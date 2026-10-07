@@ -1,7 +1,7 @@
 ---
-description: "Omitted builtin_tools and extension_tools use both defaults."
-extensions: "./ext-alpha.mjs, ./ext-beta.mjs"
-expect_tools_present: "read, bash, edit, write, grep, find, ls, alpha_read, alpha_write, beta_tool"
+description: "Omitted tools: grants nothing, even with extensions loaded."
+extensions: "+ext-alpha, +ext-beta"
+expect_tools_absent: "read, bash, edit, write, grep, find, ls, alpha_read, alpha_write, beta_tool"
 ---
-e2e template: omitted builtin_tools yields all built-ins; omitted extension_tools
-surfaces every tool from the explicitly loaded extensions.
+e2e template: loading an extension grants none of its tools; with tools:
+omitted no built-in or extension tool is active.

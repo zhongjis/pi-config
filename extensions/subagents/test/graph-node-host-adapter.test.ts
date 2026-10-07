@@ -42,8 +42,8 @@ function agentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     name: "fixture",
     description: "fixture",
-    builtinToolNames: ["read"],
-    extensions: false,
+    extensionRules: [],
+    toolRules: [{ sign: "+", selector: "read" }],
     discoverSkills: false,
     preloadSkills: [],
     systemPrompt: "Test agent",

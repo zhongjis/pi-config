@@ -28,16 +28,18 @@ markdown prompt body:
 display_name: Example 示例
 description: One-line description shown in the Agent picker.
 model: anthropic/claude-sonnet-4-6:medium
-builtin_tools: read,bash,edit,write
-extension_tools: codegraph_*,lsp
+extensions: +@all, -@builtin
+tools: +read, +bash, +edit, +write, +codegraph_*, +lsp
 prompt_mode: system_instructions
 ---
 
 <system prompt body — the agent's behavioral contract>
 ```
 
-The body becomes the agent/mode system prompt (trimmed). An **empty body makes a
-mode config invalid** (`parseModeAgentConfig` returns `null`).
+The body becomes the agent/mode system prompt (trimmed). A mode with an **empty
+body, a missing file, or an invalid file runs with no prompt and no tools**; an
+invalid file's errors are shown as notifications
+([`config-loader.ts`](../../extensions/modes/src/config-loader.ts)).
 
 ### Where files live
 
@@ -56,17 +58,17 @@ mode config invalid** (`parseModeAgentConfig` returns `null`).
 defines every field, its value format, and its default. Only include fields that
 differ from the default. Parsing rules worth knowing while authoring:
 
-- List fields take CSV strings; `none` is an explicit empty list, distinct from omitting the field.
+- `extensions` and `tools` are signed rule lists; see [Access rules](#access-rules).
 - Boolean flags are strict: only the literal `true` enables them.
-- `extension_tools` accepts trailing `*` prefix wildcards (`codegraph_*`).
 
 Fields whose purpose the code does not make obvious:
 
 - `description` — shown in the Agent picker and used by orchestrators to route. **Write this well** — it is the routing signal.
-- `extensions` — which extensions load (`false` loads none). A CSV value counts as enabled and keeps only the named or path-listed extensions; it does not scope tools to those sources. Use `extension_tools` for per-tool reachability and `exclude_extensions` for per-source exclusion.
+- `extensions` — which extensions load (Subagents only). Loading an extension grants none of its tools.
+- `tools` — which tools the agent may see and call.
 - `discover_skills` — whether pi's skill **catalog** is discoverable on demand.
 - `preload_skills` — skill names whose full body is injected into the system prompt. Independent of `discover_skills`.
-- `isolated` — built-ins only; overrides `extensions`/`extension_tools`.
+- `isolated` — no extensions load, so only granted built-in tools remain.
 
 > **Not a frontmatter field:** `thinking`. Per-call `thinking`, `model`, and
 > `max_turns` are also **`agent` tool invocation parameters**; frontmatter sets
@@ -78,18 +80,14 @@ Fields whose purpose the code does not make obvious:
 
 ## Mode frontmatter
 
-A mode file uses the **same parser**, but `parseModeAgentConfig` reads only the
-tool-selection, delegation, `allow_nesting`, `prompt_mode`, and `model` fields.
+A mode file uses the **same parser**, but `parseModeAgentConfig` reads only
+`tools`, the delegation fields, `allow_nesting`, `prompt_mode`, and `model`.
 Mode-specific differences:
 
 - `prompt_mode` collapses `system_instructions` to `replace`, and does **not** control AGENTS.md injection — modes always run with project AGENTS.md present.
 - `model` is overridable per session with `/mode-model`.
-
-**Tool-selection gating.** `builtin_tools`, `extension_tools`, and `extensions`
-are applied only when at least one tool-selection field
-(`builtin_tools`, `extension_tools`, `extensions`, `inherit_extensions`,
-`exclude_extensions`) is present. Omit them all and the mode inherits the runtime
-default tool set instead of an empty one.
+- `extensions` is an error: the main session cannot unload an extension.
+- A mode file without `tools` grants no tools.
 
 ### Inert-for-modes fields
 
@@ -141,38 +139,95 @@ Guidance for subagents:
 
 ---
 
-## Tool selection model
+## Access rules
 
-Final active tools are computed by
-[`computeActiveToolNames`](../../extensions/lib/active-tools.ts) from four inputs:
+`extensions` and `tools` are ordered lists of signed rules.
+[`active-tools.ts`](../../extensions/lib/active-tools.ts) owns parsing
+(`parseAccessRules`) and evaluation (`resolveExtensionAccess`, `resolveToolAccess`).
 
-1. **`builtin_tools`** — granted only within the built-in universe
-   (`read, bash, edit, write, grep, find, ls`). Subagents report other names as
-   unknown built-ins; they are never granted.
-2. **`extensions`** — `false` makes every extension tool unreachable.
-3. **`extension_tools`** — post-load allowlist deciding which extension tools are
-   reachable. `undefined` = all available; `false`/`none` = none; a list = exact
-   names or `prefix*` wildcards.
-4. **`allow_nesting`** — nested controls (`agent`, `get_agent_result`,
-   `resolve_agent_graph_gate`, `steer_subagent`) are unreachable unless this is `true`.
+- Every entry is `+selector` or `-selector`. The sign is required; it also keeps `@` and `*` entries valid YAML.
+- Lists start empty. Rules apply left to right, and the last matching rule wins; a candidate no rule matches is excluded.
+- An omitted or empty field means nothing: no extensions load, no tools are granted.
+- Values may be a comma-separated string or a YAML list:
 
-Reachable tools activate by Pi tool exposure: `direct` and `model-only` tools
-activate; `codemode` and `deferred` tools stay reachable from codemode scripts but
-are never auto-activated (one already active stays active); `hidden` tools never
-activate. Nested calls from codemode scripts are blocked for unreachable tools in
-subagents and in modes with a tool policy; Fu Xi's plan tools stay reachable in `fuxi`.
+```yaml
+tools: +read, +bash, +@codegraph, +lsp
+```
 
-Precedence and rules:
+```yaml
+tools:
+  - +read
+  - +@pi-web-access
+  - -web_enable
+```
 
-- `isolated: true` disables **all** extension tools regardless of
-  `extensions`/`extension_tools`.
-- `extension_tools` can never grant built-ins.
-- Subagents load Pi's built-in codemode (`builtin:codemode`, with the script
-  `models` catalog disabled) only for an exact `codemode` entry in
-  `extension_tools`; omitted lists and wildcards never load it. It does not load
-  under `isolated: true` or `extensions: false` (a diagnostic reports the
-  listing). `exclude_extensions: builtin:codemode` or the Pi settings entry
-  `-builtin:codemode` disables it; a CSV `extensions` value does not.
+### `extensions` selectors (Subagents only)
+
+| Selector | Matches |
+|---|---|
+| `@all` | Discovered extensions plus Pi built-in extensions |
+| `@builtin` | Pi built-in extensions; same as `builtin:*` |
+| `<id>` | One extension: `builtin:<name>`, or the extension's directory name or package short name |
+| glob | `*` matches any characters, e.g. `builtin:*` |
+
+```yaml
+extensions: +@all, -@builtin, +builtin:codemode, -ulw
+```
+
+### `tools` selectors
+
+| Selector | Matches |
+|---|---|
+| `@all` | Every registered tool |
+| `@builtin` | Pi built-in tool names ([`BUILTIN_TOOL_NAMES`](../../extensions/lib/active-tools.ts)), whichever extension implements them |
+| `@<id>` | Tools registered by that extension, excluding built-in tool names, e.g. `@codegraph`, `@builtin:codemode` |
+| name | A Pi tool name, e.g. `read`, `codemode` |
+| glob | `*` matches any characters, e.g. `codegraph_*`, `mcp__ctx__*` |
+
+```yaml
+tools: +@all, -@builtin, +read, +bash, +edit, +write, -web_enable
+```
+
+Extension groups and globs are evaluated against the live tool registry, so a
+tool registered later by a granted extension is granted too.
+
+### Loading and granting
+
+- Loading an extension grants nothing; `tools` alone grants. An extension that did not load contributes no tools.
+- Built-in tools are grantable without loading any extension.
+- Pi's built-in codemode loads only through `extensions` (`+builtin:codemode`).
+- `isolated: true` loads no extensions, so only granted built-in tools remain.
+
+### Hard gates
+
+After the rules apply:
+
+- tools from trusted internal sources (`<inline:…>`, `<sdk:…>`) are always allowed;
+- nested subagent controls (`agent`, `get_agent_result`, `resolve_agent_graph_gate`, `steer_subagent`) require `allow_nesting: true`;
+- goal tools require Goal access;
+- plan tools are granted only in Fu Xi.
+
+`+@all` therefore cannot enable recursion or plan-only tools.
+
+### Diagnostics
+
+Errors make the definition invalid; warnings do not.
+
+- **Errors:** an unsigned entry; an unknown `@word`; reserved words (`@read`, `@write`, `@package`, `@project`, `@user`, `@mcp:*`, argument parentheses); a path, bare `all`, or bare `builtin` in `extensions`; an extension id matching more than one extension; an extension id colliding with a reserved word; `extensions` in a mode file.
+- **Warnings:** an extension id or `@<id>` group that matches nothing; a leading `-` rule, which does nothing on an empty start.
+- Tool names and globs that match nothing never warn, because some tools register only in some configurations.
+
+### Enforcement
+
+The granted set is a ceiling: ungranted tools are hidden from the model and
+every call to them is blocked, top-level and nested inside codemode.
+
+- **Modes** activate granted `direct`/`model-only` tools on apply. The always-active, model-only `mode_tool_ceiling` tool hides declared-but-ungranted tools after all `before_agent_start` handlers, and a `tool_call` guard vetoes every ungranted call. There is no per-turn pruning.
+- **Subagents** see only granted tools from the first turn. See the [subagents README](../../extensions/subagents/README.md#tool--extension-scoping).
+- The codemode and `tool_search` catalogs may still list ungranted codemode or deferred tools; only the call veto stops them.
+
+### Role guidance
+
 - Read-only recon agents may receive built-in `bash` only when a trusted runtime guard scopes it to read-only actions; they still receive no `edit`/`write`
   (see [`agents/AGENTS.md`](../../agents/AGENTS.md) and [`extensions/smart-tool-guards/README.md`](../../extensions/smart-tool-guards/README.md)).
 - Prefer `bash` with `rg`/`fd` over the `grep`/`find`/`ls` built-ins.
@@ -215,8 +270,8 @@ mode or agent may spawn through the `agent` tool.
 - The **allowlist is applied first**, then `disallow_delegation_to` removes entries
   from that set.
 - Blocked delegations return a descriptive reason listing permitted targets.
-- Delegation also requires the nested subagent tools to be active
-  (`allow_nesting: true` + tool policy).
+- Delegation also requires the nested subagent tools: granted in `tools` and
+  enabled by `allow_nesting: true`.
 
 For modes, delegation frontmatter is canonically parsed into a versioned policy
 snapshot persisted in `agent-mode` state, which the subagent extension consumes as
@@ -227,16 +282,15 @@ the authorization authority (see
 
 ## Invalid / obsolete fields
 
-The following obsolete fields make a definition **invalid** — the loader emits an
-error diagnostic and skips the agent, and a mode config becomes `null`:
+These fields make a definition **invalid** — the loader emits an error
+diagnostic with a rewrite hint and skips the agent; a mode with one runs with no
+prompt and no tools and shows the errors as notifications:
 
-- `tools` → use `builtin_tools` + `extension_tools` instead.
-- `disallowed_tools`, `disallow_tools` → no denylist exists; use explicit
-  `builtin_tools`/`extension_tools` allowlists.
+- `builtin_tools`, `extension_tools` → `tools` rules.
+- `exclude_extensions`, `inherit_extensions`, boolean `extensions` → `extensions` rules.
+- `disallowed_tools`, `disallow_tools` → a `-name` rule in `tools`.
 - `skills`, `inherit_skills` → split into `discover_skills` (catalog on/off) and
   `preload_skills` (eager-inject names).
-
-There is intentionally **no tool denylist**. Tool selection is allowlist-only.
 
 ---
 
@@ -250,9 +304,8 @@ display_name: Taishang 太上老君
 description: Architecture decisions and debugging. Read-only consultation with deep analysis.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high
 discover_skills: false
-builtin_tools: read,bash
-extension_tools: look_at,codegraph_*,lsp
-extensions: true
+extensions: +@all, -@builtin
+tools: +read, +bash, +look_at, +codegraph_*, +lsp
 ---
 ```
 
@@ -266,13 +319,14 @@ display_name: Jintong 金童
 description: A focused build worker for isolated implementation, debugging, and verification tasks.
 model: claude-sonnet-4-6,openai-codex/gpt-5.5:medium
 prompt_mode: system_instructions
-builtin_tools: read,bash,edit,write
-extension_tools: codegraph_*,lsp
+extensions: +@all, -@builtin, +builtin:codemode
+tools: +read, +bash, +edit, +write, +codegraph_*, +lsp, +codemode
 ---
 ```
 
 `system_instructions` gives its own persona while inheriting AGENTS.md guardrails.
-Full mutating built-ins for implementation work.
+Full mutating built-ins for implementation work; codemode is loaded through
+`extensions` and granted through `tools`.
 
 ### Orchestration mode
 
@@ -282,16 +336,15 @@ display_name: Kua Fu 夸父
 description: Default build mode. A senior engineer who ships by orchestrating specialists.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:medium
 inherit_context: false
-builtin_tools: read,bash,edit,write
-extension_tools: ask,agent,get_agent_result,steer_subagent,Task*,codegraph_*,context_*,process,lsp,create_goal,get_goal,update_goal
+tools: +@all, -@builtin, +read, +bash, +edit, +write, -web_enable
 allow_delegation_to: chengfeng,wenchang,xuannv,jintong,juling,yunu,guangguang,taishang,direnjie
 disallow_delegation_to: houtu
 allow_nesting: true
 ---
 ```
 
-`allow_nesting: true` plus the nested subagent tools in `extension_tools` enables
-delegation. `disallow_delegation_to: houtu` is a defensive guard: since `houtu` is
+`+@all` grants every registered tool except the subtracted ones, and `allow_nesting: true`
+lets the nested subagent tools through the hard gate, enabling delegation. `disallow_delegation_to: houtu` is a defensive guard: since `houtu` is
 not in this allowlist (and is a mode, not a delegable subagent), it removes nothing
 here, but the allowlist-then-blocklist order means any overlapping entry would be
 dropped. `display_name`/`inherit_context` here are informational — the mode label
@@ -304,7 +357,7 @@ comes from `MODE_META` and `inherit_context` is inert for modes.
 There is no repo-local automated validator for agent/mode markdown. After editing:
 
 1. Re-read the changed frontmatter and body for internal consistency.
-2. Confirm no obsolete fields (`tools`, `disallowed_tools`, `disallow_tools`, `skills`, `inherit_skills`) remain.
+2. Confirm no obsolete fields remain (see [Invalid / obsolete fields](#invalid--obsolete-fields)).
 3. Confirm tool access matches role scope (read-only agents get no mutating tools).
 4. For subagents, test by launching through the `agent` tool.
 5. For modes, exercise the relevant integration coverage

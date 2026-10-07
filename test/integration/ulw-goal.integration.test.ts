@@ -36,7 +36,7 @@ describe("ULW Goal activation in native Pi", () => {
 	function policy(tools: string[]) {
 		const dir = join(home, ".pi/agent/modes/kuafu");
 		mkdirSync(dir, { recursive: true });
-		writeFileSync(join(dir, "mode.md"), `---\nbuiltin_tools: [read]\nextension_tools: ${JSON.stringify(tools)}\n---\nSynthetic mode fixture.`);
+		writeFileSync(join(dir, "mode.md"), `---\ntools: ${JSON.stringify(["+read", ...tools.map((tool) => `+${tool}`)])}\n---\nSynthetic mode fixture.`);
 	}
 	async function start(extensions: string[]) {
 		test = await createTestSession({

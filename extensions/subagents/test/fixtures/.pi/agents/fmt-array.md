@@ -1,6 +1,6 @@
 ---
-description: "builtin_tools value format: YAML flow array."
-builtin_tools: [read, grep, find]
+description: "tools value format: YAML flow array."
+tools: [+read, +grep, +find]
 expect_tools_present: "read, grep, find"
 expect_tools_absent: "bash, edit, write, ls"
 ---

@@ -5,10 +5,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import {
-  invalidFrontmatterFieldMessage,
-  parseAgentMarkdown,
-} from "../../lib/agent-frontmatter.js";
+import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
 import { normalizeThinkingLevel } from "./thinking-level.js";
 import type {
   AgentConfig,
@@ -74,17 +71,11 @@ function loadFromDir(
     }
 
     const parsed = parseAgentMarkdown(content);
-    for (const field of parsed.invalidFields) {
-      diagnostics.push({
-        file: filePath,
-        agentName: name,
-        field,
-        severity: "error",
-        message: invalidFrontmatterFieldMessage(field),
-      });
+    for (const d of parsed.diagnostics) {
+      diagnostics.push({ file: filePath, agentName: name, field: d.field, severity: d.severity, message: d.message });
     }
-    // Obsolete tool/skill selection fields make the definition invalid: skip it
-    // rather than misconfigure a worker with a silently-ignored allowlist.
+    // Any error diagnostic invalidates the definition: skip it rather than run
+    // a worker under a misread access contract.
     if (parsed.invalidFields.length > 0) continue;
 
     // NEW-local fields the shared schema does not model. Parsed directly from
@@ -96,13 +87,11 @@ function loadFromDir(
       name,
       displayName: parsed.displayName,
       description: parsed.description ?? name,
-      builtinToolNames: parsed.builtinToolNames,
-      extensionToolNames: parsed.extensionToolNames,
+      extensionRules: parsed.extensionRules,
+      toolRules: parsed.toolRules,
       allowDelegationTo: parsed.allowDelegationTo,
       disallowDelegationTo: parsed.disallowDelegationTo,
       allowNesting: parsed.allowNesting,
-      extensions: parsed.extensions,
-      excludeExtensions: parsed.excludeExtensions,
       discoverSkills: parsed.discoverSkills,
       preloadSkills: parsed.preloadSkills,
       model: parsed.model,

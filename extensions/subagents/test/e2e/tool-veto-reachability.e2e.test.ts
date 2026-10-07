@@ -1,14 +1,13 @@
 /**
- * tool-veto-reachability.e2e.test.ts — reachability guard for the `ext:` turn-1
- * tool veto (issue #125).
+ * tool-veto-reachability.e2e.test.ts — reachability guard for the top-level
+ * `tools:` veto (issue #125).
  *
- * `installExtensionToolScope` enforces `ext:` narrowing two ways. Re-narrowing the
+ * `installExtensionToolScope` enforces `tools:` rules two ways. Re-narrowing the
  * ACTIVE set on `turn_end` is built entirely on public API (`getAllTools`,
  * `getActiveToolNames`, `setActiveToolsByName`) and is covered by the unit tests.
- * The second half is not: turn 1 cannot be narrowed at all — `before_agent_start`
- * fires INSIDE `prompt()` and may widen the tool set, but `createContextSnapshot()`
- * freezes that turn's tools immediately after, leaving no window — so out-of-scope
- * calls are vetoed at call time by wrapping `session.agent.beforeToolCall`.
+ * The second half is not: `before_agent_start` fires INSIDE `prompt()` and may
+ * activate tools after the scope was installed, so out-of-scope calls are vetoed
+ * at call time by wrapping `session.agent.beforeToolCall`.
  *
  * That wrap is the one place this extension reaches past the documented surface:
  *   - `ExtensionBindings` has no tool_call hook, so there is no SDK-level way to
@@ -35,11 +34,12 @@
  * No network: a native faux provider on a per-test `ModelRuntime` satisfies
  * `createAgentSession`; the veto is invoked directly instead of via a model turn.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseAccessRules } from "../../../lib/active-tools.js";
 import { runAgent } from "../../src/agent-runner.js";
 import { registerAgents } from "../../src/agent-types.js";
 import type { AgentConfig } from "../../src/types.js";
@@ -50,7 +50,7 @@ vi.setConfig({ testTimeout: 30_000 });
 
 /** Registers `alpha_read` / `alpha_write`; reused so no new fixture is needed. */
 const ALPHA = resolve(fileURLToPath(new URL("../fixtures/ext-alpha.mjs", import.meta.url)));
-/** Registers `beta_tool` — loaded but NOT selected by the `ext:` selector below. */
+/** Registers `beta_tool` — loaded but NOT granted by the `tools:` rules below. */
 const BETA = resolve(fileURLToPath(new URL("../fixtures/ext-beta.mjs", import.meta.url)));
 
 function makePi() {
@@ -63,6 +63,10 @@ describe("tool veto reachability against real pi-mono", () => {
 
   beforeEach(async () => {
     cwd = mkdtempSync(join(tmpdir(), "subagents-veto-"));
+    // Discovered project extensions (`ext-alpha`, `ext-beta`) re-exporting the fixtures.
+    mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
+    writeFileSync(join(cwd, ".pi", "extensions", "ext-alpha.ts"), `export { default } from ${JSON.stringify(ALPHA)};\n`);
+    writeFileSync(join(cwd, ".pi", "extensions", "ext-beta.ts"), `export { default } from ${JSON.stringify(BETA)};\n`);
     fauxRuntime = await createFauxModelRuntime({
       provider: "faux",
       models: [{ id: "faux-1", contextWindow: 200_000 }],
@@ -81,10 +85,9 @@ describe("tool veto reachability against real pi-mono", () => {
           {
             name: "veto",
             description: "veto guard",
-            builtinToolNames: ["read"],
-            // Load both extension fixtures, but expose only alpha's tools.
-            extensions: [ALPHA, BETA],
-            extensionToolNames: ["alpha_read", "alpha_write"],
+            // Load both extension fixtures, but grant only alpha's tools.
+            extensionRules: parseAccessRules("extensions", "+ext-alpha, +ext-beta").rules,
+            toolRules: parseAccessRules("tools", "+read, +@ext-alpha").rules,
             discoverSkills: false,
             preloadSkills: [],
             systemPrompt: "You are veto.",
@@ -92,7 +95,7 @@ describe("tool veto reachability against real pi-mono", () => {
             inheritContext: false,
             runInBackground: false,
             isolated: false,
-          } as AgentConfig,
+          } satisfies AgentConfig,
         ],
       ]),
     );
@@ -122,7 +125,7 @@ describe("tool veto reachability against real pi-mono", () => {
 
     expect(priorIsFunction).toBe(true);
 
-    // Out of scope: beta loaded but the ext: flip did not select it.
+    // Out of scope: beta loaded but the tools: rules do not grant it.
     await expect(
       session.agent.beforeToolCall({ toolCall: { name: "beta_tool" }, args: {} }),
     ).resolves.toMatchObject({ block: true, reason: expect.any(String) });

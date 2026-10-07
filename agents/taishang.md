@@ -4,10 +4,8 @@ description: Read-only consultant for complex architecture decisions, hard debug
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6.1-sol:xhigh,opencode-go/glm-5.2,llama-swap/qwen2.5-coder:14b:medium
 prompt_mode: system_instructions
 discover_skills: false
-builtin_tools: read,bash
-extension_tools: look_at,codegraph_*,lsp
-extensions: true
-exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
+extensions: +@all, -@builtin, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
+tools: +read, +bash, +look_at, +codegraph_*, +lsp
 persist_session: true
 ---
 

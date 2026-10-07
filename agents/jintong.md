@@ -4,9 +4,8 @@ description: Default low-to-moderate non-UI implementation worker for clear, sta
 model: github-copilot/sonnet-5.5:medium,cliproxyapi/gpt-6.1-sol:medium,opencode-go/grok-4.7:xhigh,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
-builtin_tools: read,bash,edit,write
-extension_tools: codegraph_*,lsp,codemode
-exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
+extensions: +@all, -@builtin, +builtin:codemode, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
+tools: +read, +bash, +edit, +write, +codegraph_*, +lsp, +codemode
 persist_session: true
 ---
 

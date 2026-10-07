@@ -72,6 +72,14 @@ export function createCodemodeExtension(_options?: unknown) {
   return (_pi: unknown) => {};
 }
 
+export function createMcpExtension(_options?: unknown) {
+  return (_pi: unknown) => {};
+}
+
+export function createToolSearchExtension() {
+  return (_pi: unknown) => {};
+}
+
 export function createCodingTools() {
   return ["read", "bash", "edit", "write"].map((name) => ({ name }));
 }

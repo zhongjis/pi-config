@@ -207,40 +207,25 @@ Thinking precedence: agent frontmatter → selected model-chain suffix → SDK s
 
 ### Tool & extension scoping
 
-`extensions:` decides **which extensions load**, `tools:` decides **which tools surface to the LLM**. They compose:
+`extensions:` decides **which extensions load**; `tools:` decides **which tools the agent may see and call**. Both are signed rule lists, omitted or empty means nothing, and the last matching rule wins. The [frontmatter guide](../../docs/guides/agent-frontmatter.md#access-rules) owns the selector grammar and diagnostics.
 
 ```yaml
-# Default (both omitted): all extensions load, all 7 built-ins surface
+extensions: +@all, -@builtin, +builtin:codemode, -ulw
+tools: +read, +bash, +@codegraph, +lsp, +codemode
 
-tools: read, grep, find           # narrow to listed built-ins; extensions still load
-tools: "*"                        # all 7 built-ins (alias: `all`)
-tools: none                       # zero built-ins (alias: `""`)
-tools: "*, ext:mcp/search"        # built-ins plus one extension tool
-
-extensions: false                 # no user extensions; hidden session-local plumbing remains
-extensions: [mcp]                 # only mcp loads
-extensions: ["*", "/abs/foo.ts"]  # all defaults plus one path-loaded extension
-
-exclude_extensions: pi-notify     # everything except pi-notify (with extensions: true)
-
-# Specialist: load one extension, expose only one of its tools, keep built-ins
-extensions: [mcp]
-tools: "*, ext:mcp/search"
-
-isolated: true                    # built-ins only; no user extensions/skills/context
+isolated: true                    # no extensions load; only granted built-in tools remain
 ```
 
 A few rules the examples don't make obvious:
 
-- `extensions:` is the loading authority for user-configured extensions. `ext:foo` in `tools:` narrows what surfaces; it can't load `foo` on its own. The trusted hook-only `session-local` runtime is internal plumbing and always remains bound. Mismatches fire `extension-error:…` warnings.
-- Any `ext:` entry flips extension tools to an explicit allowlist — unnamed extensions still load (handlers fire) but expose no tools. So `tools: "*, ext:mcp/search"` exposes only `search` from `mcp`, nothing from any other extension.
-- Extension names match case-insensitively (`[Mcp]` = `[mcp]`); tool names in `ext:foo/bar` stay case-sensitive.
-- Extensions that register tools **lazily** work too. MCP-backed extensions typically can't enumerate their tools until their servers connect, so they register from `session_start` or `before_agent_start` rather than at load. Subagent scoping is re-derived as tools appear, so these surface normally — including under `ext:` selectors, which keep narrowing correctly no matter when a tool shows up.
-- An installed **package** extension matches by its package short name (`@scope/pi-subagents` → `[pi-subagents]`), in addition to its path-derived name (a package whose entry is `src/index.ts` also answers to `[src]`). Prefer the package name — the path-derived one is incidental.
-- Plain `tools:` typos fail loudly: `tools: reed, grep` fires `tools-error:…` instead of silently producing an under-tooled agent.
-- `exclude_extensions:` wins over `extensions:` and `ext:` selectors for user-configured extensions. It cannot remove the trusted hook-only `session-local` runtime. Plain names only (no paths, no `*`); a name matching nothing fires an `extension-error:…` warning.
-- `exclude_extensions:` is **not a sandbox**: excluded extensions' factory code still executes once during loading. Exclusion suppresses their tools and their bound lifecycle hooks (`pi.on` handlers like `session_start` only fire for extensions bound to the session), but not other load-time side effects — a factory that subscribes directly to the shared `pi.events` bus stays live. Don't rely on it to contain an untrusted extension.
-- Array and string forms are equivalent: `[a, b]` == `"a, b"`.
+- Loading grants nothing; built-in tools are grantable with no extensions loaded. `@all` and `@builtin` in `extensions:` include Pi's built-in extension factories for codemode, tool-search, and mcp, which the runner supplies because SDK sessions do not load them automatically. `builtin:llama.cpp` cannot load in subagents.
+- With no `+` extension rule, or under `isolated`, the granted set is a static allowlist. Otherwise scoping is re-derived on every `turn_end`, so lazily registered tools (for example MCP-backed ones) surface when granted.
+- `subagent_tool_ceiling` hides ungranted declarations from the first turn; the `beforeToolCall` veto and the hidden nested-call guard block ungranted calls, top-level and nested inside codemode.
+- The codemode and `tool_search` catalogs may still list ungranted tools; only the veto stops those calls.
+- `extensions:` errors fail the spawn. Extension warnings surface as `extension-warning:…` and tool-rule diagnostics as `tools-error:…`/`tools-warning:…` run diagnostics.
+- The trusted hook-only `session-local` runtime is internal plumbing and always remains bound.
+- An installed **package** extension matches by its package short name (`@scope/pi-subagents` → `pi-subagents`) and its directory name. Prefer the package name.
+- `-<id>` is **not a sandbox**: excluded extensions' factory code still executes once during loading. Exclusion suppresses their tools and bound lifecycle hooks, but not other load-time side effects — a factory that subscribes directly to the shared `pi.events` bus stays live.
 
 ## Tools
 

@@ -92,14 +92,14 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
     }
   });
 
-  it("A04 A05 final answer at one turn completes with zero tools despite configuration warnings", async () => {
+  it("A04 A05 final answer at one turn completes with zero tools despite an unmatched tool rule", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "subagents-final-"));
     let localRun: PrintModeRun | undefined;
     let childCalls = 0;
     try {
       mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
       writeFileSync(join(cwd, ".pi", "agents", "final.md"),
-        "---\ndescription: Final\nbuiltin_tools: missing-tool\nmax_turns: 1\n---\nReport.\n");
+        "---\ndescription: Final\ntools: +missing-tool\nmax_turns: 1\n---\nReport.\n");
       localRun = await runPrintMode({ cwd, prompt: "Delegate.", respond: routeBySession({
         parentInitial: agentCall({ subagent_type: "final", description: "final", prompt: "Report." }),
         parentFinal: "Done", subagent: () => { childCalls++; return "FINAL_OK"; },

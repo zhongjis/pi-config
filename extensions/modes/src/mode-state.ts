@@ -2,8 +2,8 @@ import { GOAL_TOOL_NAMES, goalToolAccess } from "../../goal/src/goal/access.js";
 import type { RuntimeModelCandidate } from "../../lib/runtime-model-fallback.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
-import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES, isToolReachable, type ToolReachabilityInput } from "../../lib/active-tools.js";
-import { MODES, MODE_COLORS, MODE_META, RESET } from "./constants.js";
+import { type AccessDiagnostic, resolveToolAccess, selectActiveToolNames, toolCandidates } from "../../lib/active-tools.js";
+import { MODES, MODE_COLORS, MODE_META, MODE_TOOL_CEILING_NAME, RESET } from "./constants.js";
 import { getModeSkillPaths } from "./mode-skills.js";
 import { loadAgentConfig } from "./config-loader.js";
 import { getModePromptSource } from "../../lib/model-family.js";
@@ -14,43 +14,6 @@ type ThinkingLevel = ReturnType<ExtensionAPI["getThinkingLevel"]>;
 
 function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
-}
-
-export function hasToolPolicy(config: ModeConfig): boolean {
-  return Boolean(
-    config.builtinToolNames
-    || config.extensionToolNames !== undefined
-    || config.extensions !== undefined
-  );
-}
-
-const FU_XI_ONLY_TOOL_NAMES = ["plan_approve", "plan_scaffold"] as const;
-
-function applyFuXiOnlyToolAccess(mode: Mode, toolNames: readonly string[], allToolNames: readonly string[]): string[] {
-  const withoutFuXiOnlyTools = toolNames.filter(
-    (toolName) => !FU_XI_ONLY_TOOL_NAMES.includes(toolName as (typeof FU_XI_ONLY_TOOL_NAMES)[number]),
-  );
-  if (mode !== "fuxi") return withoutFuXiOnlyTools;
-  return [
-    ...withoutFuXiOnlyTools,
-    ...FU_XI_ONLY_TOOL_NAMES.filter((toolName) => allToolNames.includes(toolName)),
-  ];
-}
-
-function modeToolPolicy(config: ModeConfig): ToolReachabilityInput {
-  return {
-    builtinToolNames: config.builtinToolNames ?? [...DEFAULT_BUILTIN_TOOL_NAMES],
-    builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
-    extensions: config.extensions ?? true,
-    extensionTools: config.extensionToolNames,
-    allowNesting: config.allowNesting,
-  };
-}
-
-/** Whether a mode with a tool policy may call `toolName`, including Fu Xi-only plan tools. */
-export function isModeToolReachable(mode: Mode, config: ModeConfig, toolName: string, allToolNames: readonly string[]): boolean {
-  const reachable = isToolReachable(modeToolPolicy(config), toolName) ? [toolName] : [];
-  return applyFuXiOnlyToolAccess(mode, reachable, allToolNames).includes(toolName);
 }
 
 function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
@@ -112,6 +75,9 @@ export class ModeStateManager {
 	appliedThinkingLevel?: ThinkingLevel;
 	applyingModelConfig = false;
 	resolvedFamily: "gpt" | "gemini" | "default" = "default";
+	/** Goal tools Goal access allowed at the last tool-access apply. */
+	allowedGoalTools: readonly string[] = [];
+	private notifiedToolDiagnostics = new Set<string>();
 	constructor(pi: ExtensionAPI) {
 		this.pi = pi;
 	}
@@ -136,7 +102,7 @@ export class ModeStateManager {
 	loadConfig(mode: Mode, family?: "gpt" | "gemini" | "default"): ModeConfig {
 		const cacheKey = `${mode}:${family ?? "default"}`;
 		if (!this.cachedConfigs[cacheKey]) {
-			this.cachedConfigs[cacheKey] = loadAgentConfig(mode, family) ?? { body: "" };
+			this.cachedConfigs[cacheKey] = loadAgentConfig(mode, family) ?? { body: "", toolRules: [] };
 		}
 		return this.cachedConfigs[cacheKey]!;
 	}
@@ -148,33 +114,59 @@ export class ModeStateManager {
 		this.updateStatus(ctx);
 	}
 
-	async applyToolAccess(ctx: ExtensionContext): Promise<void> {
+	/** Resolve the current mode's `tools:` rules against the live registry, then the hard gates. */
+	toolAccess(allowedGoals: readonly string[] = this.allowedGoalTools): { allowed: Set<string>; diagnostics: AccessDiagnostic[] } {
 		const config = this.loadConfig(this.currentMode);
+		return resolveToolAccess(config.toolRules, toolCandidates(this.pi.getAllTools()), {
+			allowNesting: config.allowNesting === true,
+			goalTools: { names: GOAL_TOOL_NAMES, allowed: allowedGoals },
+			planTools: this.currentMode === "fuxi",
+		});
+	}
+
+	/** Allowed tool names for the mode tool ceiling, using the Goal access cached at the last apply. */
+	allowedToolNames(): ReadonlySet<string> {
+		return this.toolAccess().allowed;
+	}
+
+	/** Whether a call may run; Goal tool calls re-read Goal access instead of the cache. */
+	async isToolCallAllowed(ctx: ExtensionContext, toolName: string): Promise<boolean> {
+		const isGoalTool = GOAL_TOOL_NAMES.some((goalName) => goalName === toolName);
+		const allowedGoals = isGoalTool ? await goalToolAccess(ctx) : this.allowedGoalTools;
+		return this.toolAccess(allowedGoals).allowed.has(toolName);
+	}
+
+	async applyToolAccess(ctx: ExtensionContext): Promise<void> {
 		const allTools = this.pi.getAllTools();
-		const allToolNames = allTools.map((t) => t.name);
-		const exposure = new Map(allTools.map((t) => [t.name, t.exposure]));
-		const activeToolNames = this.pi.getActiveTools().filter((t) => allToolNames.includes(t));
+		const registered = new Set(allTools.map((t) => t.name));
+		const goalNames = GOAL_TOOL_NAMES.filter((name) => registered.has(name));
+		this.allowedGoalTools = goalNames.length ? await goalToolAccess(ctx) : [];
 
-		const goalNames = allToolNames.filter((name) => GOAL_TOOL_NAMES.some((goalName) => goalName === name));
-		const allowedGoals = goalNames.length ? await goalToolAccess(ctx) : [];
-		const accessToolNames = [...activeToolNames.filter((name) => !goalNames.includes(name)),
-			...goalNames.filter((name) => allowedGoals.includes(name))];
-		let nextActiveToolNames = accessToolNames;
-		if (hasToolPolicy(config)) {
-			nextActiveToolNames = computeActiveToolNames({
-				...modeToolPolicy(config),
-				availableToolNames: allToolNames,
-				exposureOf: (name) => exposure.get(name),
-				currentActiveToolNames: accessToolNames,
-			});
+		const { allowed, diagnostics } = this.toolAccess();
+		const configErrors = this.loadConfig(this.currentMode).errors ?? [];
+		this.notifyToolDiagnostics(ctx, [...configErrors.map((message) => ({ severity: "error" as const, message })), ...diagnostics]);
+
+		const activeToolNames = this.pi.getActiveTools().filter((name) => registered.has(name));
+		// Allowed Goal tools are deferred; listing them as current activates them.
+		const nextActiveToolNames = selectActiveToolNames(allTools, allowed, [
+			...activeToolNames,
+			...goalNames.filter((name) => allowed.has(name)),
+		]);
+		if (registered.has(MODE_TOOL_CEILING_NAME) && !nextActiveToolNames.includes(MODE_TOOL_CEILING_NAME)) {
+			nextActiveToolNames.push(MODE_TOOL_CEILING_NAME);
 		}
-
-		nextActiveToolNames = nextActiveToolNames.filter((name) => !goalNames.includes(name) || allowedGoals.includes(name));
-		nextActiveToolNames = applyFuXiOnlyToolAccess(this.currentMode, nextActiveToolNames, allToolNames);
 		if (!sameToolSet(nextActiveToolNames, activeToolNames)) {
 			this.pi.setActiveTools(nextActiveToolNames);
 		}
+	}
 
+	private notifyToolDiagnostics(ctx: ExtensionContext, diagnostics: readonly AccessDiagnostic[]): void {
+		for (const diagnostic of diagnostics) {
+			const key = `${this.currentMode}\0${diagnostic.message}`;
+			if (this.notifiedToolDiagnostics.has(key)) continue;
+			this.notifiedToolDiagnostics.add(key);
+			ctx.ui.notify(`Mode ${this.currentMode} tools: ${diagnostic.message}`, diagnostic.severity === "error" ? "error" : "warning");
+		}
 	}
 
 	/**

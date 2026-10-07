@@ -1,11 +1,12 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
+import { parseAccessRules } from "../../lib/active-tools.js";
+import { MODE_TOOL_CEILING_NAME } from "../src/constants.js";
 import { resolveModelFromStr, ModeStateManager } from "../src/mode-state.js";
+import type { Mode, ModeConfig } from "../src/types.js";
+import { loadAgentConfig } from "../src/config-loader.js";
 
 vi.mock("../src/config-loader.js", () => ({
-	loadAgentConfig: () => ({ body: "" }),
+	loadAgentConfig: vi.fn(() => ({ body: "", toolRules: [] })),
 }));
 
 function createMockRegistry(models: Array<{ id: string; name: string; provider: string }>) {
@@ -84,27 +85,12 @@ describe("ModeStateManager", () => {
 		return pi;
 	}
 
-	it("activates deferred Goal tools only within the mode allowlist", async () => {
-		const goals = ["create_goal", "get_goal", "update_goal"];
-		const pi = createMockPi(["read"], goals.map((name) => ({ name, exposure: "deferred" })));
-		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["kuafu:default"] = { body: "fixture", builtinToolNames: ["read"], extensionToolNames: ["get_goal"] };
-		const ctx = {
-			ui: { setStatus: vi.fn() }, modelRegistry: createMockRegistry([]),
-			sessionManager: {
-				getSessionId: () => "fixture",
-				getEntries: () => [{ type: "custom", customType: "pi-goal-access", data: { sessionId: "fixture" } }],
-			},
-		};
-		await state.applyMode(ctx as never);
-		expect(pi.getActiveTools()).toEqual(["read", "get_goal"]);
-	});
-
 	it("persists normalized versioned delegation policy from mode config", () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			allowDelegationTo: [" jintong ", "chengfeng", "jintong", ""],
 			disallowDelegationTo: [" houtu ", "houtu", ""],
 		};
@@ -126,7 +112,7 @@ describe("ModeStateManager", () => {
 	it("switches mode and persists state", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["fuxi:default"] = { body: "plan" };
+		state.cachedConfigs["fuxi:default"] = { body: "plan", toolRules: [] };
 
 		const ctx = {
 			hasUI: false,
@@ -174,7 +160,7 @@ describe("ModeStateManager", () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["kuafu:default"] = { body: "" };
+		state.cachedConfigs["kuafu:default"] = { body: "", toolRules: [] };
 		const reload = vi.fn(async () => {});
 		const ctx = {
 			hasUI: false,
@@ -207,7 +193,7 @@ describe("ModeStateManager", () => {
 	it("returns false on same-mode no-op", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: [] };
 		state.currentMode = "fuxi";
 		const reload = vi.fn(async () => {});
 		const ctx = {
@@ -219,141 +205,6 @@ describe("ModeStateManager", () => {
 
 		await expect(state.switchMode("fuxi", ctx as never)).resolves.toBe(false);
 		expect(reload).not.toHaveBeenCalled();
-	});
-
-	it("filters active tools from builtin_tools and extension_tools", async () => {
-		const pi = createMockPi(["read", "write", "bash", "web_search"]);
-		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["kuafu:default"] = {
-			body: "prompt",
-			builtinToolNames: ["read", "write"],
-			extensionToolNames: ["web_search"],
-			extensions: true,
-		};
-
-		const ctx = {
-			hasUI: false,
-			ui: { setStatus: vi.fn() },
-			modelRegistry: createMockRegistry([]),
-		};
-
-		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "web_search"]);
-	});
-
-	it("activates built-in bash from Fu Xi frontmatter", async () => {
-		const pi = createMockPi(["read", "write", "edit", "bash"]);
-		const state = new ModeStateManager(pi as never);
-		const source = readFileSync(join(process.cwd(), "modes", "fuxi", "mode.md"), "utf8");
-		const parsed = parseAgentMarkdown(source);
-		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = {
-			body: parsed.body,
-			builtinToolNames: parsed.builtinToolNames,
-			extensionToolNames: parsed.extensionToolNames,
-			extensions: parsed.extensions,
-			allowNesting: parsed.allowNesting,
-		};
-
-		await state.applyMode({
-			hasUI: false,
-			ui: { setStatus: vi.fn() },
-			modelRegistry: createMockRegistry([]),
-		} as never);
-
-		const activeTools = pi.setActiveTools.mock.calls.at(-1)?.[0] ?? [];
-		expect(activeTools).toEqual(expect.arrayContaining(["read", "write", "edit", "bash"]));
-	});
-
-	it("uses extension_tools: none to disable extension tools", async () => {
-		const pi = createMockPi(["read", "write", "bash", "web_search", "clauderock"]);
-		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["kuafu:default"] = {
-			body: "prompt",
-			builtinToolNames: ["read"],
-			extensionToolNames: [],
-			extensions: true,
-		};
-
-		const ctx = {
-			hasUI: false,
-			ui: { setStatus: vi.fn() },
-			modelRegistry: createMockRegistry([]),
-		};
-
-		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read"]);
-	});
-
-
-	it("removes nested agent tools unless allow_nesting is true", async () => {
-		const pi = createMockPi(["read", "agent", "get_agent_result", "steer_subagent"]);
-		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["kuafu:default"] = {
-			body: "prompt",
-			builtinToolNames: ["read"],
-			extensionToolNames: ["agent", "get_agent_result", "steer_subagent"],
-			extensions: true,
-		};
-
-		const ctx = {
-			hasUI: false,
-			ui: { setStatus: vi.fn() },
-			modelRegistry: createMockRegistry([]),
-		};
-
-		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read"]);
-	});
-
-
-	it("activates listed model-only codemode but never wildcard-activates codemode-exposure tools", async () => {
-		const pi = createMockPi(["read"], [{ name: "codemode", exposure: "model-only" }, { name: "lookup_symbols", exposure: "codemode" }]);
-		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["kuafu:default"] = {
-			body: "prompt",
-			builtinToolNames: ["read"],
-			extensionToolNames: ["lookup_*", "codemode"],
-			extensions: true,
-		};
-
-		await state.applyMode({ hasUI: false, ui: { setStatus: vi.fn() }, modelRegistry: createMockRegistry([]) } as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "codemode"]);
-	});
-
-	it("does not change active tools when mode has no tool settings", async () => {
-		const pi = createMockPi(["read", "write", "bash", "web_search"]);
-		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["kuafu:default"] = { body: "prompt" };
-
-		const ctx = {
-			hasUI: false,
-			ui: { setStatus: vi.fn() },
-			modelRegistry: createMockRegistry([]),
-		};
-
-		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).not.toHaveBeenCalled();
-	});
-
-	it("exposes Fu Xi-only planning tools only in fuxi mode", async () => {
-		const pi = createMockPi(["read", "write", "plan_approve", "plan_scaffold"]);
-		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["kuafu:default"] = { body: "build" };
-		state.cachedConfigs["fuxi:default"] = { body: "plan" };
-
-		const ctx = {
-			hasUI: false,
-			ui: { setStatus: vi.fn() },
-			modelRegistry: createMockRegistry([]),
-		};
-
-		await state.applyMode(ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write"]);
-
-		pi.setActiveTools.mockClear();
-		await state.switchMode("fuxi", ctx as never);
-		expect(pi.setActiveTools).toHaveBeenCalledWith(["read", "write", "plan_approve", "plan_scaffold"]);
 	});
 
 	it("resets plan review state", () => {
@@ -382,6 +233,7 @@ describe("ModeStateManager", () => {
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 		state.modelOverride = "openai/gpt-4o";
@@ -409,6 +261,7 @@ describe("ModeStateManager", () => {
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 
@@ -445,6 +298,7 @@ describe("ModeStateManager", () => {
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 		state.thinkingOverride = "high";
@@ -479,7 +333,7 @@ describe("ModeStateManager", () => {
 	it("preserves model and thinking overrides across switchMode", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["fuxi:default"] = { body: "plan" };
+		state.cachedConfigs["fuxi:default"] = { body: "plan", toolRules: [] };
 		state.modelOverride = "openai/gpt-4o";
 		state.thinkingOverride = "high";
 
@@ -499,12 +353,232 @@ describe("ModeStateManager", () => {
 		it("uses family-scoped cache key", () => {
 			const pi = createMockPi();
 			const state = new ModeStateManager(pi as never);
-			state.cachedConfigs["kuafu:default"] = { body: "default body" };
-			state.cachedConfigs["kuafu:gpt"] = { body: "gpt body" };
+			state.cachedConfigs["kuafu:default"] = { body: "default body", toolRules: [] };
+			state.cachedConfigs["kuafu:gpt"] = { body: "gpt body", toolRules: [] };
 
 			expect(state.loadConfig("kuafu").body).toBe("default body");
 			expect(state.loadConfig("kuafu", "gpt").body).toBe("gpt body");
 			expect(state.loadConfig("kuafu", "default").body).toBe("default body");
 		});
+	});
+});
+
+describe("ModeStateManager tool access", () => {
+	type FixtureTool = { name: string; exposure: string; sourceInfo: { path: string } };
+
+	const WEB_ACCESS = "/fixture/web-access/index.ts";
+	const CODEGRAPH = "/fixture/codegraph/index.ts";
+	const SUBAGENTS = "/fixture/subagents/index.ts";
+	const GOAL = "/fixture/goal/index.ts";
+	const MODES = "/fixture/modes/index.ts";
+
+	function tool(name: string, path: string, exposure = "direct"): FixtureTool {
+		return { name, exposure, sourceInfo: { path } };
+	}
+
+	function builtin(name: string): FixtureTool {
+		return tool(name, `builtin:${name}`);
+	}
+
+	function createToolPi(tools: FixtureTool[], active: string[]) {
+		const registry = [...tools];
+		let activeTools = [...active];
+		return {
+			appendEntry: vi.fn(),
+			getAllTools: () => registry.map((entry) => ({ ...entry })),
+			getActiveTools: () => [...activeTools],
+			setActiveTools: vi.fn((toolNames: string[]) => {
+				activeTools = [...toolNames];
+			}),
+			/** A tool registered after a previous apply, not yet active. */
+			addTool: (entry: FixtureTool) => {
+				registry.push(entry);
+			},
+			setModel: vi.fn(),
+			getThinkingLevel: vi.fn(() => "off"),
+			setThinkingLevel: vi.fn(),
+		};
+	}
+
+	function createCtx(sessionManager: Record<string, unknown> = {}) {
+		return {
+			hasUI: false,
+			ui: { setStatus: vi.fn(), notify: vi.fn() },
+			modelRegistry: createMockRegistry([]),
+			sessionManager: {
+				getSessionId: () => "fixture",
+				getEntries: () => [],
+				getBranch: () => [],
+				...sessionManager,
+			},
+		};
+	}
+
+	function rules(text: string) {
+		return parseAccessRules("tools", text).rules;
+	}
+
+	function createState(pi: ReturnType<typeof createToolPi>, configs: Partial<Record<Mode, ModeConfig>>, mode: Mode = "kuafu") {
+		const state = new ModeStateManager(pi as never);
+		state.currentMode = mode;
+		vi.spyOn(state, "loadConfig").mockImplementation((target: Mode) => configs[target] ?? { body: "", toolRules: [] });
+		return state;
+	}
+
+	it("leaves only the ceiling active for empty tools rules", async () => {
+		const pi = createToolPi(
+			[builtin("read"), builtin("bash"), tool("web_search", WEB_ACCESS), tool(MODE_TOOL_CEILING_NAME, MODES, "model-only")],
+			["read", "bash", "web_search", MODE_TOOL_CEILING_NAME],
+		);
+		const state = createState(pi, { kuafu: { body: "", toolRules: [] } });
+
+		await state.applyToolAccess(createCtx() as never);
+
+		expect(pi.getActiveTools()).toEqual([MODE_TOOL_CEILING_NAME]);
+	});
+
+	it("activates every direct tool but a subtracted one and no inactive codemode or deferred tool under +@all, -edit", async () => {
+		const pi = createToolPi([
+			builtin("read"),
+			builtin("edit"),
+			builtin("bash"),
+			tool("web_search", WEB_ACCESS),
+			tool("codemode", "builtin:codemode", "model-only"),
+			tool("lookup_symbols", CODEGRAPH, "codemode"),
+			tool("web_fetch", WEB_ACCESS, "deferred"),
+		], ["read"]);
+		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+@all, -edit") } });
+
+		await state.applyToolAccess(createCtx() as never);
+
+		expect(pi.getActiveTools()).toEqual(["read", "bash", "web_search", "codemode"]);
+	});
+
+	it("activates a tool an @<extension> rule grants once that extension registers it late", async () => {
+		const pi = createToolPi([builtin("read"), tool("web_search", WEB_ACCESS)], ["read"]);
+		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+read, +@web-access") } });
+		const ctx = createCtx();
+		await state.applyToolAccess(ctx as never);
+		pi.addTool(tool("web_fetch", WEB_ACCESS));
+
+		await state.applyToolAccess(ctx as never);
+
+		expect(pi.getActiveTools()).toEqual(["read", "web_search", "web_fetch"]);
+	});
+
+	it("activates the deferred Goal tools that both the rules and Goal access allow", async () => {
+		const goals = ["create_goal", "get_goal", "update_goal"].map((name) => tool(name, GOAL, "deferred"));
+		const pi = createToolPi([builtin("read"), ...goals], ["read"]);
+		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+read, +get_goal, +update_goal") } });
+		const ctx = createCtx({ getEntries: () => [{ type: "custom", customType: "pi-goal-access", data: { sessionId: "fixture" } }] });
+
+		await state.applyToolAccess(ctx as never);
+
+		expect(pi.getActiveTools()).toEqual(["read", "get_goal", "update_goal"]);
+	});
+
+	it("keeps Goal tools inactive without Goal access even under +@all", async () => {
+		const goals = ["create_goal", "get_goal", "update_goal"].map((name) => tool(name, GOAL, "deferred"));
+		const pi = createToolPi([builtin("read"), ...goals], ["read"]);
+		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+@all") } });
+		const ctx = createCtx({
+			getSessionFile: () => "/fixture-missing-session/session.jsonl",
+			getSessionDir: () => "/fixture-missing-session",
+		});
+
+		await state.applyToolAccess(ctx as never);
+
+		expect(pi.getActiveTools()).toEqual(["read"]);
+	});
+
+	it.each([
+		["kuafu", ["read"]],
+		["fuxi", ["read", "plan_approve", "plan_scaffold"]],
+	] as const)("grants Fu Xi plan tools under +@all only in fuxi (%s)", async (mode: Mode, expected: readonly string[]) => {
+		const pi = createToolPi([builtin("read"), tool("plan_approve", MODES), tool("plan_scaffold", MODES)], ["read"]);
+		const state = createState(pi, { [mode]: { body: "", toolRules: rules("+@all") } }, mode);
+
+		await state.applyToolAccess(createCtx() as never);
+
+		expect(pi.getActiveTools()).toEqual(expected);
+	});
+
+	it("grants no tools when the mode file is missing", async () => {
+		const agentTools = ["agent", "get_agent_result", "steer_subagent"];
+		const pi = createToolPi(
+			[builtin("read"), ...agentTools.map((name) => tool(name, SUBAGENTS)), tool(MODE_TOOL_CEILING_NAME, MODES, "model-only")],
+			["read", ...agentTools, MODE_TOOL_CEILING_NAME],
+		);
+		vi.mocked(loadAgentConfig).mockReturnValueOnce(null);
+		const state = new ModeStateManager(pi as never);
+
+		await state.applyToolAccess(createCtx() as never);
+
+		expect(pi.getActiveTools()).toEqual([MODE_TOOL_CEILING_NAME]);
+	});
+
+	it("an invalid mode file notifies its errors and grants no tools", async () => {
+		const pi = createToolPi(
+			[builtin("read"), builtin("bash"), tool(MODE_TOOL_CEILING_NAME, MODES, "model-only")],
+			["read", "bash", MODE_TOOL_CEILING_NAME],
+		);
+		const errors = ["first fixture error", "second fixture error"];
+		const state = createState(pi, { kuafu: { body: "", toolRules: [], errors } });
+		const ctx = createCtx();
+
+		await state.applyToolAccess(ctx as never);
+		await state.applyToolAccess(ctx as never);
+
+		expect({ active: pi.getActiveTools(), notified: ctx.ui.notify.mock.calls }).toEqual({
+			active: [MODE_TOOL_CEILING_NAME],
+			notified: errors.map((message) => [`Mode kuafu tools: ${message}`, "error"]),
+		});
+	});
+
+	it("removes nested agent tools under +@all unless allow_nesting is true", async () => {
+		const agentTools = ["agent", "get_agent_result", "steer_subagent"];
+		const pi = createToolPi([builtin("read"), ...agentTools.map((name) => tool(name, SUBAGENTS))], ["read", ...agentTools]);
+		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+@all") } });
+
+		await state.applyToolAccess(createCtx() as never);
+
+		expect(pi.getActiveTools()).toEqual(["read"]);
+	});
+
+	it("sets active tools once when the same mode applies twice", async () => {
+		const pi = createToolPi([builtin("read"), builtin("bash"), builtin("edit")], ["read", "edit"]);
+		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+read, +bash") } });
+		const ctx = createCtx();
+
+		await state.applyToolAccess(ctx as never);
+		await state.applyToolAccess(ctx as never);
+
+		expect(pi.setActiveTools).toHaveBeenCalledTimes(1);
+	});
+
+	it("restores Kua Fu's active tools after a round trip through Fu Xi", async () => {
+		const kuafuTools = ["read", "edit", "bash", "web_search"];
+		const pi = createToolPi([builtin("read"), builtin("edit"), builtin("bash"), tool("web_search", WEB_ACCESS)], kuafuTools);
+		const state = createState(pi, {
+			kuafu: { body: "", toolRules: rules("+@all") },
+			fuxi: { body: "", toolRules: rules("+read") },
+		});
+		const ctx = createCtx();
+
+		await state.switchMode("fuxi", ctx as never);
+		await state.switchMode("kuafu", ctx as never);
+
+		expect(pi.getActiveTools()).toEqual(kuafuTools);
+	});
+
+	it("notifies a resolution diagnostic once across repeated applies", async () => {
+		const pi = createToolPi([builtin("read")], ["read"]);
+		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+read, +@missing-ext") } });
+		const ctx = createCtx();
+
+		await state.applyToolAccess(ctx as never);
+		await state.applyToolAccess(ctx as never);
+
+		expect(ctx.ui.notify.mock.calls).toEqual([[expect.stringContaining("@missing-ext"), "warning"]]);
 	});
 });

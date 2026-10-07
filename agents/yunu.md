@@ -5,9 +5,8 @@ model: github-copilot/claude-opus-5.5:max,cliproxyapi/gpt-6.1-sol:medium,opencod
 prompt_mode: system_instructions
 discover_skills: false
 preload_skills: impeccable
-builtin_tools: read,bash,edit,write
-extension_tools: look_at,codegraph_*,lsp
-exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
+extensions: +@all, -@builtin, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
+tools: +read, +bash, +edit, +write, +look_at, +codegraph_*, +lsp
 persist_session: true
 ---
 

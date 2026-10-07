@@ -1,12 +1,12 @@
 /**
  * Data lint — every real agents/<name>.md (except AGENTS.md) and
- * modes/<name>/mode.md must parse under the shared agent-frontmatter schema
- * with zero invalidFields. A non-empty invalidFields means the shared parser
- * rejects a fleet file.
+ * modes/<name>/mode.md (parsed as a Mode Agent) must parse under the shared
+ * agent-frontmatter schema with zero invalidFields and zero error
+ * diagnostics. Validity only; contents are never asserted.
  */
 
 import { readdirSync, readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
@@ -46,9 +46,12 @@ describe("fleet frontmatter — shared schema acceptance", () => {
     expect(FLEET_FILES.length).toBeGreaterThan(0);
   });
 
-  it.each(FLEET_FILES)("%s parses with ZERO invalidFields", (file) => {
-    const parsed = parseAgentMarkdown(readFileSync(file, "utf-8"));
-    // A non-empty invalidFields means the shared schema rejects a fleet agent.
-    expect(parsed.invalidFields).toEqual([]);
+  it.each(FLEET_FILES)("%s parses with ZERO invalidFields and error diagnostics", (file) => {
+    const kind = file.endsWith(`${sep}mode.md`) ? "mode" : "subagent";
+    const parsed = parseAgentMarkdown(readFileSync(file, "utf-8"), { kind });
+    expect({
+      invalidFields: parsed.invalidFields,
+      errors: parsed.diagnostics.filter((d) => d.severity === "error"),
+    }).toEqual({ invalidFields: [], errors: [] });
   });
 });

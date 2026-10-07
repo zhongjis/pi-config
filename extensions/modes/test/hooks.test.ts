@@ -24,7 +24,7 @@ vi.mock("@earendil-works/pi-tui", async (importOriginal: () => Promise<object>) 
 
 
 vi.mock("../src/config-loader.js", () => ({
-	loadAgentConfig: () => ({ body: "" }),
+	loadAgentConfig: () => ({ body: "", toolRules: [] }),
 }));
 
 vi.mock("../src/plannotator.js", () => ({
@@ -44,14 +44,39 @@ vi.mock("../src/plan-storage.js", () => ({
 	hydratePlanState: vi.fn(async () => undefined),
 }));
 
+import { parseAccessRules } from "../../lib/active-tools.js";
 import smartToolGuards from "../../smart-tool-guards/index.js";
+import { MODE_TOOL_CEILING_NAME } from "../src/constants.js";
 import modesExtension from "../src/index.js";
 import { registerModeGuardScope, registerModeHooks } from "../src/hooks.js";
 import { ModeStateManager } from "../src/mode-state.js";
 
-function createMockPi() {
+type MockTool = { name: string; exposure?: string; sourceInfo?: { path: string } };
+type MockToolDefinition = {
+	name: string;
+	exposure?: string;
+	prepareLoadout?: (loadout: unknown) => { hiddenDeclarations?: readonly string[] } | undefined;
+};
+
+const MODES_PATH = "/fixture/modes/src/index.ts";
+const DEFAULT_TOOLS: MockTool[] = [{ name: "read" }, { name: "write" }, { name: "edit" }, { name: "bash" }, { name: "agent" }];
+
+function activatesOnRegistration(tool: MockTool): boolean {
+	return tool.exposure === undefined || tool.exposure === "direct" || tool.exposure === "model-only";
+}
+
+function createMockPi(tools: MockTool[] = DEFAULT_TOOLS) {
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>>>();
 	const eventListeners = new Map<string, Set<(data: unknown) => void>>();
+	const registry = new Map(tools.map((tool) => [tool.name, tool]));
+	const definitions = new Map<string, MockToolDefinition>();
+	let activeTools = tools.map((tool) => tool.name);
+
+	/** Registers a tool the way Pi does after binding: `direct`/`model-only` tools activate. */
+	function addTool(tool: MockTool): void {
+		registry.set(tool.name, tool);
+		if (activatesOnRegistration(tool)) activeTools = [...activeTools.filter((name) => name !== tool.name), tool.name];
+	}
 
 	return {
 		pi: {
@@ -71,12 +96,17 @@ function createMockPi() {
 				next.push(handler);
 				handlers.set(event, next);
 			},
-			registerTool: vi.fn(),
+			registerTool: vi.fn((definition: MockToolDefinition) => {
+				definitions.set(definition.name, definition);
+				addTool({ name: definition.name, exposure: definition.exposure, sourceInfo: { path: MODES_PATH } });
+			}),
 			registerFlag: vi.fn(),
 			registerCommand: vi.fn(),
-			getAllTools: () => [{ name: "read" }, { name: "write" }, { name: "edit" }, { name: "bash" }, { name: "agent" }],
-			getActiveTools: () => ["read", "write", "edit", "bash", "agent"],
-			setActiveTools: vi.fn(),
+			getAllTools: () => [...registry.values()],
+			getActiveTools: () => [...activeTools],
+			setActiveTools: vi.fn((toolNames: string[]) => {
+				activeTools = [...toolNames];
+			}),
 			setModel: vi.fn(async () => true),
 			appendEntry: vi.fn(),
 			getFlag: vi.fn(() => undefined),
@@ -92,7 +122,36 @@ function createMockPi() {
 			}
 			return results;
 		},
+		addTool,
+		/** Declarations a request leaves out, as Pi's loadout step collects them from active tools' `prepareLoadout`. */
+		hiddenDeclarations(): string[] {
+			const declared = activeTools.filter((name) => registry.get(name)?.exposure !== "hidden").map((name) => ({ name }));
+			const loadout = { declared, callable: [], registered: [], getExposure: () => "direct", getNamespace: () => undefined };
+			const hidden = new Set<string>();
+			for (const name of activeTools) {
+				for (const hiddenName of definitions.get(name)?.prepareLoadout?.(loadout)?.hiddenDeclarations ?? []) hidden.add(hiddenName);
+			}
+			return [...hidden].sort();
+		},
 	};
+}
+
+function createSessionCtx(sessionFile?: string, entries: unknown[] = []) {
+	return {
+		hasUI: false,
+		ui: { setStatus: vi.fn(), notify: vi.fn() },
+		modelRegistry: { getAll: () => [], getAvailable: () => [], find: () => undefined },
+		sessionManager: {
+			getEntries: () => entries,
+			getBranch: () => [],
+			getSessionId: () => "fixture",
+			getSessionFile: () => sessionFile,
+		},
+	};
+}
+
+function toolRules(text: string) {
+	return parseAccessRules("tools", text).rules;
 }
 
 type PromptFamily = "default" | "gpt" | "gemini";
@@ -121,9 +180,9 @@ async function renderInjectedPrompt({
 	const state = new ModeStateManager(mock.pi as never);
 	state.currentMode = mode;
 	state.resolvedFamily = family;
-	state.cachedConfigs[`${mode}:default`] = defaultConfig;
+	state.cachedConfigs[`${mode}:default`] = { ...defaultConfig, toolRules: [] };
 	if (family !== "default") {
-		state.cachedConfigs[`${mode}:${family}`] = familyConfig ?? { body: `${family} body`, promptMode: "replace" };
+		state.cachedConfigs[`${mode}:${family}`] = { ...(familyConfig ?? { body: `${family} body`, promptMode: "replace" }), toolRules: [] };
 	}
 
 	registerModeHooks(mock.pi as never, state);
@@ -181,7 +240,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi prompt" };
+		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi prompt", toolRules: [] };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -195,7 +254,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all") };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -215,7 +274,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all") };
 
 		registerModeHooks(mock.pi as never, state);
 		const [result] = await mock.fire(
@@ -234,7 +293,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all") };
 		registerGuardCapability(mock.pi as never, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY);
 
 		registerModeHooks(mock.pi as never, state);
@@ -312,8 +371,8 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi planning prompt", promptMode: "replace" };
-		state.cachedConfigs["kuafu:default"] = { body: "Kua Fu build prompt", promptMode: "replace" };
+		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi planning prompt", promptMode: "replace", toolRules: [] };
+		state.cachedConfigs["kuafu:default"] = { body: "Kua Fu build prompt", promptMode: "replace", toolRules: [] };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -427,6 +486,7 @@ describe("mode hooks", () => {
 		state.currentMode = "kuafu";
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 
@@ -455,6 +515,7 @@ describe("mode hooks", () => {
 		state.currentMode = "kuafu";
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 
@@ -560,8 +621,8 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "kuafu";
-		state.cachedConfigs["kuafu:gpt"] = { body: "GPT variant body" };
-		state.cachedConfigs["kuafu:default"] = { body: "default body" };
+		state.cachedConfigs["kuafu:gpt"] = { body: "GPT variant body", toolRules: [] };
+		state.cachedConfigs["kuafu:default"] = { body: "default body", toolRules: [] };
 		state.resolvedFamily = "gpt";
 
 		registerModeHooks(mock.pi as never, state);
@@ -578,9 +639,10 @@ describe("mode hooks", () => {
 		state.currentMode = "kuafu";
 		state.cachedConfigs["kuafu:gemini"] = {
 			body: "before\n\n<critical>\nafter",
+			toolRules: [],
 			overlays: "<GEMINI_INTENT_GATE>must classify</GEMINI_INTENT_GATE>",
 		};
-		state.cachedConfigs["kuafu:default"] = { body: "before\n\n<critical>\nafter" };
+		state.cachedConfigs["kuafu:default"] = { body: "before\n\n<critical>\nafter", toolRules: [] };
 		state.resolvedFamily = "gemini";
 
 		registerModeHooks(mock.pi as never, state);
@@ -630,6 +692,7 @@ describe("mode runtime model fallback", () => {
 		const state = new ModeStateManager(mock.pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/configured-primary,anthropic/configured-fallback",
 		};
 		state.modelOverride = "anthropic/active-primary,openai-codex/gpt-5.4:high:fast";
@@ -663,7 +726,7 @@ describe("mode runtime model fallback", () => {
 	])("does not recover %s", async (_reason: string, chain: string | undefined, sessionFile: string | undefined) => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
-		state.cachedConfigs["kuafu:default"] = { body: "build", model: chain };
+		state.cachedConfigs["kuafu:default"] = { body: "build", model: chain, toolRules: [] };
 		const current = { provider: "anthropic", id: "active-primary", api: "anthropic-messages" };
 		const fallback = { provider: "openai-codex", id: "gpt-5.4", api: "openai-codex-responses" };
 		const ctx = {
@@ -688,7 +751,7 @@ describe("mode runtime model fallback", () => {
 	it("rejects unsupported Fast before switching or persisting policy", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
-		state.cachedConfigs["kuafu:default"] = { body: "build", model: "anthropic/active-primary,openai-codex/gpt-5.4:fast" };
+		state.cachedConfigs["kuafu:default"] = { body: "build", model: "anthropic/active-primary,openai-codex/gpt-5.4:fast", toolRules: [] };
 		const current = { provider: "anthropic", id: "active-primary", api: "anthropic-messages" };
 		const fallback = { provider: "openai-codex", id: "gpt-5.4", api: "openai-codex-responses" };
 		const ctx = {
@@ -712,38 +775,147 @@ describe("mode runtime model fallback", () => {
 	});
 });
 
-describe("nested tool calls under a mode tool policy", () => {
-	function setup(mode: TestMode, sessionFile?: string) {
-		const mock = createMockPi();
-		mock.pi.getAllTools = () => [{ name: "read" }, { name: "lookup_symbols" }, { name: "secret_tool" }, { name: "plan_approve" }];
+describe("mode tool ceiling", () => {
+	const SUBAGENT_SESSION = "/tmp/subagent-sessions/child.jsonl";
+
+	function setup(rules: string, tools: MockTool[] = [{ name: "read" }, { name: "edit" }]) {
+		const mock = createMockPi(tools);
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs["kuafu:default"] = { body: "", toolRules: toolRules(rules) };
+		registerModeHooks(mock.pi as never, state);
+		return mock;
+	}
+
+	function ceilingRegistrations(mock: ReturnType<typeof createMockPi>): number {
+		return mock.pi.registerTool.mock.calls.filter(([definition]: [MockToolDefinition]) => definition.name === MODE_TOOL_CEILING_NAME).length;
+	}
+
+	it("registers the ceiling once across main-session starts", async () => {
+		const mock = setup("+read");
+
+		await mock.fire("session_start", {}, createSessionCtx());
+		await mock.fire("session_start", {}, createSessionCtx());
+
+		expect(ceilingRegistrations(mock)).toBe(1);
+	});
+
+	it("does not register the ceiling in a subagent session", async () => {
+		const mock = setup("+read");
+
+		await mock.fire("session_start", {}, createSessionCtx(SUBAGENT_SESSION));
+
+		expect(ceilingRegistrations(mock)).toBe(0);
+	});
+
+	it("hides its own declaration and every declared ungranted tool", async () => {
+		const mock = setup("+read");
+		await mock.fire("session_start", {}, createSessionCtx());
+
+		mock.pi.setActiveTools([...mock.pi.getActiveTools(), "edit"]);
+
+		expect(mock.hiddenDeclarations()).toEqual(["edit", MODE_TOOL_CEILING_NAME].sort());
+	});
+
+	it("hides a loader registered late and re-added by a handler that runs after modes", async () => {
+		const mock = setup("+read", [{ name: "read" }]);
+		mock.pi.on("before_agent_start", async () => {
+			mock.pi.setActiveTools([...mock.pi.getActiveTools().filter((name) => name !== "web_enable"), "web_enable"]);
+		});
+		await mock.fire("session_start", {}, createSessionCtx());
+		mock.addTool({ name: "web_enable", sourceInfo: { path: "/fixture/pi-web-access/index.ts" } });
+
+		await mock.fire("before_agent_start", { systemPrompt: "Base" }, createSessionCtx());
+
+		expect(mock.hiddenDeclarations()).toContain("web_enable");
+	});
+
+	it("re-adds the ceiling at turn end after another extension dropped it", async () => {
+		const mock = setup("+read");
+		await mock.fire("session_start", {}, createSessionCtx());
+		mock.pi.setActiveTools(["read"]);
+
+		await mock.fire("turn_end", {}, createSessionCtx());
+
+		expect(mock.pi.getActiveTools()).toEqual(["read", MODE_TOOL_CEILING_NAME]);
+	});
+
+	it("leaves active tools alone at turn end while the ceiling is active", async () => {
+		const mock = setup("+read");
+		await mock.fire("session_start", {}, createSessionCtx());
+		mock.pi.setActiveTools.mockClear();
+
+		await mock.fire("turn_end", {}, createSessionCtx());
+
+		expect(mock.pi.setActiveTools).not.toHaveBeenCalled();
+	});
+});
+
+describe("mode tool_call veto", () => {
+	const GOAL_ACCESS = [{ type: "custom", customType: "pi-goal-access", data: { sessionId: "fixture" } }];
+
+	function setup(mode: TestMode = "kuafu", sessionFile?: string) {
+		const mock = createMockPi([
+			{ name: "read" },
+			{ name: "secret_tool" },
+			{ name: "create_goal", exposure: "deferred" },
+			{ name: "plan_approve" },
+		]);
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = mode;
-		state.cachedConfigs[`${mode}:default`] = { body: "", builtinToolNames: ["read"], extensionToolNames: ["lookup_*"], extensions: true };
+		state.cachedConfigs[`${mode}:default`] = { body: "", toolRules: toolRules("+read, +create_goal, +plan_approve") };
 		registerModeHooks(mock.pi as never, state);
-		const ctx = sessionFile ? { sessionManager: { getSessionFile: () => sessionFile } } : {};
-		return async (toolName: string, parentToolCallId?: string) => (await mock.fire(
+		return async (toolName: string, options: { parentToolCallId?: string; entries?: unknown[] } = {}) => (await mock.fire(
 			"tool_call",
-			{ type: "tool_call", toolCallId: parentToolCallId ? `${parentToolCallId}/1` : "call-1", parentToolCallId, toolName, input: {} },
-			ctx,
+			{
+				type: "tool_call",
+				toolCallId: options.parentToolCallId ? `${options.parentToolCallId}/1` : "call-1",
+				parentToolCallId: options.parentToolCallId,
+				toolName,
+				input: {},
+			},
+			createSessionCtx(sessionFile, options.entries),
 		))[0];
 	}
 
-	it("blocks nested calls the policy does not reach and leaves top-level calls unchanged", async () => {
-		const call = setup("kuafu");
-		await expect(call("secret_tool", "parent")).resolves.toMatchObject({ block: true });
-		await expect(call("plan_approve", "parent")).resolves.toMatchObject({ block: true });
-		await expect(call("lookup_symbols", "parent")).resolves.toBeUndefined();
+	it("blocks an ungranted top-level call", async () => {
+		const call = setup();
+
+		await expect(call("secret_tool")).resolves.toEqual({ block: true, reason: 'Mode kuafu: tool "secret_tool" is not available.' });
+	});
+
+	it("blocks an ungranted nested call", async () => {
+		const call = setup();
+
+		await expect(call("secret_tool", { parentToolCallId: "parent" })).resolves.toEqual({
+			block: true,
+			reason: 'Mode kuafu: tool "secret_tool" is not available.',
+		});
+	});
+
+	it("allows a granted call", async () => {
+		const call = setup();
+
+		await expect(call("read")).resolves.toBeUndefined();
+	});
+
+	it.each([
+		["kuafu", { block: true, reason: 'Mode kuafu: tool "plan_approve" is not available.' }],
+		["fuxi", undefined],
+	] as const)("allows a granted Fu Xi plan tool only in fuxi (%s)", async (mode: TestMode, expected: unknown) => {
+		const call = setup(mode);
+
+		await expect(call("plan_approve", { parentToolCallId: "parent" })).resolves.toEqual(expected);
+	});
+
+	it("leaves subagent sessions to their own frontmatter scope", async () => {
+		const call = setup("kuafu", "/tmp/subagent-sessions/child.jsonl");
+
 		await expect(call("secret_tool")).resolves.toBeUndefined();
 	});
 
-	it("reaches Fu Xi-only plan tools from nested calls only in fuxi", async () => {
-		const call = setup("fuxi");
-		await expect(call("plan_approve", "parent")).resolves.toBeUndefined();
-		await expect(call("secret_tool", "parent")).resolves.toMatchObject({ block: true });
-	});
+	it("checks a Goal tool call against fresh Goal access", async () => {
+		const call = setup();
 
-	it("leaves subagent sessions' nested calls to their own frontmatter scope", async () => {
-		const call = setup("kuafu", "/tmp/subagent-sessions/child.jsonl");
-		await expect(call("secret_tool", "parent")).resolves.toBeUndefined();
+		await expect(call("create_goal", { entries: GOAL_ACCESS })).resolves.toBeUndefined();
 	});
 });

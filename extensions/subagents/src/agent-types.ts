@@ -5,21 +5,9 @@
  * User agents override defaults with the same name. Disabled agents are kept but excluded from spawning.
  */
 
-import { createCodingTools, createReadOnlyTools } from "@earendil-works/pi-coding-agent";
+import { type AccessRule, parseAccessRules } from "../../lib/active-tools.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import type { AgentConfig } from "./types.js";
-
-/**
- * All known built-in tool names, derived from pi's own tool factories rather
- * than hardcoded so the set tracks pi-mono if it adds/renames a built-in.
- * `createCodingTools` → read/bash/edit/write; `createReadOnlyTools` →
- * read/grep/find/ls; their de-duplicated union is the 7 built-ins
- * (read, bash, edit, write, grep, find, ls). The `cwd` only binds tool
- * operations we never invoke here — we read each tool's `.name` and discard it.
- */
-export const BUILTIN_TOOL_NAMES: string[] = [
-  ...new Set([...createCodingTools("."), ...createReadOnlyTools(".")].map((t) => t.name)),
-];
 
 /** Unified runtime registry of all agents (defaults + user-defined). */
 const agents = new Map<string, AgentConfig>();
@@ -108,23 +96,12 @@ export function isValidType(type: string): boolean {
   return agents.get(key)?.enabled !== false;
 }
 
-/** Get built-in tool names for a type (case-insensitive). */
-export function getToolNamesForType(type: string): string[] {
-  const key = resolveKey(type);
-  const raw = key ? agents.get(key) : undefined;
-  const config = raw?.enabled !== false ? raw : undefined;
-  // `undefined` (definition omitted the field) → all built-ins; an explicit `[]`
-  // (`tools: none` or a `tools:` with only `ext:` entries) → zero built-ins.
-  return config?.builtinToolNames ?? [...BUILTIN_TOOL_NAMES];
-}
-
 /** Get config for a type (case-insensitive, returns a SubagentTypeConfig-compatible object). Falls back to general-purpose. */
 export function getConfig(type: string): {
   displayName: string;
   description: string;
-  builtinToolNames: string[];
-  extensions: true | string[] | false;
-  excludeExtensions?: string[];
+  extensionRules: AccessRule[];
+  toolRules: AccessRule[];
   discoverSkills: boolean;
   preloadSkills: string[];
   promptMode: "replace" | "append" | "system_instructions";
@@ -135,9 +112,8 @@ export function getConfig(type: string): {
     return {
       displayName: config.displayName ?? config.name,
       description: config.description,
-      builtinToolNames: config.builtinToolNames ?? BUILTIN_TOOL_NAMES,
-      extensions: config.extensions,
-      excludeExtensions: config.excludeExtensions,
+      extensionRules: config.extensionRules,
+      toolRules: config.toolRules,
       discoverSkills: config.discoverSkills,
       preloadSkills: config.preloadSkills,
       promptMode: config.promptMode,
@@ -150,9 +126,8 @@ export function getConfig(type: string): {
     return {
       displayName: gp.displayName ?? gp.name,
       description: gp.description,
-      builtinToolNames: gp.builtinToolNames ?? BUILTIN_TOOL_NAMES,
-      extensions: gp.extensions,
-      excludeExtensions: gp.excludeExtensions,
+      extensionRules: gp.extensionRules,
+      toolRules: gp.toolRules,
       discoverSkills: gp.discoverSkills,
       preloadSkills: gp.preloadSkills,
       promptMode: gp.promptMode,
@@ -163,8 +138,8 @@ export function getConfig(type: string): {
   return {
     displayName: "Agent",
     description: "General-purpose agent for complex, multi-step tasks",
-    builtinToolNames: BUILTIN_TOOL_NAMES,
-    extensions: true,
+    extensionRules: parseAccessRules("extensions", "+@all, -@builtin").rules,
+    toolRules: parseAccessRules("tools", "+@all").rules,
     discoverSkills: true,
     preloadSkills: [],
     promptMode: "append",

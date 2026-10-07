@@ -21,7 +21,7 @@ describe("Packet B actual SDK metadata", () => {
       let run: PrintModeRun | undefined;
       try {
         mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
-        writeFileSync(join(cwd, ".pi", "agents", "defaults.md"), `---\ndescription: Defaults\n${model}extensions: false\n---\nReport.\n`);
+        writeFileSync(join(cwd, ".pi", "agents", "defaults.md"), `---\ndescription: Defaults\n${model}---\nReport.\n`);
         writeFileSync(join(cwd, ".pi", "settings.json"), JSON.stringify({ defaultThinkingLevel }));
         run = await runPrintMode({ cwd, prompt: "Delegate.", reasoning: true, parentThinking: "high",
           respond: routeBySession({
@@ -44,7 +44,7 @@ describe("Packet B actual SDK metadata", () => {
     let run: PrintModeRun | undefined;
     try {
       mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
-      writeFileSync(join(cwd, ".pi", "agents", "pending.md"), "---\ndescription: Pending\nextensions: false\n---\nReport.\n");
+      writeFileSync(join(cwd, ".pi", "agents", "pending.md"), "---\ndescription: Pending\n---\nReport.\n");
       run = await runPrintMode({ cwd, prompt: "Delegate.", reasoning: true, parentThinking: "high", respond: routeBySession({
         parentInitial: agentCall({ subagent_type: "pending", prompt: "Report.", description: "pending", run_in_background: true }),
         parentFinal: (ctx) => {
@@ -70,7 +70,7 @@ describe("Packet B actual SDK metadata", () => {
     try {
       mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
       const config = join(cwd, ".pi", "agents", "metadata.md");
-      writeFileSync(config, "---\ndescription: Metadata\nthinking: high\nprompt_mode: append\nextensions: false\nexclude_extensions: unused-extension\nmax_turns: 1\n---\nReport.\n");
+      writeFileSync(config, "---\ndescription: Metadata\nthinking: high\nprompt_mode: append\nextensions: +unused-extension\nmax_turns: 1\n---\nReport.\n");
       let phase = 0;
       run = await runPrintMode({ cwd, prompt: "Delegate.", respond: routeBySession({
         parentInitial: agentCall({ subagent_type: "metadata", prompt: "Report.", description: "metadata", run_in_background: background }),
@@ -113,7 +113,7 @@ describe("Packet B actual SDK metadata", () => {
       if (!retrieved) throw new Error("Missing retrieval");
       const details = retrieved.details as Record<string, unknown>;
       expect(details.toolUses).toBe(0);
-      expect(details.diagnostics).toEqual(expect.arrayContaining([expect.stringContaining("exclude_extensions has no effect")]));
+      expect(details.diagnostics).toEqual(expect.arrayContaining([expect.stringContaining('"unused-extension" matches no extension')]));
       expect(details.conversation).toContain("ACTUAL_ANSWER");
       const previousPackageDir = process.env.PI_PACKAGE_DIR;
       try {
@@ -133,7 +133,7 @@ describe("Packet B actual SDK metadata", () => {
         const expanded = renderAgentToolResult(presentation, { expanded: true }, theme);
         expect(collapsed.render(120).join("\n")).toContain("ctrl+e");
         const report = expanded.render(120).join("\n");
-        expect(report).toContain("exclude_extensions has no effect");
+        expect(report).toContain('"unused-extension" matches no extension');
         expect(report).toContain("cost: ~$0.012");
         expect(report).toContain("requested model: requested/model");
         expect(report).toContain("requested thinking: max");

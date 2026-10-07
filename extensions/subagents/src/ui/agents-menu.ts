@@ -2,9 +2,10 @@ import { existsSync, mkdirSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { type ExtensionCommandContext, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
+import { BUILTIN_TOOL_NAMES, formatAccessRules, resolveToolAccess, toolCandidates } from "../../../lib/active-tools.js";
 import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../../../lib/model-selection.js";
 import { type AgentToolHost, THINKING_LEVELS } from "../agent-tool.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getAllTypes } from "../agent-types.js";
+import { getAgentConfig, getAllTypes } from "../agent-types.js";
 import type { AgentConfig, AgentRecord } from "../types.js";
 import { type AgentActivity, formatDuration, getDisplayName } from "./agent-widget.js";
 import { type GraphRunMenuDeps, type GraphRunUIContext, showGraphRunsMenu } from "./graph-run-menu.js";
@@ -196,7 +197,15 @@ export function createAgentsMenu(
     } else {
       menuOptions = ["Edit", "Disable", "Delete", "Back"];
     }
-    const choice = await ctx.ui.select(name, menuOptions);
+    // Rules are configuration; the resolved names depend on THIS session's tool registry.
+    const resolved = resolveToolAccess(cfg.toolRules, toolCandidates(pi.getAllTools()), { allowNesting: cfg.allowNesting }).allowed;
+    const title = [
+      name,
+      `extensions: ${formatAccessRules(cfg.extensionRules) || "none"}`,
+      `tools: ${formatAccessRules(cfg.toolRules) || "none"}`,
+      `resolves here to: ${[...resolved].join(", ") || "none"}`,
+    ].join("\n");
+    const choice = await ctx.ui.select(title, menuOptions);
     if (!choice || choice === "Back") return;
     if (choice === "Edit" && file) {
       const content = readFileSync(file.path, "utf-8");
@@ -248,15 +257,12 @@ export function createAgentsMenu(
     const fmFields: string[] = [];
     fmFields.push(`description: ${JSON.stringify(cfg.description)}`);
     if (cfg.displayName) fmFields.push(`display_name: ${cfg.displayName}`);
-    if (cfg.builtinToolNames) fmFields.push(`builtin_tools: ${cfg.builtinToolNames.join(", ") || "none"}`);
-    if (cfg.extensionToolNames) fmFields.push(`extension_tools: ${cfg.extensionToolNames.join(", ") || "none"}`);
+    if (cfg.extensionRules.length > 0) fmFields.push(`extensions: ${formatAccessRules(cfg.extensionRules)}`);
+    if (cfg.toolRules.length > 0) fmFields.push(`tools: ${formatAccessRules(cfg.toolRules)}`);
     if (cfg.model) fmFields.push(`model: ${cfg.model}`);
     if (cfg.thinking) fmFields.push(`thinking: ${cfg.thinking}`);
     if (cfg.maxTurns) fmFields.push(`max_turns: ${cfg.maxTurns}`);
     fmFields.push(`prompt_mode: ${cfg.promptMode}`);
-    if (cfg.extensions === false) fmFields.push("extensions: false");
-    else if (Array.isArray(cfg.extensions)) fmFields.push(`extensions: ${cfg.extensions.join(", ")}`);
-    if (cfg.excludeExtensions?.length) fmFields.push(`exclude_extensions: ${cfg.excludeExtensions.join(", ")}`);
     if (!cfg.discoverSkills) fmFields.push("discover_skills: false");
     if (cfg.preloadSkills?.length) fmFields.push(`preload_skills: ${cfg.preloadSkills.join(", ")}`);
     if (cfg.inheritContext) fmFields.push("inherit_context: true");
@@ -353,31 +359,39 @@ The file format is a markdown file with YAML frontmatter and a system prompt bod
 \`\`\`markdown
 ---
 description: <one-line description shown in UI>
-builtin_tools: <comma-separated built-in tools: read, bash, edit, write, grep, find, ls. Use "none" for no built-in tools. Omit for all>
-extension_tools: <comma-separated extension/MCP tool names (exact or trailing-* wildcard, e.g. codegraph_*). Use "none" for none. Omit for all>
+extensions: <signed rules choosing which extensions load, e.g. "+@all" or "+@all, -@builtin". Omit to load none>
+tools: <signed rules choosing which tools the agent may use, e.g. "+read, +bash" or "+@all, -edit". Omit for no tools>
 model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5". Omit to inherit parent model>
 thinking: <optional thinking level: ${THINKING_LEVELS.join(", ")}. Omit for model default>
 max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
 prompt_mode: <"replace" (body IS the full system prompt) or "append" (body is appended to default prompt). Default: replace>
-extensions: <true (inherit all MCP/extension tools), false (none), or comma-separated names. Default: true>
 discover_skills: <false to disable the on-demand skill catalog. Default: true>
 preload_skills: <comma-separated skill names to eagerly inject into the prompt. Omit for none>
 inherit_context: <true to fork parent conversation into agent so it sees chat history. Default: false>
 run_in_background: <true to run in background by default. Default: false>
 output_transcript: <false to write no transcript file or path for this agent. Independent of persist_session. Default: true>
-isolated: <true for no extension/MCP tools, only built-in tools. Default: false>
+isolated: <true for no extensions; built-in tools only. Default: false>
 ---
 
 <system prompt body — instructions for the agent>
 \`\`\`
 
+\`extensions:\` and \`tools:\` are ordered lists (comma-separated or YAML list) of signed rules: every entry is "+selector" (grant) or "-selector" (remove). The list starts empty and the last matching rule wins; an omitted or empty field means nothing (no extensions load, no tools are allowed). Selectors:
+- \`@all\` — every extension (incl. Pi built-ins like builtin:codemode) / every registered tool
+- \`@builtin\` — Pi's built-in extensions (builtin:*) / Pi's built-in tools by name (${BUILTIN_TOOL_NAMES.join(", ")})
+- \`@<extension id>\` (tools only) — every non-built-in tool that extension registers, e.g. @codegraph
+- a name — an extension id (directory or package name, or builtin:<name>) / a tool name, e.g. read, mcp__context7__resolve
+- a glob — \`*\` matches any characters, e.g. builtin:*, codegraph_*
+Loading an extension grants none of its tools; grant them in \`tools:\`.
+
 Guidelines for choosing settings:
-- For read-only tasks (review, analysis): builtin_tools: read, bash, grep, find, ls
-- For code modification tasks: include edit, write
+- For read-only tasks (review, analysis): tools: +read, +bash, +grep, +find, +ls
+- For code modification tasks: include +edit, +write
+- To use extension tools: extensions: +@all (or specific ids), then grant them in tools:, e.g. +@codegraph
 - Use prompt_mode: append if the agent should keep the default system prompt and add specialization on top
 - Use prompt_mode: replace for fully custom agents with their own personality/instructions
 - Set inherit_context: true if the agent needs to know what was discussed in the parent conversation
-- Set isolated: true if the agent should NOT have access to MCP servers or other extensions
+- Set isolated: true if the agent should load no extensions and use built-in tools only
 - Set output_transcript: false to skip writing this agent's transcript; this alone doesn't keep the run off disk (persist_session still writes) — set it too if that's the goal
 - Only include frontmatter fields that differ from defaults — omit fields where the default is fine
 
@@ -400,16 +414,22 @@ Write the file using the write tool. Only write the file, nothing else.`;
     if (!name) return;
     const description = await ctx.ui.input("Description (one line)");
     if (!description) return;
-    const toolChoice = await ctx.ui.select("Tools", ["all", "none", "read-only (read, bash, grep, find, ls)", "custom..."]);
+    const toolChoice = await ctx.ui.select("Tools", [
+      "all",
+      "built-in only",
+      "read-only (read, bash, grep, find, ls)",
+      "none",
+      "custom...",
+    ]);
     if (!toolChoice) return;
-    let tools: string;
-    if (toolChoice === "all") tools = BUILTIN_TOOL_NAMES.join(", ");
-    else if (toolChoice === "none") tools = "none";
-    else if (toolChoice.startsWith("read-only")) tools = "read, bash, grep, find, ls";
-    else {
-      const customTools = await ctx.ui.input("Tools (comma-separated)", BUILTIN_TOOL_NAMES.join(", "));
+    let accessLines = "";
+    if (toolChoice === "all") accessLines = "\nextensions: +@all\ntools: +@all";
+    else if (toolChoice === "built-in only") accessLines = "\ntools: +@builtin";
+    else if (toolChoice.startsWith("read-only")) accessLines = "\ntools: +read, +bash, +grep, +find, +ls";
+    else if (toolChoice === "custom...") {
+      const customTools = await ctx.ui.input("Tools (signed rules, comma-separated)", "+read, +bash");
       if (!customTools) return;
-      tools = customTools;
+      accessLines = `\nextensions: +@all\ntools: ${customTools}`;
     }
     const modelChoice = await ctx.ui.select("Model", [
       "inherit (parent model)",
@@ -434,8 +454,7 @@ Write the file using the write tool. Only write the file, nothing else.`;
     const systemPrompt = await ctx.ui.editor("System prompt", "");
     if (systemPrompt === undefined) return;
     const content = `---
-description: ${description}
-builtin_tools: ${tools}${modelLine}${thinkingLine}
+description: ${description}${accessLines}${modelLine}${thinkingLine}
 prompt_mode: replace
 ---
 

@@ -10,7 +10,8 @@
  *
  * This test closes that loop with NO pi-mono mock:
  *   - a real extension fixture (`fixtures/e2e-probe-ext.mjs`) registers a tool,
- *   - the real `DefaultResourceLoader` loads it via `additionalExtensionPaths`,
+ *   - the real `DefaultResourceLoader` discovers it as the project extension
+ *     `e2e-probe` and `extensions:` rules select it,
  *   - the real `createAgentSession` builds the session,
  *   - we read the real `session.getActiveToolNames()` at `onSessionCreated`
  *     (fires after construction, before any prompt) and assert what the LLM
@@ -19,11 +20,12 @@
  * No network: a native faux provider on a per-test `ModelRuntime` satisfies
  * `createAgentSession`; assertions inspect the gated tool set at construction.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseAccessRules } from "../../lib/active-tools.js";
 import { runAgent } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
 import type { AgentConfig } from "../src/types.js";
@@ -51,6 +53,9 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
 
   beforeEach(async () => {
     cwd = mkdtempSync(join(tmpdir(), "subagents-e2e-"));
+    // Discovered project extension `e2e-probe`, re-exporting the fixture.
+    mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
+    writeFileSync(join(cwd, ".pi", "extensions", "e2e-probe.ts"), `export { default } from ${JSON.stringify(FIXTURE)};\n`);
     fauxRuntime = await createFauxModelRuntime({
       provider: "faux",
       models: [{ id: "faux-1", contextWindow: 200_000 }],
@@ -62,10 +67,11 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
   });
 
   /**
-   * Register `cfg` as agent type "e2e", run it through the REAL runAgent, and
-   * return the real session's active tool names captured at construction time.
+   * Register an agent type "e2e" with the given `extensions:` / `tools:` rules,
+   * run it through the REAL runAgent, and return the real session's active tool
+   * names captured at construction time.
    */
-  async function activeToolsFor(cfg: Partial<AgentConfig>): Promise<string[]> {
+  async function activeToolsFor(extensions: string, tools: string): Promise<string[]> {
     registerAgents(
       new Map([
         [
@@ -73,7 +79,8 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
           {
             name: "e2e",
             description: "e2e",
-            builtinToolNames: BUILTINS,
+            extensionRules: parseAccessRules("extensions", extensions).rules,
+            toolRules: parseAccessRules("tools", tools).rules,
             discoverSkills: false,
             preloadSkills: [],
             systemPrompt: "You are e2e.",
@@ -81,8 +88,7 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
             inheritContext: false,
             runInBackground: false,
             isolated: false,
-            ...cfg,
-          } as AgentConfig,
+          } satisfies AgentConfig,
         ],
       ]),
     );
@@ -105,44 +111,37 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
     return active;
   }
 
-  it("real pi-mono admits an extension-registered tool when it's in the allowlist (#47)", async () => {
-    const active = await activeToolsFor({ extensions: [FIXTURE] });
+  it("real pi-mono admits an extension-registered tool when it's granted (#47)", async () => {
+    const active = await activeToolsFor("+e2e-probe", "+@all");
     // The extension actually loaded and its tool reached the live session.
     expect(active).toContain(EXT_TOOL);
     for (const b of BUILTINS) expect(active).toContain(b);
   });
 
-  it("an extension tool is absent when extensions are disabled (not loaded)", async () => {
-    const active = await activeToolsFor({ extensions: false });
+  it("an extension tool is absent when its extension does not load", async () => {
+    const active = await activeToolsFor("", "+@all");
     expect(active).not.toContain(EXT_TOOL);
     for (const b of BUILTINS) expect(active).toContain(b);
   });
 
-  it("extensionToolNames removes an unselected extension tool from the live session", async () => {
-    const active = await activeToolsFor({ extensions: [FIXTURE], extensionToolNames: [] });
+  it("a loaded extension's tool stays inactive when tools: grants only built-ins", async () => {
+    const active = await activeToolsFor("+e2e-probe", "+@builtin");
     expect(active).not.toContain(EXT_TOOL); // loaded, then denied at construction
     expect(active).toContain("read");
   });
 
-  it("the extension tool allowlist mutes a loaded-but-unselected tool in real pi-mono", async () => {
-    // Extension loads, but selecting a different extension tool keeps this one
-    // inactive even though its extension loaded and ran its handlers.
-    const active = await activeToolsFor({
-      extensions: [FIXTURE],
-      extensionToolNames: ["not_the_fixture"],
-    });
+  it("tool rules mute a loaded-but-ungranted tool in real pi-mono", async () => {
+    // Extension loads, but granting a different tool keeps this one inactive
+    // even though its extension loaded and ran its handlers.
+    const active = await activeToolsFor("+e2e-probe", "+@builtin, +not_the_fixture");
     expect(active).not.toContain(EXT_TOOL);
     for (const b of BUILTINS) expect(active).toContain(b);
   });
 
-  it("an extension tool allowlist surfaces the selected loaded tool", async () => {
-    const active = await activeToolsFor({
-      extensions: [FIXTURE],
-      builtinToolNames: ["read"],
-      extensionToolNames: [EXT_TOOL],
-    });
-    expect(active).toContain(EXT_TOOL); // selected → surfaces despite the flip
+  it("a tool grant surfaces the selected loaded tool", async () => {
+    const active = await activeToolsFor("+e2e-probe", `+read, +${EXT_TOOL}`);
+    expect(active).toContain(EXT_TOOL); // granted → surfaces
     expect(active).toContain("read");
-    expect(active).not.toContain("bash"); // builtinToolNames: ["read"] only
+    expect(active).not.toContain("bash"); // only read among built-ins
   });
 });

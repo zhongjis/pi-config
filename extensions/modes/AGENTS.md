@@ -14,7 +14,7 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 - Mode colors (`MODE_COLORS` in [constants](src/constants.ts)) are intentionally hardcoded 24-bit SGR; MUST NOT migrate them to theme tokens or theme APIs.
 
 - Mode prompts MUST retain global AGENTS rules and shared frontmatter semantics.
-- Mode tool policy MUST use the shared exposure-aware activation. With a tool policy, nested (codemode-script) calls outside it are blocked, Fu Xi plan tools stay reachable only in `fuxi`, and subagent sessions are left to their own frontmatter scope.
+- Mode tool access MUST resolve `tools:` rules through shared `resolveToolAccess`. Apply MUST activate granted `direct`/`model-only` tools; `mode_tool_ceiling` MUST stay active (re-added on `turn_end` when replaced) to hide ungranted declarations; the `tool_call` guard MUST veto every ungranted call, top-level and nested. NEVER prune tools per turn. A missing or invalid mode file MUST fail closed (no tools; invalid-file errors notified). Fu Xi plan tools are granted only in `fuxi`; subagent sessions are left to their own frontmatter scope.
 - Replacement MUST strip prior mode bodies; append mode stacks them.
 - `system_instructions` prompt mode is coerced to replacement here.
 - Session model and effort (thinking-level) overrides MUST NOT rewrite mode frontmatter; they are captured from `/mode-model` and manual mid-session model/effort picks, persist with mode state, and clear via `/mode-model --reset`.

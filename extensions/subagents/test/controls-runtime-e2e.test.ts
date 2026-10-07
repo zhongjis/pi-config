@@ -11,7 +11,7 @@ it.each([false, true])("reports native usage once across retrieval and resume (b
   try {
     mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
     writeFileSync(join(cwd, ".pi", "subagents.json"), JSON.stringify({ reportUsage: true, showCost: true }));
-    writeFileSync(join(cwd, ".pi", "agents", "controlled.md"), "---\ndescription: Controlled\nmodel: faux/faux-1\nthinking: high\nextensions: false\n---\nReport.\n");
+    writeFileSync(join(cwd, ".pi", "agents", "controlled.md"), "---\ndescription: Controlled\nmodel: faux/faux-1\nthinking: high\n---\nReport.\n");
     run = await runPrintMode({
       cwd,
       prompt: "Delegate.",

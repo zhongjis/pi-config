@@ -1,6 +1,7 @@
 ---
 description: "prompt_mode append — body appended to the parent's prompt."
 prompt_mode: append
+tools: +read
 expect_tools_present: "read"
 expect_prompt_contains: "PARENT_PROMPT_MARKER, APPEND_BODY_MARKER"
 ---

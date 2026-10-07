@@ -4,10 +4,8 @@ description: Read-only external research and information retrieval from issue tr
 model: github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b
 prompt_mode: system_instructions
 discover_skills: false
-builtin_tools: read
-extension_tools: web_search,code_search,fetch_content,get_search_content,mcporter
-extensions: true
-exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
+extensions: +@all, -@builtin, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
+tools: +read, +web_search, +code_search, +fetch_content, +get_search_content, +mcporter
 persist_session: true
 ---
 

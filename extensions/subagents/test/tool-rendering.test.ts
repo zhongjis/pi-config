@@ -142,7 +142,7 @@ describe("subagent tool rendering migration", () => {
     status: "completed", result: answer, modelName: "provider/model", thinking: "off",
     turnCount: 2, maxTurns: 1, toolUses: 0, tokens: "488.9k token", durationMs: 12000,
     outputFile: "/tmp/完整路径/agent.output", agentId: "actual-id",
-    diagnostics: ["extension-error:exclude_extensions has no effect"],
+    diagnostics: ['extension-warning:"foo" matches no extension (agent "x")'],
     conversation: "[User]: full verbose conversation",
   };
 
@@ -255,7 +255,7 @@ describe("subagent tool rendering migration", () => {
     expect(full.indexOf("Decisive failure")).toBeLessThan(full.indexOf("Partial output before the failure"));
     expect(full.indexOf("Decisive answer")).toBeLessThan(full.indexOf("Run"));
     expect(full.match(/Complete retained line\./g)).toHaveLength(60);
-    for (const text of ["status: failed", "model: provider/model", "thinking: off", "turns: 2", "soft limit: 1", "tools: 7", "tokens: 488.9k", "duration: 12.0s", "Diagnostics", "exclude_extensions has no effect", "Artifacts", "/tmp/完整路径/agent.output", "Agent Conversation", "[User]: full verbose conversation"]) expect(full).toContain(text);
+    for (const text of ["status: failed", "model: provider/model", "thinking: off", "turns: 2", "soft limit: 1", "tools: 7", "tokens: 488.9k", "duration: 12.0s", "Diagnostics", '"foo" matches no extension', "Artifacts", "/tmp/完整路径/agent.output", "Agent Conversation", "[User]: full verbose conversation"]) expect(full).toContain(text);
     expect(result.content).toEqual([{ type: "text", text: "original error envelope" }]);
     expect(result.isError).toBe(true);
   });
@@ -305,7 +305,7 @@ describe("subagent tool rendering migration", () => {
     expect(full).toContain("tools: 0");
     expect(full).toContain("Artifacts");
     expect(full).toContain(base.outputFile);
-    expect(full).toContain("exclude_extensions has no effect");
+    expect(full).toContain('"foo" matches no extension');
     expect(full).toContain("full verbose conversation");
     for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
       expect(collapsed.render(width).length).toBeLessThanOrEqual(3);
