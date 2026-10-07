@@ -458,56 +458,66 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
   }
 
   const resetRate = () => {
-    generationStartedAt = null;
+    firstTokenAt = null;
+    lastTokenAt = null;
     lastGenerationTps = null;
   };
 
-  let generationStartedAt: number | null = null;
+  let firstTokenAt: number | null = null;
+  let lastTokenAt: number | null = null;
   let lastGenerationTps: number | null = null;
 
   pi.on("turn_start", async () => {
-    generationStartedAt = null;
+    firstTokenAt = null;
+    lastTokenAt = null;
   });
 
   pi.on("before_provider_request", async () => {
-    generationStartedAt = null;
+    firstTokenAt = null;
+    lastTokenAt = null;
   });
 
   pi.on("message_start", async (event) => {
-    if (event.message.role === "assistant") generationStartedAt = null;
+    if (event.message.role === "assistant") {
+      firstTokenAt = null;
+      lastTokenAt = null;
+    }
   });
 
   pi.on("message_update", async (event) => {
-    if (event.message.role !== "assistant" || generationStartedAt !== null) return;
+    if (event.message.role !== "assistant") return;
     const update = event.assistantMessageEvent;
     if (
       (update.type !== "text_delta" && update.type !== "thinking_delta" && update.type !== "toolcall_delta") ||
       update.delta.length === 0
     ) return;
     const now = performance.now();
-    if (Number.isFinite(now)) generationStartedAt = now;
+    if (!Number.isFinite(now)) return;
+    if (firstTokenAt === null) firstTokenAt = now;
+    lastTokenAt = now;
   });
 
   pi.on("message_end", async (event) => {
     if (event.message.role !== "assistant") return;
-    const startedAt = generationStartedAt;
-    generationStartedAt = null;
+    const startedAt = firstTokenAt;
+    const endedAt = lastTokenAt;
+    firstTokenAt = null;
+    lastTokenAt = null;
 
-    const output = event.message.usage.output;
-    const endedAt = performance.now();
-    const durationMs = endedAt - (startedAt ?? NaN);
+    const tokens = event.message.usage.output - 1;
+    const durationMs = (endedAt ?? NaN) - (startedAt ?? NaN);
     if (
       event.message.stopReason === "error" ||
       event.message.stopReason === "aborted" ||
-      !Number.isFinite(output) ||
-      output <= 0 ||
+      !Number.isFinite(tokens) ||
+      tokens <= 0 ||
       !Number.isFinite(durationMs) ||
       durationMs < 250
     ) {
       return;
     }
 
-    const rate = output / (durationMs / 1000);
+    const rate = tokens / (durationMs / 1000);
     if (Number.isFinite(rate)) lastGenerationTps = rate;
   });
 

@@ -115,7 +115,8 @@ describe("qol footer generation TPS", () => {
     now = 11_100;
     await update();
     now = 12_100;
-    await emit("message_end", { message: assistant(200) });
+    await update();
+    await emit("message_end", { message: assistant(201) });
     expect(footer()).toContain("100 tok/s");
 
     now = 13_000;
@@ -128,7 +129,8 @@ describe("qol footer generation TPS", () => {
     await update(type);
     expect(footer()).toContain("100 tok/s");
     now = 23_000;
-    await emit("message_end", { message: assistant(100, "toolUse") });
+    await update(type);
+    await emit("message_end", { message: assistant(101, "toolUse") });
     expect(footer()).toContain("50.0 tok/s");
   });
 
@@ -143,7 +145,8 @@ describe("qol footer generation TPS", () => {
     now = 10_000;
     await update("thinking_delta", " ");
     now = 11_000;
-    await emit("message_end", { message: assistant(100) });
+    await update("thinking_delta", " ");
+    await emit("message_end", { message: assistant(101) });
     expect(footer()).toContain("100 tok/s");
   });
 
@@ -155,7 +158,8 @@ describe("qol footer generation TPS", () => {
     await emit("message_start", { message: assistant(0) });
     await update();
     now = 1_000;
-    await emit("message_end", { message: assistant(100, "error") });
+    await update();
+    await emit("message_end", { message: assistant(101, "error") });
     expect(footer()).not.toContain("tok/s");
     await emit("auto_retry_start");
     now = 10_000;
@@ -165,7 +169,8 @@ describe("qol footer generation TPS", () => {
     now = 12_000;
     await update();
     now = 13_000;
-    await emit("message_end", { message: assistant(40) });
+    await update();
+    await emit("message_end", { message: assistant(41) });
     expect(footer()).toContain("40.0 tok/s");
   });
 
@@ -174,14 +179,16 @@ describe("qol footer generation TPS", () => {
     await emit("session_start");
     await update();
     now = 1_000;
-    await emit("message_end", { message: assistant(100) });
+    await update();
+    await emit("message_end", { message: assistant(101) });
     await update();
     now = 10_000;
     await emit(boundary, { message: assistant(0) });
     expect(footer()).toContain("100 tok/s");
     await update();
     now = 11_000;
-    await emit("message_end", { message: assistant(50) });
+    await update();
+    await emit("message_end", { message: assistant(51) });
     expect(footer()).toContain("50.0 tok/s");
   });
 
@@ -191,6 +198,7 @@ describe("qol footer generation TPS", () => {
     ["missing generation start", assistant(100), 1_000],
     ["short", assistant(100), 249],
     ["zero output", assistant(0), 1_000],
+    ["single token", assistant(1), 1_000],
     ["negative output", assistant(-1), 1_000],
     ["non-finite output", assistant(Number.NaN), 1_000],
     ["non-finite duration", assistant(100), Number.POSITIVE_INFINITY],
@@ -204,27 +212,37 @@ describe("qol footer generation TPS", () => {
       if (measured) {
         await update();
         now = 1_000;
-        await emit("message_end", { message: assistant(100) });
+        await update();
+        await emit("message_end", { message: assistant(101) });
         expect(footer()).toContain("100 tok/s");
       }
 
       now = 2_000;
       await emit("turn_start");
       await emit("before_provider_request");
-      if (name !== "missing generation start") await update();
-      now += elapsed;
+      if (name === "non-finite duration") {
+        now = -Number.MAX_VALUE;
+        await update();
+        now = Number.MAX_VALUE;
+        await update();
+      } else if (name !== "missing generation start") {
+        await update();
+        now += elapsed;
+        await update();
+      }
       await emit("message_end", { message });
       if (measured) expect(footer()).toContain("100 tok/s");
       else expect(footer()).not.toContain("tok/s");
 
       now = 4_000;
-      await emit("message_end", { message: assistant(50) });
+      await emit("message_end", { message: assistant(51) });
       if (measured) expect(footer()).toContain("100 tok/s");
       else expect(footer()).not.toContain("tok/s");
 
       await update();
       now = 5_000;
-      await emit("message_end", { message: assistant(50) });
+      await update();
+      await emit("message_end", { message: assistant(51) });
       expect(footer()).toContain("50.0 tok/s");
     }
   });
@@ -239,10 +257,11 @@ describe("qol footer generation TPS", () => {
     await emit("message_start", { message: { role: "user" } });
     await emit("message_end", { message: { role: "toolResult" } });
     now = 2_000;
-    await emit("message_end", { message: assistant(100) });
+    await update();
+    await emit("message_end", { message: assistant(101) });
     expect(footer()).toContain("100 tok/s");
     now = 3_000;
-    await emit("message_end", { message: assistant(100) });
+    await emit("message_end", { message: assistant(201) });
     expect(footer()).toContain("100 tok/s");
   });
 
@@ -251,8 +270,33 @@ describe("qol footer generation TPS", () => {
     await emit("session_start");
     now = Number.NaN;
     await update();
+    now = 0;
+    await update();
     now = 1_000;
-    await emit("message_end", { message: assistant(100) });
+    await update();
+    await emit("message_end", { message: assistant(101) });
+    expect(footer()).toContain("100 tok/s");
+  });
+
+  it("ignores the message_end timestamp", async () => {
+    const { emit, update, footer } = createHarness();
+    await emit("session_start");
+    now = 0;
+    await update();
+    now = 2_000;
+    await update();
+    now = 9_000;
+    await emit("message_end", { message: assistant(201) });
+    expect(footer()).toContain("100 tok/s");
+  });
+
+  it("treats a single qualifying delta as unmeasurable", async () => {
+    const { emit, update, footer } = createHarness();
+    await emit("session_start");
+    now = 0;
+    await update();
+    now = 5_000;
+    await emit("message_end", { message: assistant(201) });
     expect(footer()).not.toContain("tok/s");
   });
 
@@ -264,7 +308,8 @@ describe("qol footer generation TPS", () => {
       now = 0;
       await update();
       now = elapsed;
-      await emit("message_end", { message: assistant(output) });
+      await update();
+      await emit("message_end", { message: assistant(output + 1) });
       expect(footer()).toContain(`model · ${formatted} tok/s`);
       expect(styles).toContainEqual(["dim", `${formatted} tok/s`]);
       for (const width of [20, 40, 80, 120]) {
@@ -287,17 +332,20 @@ describe("qol footer generation TPS", () => {
     now = 0;
     await update();
     now = 1_000;
-    await emit("message_end", { message: assistant(100) });
+    await update();
+    await emit("message_end", { message: assistant(101) });
     expect(footer()).toContain("100 tok/s");
 
     now = 2_000;
     await emit("turn_start");
     await update();
+    now = 3_000;
+    await update();
     await emit(event);
     expect(footer()).not.toContain("tok/s");
 
-    now = 3_000;
-    await emit("message_end", { message: assistant(100) });
+    now = 4_000;
+    await emit("message_end", { message: assistant(101) });
     expect(footer()).not.toContain("tok/s");
   });
 
@@ -310,6 +358,7 @@ describe("qol footer generation TPS", () => {
     await expect(emit("message_start", { message: assistant(0) })).resolves.toBeUndefined();
     await expect(update()).resolves.toBeUndefined();
     now = 1_000;
-    await expect(emit("message_end", { message: assistant(100) })).resolves.toBeUndefined();
+    await expect(update()).resolves.toBeUndefined();
+    await expect(emit("message_end", { message: assistant(101) })).resolves.toBeUndefined();
   });
 });
