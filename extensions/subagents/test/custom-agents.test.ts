@@ -436,7 +436,7 @@ Leading minus.`);
     });
   });
 
-  it("reports an extensions: error without skipping the definition (transitional)", () => {
+  it("an extensions: error skips the definition", () => {
     writeAgent("boolean-extensions", `---
 extensions: false
 ---
@@ -445,7 +445,7 @@ Boolean extensions.`);
 
     const result = loadCustomAgentsWithDiagnostics(tmpDir);
     expect({ loaded: result.agents.has("boolean-extensions"), diagnostics: result.diagnostics.map((d) => [d.field, d.severity]) })
-      .toEqual({ loaded: true, diagnostics: [["extensions", "error"]] });
+      .toEqual({ loaded: false, diagnostics: [["extensions", "error"]] });
   });
 
   // ─── skill fields (discover_skills / preload_skills) ────────────────────

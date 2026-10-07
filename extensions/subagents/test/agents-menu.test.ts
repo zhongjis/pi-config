@@ -88,7 +88,7 @@ describe("agents menu access rules", () => {
     });
 
     const ejected = readFileSync(join(root, "agent-dir", "agents", "probe.md"), "utf-8");
-    expect(ejected.split("\n").filter((line) => /^(extensions|tools|builtin_tools|extension_tools|exclude_extensions):/.test(line)))
+    expect(ejected.split("\n").filter((line) => /^\w*(extensions|tools)\w*:/.test(line)))
       .toEqual(["extensions: +matrix", "tools: +read, +@matrix"]);
   });
 });

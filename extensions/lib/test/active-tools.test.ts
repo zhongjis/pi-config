@@ -4,15 +4,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   BUILTIN_TOOL_NAMES,
-  computeActiveToolNames,
   createToolCeilingTool,
-  DEFAULT_BUILTIN_TOOL_NAMES,
   extensionCanonicalName,
   extensionCanonicalNames,
   extensionIdsForPath,
   formatAccessRules,
   isBuiltinToolName,
-  isToolReachable,
   isTrustedToolSource,
   parseAccessRules,
   PLAN_TOOL_NAMES,
@@ -23,70 +20,7 @@ import {
   type ExtensionCandidate,
   type ToolCandidate,
 } from "../active-tools.js";
-import { invalidFrontmatterFieldMessage, parseAgentFrontmatter } from "../agent-frontmatter.js";
-
-const exposures: Record<string, string> = {
-  direct_tool: "direct",
-  model_tool: "model-only",
-  code_tool: "codemode",
-  deferred_tool: "deferred",
-  hidden_tool: "hidden",
-};
-const available = ["read", "bash", ...Object.keys(exposures), "agent"];
-const base = {
-  availableToolNames: available,
-  builtinToolNames: ["read"],
-  builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
-  extensions: true as const,
-  exposureOf: (name: string) => exposures[name],
-};
-
-describe("computeActiveToolNames exposure", () => {
-  it.each([undefined, ["*"], ["direct_*", "model_*", "code_*", "deferred_*", "hidden_*"]])("never auto-activates codemode/deferred/hidden tools (extensionTools %j)", (extensionTools) => {
-    expect(computeActiveToolNames({ ...base, extensionTools })).toEqual(["read", "direct_tool", "model_tool"]);
-  });
-
-  it("keeps allowlisted codemode/deferred tools only when already active", () => {
-    expect(computeActiveToolNames({
-      ...base,
-      extensionTools: ["code_tool", "deferred_tool", "hidden_tool"],
-      currentActiveToolNames: ["code_tool", "deferred_tool", "hidden_tool"],
-    })).toEqual(["read", "code_tool", "deferred_tool"]);
-  });
-
-  it("drops active tools the allowlist does not reach", () => {
-    expect(computeActiveToolNames({
-      ...base,
-      extensionTools: ["direct_tool"],
-      currentActiveToolNames: ["bash", "code_tool", "agent"],
-    })).toEqual(["read", "direct_tool"]);
-  });
-
-  it("treats every tool as direct without exposureOf", () => {
-    const { exposureOf: _exposureOf, ...legacy } = base;
-    expect(computeActiveToolNames(legacy)).toEqual(["read", ...Object.keys(exposures)]);
-  });
-});
-
-describe("isToolReachable", () => {
-  const policy = { builtinToolNames: ["read"], builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES, extensions: true as const };
-
-  it("ignores exposure and active state", () => {
-    expect(isToolReachable({ ...policy, extensionTools: ["code_*"] }, "code_tool")).toBe(true);
-    expect(isToolReachable({ ...policy, extensionTools: ["direct_tool"] }, "code_tool")).toBe(false);
-    expect(isToolReachable(policy, "hidden_tool")).toBe(true);
-  });
-
-  it("applies built-in selection, nesting, and extension switches", () => {
-    expect(isToolReachable(policy, "read")).toBe(true);
-    expect(isToolReachable(policy, "bash")).toBe(false);
-    expect(isToolReachable({ ...policy, extensionTools: ["agent"] }, "agent")).toBe(false);
-    expect(isToolReachable({ ...policy, extensionTools: ["agent"], allowNesting: true }, "agent")).toBe(true);
-    expect(isToolReachable({ ...policy, isolated: true }, "direct_tool")).toBe(false);
-    expect(isToolReachable({ ...policy, extensions: false }, "direct_tool")).toBe(false);
-    expect(isToolReachable({ ...policy, extensionTools: false }, "direct_tool")).toBe(false);
-  });
-});
+import { parseAgentFrontmatter } from "../agent-frontmatter.js";
 
 // ─── BUILTIN_TOOL_NAMES / PLAN_TOOL_NAMES ────────────────────────────────
 
@@ -582,15 +516,49 @@ describe("parseAgentFrontmatter tools/extensions rules", () => {
     ]);
   });
 
-  it("TRANSITIONAL: an extensions: rule error is recorded but does not invalidate the definition", () => {
-    const parsed = parseAgentFrontmatter({ extensions: true });
-    expect(parsed.invalidFields).toEqual([]);
-    expect(parsed.diagnostics[0]).toMatchObject({ field: "extensions", severity: "error" });
+  it.each([true, false, "ulw", "+@foo", "+./ext"])("an extensions: %j rule error invalidates the definition", (extensions) => {
+    expect(parseAgentFrontmatter({ extensions }).invalidFields).toEqual(["extensions"]);
   });
 
-  it("'tools' is no longer an obsolete field by itself", () => {
-    expect(invalidFrontmatterFieldMessage("disallowed_tools")).toMatch(/invalid\/obsolete/);
-    const parsed = parseAgentFrontmatter({ tools: ["+read"] });
-    expect(parsed.invalidFields).toEqual([]);
+  it("a rule warning is reported without invalidating the definition", () => {
+    const parsed = parseAgentFrontmatter({ extensions: "-ulw, +@all" });
+    expect({ invalidFields: parsed.invalidFields, diagnostics: parsed.diagnostics }).toEqual({
+      invalidFields: [],
+      diagnostics: [{ field: "extensions", severity: "warning", message: 'leading "-ulw" removes nothing from the empty start.' }],
+    });
+  });
+
+  it("a signed tools: list leaves the definition valid", () => {
+    expect(parseAgentFrontmatter({ tools: ["+read"] }).invalidFields).toEqual([]);
+  });
+
+  const skillsMessage = "skills/inherit_skills is invalid/obsolete; use discover_skills (catalog on/off) and preload_skills (eager-inject names) instead.";
+  it.each([
+    ["builtin_tools", "read,bash", "builtin_tools is obsolete; list built-in tools in tools:, e.g. `tools: +read, +bash` or `tools: +@builtin`."],
+    ["extension_tools", "codegraph_*", "extension_tools is obsolete; list extension tools in tools:, e.g. `tools: +codegraph_*, +@pi-web-access`."],
+    ["exclude_extensions", "ulw", "exclude_extensions is obsolete; add -<id> rules to extensions:, e.g. `extensions: +@all, -ulw`."],
+    ["inherit_extensions", true, "inherit_extensions is obsolete; use `extensions: +@all` to load every extension or omit it to load none."],
+    ["disallowed_tools", "edit", "disallowed_tools is invalid; subtract tools with -name rules in tools:, e.g. `tools: +@all, -edit`."],
+    ["disallow_tools", "edit", "disallow_tools is invalid; subtract tools with -name rules in tools:, e.g. `tools: +@all, -edit`."],
+    ["skills", "a", skillsMessage],
+    ["inherit_skills", true, skillsMessage],
+  ])("an obsolete %s field is an error with a rewrite hint", (field, value, message) => {
+    const parsed = parseAgentFrontmatter({ [field]: value });
+    expect({ invalidFields: parsed.invalidFields, diagnostics: parsed.diagnostics }).toEqual({
+      invalidFields: [field],
+      diagnostics: [{ field, severity: "error", message }],
+    });
+  });
+
+  it("a Mode Agent extensions: field is an error that replaces its rule diagnostics", () => {
+    const parsed = parseAgentFrontmatter({ extensions: "ulw" }, "", { kind: "mode" });
+    expect({ invalidFields: parsed.invalidFields, diagnostics: parsed.diagnostics }).toEqual({
+      invalidFields: ["extensions"],
+      diagnostics: [{
+        field: "extensions",
+        severity: "error",
+        message: "extensions: is not supported in Mode Agents (the main session cannot unload extensions); grant tools with tools: only.",
+      }],
+    });
   });
 });

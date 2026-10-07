@@ -2,7 +2,7 @@ import { GOAL_TOOL_NAMES, goalToolAccess } from "../../goal/src/goal/access.js";
 import type { RuntimeModelCandidate } from "../../lib/runtime-model-fallback.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
-import { type AccessDiagnostic, type AccessRule, resolveToolAccess, selectActiveToolNames, toolCandidates } from "../../lib/active-tools.js";
+import { type AccessDiagnostic, resolveToolAccess, selectActiveToolNames, toolCandidates } from "../../lib/active-tools.js";
 import { MODES, MODE_COLORS, MODE_META, MODE_TOOL_CEILING_NAME, RESET } from "./constants.js";
 import { getModeSkillPaths } from "./mode-skills.js";
 import { loadAgentConfig } from "./config-loader.js";
@@ -15,9 +15,6 @@ type ThinkingLevel = ReturnType<ExtensionAPI["getThinkingLevel"]>;
 function colored(mode: Mode, text: string): string {
 	return `${MODE_COLORS[mode]}${text}${RESET}`;
 }
-
-/** A missing or invalid mode file has no rules policy: every tool, gates still apply. */
-const NO_RULES_POLICY: readonly AccessRule[] = [{ sign: "+", selector: "@all" }];
 
 function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
   if (a.length !== b.length) return false;
@@ -105,7 +102,7 @@ export class ModeStateManager {
 	loadConfig(mode: Mode, family?: "gpt" | "gemini" | "default"): ModeConfig {
 		const cacheKey = `${mode}:${family ?? "default"}`;
 		if (!this.cachedConfigs[cacheKey]) {
-			this.cachedConfigs[cacheKey] = loadAgentConfig(mode, family) ?? { body: "" };
+			this.cachedConfigs[cacheKey] = loadAgentConfig(mode, family) ?? { body: "", toolRules: [] };
 		}
 		return this.cachedConfigs[cacheKey]!;
 	}
@@ -120,9 +117,8 @@ export class ModeStateManager {
 	/** Resolve the current mode's `tools:` rules against the live registry, then the hard gates. */
 	toolAccess(allowedGoals: readonly string[] = this.allowedGoalTools): { allowed: Set<string>; diagnostics: AccessDiagnostic[] } {
 		const config = this.loadConfig(this.currentMode);
-		return resolveToolAccess(config.toolRules ?? NO_RULES_POLICY, toolCandidates(this.pi.getAllTools()), {
-			// A missing mode file must not lose the nested agent tools it never restricted.
-			allowNesting: config.toolRules === undefined ? true : config.allowNesting === true,
+		return resolveToolAccess(config.toolRules, toolCandidates(this.pi.getAllTools()), {
+			allowNesting: config.allowNesting === true,
 			goalTools: { names: GOAL_TOOL_NAMES, allowed: allowedGoals },
 			planTools: this.currentMode === "fuxi",
 		});
@@ -147,7 +143,8 @@ export class ModeStateManager {
 		this.allowedGoalTools = goalNames.length ? await goalToolAccess(ctx) : [];
 
 		const { allowed, diagnostics } = this.toolAccess();
-		this.notifyToolDiagnostics(ctx, diagnostics);
+		const configErrors = this.loadConfig(this.currentMode).errors ?? [];
+		this.notifyToolDiagnostics(ctx, [...configErrors.map((message) => ({ severity: "error" as const, message })), ...diagnostics]);
 
 		const activeToolNames = this.pi.getActiveTools().filter((name) => registered.has(name));
 		// Allowed Goal tools are deferred; listing them as current activates them.

@@ -1,7 +1,6 @@
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { type AccessRule, DEFAULT_BUILTIN_TOOL_NAMES, parseAccessRules } from "./active-tools.js";
+import { type AccessRule, parseAccessRules } from "./active-tools.js";
 
-export type InheritSelection = true | string[] | false;
 export type PromptMode = "replace" | "append" | "system_instructions";
 
 export interface FrontmatterDiagnostic {
@@ -10,19 +9,21 @@ export interface FrontmatterDiagnostic {
   message: string;
 }
 
+export interface ParseAgentOptions {
+  /** Mode Agents reject `extensions:`; the main session cannot unload extensions. Default `subagent`. */
+  kind?: "subagent" | "mode";
+}
+
 export interface ParsedAgentFrontmatter {
   frontmatter: Record<string, unknown>;
   body: string;
+  /** Unique fields with an error diagnostic; non-empty means the definition is invalid. */
   invalidFields: string[];
   displayName?: string;
   description?: string;
-  builtinToolNames: string[];
-  extensionToolNames?: string[];
   allowDelegationTo?: string[];
   disallowDelegationTo?: string[];
   allowNesting?: boolean;
-  extensions: InheritSelection;
-  excludeExtensions?: string[];
   discoverSkills: boolean;
   preloadSkills: string[];
   model?: string;
@@ -32,39 +33,61 @@ export interface ParsedAgentFrontmatter {
   runInBackground?: boolean;
   isolated?: boolean;
   enabled: boolean;
-  toolSelectionSpecified: boolean;
   /** Parsed `tools:` signed rules; see `extensions/lib/active-tools.ts`. */
   toolRules: AccessRule[];
   /** Parsed `extensions:` signed rules (Subagents only); see `extensions/lib/active-tools.ts`. */
   extensionRules: AccessRule[];
-  /** Field-tagged diagnostics from parsing `toolRules`/`extensionRules`. */
+  /** Field-tagged diagnostics. Errors invalidate the definition; warnings do not. */
   diagnostics: FrontmatterDiagnostic[];
 }
 
+const SKILLS_FIELD_MESSAGE = "skills/inherit_skills is invalid/obsolete; use discover_skills (catalog on/off) and preload_skills (eager-inject names) instead.";
+const DISALLOWED_TOOLS_HINT = "subtract tools with -name rules in tools:, e.g. `tools: +@all, -edit`.";
+
+/** Obsolete or invalid fields and their rewrite hints. */
+const OBSOLETE_FIELD_MESSAGES: Readonly<Record<string, string>> = {
+  builtin_tools: "builtin_tools is obsolete; list built-in tools in tools:, e.g. `tools: +read, +bash` or `tools: +@builtin`.",
+  extension_tools: "extension_tools is obsolete; list extension tools in tools:, e.g. `tools: +codegraph_*, +@pi-web-access`.",
+  exclude_extensions: "exclude_extensions is obsolete; add -<id> rules to extensions:, e.g. `extensions: +@all, -ulw`.",
+  inherit_extensions: "inherit_extensions is obsolete; use `extensions: +@all` to load every extension or omit it to load none.",
+  disallowed_tools: `disallowed_tools is invalid; ${DISALLOWED_TOOLS_HINT}`,
+  disallow_tools: `disallow_tools is invalid; ${DISALLOWED_TOOLS_HINT}`,
+  skills: SKILLS_FIELD_MESSAGE,
+  inherit_skills: SKILLS_FIELD_MESSAGE,
+};
+
+const MODE_EXTENSIONS_MESSAGE = "extensions: is not supported in Mode Agents (the main session cannot unload extensions); grant tools with tools: only.";
+
 /** Parse markdown frontmatter using the shared agent schema. */
-export function parseAgentMarkdown(content: string): ParsedAgentFrontmatter {
+export function parseAgentMarkdown(content: string, options: ParseAgentOptions = {}): ParsedAgentFrontmatter {
   const { frontmatter, body } = parseFrontmatter<Record<string, unknown>>(content);
-  return parseAgentFrontmatter(frontmatter, body);
+  return parseAgentFrontmatter(frontmatter, body, options);
 }
 
 /** Parse already-extracted frontmatter using the shared agent schema. */
 export function parseAgentFrontmatter(
   fm: Record<string, unknown>,
   body = "",
+  options: ParseAgentOptions = {},
 ): ParsedAgentFrontmatter {
-  const toolsParsed = parseAccessRules("tools", fm.tools);
-  const extensionsParsed = parseAccessRules("extensions", fm.extensions);
-  const diagnostics: FrontmatterDiagnostic[] = [
-    ...toolsParsed.diagnostics.map((d) => ({ field: "tools", ...d })),
-    ...extensionsParsed.diagnostics.map((d) => ({ field: "extensions", ...d })),
-  ];
+  const diagnostics: FrontmatterDiagnostic[] = [];
+  for (const [field, message] of Object.entries(OBSOLETE_FIELD_MESSAGES)) {
+    if (hasField(fm, field)) diagnostics.push({ field, severity: "error", message });
+  }
 
-  // TRANSITIONAL: extensions rule errors are recorded in `diagnostics` but do not
-  // (yet) invalidate the definition, because existing definitions still use the
-  // boolean `extensions: true/false` contract. A later wave makes them invalid.
-  const invalidFields = toolsParsed.diagnostics.some((d) => d.severity === "error")
-    ? [...invalidFrontmatterFields(fm), "tools"]
-    : invalidFrontmatterFields(fm);
+  const toolsParsed = parseAccessRules("tools", fm.tools);
+  diagnostics.push(...toolsParsed.diagnostics.map((d) => ({ field: "tools", ...d })));
+
+  let extensionRules: AccessRule[] = [];
+  if (options.kind === "mode") {
+    if (hasField(fm, "extensions")) diagnostics.push({ field: "extensions", severity: "error", message: MODE_EXTENSIONS_MESSAGE });
+  } else {
+    const extensionsParsed = parseAccessRules("extensions", fm.extensions);
+    extensionRules = extensionsParsed.rules;
+    diagnostics.push(...extensionsParsed.diagnostics.map((d) => ({ field: "extensions", ...d })));
+  }
+
+  const invalidFields = [...new Set(diagnostics.filter((d) => d.severity === "error").map((d) => d.field))];
 
   return {
     frontmatter: fm,
@@ -72,13 +95,9 @@ export function parseAgentFrontmatter(
     invalidFields,
     displayName: str(fm.display_name),
     description: str(fm.description),
-    builtinToolNames: parseBuiltinTools(fm),
-    extensionToolNames: csvListOptionalWithNone(fm.extension_tools),
     allowDelegationTo: csvListOptional(fm.allow_delegation_to),
     disallowDelegationTo: csvListOptional(fm.disallow_delegation_to),
     allowNesting: fm.allow_nesting === true,
-    extensions: inheritField(fm.extensions ?? fm.inherit_extensions),
-    excludeExtensions: csvListOptional(fm.exclude_extensions),
     discoverSkills: parseDiscoverSkills(fm.discover_skills),
     preloadSkills: csvListOptional(fm.preload_skills) ?? [],
     model: str(fm.model),
@@ -88,29 +107,10 @@ export function parseAgentFrontmatter(
     runInBackground: fm.run_in_background != null ? fm.run_in_background === true : undefined,
     isolated: fm.isolated != null ? fm.isolated === true : undefined,
     enabled: fm.enabled !== false,
-    toolSelectionSpecified:
-      hasField(fm, "builtin_tools")
-      || hasField(fm, "extension_tools")
-      || hasField(fm, "extensions")
-      || hasField(fm, "inherit_extensions")
-      || hasField(fm, "exclude_extensions"),
     toolRules: toolsParsed.rules,
-    extensionRules: extensionsParsed.rules,
+    extensionRules,
     diagnostics,
   };
-}
-
-/** Obsolete frontmatter fields make the definition invalid. */
-export function invalidFrontmatterFields(fm: Record<string, unknown>): string[] {
-  return ["disallowed_tools", "disallow_tools", "skills", "inherit_skills"].filter((field) => hasField(fm, field));
-}
-
-export function invalidFrontmatterFieldMessage(field: string): string {
-  if (field === "skills" || field === "inherit_skills") {
-    return "skills/inherit_skills is invalid/obsolete; use discover_skills (catalog on/off) and preload_skills (eager-inject names) instead.";
-  }
-
-  return `${field} is invalid/obsolete; use builtin_tools and extension_tools explicit allowlists instead.`;
 }
 
 function str(val: unknown): string | undefined {
@@ -125,16 +125,6 @@ function hasField(fm: Record<string, unknown>, field: string): boolean {
   return Object.hasOwn(fm, field);
 }
 
-// Unknown names are kept so runtimes can diagnose them; policy only grants
-// names in the built-in universe.
-function parseBuiltinTools(fm: Record<string, unknown>): string[] {
-  if (hasField(fm, "builtin_tools")) {
-    return csvList(fm.builtin_tools, [...DEFAULT_BUILTIN_TOOL_NAMES]);
-  }
-
-  return [...DEFAULT_BUILTIN_TOOL_NAMES];
-}
-
 function parseCsvField(val: unknown): string[] | undefined {
   if (val === undefined || val === null) return undefined;
   const s = String(val).trim();
@@ -143,26 +133,8 @@ function parseCsvField(val: unknown): string[] | undefined {
   return items.length > 0 ? items : undefined;
 }
 
-function csvList(val: unknown, defaults: string[]): string[] {
-  if (val === undefined || val === null) return defaults;
-  return parseCsvField(val) ?? [];
-}
-
 function csvListOptional(val: unknown): string[] | undefined {
   return parseCsvField(val);
-}
-
-function csvListOptionalWithNone(val: unknown): string[] | undefined {
-  if (val === undefined || val === null) return undefined;
-  return parseCsvField(val) ?? [];
-}
-
-
-function inheritField(val: unknown): InheritSelection {
-  if (val === undefined || val === null || val === true) return true;
-  if (val === false || val === "none") return false;
-  const items = csvList(val, []);
-  return items.length > 0 ? items : false;
 }
 
 /** Skill catalog is discoverable unless explicitly disabled. Default true. */

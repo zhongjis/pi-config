@@ -16,7 +16,7 @@ likely to fetch GitHub content is tool-scoped away from these paths.
 
 The path grammar reaches the main agent and every non-isolated subagent: github-fs
 is a hook-only extension that appends its `## GitHub virtual paths` guide to the
-system prompt, and `extension_tools` allowlists cannot gate it. Agents still reach
+system prompt, and `tools:` rules cannot gate it. Agents still reach
 for other tools. See [`extensions/github-fs/`](../../extensions/github-fs/) for the
 hooks and grammar.
 

@@ -1,108 +1,19 @@
 /**
- * Shared active-tool policy for mode and subagent sessions.
+ * Shared `extensions:`/`tools:` access policy for Mode Agent and Subagent sessions.
  *
- * Active tool names are strings. `extensions` controls whether extension tools
- * are available; `extensionTools` is the post-load extension-tool filter.
+ * Both frontmatter fields are ordered lists of signed rules (`+selector` /
+ * `-selector`). Lists start empty and the last matching rule wins. This
+ * module owns rule parsing, group/glob matching, resolution against the live
+ * registry, hard gates, extension identity, and the tool ceiling.
  */
 
 import { readFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-
-export const DEFAULT_BUILTIN_TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
+import { extractToolText, firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "./tool-output.js";
 
 export const NESTED_SUBAGENT_TOOL_NAMES = ["agent", "get_agent_result", "resolve_agent_graph_gate", "steer_subagent"] as const;
-
-export type ExtensionSelection = true | readonly string[] | false;
-export type ExtensionToolSelection = readonly string[] | false | undefined;
-
-export interface ComputeActiveToolNamesInput {
-  /** Tool names currently available from the session/runtime. Output order follows this list. */
-  availableToolNames: readonly string[];
-  /** Selected built-in tool names after parser/default resolution. */
-  builtinToolNames: readonly string[];
-  /** Canonical built-in names; values outside this set are never granted as built-ins. */
-  builtinToolUniverse: readonly string[];
-  /** false disables extension tools; true/string[] means extension tools are available after loading. */
-  extensions: ExtensionSelection;
-  /** undefined = all available extension tools; false/[] = none; string[] = exact tool names or trailing `*` prefix wildcards. */
-  extensionTools?: ExtensionToolSelection;
-  /** false removes nested subagent tools even if extension tool policy would otherwise include them. */
-  allowNesting?: boolean;
-  /** true disables all extension tools regardless of extensions/extensionTools settings. */
-  isolated?: boolean;
-  /**
-   * Pi tool exposure by name; undefined means `direct`. Reachable `direct`/`model-only` tools
-   * activate; reachable `codemode`/`deferred` tools stay active only if already in
-   * `currentActiveToolNames`; `hidden` tools never activate.
-   */
-  exposureOf?: (name: string) => string | undefined;
-  /** Active tool names before this computation; only consulted for `codemode`/`deferred` tools. */
-  currentActiveToolNames?: readonly string[];
-}
-
-export type ToolReachabilityInput = Omit<ComputeActiveToolNamesInput, "availableToolNames" | "exposureOf" | "currentActiveToolNames">;
-
-/**
- * Whether the allowlist policy permits calling `name`, ignoring exposure and active state.
- *
- * Nested subagent controls require `allowNesting`; built-in universe names require the
- * built-in selection; other names require enabled extensions and a matching `extensionTools`.
- */
-export function isToolReachable(input: ToolReachabilityInput, name: string): boolean {
-  if (NESTED_SUBAGENT_TOOL_NAMES.includes(name as typeof NESTED_SUBAGENT_TOOL_NAMES[number]) && input.allowNesting !== true) {
-    return false;
-  }
-
-  if (input.builtinToolUniverse.includes(name)) return input.builtinToolNames.includes(name);
-
-  if (input.isolated === true || input.extensions === false || input.extensionTools === false) return false;
-  return input.extensionTools === undefined || matchesExtensionToolSelection(new Set(input.extensionTools), name);
-}
-
-/**
- * Compute final active tool names for an agent-like runtime.
- *
- * This function intentionally has no denylist or legacy `tools:` input.
- * Obsolete tool-selection fields are parser errors before runtime.
- */
-export function computeActiveToolNames(input: ComputeActiveToolNamesInput): string[] {
-  const currentActive = new Set(input.currentActiveToolNames ?? []);
-  const seen = new Set<string>();
-  const activeToolNames: string[] = [];
-
-  for (const name of input.availableToolNames) {
-    if (seen.has(name)) continue;
-    seen.add(name);
-    if (!isToolReachable(input, name)) continue;
-
-    const exposure = input.exposureOf?.(name);
-    if (exposure === "hidden") continue;
-    if ((exposure === "codemode" || exposure === "deferred") && !currentActive.has(name)) continue;
-
-    activeToolNames.push(name);
-  }
-
-  return activeToolNames;
-}
-
-function matchesExtensionToolSelection(selection: ReadonlySet<string>, name: string): boolean {
-  if (selection.has(name)) return true;
-
-  for (const pattern of selection) {
-    if (pattern.endsWith("*") && name.startsWith(pattern.slice(0, -1))) return true;
-  }
-
-  return false;
-}
-
-// ─── Signed-rule access policy (additive; see `extensions/lib/AGENTS.md`) ───
-//
-// `extensions:` and `tools:` frontmatter fields are ordered lists of signed
-// rules (`+selector` / `-selector`). Lists start empty and the last matching
-// rule wins. This section owns parsing, group/glob matching, resolution
-// against a live registry, hard gates, and the mode/subagent tool ceiling.
 
 // ponytail: copy of Pi's internal built-in tool name list. Pi does not export
 // `ToolName`/`allToolNames`, so this is hand-maintained. Add new Pi built-ins
@@ -449,6 +360,14 @@ export function createToolCeilingTool(name: string, allowedToolNames: () => Read
     parameters: Type.Object({}),
     async execute() {
       return { content: [{ type: "text" as const, text: "This tool is internal and must never be called." }], details: undefined };
+    },
+    renderCall(_args, theme) {
+      return renderToolCall(name, undefined, theme);
+    },
+    renderResult(result, options, theme) {
+      const raw = extractToolText(result);
+      if (options.expanded) return renderToolExpanded(raw);
+      return renderToolSummary([firstMeaningfulLine(raw) || "internal tool"], theme, { expandable: true, expandLabel: "full result" });
     },
     prepareLoadout(loadout) {
       const allowed = allowedToolNames();

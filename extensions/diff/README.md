@@ -53,4 +53,4 @@ Sidecar schema (line numbers are on the new side of each file):
 
 Single terminal — the tool suspends pi's TUI and launches hunk like any other `/diff`, so no separate hunk window is needed.
 
-The `open_pr_walkthrough` tool is **command-gated, not allowlisted**: it is registered but kept out of every mode's `extension_tools` list. `/diff pr-walkthrough` force-enables it for the session via `pi.setActiveTools`, and the tool removes itself from the active set after a successful launch. So it stays invisible to the agent until you actually ask for a walkthrough — and it works in any mode without per-mode frontmatter edits.
+The `open_pr_walkthrough` tool is **command-gated**: `/diff pr-walkthrough` adds it to the active set via `pi.setActiveTools`, and the tool removes itself after a successful launch. The mode tool ceiling still applies, so the tool is reachable only in modes whose `tools:` rules grant it.

@@ -13,7 +13,7 @@ const beta = "fast-mode-2026-02-01";
 it("real mode hooks: user off survives prompts/reload and same-model transitions; headers never mutate", async () => {
 	const modes: ExtensionFactory = (pi) => {
 		const state = new ModeStateManager(pi);
-		vi.spyOn(state, "loadConfig").mockImplementation((mode) => ({ body: "Test mode", model: `anthropic/claude-opus-4-8${mode === "kuafu" ? ":fast" : ""}` }));
+		vi.spyOn(state, "loadConfig").mockImplementation((mode) => ({ body: "Test mode", toolRules: [], model: `anthropic/claude-opus-4-8${mode === "kuafu" ? ":fast" : ""}` }));
 		registerModeCommands(pi, state);
 		registerModeHooks(pi, state);
 	};
@@ -136,7 +136,7 @@ it("real CLIProxyAPI openai-responses transport sends priority only after /fast 
 it.each([false, true])("real branch bypass, backwards navigation and native file reopen retain explicit %s", async (enabled) => {
 	const modes: ExtensionFactory = (pi) => {
 		const state = new ModeStateManager(pi);
-		vi.spyOn(state, "loadConfig").mockReturnValue({ body: "Test mode", model: "anthropic/claude-opus-4-8" });
+		vi.spyOn(state, "loadConfig").mockReturnValue({ body: "Test mode", toolRules: [], model: "anthropic/claude-opus-4-8" });
 		registerModeHooks(pi, state);
 	};
 	const t = await createFastSession([fastExtension, modes], {}, true);

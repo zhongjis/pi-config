@@ -51,12 +51,27 @@ Prompt only.`);
 		});
 	});
 
-	it("returns null for an unsigned tools entry", () => {
+	it("an unsigned tools entry yields the no-prompt, no-tools errors config", () => {
 		expect(parseModeAgentConfig(`---
-tools: read,bash
+tools: read
 ---
 
-Unsigned prompt.`)).toBeNull();
+Unsigned prompt.`)).toEqual({
+			body: "",
+			toolRules: [],
+			errors: ['unsigned entry "read": prefix + to grant or - to remove, e.g. "+read"'],
+		});
+	});
+
+	it("an extensions: field is a Mode Agent error", () => {
+		expect(parseModeAgentConfig(`---
+extensions: +@all
+tools: +read
+---
+
+Extensions prompt.`)?.errors).toEqual([
+			"extensions: is not supported in Mode Agents (the main session cannot unload extensions); grant tools with tools: only.",
+		]);
 	});
 });
 
@@ -119,6 +134,15 @@ Base mode body.`;
 	it("returns null when mode.md does not exist", () => {
 		vi.mocked(fs.existsSync).mockReturnValue(false);
 		expect(loadAgentConfig("kuafu")).toBeNull();
+	});
+
+	it("an invalid mode.md keeps the errors config over a gpt.md body", () => {
+		stubFiles({ "mode.md": "---\nbuiltin_tools: read\n---\n\nBase mode body.", "gpt.md": "GPT body override.\n" });
+		expect(loadAgentConfig("kuafu", "gpt")).toEqual({
+			body: "",
+			toolRules: [],
+			errors: ["builtin_tools is obsolete; list built-in tools in tools:, e.g. `tools: +read, +bash` or `tools: +@builtin`."],
+		});
 	});
 
 	it("gpt family replaces body from gpt.md, keeping mode.md frontmatter", () => {

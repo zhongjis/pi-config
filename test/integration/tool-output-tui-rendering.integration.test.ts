@@ -126,6 +126,7 @@ const FIXTURES: Record<string, ToolFixture> = {
   get_agent_result: { args: { run_id: "agent-render-1", wait: false }, raw: "Agent agent-render-1 completed.\nResult: renderer audit complete\nRAW31_32", details: {} },
   look_at: { args: { file_path: "screens/界面.png", goal: "Find renderer status" }, raw: "Renderer status is visible.\nRAW31_23", details: {} },
   lsp: { args: { operation: "diagnostics", filePath: "extensions/render.ts" }, raw: "No diagnostics found.\nRAW31_24", details: {} },
+  mode_tool_ceiling: { args: {}, raw: "This tool is internal and must never be called.\nRAW31_33", details: {} },
   open_pr_walkthrough: { args: { sidecar_path: "/tmp/review-sidecar.json", head_sha: "0123456789abcdef" }, raw: "- extensions/render.ts:31 — Renderer verified\nRAW31_25", details: {} },
   plan_approve: { args: { variant: "review" }, raw: "Plan approved for handoff.\nRAW31_26", details: {} },
   plan_scaffold: { args: { slug: "renderer-audit", intent: "Prove tool output", create_plan: true }, raw: "Created DRAFT.md and PLAN.md\nNext: review plan\nRAW31_27", details: { artifacts: [{ name: "DRAFT.md", status: "created" }, { name: "PLAN.md", status: "created" }] } },

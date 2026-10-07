@@ -7,9 +7,13 @@ import {
 import type { Mode, ModeConfig } from "./types.js";
 
 export function parseModeAgentConfig(content: string): ModeConfig | null {
-  const parsed = parseAgentMarkdown(content);
+  const parsed = parseAgentMarkdown(content, { kind: "mode" });
+  // An invalid mode file fails closed: no prompt, no tools, its errors reported.
+  if (parsed.invalidFields.length > 0) {
+    return { body: "", toolRules: [], errors: parsed.diagnostics.filter((d) => d.severity === "error").map((d) => d.message) };
+  }
   const trimmedBody = parsed.body.trim();
-  if (!trimmedBody || parsed.invalidFields.length > 0) return null;
+  if (!trimmedBody) return null;
 
   return {
     body: trimmedBody,
@@ -35,7 +39,7 @@ export function loadAgentConfig(mode: Mode, family?: "gpt" | "gemini" | "default
   } catch {
     return null;
   }
-  if (!baseConfig) return null;
+  if (!baseConfig || baseConfig.errors) return baseConfig;
 
   // GPT family: gpt.md replaces the prompt body (body-only file, no frontmatter)
   if (family === "gpt") {

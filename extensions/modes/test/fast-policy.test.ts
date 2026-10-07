@@ -4,14 +4,14 @@ import { readFastPolicy } from "../../lib/fast.js";
 import { ModeStateManager } from "../src/mode-state.js";
 import type { Mode, ModeConfig } from "../src/types.js";
 
-vi.mock("../src/config-loader.js", () => ({ loadAgentConfig: () => ({ body: "" }) }));
+vi.mock("../src/config-loader.js", () => ({ loadAgentConfig: () => ({ body: "", toolRules: [] }) }));
 
 function setup() {
 	const model = { provider: "anthropic", id: "claude-opus-4-8", api: "anthropic-messages", name: "Opus" };
 	const entries: unknown[] = [];
 	const configs: Partial<Record<Mode, ModeConfig>> = {
-		kuafu: { body: "build", model: "missing:fast,anthropic/claude-opus-4-8:fast" },
-		houtu: { body: "execute", model: "anthropic/claude-opus-4-8" },
+		kuafu: { body: "build", model: "missing:fast,anthropic/claude-opus-4-8:fast", toolRules: [] },
+		houtu: { body: "execute", model: "anthropic/claude-opus-4-8", toolRules: [] },
 	};
 	const pi = {
 		appendEntry: (customType: string, data: unknown) => entries.push({ type: "custom", customType, data }),
@@ -49,7 +49,7 @@ it("user off survives repeated prompts, reload and same-model mode transitions",
 it("unsupported selected fast fails without fallback or corrupting current mode/policy/tool state", async () => {
 	const { state, ctx, configs, entries, pi } = setup();
 	await state.applyMode(ctx);
-	configs.houtu = { body: "execute", model: "anthropic/claude-opus-4-8:fast,anthropic/claude-opus-4-8" };
+	configs.houtu = { body: "execute", model: "anthropic/claude-opus-4-8:fast,anthropic/claude-opus-4-8", toolRules: [] };
 	const unsupported = { ...ctx.model, id: "claude-sonnet-4-6" };
 	vi.spyOn(ctx.modelRegistry, "find").mockReturnValue(unsupported as NonNullable<ExtensionContext["model"]>);
 	const before = entries.length;
@@ -95,7 +95,7 @@ it.each([false, true])("reload replaces a stale same-ID API and retains native C
 	vi.spyOn(ctx.modelRegistry, "getAvailable").mockReturnValue([native]);
 	if (savedPolicy) pi.appendEntry("fast-policy", { version: 1, mode: "kuafu", source: "mode", enabled: true });
 
-	await state.applyModelFromConfig({ body: "", model: "cliproxyapi/gpt-6.1-sol:fast" }, { ...ctx, model: stale });
+	await state.applyModelFromConfig({ body: "", model: "cliproxyapi/gpt-6.1-sol:fast", toolRules: [] }, { ...ctx, model: stale });
 
 	expect(pi.setModel).toHaveBeenCalledExactlyOnceWith(native);
 	expect(readFastPolicy(entries)).toMatchObject({ mode: "kuafu", source: "mode", enabled: true });

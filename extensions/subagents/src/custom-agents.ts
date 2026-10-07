@@ -5,10 +5,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import {
-  invalidFrontmatterFieldMessage,
-  parseAgentMarkdown,
-} from "../../lib/agent-frontmatter.js";
+import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
 import { normalizeThinkingLevel } from "./thinking-level.js";
 import type {
   AgentConfig,
@@ -74,22 +71,11 @@ function loadFromDir(
     }
 
     const parsed = parseAgentMarkdown(content);
-    // Every parse diagnostic is reported exactly once. Errors on invalid fields
-    // come first (an invalid field without its own diagnostic falls back to the
-    // obsolete-field message); warnings and errors on still-valid fields follow.
-    const report = (field: string, severity: "warning" | "error", message: string) =>
-      diagnostics.push({ file: filePath, agentName: name, field, severity, message });
-    for (const field of parsed.invalidFields) {
-      const errors = parsed.diagnostics.filter((d) => d.field === field && d.severity === "error");
-      if (errors.length === 0) report(field, "error", invalidFrontmatterFieldMessage(field));
-      for (const d of errors) report(field, "error", d.message);
-    }
     for (const d of parsed.diagnostics) {
-      if (d.severity === "error" && parsed.invalidFields.includes(d.field)) continue;
-      report(d.field, d.severity, d.message);
+      diagnostics.push({ file: filePath, agentName: name, field: d.field, severity: d.severity, message: d.message });
     }
-    // Obsolete tool/skill selection fields make the definition invalid: skip it
-    // rather than misconfigure a worker with a silently-ignored allowlist.
+    // Any error diagnostic invalidates the definition: skip it rather than run
+    // a worker under a misread access contract.
     if (parsed.invalidFields.length > 0) continue;
 
     // NEW-local fields the shared schema does not model. Parsed directly from

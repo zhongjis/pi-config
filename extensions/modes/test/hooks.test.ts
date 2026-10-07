@@ -24,7 +24,7 @@ vi.mock("@earendil-works/pi-tui", async (importOriginal: () => Promise<object>) 
 
 
 vi.mock("../src/config-loader.js", () => ({
-	loadAgentConfig: () => ({ body: "" }),
+	loadAgentConfig: () => ({ body: "", toolRules: [] }),
 }));
 
 vi.mock("../src/plannotator.js", () => ({
@@ -180,9 +180,9 @@ async function renderInjectedPrompt({
 	const state = new ModeStateManager(mock.pi as never);
 	state.currentMode = mode;
 	state.resolvedFamily = family;
-	state.cachedConfigs[`${mode}:default`] = defaultConfig;
+	state.cachedConfigs[`${mode}:default`] = { ...defaultConfig, toolRules: [] };
 	if (family !== "default") {
-		state.cachedConfigs[`${mode}:${family}`] = familyConfig ?? { body: `${family} body`, promptMode: "replace" };
+		state.cachedConfigs[`${mode}:${family}`] = { ...(familyConfig ?? { body: `${family} body`, promptMode: "replace" }), toolRules: [] };
 	}
 
 	registerModeHooks(mock.pi as never, state);
@@ -240,7 +240,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi prompt" };
+		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi prompt", toolRules: [] };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -254,7 +254,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all") };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -274,7 +274,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all") };
 
 		registerModeHooks(mock.pi as never, state);
 		const [result] = await mock.fire(
@@ -293,7 +293,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all") };
 		registerGuardCapability(mock.pi as never, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY);
 
 		registerModeHooks(mock.pi as never, state);
@@ -371,8 +371,8 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi planning prompt", promptMode: "replace" };
-		state.cachedConfigs["kuafu:default"] = { body: "Kua Fu build prompt", promptMode: "replace" };
+		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi planning prompt", promptMode: "replace", toolRules: [] };
+		state.cachedConfigs["kuafu:default"] = { body: "Kua Fu build prompt", promptMode: "replace", toolRules: [] };
 
 		registerModeHooks(mock.pi as never, state);
 
@@ -486,6 +486,7 @@ describe("mode hooks", () => {
 		state.currentMode = "kuafu";
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 
@@ -514,6 +515,7 @@ describe("mode hooks", () => {
 		state.currentMode = "kuafu";
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 
@@ -619,8 +621,8 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "kuafu";
-		state.cachedConfigs["kuafu:gpt"] = { body: "GPT variant body" };
-		state.cachedConfigs["kuafu:default"] = { body: "default body" };
+		state.cachedConfigs["kuafu:gpt"] = { body: "GPT variant body", toolRules: [] };
+		state.cachedConfigs["kuafu:default"] = { body: "default body", toolRules: [] };
 		state.resolvedFamily = "gpt";
 
 		registerModeHooks(mock.pi as never, state);
@@ -637,9 +639,10 @@ describe("mode hooks", () => {
 		state.currentMode = "kuafu";
 		state.cachedConfigs["kuafu:gemini"] = {
 			body: "before\n\n<critical>\nafter",
+			toolRules: [],
 			overlays: "<GEMINI_INTENT_GATE>must classify</GEMINI_INTENT_GATE>",
 		};
-		state.cachedConfigs["kuafu:default"] = { body: "before\n\n<critical>\nafter" };
+		state.cachedConfigs["kuafu:default"] = { body: "before\n\n<critical>\nafter", toolRules: [] };
 		state.resolvedFamily = "gemini";
 
 		registerModeHooks(mock.pi as never, state);
@@ -689,6 +692,7 @@ describe("mode runtime model fallback", () => {
 		const state = new ModeStateManager(mock.pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/configured-primary,anthropic/configured-fallback",
 		};
 		state.modelOverride = "anthropic/active-primary,openai-codex/gpt-5.4:high:fast";
@@ -722,7 +726,7 @@ describe("mode runtime model fallback", () => {
 	])("does not recover %s", async (_reason: string, chain: string | undefined, sessionFile: string | undefined) => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
-		state.cachedConfigs["kuafu:default"] = { body: "build", model: chain };
+		state.cachedConfigs["kuafu:default"] = { body: "build", model: chain, toolRules: [] };
 		const current = { provider: "anthropic", id: "active-primary", api: "anthropic-messages" };
 		const fallback = { provider: "openai-codex", id: "gpt-5.4", api: "openai-codex-responses" };
 		const ctx = {
@@ -747,7 +751,7 @@ describe("mode runtime model fallback", () => {
 	it("rejects unsupported Fast before switching or persisting policy", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
-		state.cachedConfigs["kuafu:default"] = { body: "build", model: "anthropic/active-primary,openai-codex/gpt-5.4:fast" };
+		state.cachedConfigs["kuafu:default"] = { body: "build", model: "anthropic/active-primary,openai-codex/gpt-5.4:fast", toolRules: [] };
 		const current = { provider: "anthropic", id: "active-primary", api: "anthropic-messages" };
 		const fallback = { provider: "openai-codex", id: "gpt-5.4", api: "openai-codex-responses" };
 		const ctx = {

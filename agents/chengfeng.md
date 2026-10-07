@@ -5,10 +5,8 @@ model: github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,opencode-go
 prompt_mode: system_instructions
 discover_skills: false
 preload_skills: ast-grep
-builtin_tools: read,bash
-extension_tools: codegraph_*,lsp,codemode
-extensions: true
-exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
+extensions: +@all, -@builtin, +builtin:codemode, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
+tools: +read, +bash, +codegraph_*, +lsp, +codemode
 persist_session: true
 ---
 

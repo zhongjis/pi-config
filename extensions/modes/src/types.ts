@@ -10,8 +10,10 @@ export type ModePromptMode = "append" | "replace";
 export interface ModeConfig {
   body: string;
   promptMode?: ModePromptMode;
-  /** Signed `tools:` rules. Undefined (missing or invalid mode file) means no rules policy; `[]` grants no tools. */
-  toolRules?: AccessRule[];
+  /** Signed `tools:` rules; `[]` grants no tools. */
+  toolRules: AccessRule[];
+  /** Error diagnostics of an invalid mode file, which grants no tools. */
+  errors?: string[];
   allowDelegationTo?: string[];
   disallowDelegationTo?: string[];
   allowNesting?: boolean;

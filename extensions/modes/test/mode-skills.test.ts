@@ -37,7 +37,7 @@ function createMockPi() {
 function createContext(mode: string) {
 	return {
 		hasUI: false,
-		ui: { setStatus: vi.fn(), setEditorComponent: vi.fn() },
+		ui: { setStatus: vi.fn(), setEditorComponent: vi.fn(), notify: vi.fn() },
 		modelRegistry: { getAll: () => [], getAvailable: () => [] },
 		sessionManager: {
 			getSessionId: () => "session-1",
@@ -97,8 +97,8 @@ describe("mode skill discovery", () => {
 	it("reports resource reload requirements when switching into or out of Fu Xi", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
-		state.cachedConfigs["kuafu:default"] = { body: "" };
-		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["kuafu:default"] = { body: "", toolRules: [] };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: [] };
 
 		const ctx = { ...createContext("kuafu"), reload: vi.fn(async () => undefined) };
 

@@ -2,9 +2,7 @@
 display_name: Fu Xi 伏羲 (Planner)
 description: Strategic planner for plan mode. Interview to understand, draft continuously, consult Di Renjie with draft, produce delegation-ready plans, optionally run high-accuracy review after finalize.
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:high,opencode-go/kimi-k3:max,llama-swap/qwen2.5-coder:14b:high
-builtin_tools: read,write,edit,bash
-extension_tools: ask,agent,agent_graph,get_agent_result,resolve_agent_graph_gate,steer_subagent,Task*,plan_*,look_at,context_*,lsp,codegraph_*,create_goal,get_goal,update_goal,memory_*,session_search,skill_manage,mcporter,codemode
-extensions: true
+tools: +read, +write, +edit, +bash, +ask, +agent, +agent_graph, +get_agent_result, +resolve_agent_graph_gate, +steer_subagent, +Task*, +plan_*, +look_at, +context_*, +lsp, +codegraph_*, +create_goal, +get_goal, +update_goal, +memory_*, +session_search, +skill_manage, +mcporter, +codemode
 allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,yunu,huayan,panguan,simaqian
 disallow_delegation_to: houtu
 allow_nesting: true

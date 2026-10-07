@@ -20,8 +20,9 @@ Provide shared extension utilities and integration primitives.
 - Fast allowlist changes require official provider evidence for exact public model IDs, matching regression tests, and updated [support documentation and sources](README.md#fast-request-helpers); no inferred aliases, wildcards, or internal models.
 - CLIProxyAPI Fast profiles support only `cliproxyapi` / `openai-responses` or `openai-codex-responses` and accept Pi local API-key auth; preserve the separate OpenAI Codex OAuth requirement.
 - `tool-output.ts` owns shared passive TUI helpers, including custom-message Box shells; callers retain content construction and delivery.
-- `active-tools.ts` MUST classify result retrieval and graph-gate resolution as nested controls; tool allowlists NEVER override `allowNesting: false`.
-- `isToolReachable` decides allowlist reachability; `computeActiveToolNames` activates reachable `direct`/`model-only` (or unknown-exposure) tools, keeps `codemode`/`deferred` tools only when already active, and never activates `hidden` tools.
+- `active-tools.ts` owns the shared `extensions:`/`tools:` access policy: rule parsing, last-match-wins evaluation, groups, extension identity, and the ceiling tool. Mode and subagent loadout, blocking, nested guards, roster, and menu MUST use it.
+- Hard gates MUST apply after rules: trusted `<inline:…>`/`<sdk:…>` sources always allowed; nested controls (including result retrieval and graph-gate resolution) require `allowNesting`, and rules NEVER override `allowNesting: false`; goal tools require Goal access; plan tools only where the plan gate grants them.
+- `BUILTIN_TOOL_NAMES` is a copy of Pi's built-in tool list; update it when Pi adds a built-in tool.
 
 ## Work Guidance
 

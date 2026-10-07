@@ -3,9 +3,10 @@ import { parseAccessRules } from "../../lib/active-tools.js";
 import { MODE_TOOL_CEILING_NAME } from "../src/constants.js";
 import { resolveModelFromStr, ModeStateManager } from "../src/mode-state.js";
 import type { Mode, ModeConfig } from "../src/types.js";
+import { loadAgentConfig } from "../src/config-loader.js";
 
 vi.mock("../src/config-loader.js", () => ({
-	loadAgentConfig: () => ({ body: "" }),
+	loadAgentConfig: vi.fn(() => ({ body: "", toolRules: [] })),
 }));
 
 function createMockRegistry(models: Array<{ id: string; name: string; provider: string }>) {
@@ -89,6 +90,7 @@ describe("ModeStateManager", () => {
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			allowDelegationTo: [" jintong ", "chengfeng", "jintong", ""],
 			disallowDelegationTo: [" houtu ", "houtu", ""],
 		};
@@ -110,7 +112,7 @@ describe("ModeStateManager", () => {
 	it("switches mode and persists state", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["fuxi:default"] = { body: "plan" };
+		state.cachedConfigs["fuxi:default"] = { body: "plan", toolRules: [] };
 
 		const ctx = {
 			hasUI: false,
@@ -158,7 +160,7 @@ describe("ModeStateManager", () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["kuafu:default"] = { body: "" };
+		state.cachedConfigs["kuafu:default"] = { body: "", toolRules: [] };
 		const reload = vi.fn(async () => {});
 		const ctx = {
 			hasUI: false,
@@ -191,7 +193,7 @@ describe("ModeStateManager", () => {
 	it("returns false on same-mode no-op", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["fuxi:default"] = { body: "" };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: [] };
 		state.currentMode = "fuxi";
 		const reload = vi.fn(async () => {});
 		const ctx = {
@@ -231,6 +233,7 @@ describe("ModeStateManager", () => {
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 		state.modelOverride = "openai/gpt-4o";
@@ -258,6 +261,7 @@ describe("ModeStateManager", () => {
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 
@@ -294,6 +298,7 @@ describe("ModeStateManager", () => {
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
+			toolRules: [],
 			model: "anthropic/claude-sonnet-4:medium",
 		};
 		state.thinkingOverride = "high";
@@ -328,7 +333,7 @@ describe("ModeStateManager", () => {
 	it("preserves model and thinking overrides across switchMode", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
-		state.cachedConfigs["fuxi:default"] = { body: "plan" };
+		state.cachedConfigs["fuxi:default"] = { body: "plan", toolRules: [] };
 		state.modelOverride = "openai/gpt-4o";
 		state.thinkingOverride = "high";
 
@@ -348,8 +353,8 @@ describe("ModeStateManager", () => {
 		it("uses family-scoped cache key", () => {
 			const pi = createMockPi();
 			const state = new ModeStateManager(pi as never);
-			state.cachedConfigs["kuafu:default"] = { body: "default body" };
-			state.cachedConfigs["kuafu:gpt"] = { body: "gpt body" };
+			state.cachedConfigs["kuafu:default"] = { body: "default body", toolRules: [] };
+			state.cachedConfigs["kuafu:gpt"] = { body: "gpt body", toolRules: [] };
 
 			expect(state.loadConfig("kuafu").body).toBe("default body");
 			expect(state.loadConfig("kuafu", "gpt").body).toBe("gpt body");
@@ -416,7 +421,7 @@ describe("ModeStateManager tool access", () => {
 	function createState(pi: ReturnType<typeof createToolPi>, configs: Partial<Record<Mode, ModeConfig>>, mode: Mode = "kuafu") {
 		const state = new ModeStateManager(pi as never);
 		state.currentMode = mode;
-		vi.spyOn(state, "loadConfig").mockImplementation((target: Mode) => configs[target] ?? { body: "" });
+		vi.spyOn(state, "loadConfig").mockImplementation((target: Mode) => configs[target] ?? { body: "", toolRules: [] });
 		return state;
 	}
 
@@ -498,14 +503,36 @@ describe("ModeStateManager tool access", () => {
 		expect(pi.getActiveTools()).toEqual(expected);
 	});
 
-	it("keeps nested agent tools when the mode file is missing", async () => {
+	it("grants no tools when the mode file is missing", async () => {
 		const agentTools = ["agent", "get_agent_result", "steer_subagent"];
-		const pi = createToolPi([builtin("read"), ...agentTools.map((name) => tool(name, SUBAGENTS))], ["read", ...agentTools]);
-		const state = createState(pi, { kuafu: { body: "" } });
+		const pi = createToolPi(
+			[builtin("read"), ...agentTools.map((name) => tool(name, SUBAGENTS)), tool(MODE_TOOL_CEILING_NAME, MODES, "model-only")],
+			["read", ...agentTools, MODE_TOOL_CEILING_NAME],
+		);
+		vi.mocked(loadAgentConfig).mockReturnValueOnce(null);
+		const state = new ModeStateManager(pi as never);
 
 		await state.applyToolAccess(createCtx() as never);
 
-		expect(pi.getActiveTools()).toEqual(["read", ...agentTools]);
+		expect(pi.getActiveTools()).toEqual([MODE_TOOL_CEILING_NAME]);
+	});
+
+	it("an invalid mode file notifies its errors and grants no tools", async () => {
+		const pi = createToolPi(
+			[builtin("read"), builtin("bash"), tool(MODE_TOOL_CEILING_NAME, MODES, "model-only")],
+			["read", "bash", MODE_TOOL_CEILING_NAME],
+		);
+		const errors = ["first fixture error", "second fixture error"];
+		const state = createState(pi, { kuafu: { body: "", toolRules: [], errors } });
+		const ctx = createCtx();
+
+		await state.applyToolAccess(ctx as never);
+		await state.applyToolAccess(ctx as never);
+
+		expect({ active: pi.getActiveTools(), notified: ctx.ui.notify.mock.calls }).toEqual({
+			active: [MODE_TOOL_CEILING_NAME],
+			notified: errors.map((message) => [`Mode kuafu tools: ${message}`, "error"]),
+		});
 	});
 
 	it("removes nested agent tools under +@all unless allow_nesting is true", async () => {

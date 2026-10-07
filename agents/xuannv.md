@@ -4,10 +4,8 @@ description: Coarsest-cohesive tactical planning advisor; emits advisory worker-
 model: github-copilot/claude-opus-5.5:max,cliproxyapi/gpt-6-astra:medium,opencode-go/kimi-k3:max,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
-builtin_tools: read,bash
-extension_tools: codegraph_*,lsp,agent,get_agent_result,steer_subagent
-extensions: true
-exclude_extensions: ulw,caveman,smart-sessions,boomerang,inline-skills,goal
+extensions: +@all, -@builtin, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
+tools: +read, +bash, +codegraph_*, +lsp, +agent, +get_agent_result, +steer_subagent
 allow_delegation_to: chengfeng,wenchang,direnjie
 allow_nesting: true
 persist_session: true
