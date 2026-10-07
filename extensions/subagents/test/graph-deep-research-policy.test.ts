@@ -64,6 +64,34 @@ describe("deep-research-v1 checks", () => {
     expect(writer({ verifiedCoverage: [{ id: "p1", status: "supported", claimIds: [] }, { id: "p2", status: "missing", claimIds: [] }] })).toMatch(/supported coverage requires at least one claimId: p1/);
   });
 
+  it("treats a URL inside an annotated or joined claim reference as opened, while a URL in no reference is still rejected", () => {
+    const annotatedRound: Results = [
+      done(task("q1", ["p1"]), {
+        claims: [
+          claim("https://arxiv.org/html/2607.00038, section 3", "alpha"),
+          claim("https://a2a-protocol.org/latest/specification/ \u2014 Introduction", "beta"),
+        ],
+        gaps: [],
+      }),
+      done(task("q2", ["p2"]), { claims: [claim("github://owner/repo/README.md and https://api.github.com/repos/owner/repo/commits?per_page=100", "gamma")], gaps: [] }, 1),
+    ];
+    const annotatedResearch = { reason: "sufficient", partial: false, gaps: [], counters: { iterations: 1, totalItems: 2 }, iterations: [{ iteration: 1, results: annotatedRound }] };
+    const annotatedWriter = (markdown: string) => checkDeepResearchOutput({ graph: graphStub, stage: "synthesize", planning: PLANNING, research: annotatedResearch }, {
+      markdown, outcome: { status: "succeeded" },
+      acceptedFindings: [{ claim: "alpha", claimIds: ["r1-1-1"], verification: "single-source" }],
+      verifiedCoverage: [{ id: "p1", status: "supported", claimIds: ["r1-1-1"] }, { id: "p2", status: "supported", claimIds: ["r1-2-1"] }],
+    });
+    expect(annotatedWriter(
+      "Alpha [r1-1-1] per https://arxiv.org/html/2607.00038, beta [r1-1-2] per https://a2a-protocol.org/latest/specification/, gamma [r1-2-1] per https://api.github.com/repos/owner/repo/commits?per_page=100",
+    )).toBe(true);
+    expect(annotatedWriter("Alpha [r1-1-1] per https://unopened.example/page.")).toMatch(/markdown cites URLs no ledger claim references: https:\/\/unopened\.example\/page/);
+  });
+
+  it("keeps the whole normalized reference in visited alongside its URL", () => {
+    const ledger = researchLedger(undefined, [{ iteration: 1, results: [done(task("q1", ["p1"]), { claims: [claim("https://arxiv.org/html/2607.00038, section 3", "alpha")], gaps: [] })] }]);
+    expect(ledger.visited).toEqual(["https://arxiv.org/html/2607.00038,%20section%203", "https://arxiv.org/html/2607.00038"]);
+  });
+
   const ROUND1_WITH_SECONDARY: Results = [
     done(task("q1", ["p1"]), { claims: [claim("https://a.example/x", "alpha"), claim("https://a.example/z", "zeta", "secondary")], gaps: ["paywalled"] }),
     ROUND1[1],

@@ -80,6 +80,7 @@ export function researchLedger(seed: unknown, iterations: readonly LedgerRound[]
         const reference = text(raw.reference);
         const normalized = normalizeReference(reference);
         if (normalized) visited.add(normalized);
+        for (const url of urlsIn(reference)) visited.add(normalizeReference(url));
         const key = `${normalized}\n${normalizeExcerpt(text(raw.excerpt))}`;
         const first = kept.get(key);
         if (first) {
@@ -136,6 +137,11 @@ export interface DeepResearchOutput {
 const CLAIM_ID = /(?<![\w-])r\d+-\d+-\d+(?![\w-])/g;
 const URL_PATTERN = /https?:\/\/[^\s<>()[\]"'`]+/g;
 
+/** URLs found in free text, with trailing punctuation (sentence-ending marks, not URL characters) stripped. */
+function urlsIn(text: string): string[] {
+  return (text.match(URL_PATTERN) ?? []).map(url => url.replace(/[.,;:!?]+$/, ""));
+}
+
 /** Relational checks after JSON Schema at the structured repair seam; errors become repair prompts. */
 export function checkDeepResearchOutput(context: DeepResearchOutput, value: unknown): true | string {
   if (context.graph.semanticPolicy !== "deep-research-v1") return true;
@@ -168,7 +174,7 @@ export function checkDeepResearchOutput(context: DeepResearchOutput, value: unkn
     const coverage = list(output.verifiedCoverage).filter(record);
     for (const row of coverage) for (const claimId of strings(row.claimIds)) if (!known.has(claimId)) unknownIds.add(claimId);
     if (unknownIds.size) errors.push(`unknown ledger claim IDs: ${[...unknownIds].join(", ")}`);
-    const urls = new Set((markdown.match(URL_PATTERN) ?? []).map(url => url.replace(/[.,;:!?]+$/, "")).filter(url => !visited.has(normalizeReference(url))));
+    const urls = new Set(urlsIn(markdown).filter(url => !visited.has(normalizeReference(url))));
     if (urls.size) errors.push(`markdown cites URLs no ledger claim references: ${[...urls].join(", ")}`);
     const ids = coverage.map(row => text(row.id));
     const missing = plan.parts.filter(part => ids.filter(id => id === part).length !== 1);
