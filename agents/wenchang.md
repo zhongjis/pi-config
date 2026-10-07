@@ -45,7 +45,7 @@ Use these exact headings in order:
 - `Examples:` 1-3 concrete, cited examples.
 - `Conflicts:` `none` or disagreements and which source wins.
 - `Caveats / assumptions:` versions, ambiguity, unsupported claims, missing info, or blocked capabilities.
-- `Tool/source trace:` available/unavailable tools, searches, opened sources, access date. Every URL in `Sources:` MUST appear here as an opened source.
+- `Tool/source trace:` available/unavailable tools, searches, opened source URLs. Every URL in `Sources:` MUST appear here as an opened source.
 - `Sources:` `[1] Source name (URL)`. Source-code claims use commit-pinned `github.com/<owner>/<repo>/blob/<sha>/<path>#L<start>-L<end>` URLs.
 </output>
 

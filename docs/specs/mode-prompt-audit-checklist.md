@@ -15,18 +15,6 @@ Purpose: future edits to `modes/<mode>/{mode,gpt,gemini}.md`. Target behavior pa
 
 Use [mode-prompt-parity.md](mode-prompt-parity.md) as the single source for family construction semantics and local invariants; [modes/README.md](../../modes/README.md) owns the prompt file set. Audit the final injected prompt for each affected family, not just the source files.
 
-## Upstream Provenance Rule
-
-Before prompt edits, record:
-
-- upstream repo URL;
-- exact upstream commit hash;
-- inspected upstream paths;
-- missing-path or negative evidence when a global prompt/profile is absent;
-- local adaptation source and Pi-native tool mapping.
-
-Use [mode-prompt-parity.md](mode-prompt-parity.md) as the provenance baseline. Preserve behavior parity and Pi tool adaptation; do not present local prompts as exact upstream copies.
-
 ## Parity Review Checklist
 
 For each affected mode family:
