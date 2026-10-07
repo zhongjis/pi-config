@@ -1,8 +1,14 @@
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_BUILTIN_TOOL_NAMES } from "./active-tools.js";
+import { type AccessRule, DEFAULT_BUILTIN_TOOL_NAMES, parseAccessRules } from "./active-tools.js";
 
 export type InheritSelection = true | string[] | false;
 export type PromptMode = "replace" | "append" | "system_instructions";
+
+export interface FrontmatterDiagnostic {
+  field: string;
+  severity: "error" | "warning";
+  message: string;
+}
 
 export interface ParsedAgentFrontmatter {
   frontmatter: Record<string, unknown>;
@@ -27,6 +33,12 @@ export interface ParsedAgentFrontmatter {
   isolated?: boolean;
   enabled: boolean;
   toolSelectionSpecified: boolean;
+  /** Parsed `tools:` signed rules; see `extensions/lib/active-tools.ts`. */
+  toolRules: AccessRule[];
+  /** Parsed `extensions:` signed rules (Subagents only); see `extensions/lib/active-tools.ts`. */
+  extensionRules: AccessRule[];
+  /** Field-tagged diagnostics from parsing `toolRules`/`extensionRules`. */
+  diagnostics: FrontmatterDiagnostic[];
 }
 
 /** Parse markdown frontmatter using the shared agent schema. */
@@ -40,10 +52,24 @@ export function parseAgentFrontmatter(
   fm: Record<string, unknown>,
   body = "",
 ): ParsedAgentFrontmatter {
+  const toolsParsed = parseAccessRules("tools", fm.tools);
+  const extensionsParsed = parseAccessRules("extensions", fm.extensions);
+  const diagnostics: FrontmatterDiagnostic[] = [
+    ...toolsParsed.diagnostics.map((d) => ({ field: "tools", ...d })),
+    ...extensionsParsed.diagnostics.map((d) => ({ field: "extensions", ...d })),
+  ];
+
+  // TRANSITIONAL: extensions rule errors are recorded in `diagnostics` but do not
+  // (yet) invalidate the definition, because existing definitions still use the
+  // boolean `extensions: true/false` contract. A later wave makes them invalid.
+  const invalidFields = toolsParsed.diagnostics.some((d) => d.severity === "error")
+    ? [...invalidFrontmatterFields(fm), "tools"]
+    : invalidFrontmatterFields(fm);
+
   return {
     frontmatter: fm,
     body,
-    invalidFields: invalidFrontmatterFields(fm),
+    invalidFields,
     displayName: str(fm.display_name),
     description: str(fm.description),
     builtinToolNames: parseBuiltinTools(fm),
@@ -68,19 +94,18 @@ export function parseAgentFrontmatter(
       || hasField(fm, "extensions")
       || hasField(fm, "inherit_extensions")
       || hasField(fm, "exclude_extensions"),
+    toolRules: toolsParsed.rules,
+    extensionRules: extensionsParsed.rules,
+    diagnostics,
   };
 }
 
 /** Obsolete frontmatter fields make the definition invalid. */
 export function invalidFrontmatterFields(fm: Record<string, unknown>): string[] {
-  return ["tools", "disallowed_tools", "disallow_tools", "skills", "inherit_skills"].filter((field) => hasField(fm, field));
+  return ["disallowed_tools", "disallow_tools", "skills", "inherit_skills"].filter((field) => hasField(fm, field));
 }
 
 export function invalidFrontmatterFieldMessage(field: string): string {
-  if (field === "tools") {
-    return "tools is invalid/obsolete; use builtin_tools for built-in tools and extension_tools for extension/custom tools instead.";
-  }
-
   if (field === "skills" || field === "inherit_skills") {
     return "skills/inherit_skills is invalid/obsolete; use discover_skills (catalog on/off) and preload_skills (eager-inject names) instead.";
   }

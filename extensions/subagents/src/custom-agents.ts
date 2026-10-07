@@ -75,12 +75,13 @@ function loadFromDir(
 
     const parsed = parseAgentMarkdown(content);
     for (const field of parsed.invalidFields) {
+      const matched = parsed.diagnostics.find((d) => d.field === field && d.severity === "error");
       diagnostics.push({
         file: filePath,
         agentName: name,
         field,
         severity: "error",
-        message: invalidFrontmatterFieldMessage(field),
+        message: matched?.message ?? invalidFrontmatterFieldMessage(field),
       });
     }
     // Obsolete tool/skill selection fields make the definition invalid: skip it

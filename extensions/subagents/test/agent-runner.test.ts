@@ -132,8 +132,6 @@ vi.mock("../src/skill-loader.js", () => ({
 
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import {
-  extensionCanonicalName,
-  extensionCanonicalNames,
   getAgentConversation,
   parseExtensionsSpec,
   resumeAgent,
@@ -1659,81 +1657,6 @@ describe("agent-runner async extension tool registration", () => {
 // Filtering happens at the loader via additionalExtensionPaths +
 // extensionsOverride — excluded extensions never bind handlers or register
 // tools.
-
-describe("extensionCanonicalName", () => {
-  it("strips .ts/.js from a single-file extension basename", () => {
-    expect(extensionCanonicalName("/x/foo.ts")).toBe("foo");
-    expect(extensionCanonicalName("/x/foo.js")).toBe("foo");
-  });
-  it("uses the parent directory name for index.{ts,js} extensions", () => {
-    expect(extensionCanonicalName("/x/foo/index.ts")).toBe("foo");
-    expect(extensionCanonicalName("/x/foo/index.js")).toBe("foo");
-  });
-  it("lowercases the result for case-insensitive matching", () => {
-    expect(extensionCanonicalName("/x/MCP.ts")).toBe("mcp");
-    expect(extensionCanonicalName("/x/MyExt.js")).toBe("myext");
-    expect(extensionCanonicalName("/x/Foo/index.ts")).toBe("foo");
-  });
-});
-
-describe("extensionCanonicalNames (#143 — package short name alias)", () => {
-  const tmpDirs: string[] = [];
-  function pkgDir(name: string, piExtensions: unknown): string {
-    const dir = mkdtempSync(join(tmpdir(), "subagents-pkg-"));
-    tmpDirs.push(dir);
-    const manifest: Record<string, unknown> = { name };
-    if (piExtensions !== undefined) manifest.pi = { extensions: piExtensions };
-    writeFileSync(join(dir, "package.json"), JSON.stringify(manifest));
-    mkdirSync(join(dir, "src"));
-    writeFileSync(join(dir, "src", "index.ts"), "export default () => {};");
-    return dir;
-  }
-  afterEach(() => {
-    while (tmpDirs.length) rmSync(tmpDirs.pop()!, { recursive: true, force: true });
-  });
-
-  it("aliases a package-declared index.ts entry to the unscoped, lowercased package name", () => {
-    // Without this, `pi.extensions: ["./src/index.ts"]` only ever matches as "src".
-    const dir = pkgDir("@scope/Pi-Subagents", ["./src/index.ts"]);
-    expect(extensionCanonicalNames(join(dir, "src", "index.ts"))).toEqual(["src", "pi-subagents"]);
-  });
-
-  it("adds no alias for a loose file with no enclosing package.json", () => {
-    const dir = mkdtempSync(join(tmpdir(), "subagents-loose-"));
-    tmpDirs.push(dir);
-    writeFileSync(join(dir, "foo.ts"), "export default () => {};");
-    expect(extensionCanonicalNames(join(dir, "foo.ts"))).toEqual(["foo"]);
-  });
-
-  it("adds no alias when the nearest manifest does not declare this entry", () => {
-    // The package.json is a real pi package but lists a *different* entry — so a
-    // co-located file (e.g. our own test fixtures under this repo) is not falsely
-    // stamped with the package name.
-    const dir = pkgDir("@scope/other-ext", ["./src/other.ts"]);
-    expect(extensionCanonicalNames(join(dir, "src", "index.ts"))).toEqual(["src"]);
-  });
-
-  it("adds no alias when the nearest package.json has no pi manifest", () => {
-    const dir = pkgDir("just-a-project", undefined);
-    expect(extensionCanonicalNames(join(dir, "src", "index.ts"))).toEqual(["src"]);
-  });
-
-  it("does not climb past a node_modules boundary into a consumer's manifest", () => {
-    // A consumer that *declares* a dependency's entry must not lend its name to
-    // that dependency: the walk stops at node_modules before reading it.
-    const root = mkdtempSync(join(tmpdir(), "subagents-consumer-"));
-    tmpDirs.push(root);
-    writeFileSync(
-      join(root, "package.json"),
-      JSON.stringify({ name: "consumer", pi: { extensions: ["./node_modules/inner-ext/index.ts"] } }),
-    );
-    const inner = join(root, "node_modules", "inner-ext");
-    mkdirSync(inner, { recursive: true });
-    writeFileSync(join(inner, "index.ts"), "export default () => {};");
-    // Only the path-derived name — never "consumer".
-    expect(extensionCanonicalNames(join(inner, "index.ts"))).toEqual(["inner-ext"]);
-  });
-});
 
 describe("parseExtensionsSpec", () => {
   it("classifies bare entries as names", () => {

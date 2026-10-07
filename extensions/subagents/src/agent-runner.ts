@@ -3,9 +3,8 @@ import { registerRuntimeModelFallback } from "../../lib/runtime-model-fallback.j
  * agent-runner.ts — Core execution engine: creates sessions, runs agents, collects results.
  */
 
-import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
 import {
@@ -20,7 +19,7 @@ import {
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_BUILTIN_TOOL_NAMES, isToolReachable } from "../../lib/active-tools.js";
+import { DEFAULT_BUILTIN_TOOL_NAMES, extensionCanonicalName, extensionCanonicalNames, isToolReachable } from "../../lib/active-tools.js";
 import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import sessionLocalTools from "../../session-local/index.js";
@@ -86,83 +85,6 @@ const EXCLUDED_TOOL_NAMES: string[] = Object.values(SUBAGENT_TOOL_NAMES);
 
 /** Directory name under getAgentDir() used to store child session files. */
 export const SUBAGENT_SESSION_DIR_NAME = "subagent-sessions";
-
-/**
- * Canonical name of an extension for `extensions: [...]` allowlist matching.
- * Lowercased — extension names match case-insensitively so `extensions: [Mcp]`
- * resolves the same as `[mcp]`. Tool names within `ext:foo/bar` are not affected.
- * Directory extensions (`foo/index.ts`) resolve to the parent directory name;
- * single-file extensions to the basename minus `.ts`/`.js`.
- */
-export function extensionCanonicalName(extPath: string): string {
-  const base = basename(extPath);
-  const name = base === "index.ts" || base === "index.js"
-    ? basename(dirname(extPath))
-    : base.replace(/\.(ts|js)$/, "");
-  return name.toLowerCase();
-}
-
-/**
- * The unscoped, lowercased npm short name of the pi package that DECLARES
- * `extPath` as an extension entry — or undefined if the entry doesn't belong to
- * such a package.
- *
- * Climbs from the entry's directory looking for the package that owns it, and
- * stays strictly within that package's tree by stopping at two structural
- * boundaries — no hardcoded depth:
- *   - the FIRST `package.json` found (the package root); the entry's own
- *     manifest always sits at the root, above the entry, below any node_modules.
- *   - a `node_modules` directory: a package never spans one (it's where OTHER
- *     packages live), so reaching it means we've climbed out of the package —
- *     stop before reading a consumer's or parent package's manifest.
- * The name is then taken only when that root's `pi.extensions` manifest actually
- * lists this entry. That "declares this entry" check is deliberate: our own test
- * fixtures live under this repo, whose root manifest declares `./src/index.ts`
- * as `@panda/pi-subagents`, so a looser rule would misattribute every
- * co-located file to `pi-subagents`.
- */
-function extensionPackageName(extPath: string): string | undefined {
-  const entry = resolve(extPath);
-  let dir = dirname(extPath);
-  for (;;) {
-    // Climbing into node_modules means we've left the owning package's tree.
-    if (basename(dir) === "node_modules") return undefined;
-    let pkg: { name?: unknown; pi?: { extensions?: unknown } };
-    try {
-      pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"));
-    } catch {
-      const parent = dirname(dir);
-      if (parent === dir) return undefined; // walked to the filesystem root
-      dir = parent;
-      continue;
-    }
-    // First package.json wins — it's the package root; decide here.
-    const entries = pkg.pi?.extensions;
-    if (
-      typeof pkg.name === "string" &&
-      Array.isArray(entries) &&
-      entries.some((e) => typeof e === "string" && resolve(dir, e) === entry)
-    ) {
-      const short = pkg.name.startsWith("@") ? pkg.name.slice(pkg.name.indexOf("/") + 1) : pkg.name;
-      return short.toLowerCase();
-    }
-    return undefined;
-  }
-}
-
-/**
- * All names an extension answers to for allowlist matching (lowercased): its
- * path-derived {@link extensionCanonicalName} plus, when a pi package manifest
- * declares this entry, that package's unscoped short name (`@scope/foo` → `foo`).
- * #143: an extension installed via `pi.extensions: ["./src/index.ts"]` would
- * otherwise only ever match as `src` (the source directory), never by its
- * package name. The path-derived name is preserved, so it keeps matching too.
- */
-export function extensionCanonicalNames(extPath: string): string[] {
-  const canonical = extensionCanonicalName(extPath);
-  const pkg = extensionPackageName(extPath);
-  return pkg && pkg !== canonical ? [canonical, pkg] : [canonical];
-}
 
 /**
  * Classify `extensions: string[]` frontmatter entries for the loader-level filter.
