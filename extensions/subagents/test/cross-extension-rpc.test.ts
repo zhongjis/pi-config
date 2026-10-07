@@ -425,7 +425,7 @@ it("RPC frontmatter wins over caller model and carries the selected fast candida
   const model = { provider: "anthropic", api: "anthropic-messages", id: "claude-opus-4-8", name: "Opus" };
   const callerModel = { provider: "fixture", api: "anthropic-messages", id: "caller", name: "Caller" };
   const modelInput = "fixture/unavailable,anthropic/claude-opus-4-8:low:fast";
-  registerAgents(new Map([["rpc-fast", { name: "rpc-fast", description: "test", model: modelInput, extensions: false, discoverSkills: false, preloadSkills: [], systemPrompt: "test", promptMode: "replace" }]]));
+  registerAgents(new Map([["rpc-fast", { name: "rpc-fast", description: "test", model: modelInput, extensionRules: [], toolRules: [], discoverSkills: false, preloadSkills: [], systemPrompt: "test", promptMode: "replace" }]]));
   const events = createEventBus();
   const spawn = vi.fn<SpawnCapable["spawn"]>(() => "id");
   const models = [model, callerModel];

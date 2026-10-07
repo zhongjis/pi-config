@@ -74,15 +74,19 @@ function loadFromDir(
     }
 
     const parsed = parseAgentMarkdown(content);
+    // Every parse diagnostic is reported exactly once. Errors on invalid fields
+    // come first (an invalid field without its own diagnostic falls back to the
+    // obsolete-field message); warnings and errors on still-valid fields follow.
+    const report = (field: string, severity: "warning" | "error", message: string) =>
+      diagnostics.push({ file: filePath, agentName: name, field, severity, message });
     for (const field of parsed.invalidFields) {
-      const matched = parsed.diagnostics.find((d) => d.field === field && d.severity === "error");
-      diagnostics.push({
-        file: filePath,
-        agentName: name,
-        field,
-        severity: "error",
-        message: matched?.message ?? invalidFrontmatterFieldMessage(field),
-      });
+      const errors = parsed.diagnostics.filter((d) => d.field === field && d.severity === "error");
+      if (errors.length === 0) report(field, "error", invalidFrontmatterFieldMessage(field));
+      for (const d of errors) report(field, "error", d.message);
+    }
+    for (const d of parsed.diagnostics) {
+      if (d.severity === "error" && parsed.invalidFields.includes(d.field)) continue;
+      report(d.field, d.severity, d.message);
     }
     // Obsolete tool/skill selection fields make the definition invalid: skip it
     // rather than misconfigure a worker with a silently-ignored allowlist.
@@ -97,13 +101,11 @@ function loadFromDir(
       name,
       displayName: parsed.displayName,
       description: parsed.description ?? name,
-      builtinToolNames: parsed.builtinToolNames,
-      extensionToolNames: parsed.extensionToolNames,
+      extensionRules: parsed.extensionRules,
+      toolRules: parsed.toolRules,
       allowDelegationTo: parsed.allowDelegationTo,
       disallowDelegationTo: parsed.disallowDelegationTo,
       allowNesting: parsed.allowNesting,
-      extensions: parsed.extensions,
-      excludeExtensions: parsed.excludeExtensions,
       discoverSkills: parsed.discoverSkills,
       preloadSkills: parsed.preloadSkills,
       model: parsed.model,

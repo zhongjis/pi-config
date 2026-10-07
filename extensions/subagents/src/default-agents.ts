@@ -4,9 +4,14 @@
  * These are always available but can be overridden by user .md files with the same name.
  */
 
+import { type AccessRuleField, parseAccessRules } from "../../lib/active-tools.js";
 import type { AgentConfig } from "./types.js";
 
-const READ_ONLY_TOOLS = ["read", "bash", "grep", "find", "ls"];
+const rules = (field: AccessRuleField, value: string) => parseAccessRules(field, value).rules;
+/** Every discovered extension, none of Pi's built-in extensions. */
+const DISCOVERED_EXTENSIONS = "+@all, -@builtin";
+/** Every extension tool plus the five read-only built-ins. */
+const READ_ONLY_TOOLS = "+@all, -@builtin, +read, +bash, +grep, +find, +ls";
 
 export const DEFAULT_AGENTS: Map<string, AgentConfig> = new Map([
   [
@@ -15,10 +20,10 @@ export const DEFAULT_AGENTS: Map<string, AgentConfig> = new Map([
       name: "general-purpose",
       displayName: "Agent",
       description: "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks. When you are searching for a keyword or file and are not confident that you will find the right match in the first few tries use this agent to perform the search for you.",
-      // builtinToolNames omitted — means "all available tools" (resolved at lookup time)
+      extensionRules: rules("extensions", DISCOVERED_EXTENSIONS),
+      toolRules: rules("tools", "+@all"),
       // inheritContext / runInBackground / isolated omitted — strategy fields, callers decide per-call.
       // Setting them to false would lock callsite intent (see resolveAgentInvocationConfig in invocation-config.ts).
-      extensions: true,
       discoverSkills: true,
       preloadSkills: [],
       systemPrompt: "",
@@ -32,8 +37,8 @@ export const DEFAULT_AGENTS: Map<string, AgentConfig> = new Map([
       name: "Explore",
       displayName: "Explore",
       description: "Fast read-only search agent for locating code. Use it to find files by pattern (eg. \"src/components/**/*.tsx\"), grep for symbols or keywords (eg. \"API endpoints\"), or answer \"where is X defined / which files reference Y.\" Do NOT use it for code review, design-doc auditing, cross-file consistency checks, or open-ended analysis — it reads excerpts rather than whole files and will miss content past its read window. When calling, specify search breadth: \"quick\" for a single targeted lookup, \"medium\" for moderate exploration, or \"very thorough\" to search across multiple locations and naming conventions.",
-      builtinToolNames: READ_ONLY_TOOLS,
-      extensions: true,
+      extensionRules: rules("extensions", DISCOVERED_EXTENSIONS),
+      toolRules: rules("tools", READ_ONLY_TOOLS),
       discoverSkills: true,
       preloadSkills: [],
       // Fast/cheap model for read-only search. Provider-preferred but resilient:
@@ -78,8 +83,8 @@ Use Bash ONLY for read-only operations: ls, git status, git log, git diff, find,
       name: "Plan",
       displayName: "Plan",
       description: "Software architect agent for designing implementation plans. Use this when you need to plan the implementation strategy for a task. Returns step-by-step plans, identifies critical files, and considers architectural trade-offs.",
-      builtinToolNames: READ_ONLY_TOOLS,
-      extensions: true,
+      extensionRules: rules("extensions", DISCOVERED_EXTENSIONS),
+      toolRules: rules("tools", READ_ONLY_TOOLS),
       discoverSkills: true,
       preloadSkills: [],
       systemPrompt: `# CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS

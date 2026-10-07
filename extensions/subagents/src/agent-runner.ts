@@ -12,21 +12,35 @@ import {
   type AgentSessionEvent,
   createAgentSession,
   createCodemodeExtension,
+  createMcpExtension,
+  createToolSearchExtension,
   DefaultResourceLoader,
   type ExtensionAPI,
+  type ExtensionFactory,
   getAgentDir,
   type ModelRuntime,
   SessionManager,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_BUILTIN_TOOL_NAMES, extensionCanonicalName, extensionCanonicalNames, isToolReachable } from "../../lib/active-tools.js";
+import {
+  type AccessDiagnostic,
+  type AccessRule,
+  BUILTIN_TOOL_NAMES,
+  createToolCeilingTool,
+  type ExtensionCandidate,
+  extensionIdsForPath,
+  resolveExtensionAccess,
+  resolveToolAccess,
+  type ToolAccessGates,
+  toolCandidates,
+} from "../../lib/active-tools.js";
 import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import sessionLocalTools from "../../session-local/index.js";
 import { seedSessionLocalScope } from "../../session-local/storage.js";
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import { installExtensionToolScope } from "./agent-tool-scope.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getConfig, getToolNamesForType, resolveType } from "./agent-types.js";
+import { getAgentConfig, getConfig, resolveType } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
@@ -54,9 +68,21 @@ const TRUSTED_EXTENSION_PATHS = new Set([
   TRUSTED_FAST_EXTENSION_PATH,
   TRUSTED_FALLBACK_EXTENSION_PATH,
 ]);
-/** Pi names built-in extension resources `builtin:<name>`. */
-const BUILTIN_EXTENSION_PATH_PREFIX = "builtin:";
-const CODEMODE_TOOL_NAME = "codemode";
+/** Trusted model-only tool whose `prepareLoadout` hides ungranted declarations. */
+const TOOL_CEILING_TOOL_NAME = "subagent_tool_ceiling";
+/**
+ * Pi's built-in extensions the runner can supply. SDK sessions do not load
+ * them on their own; a factory passed with `builtin: true` loads as
+ * `builtin:<name>` (honoring settings that disable it).
+ * ponytail: Pi does not export its `llama.cpp` factory, and the parent's model
+ * runtime already carries its providers, so `builtin:llama.cpp` never loads
+ * here (a `+builtin:llama.cpp` rule just warns zero-match).
+ */
+const PI_BUILTIN_EXTENSIONS: ReadonlyArray<{ name: string; create: () => ExtensionFactory }> = [
+  { name: "codemode", create: () => createCodemodeExtension({ models: false }) },
+  { name: "tool-search", create: () => createToolSearchExtension() },
+  { name: "mcp", create: () => createMcpExtension() },
+];
 const GUARDED_CANONICAL_AGENT_TYPES = new Set([
   "chengfeng",
   "direnjie",
@@ -85,46 +111,6 @@ const EXCLUDED_TOOL_NAMES: string[] = Object.values(SUBAGENT_TOOL_NAMES);
 
 /** Directory name under getAgentDir() used to store child session files. */
 export const SUBAGENT_SESSION_DIR_NAME = "subagent-sessions";
-
-/**
- * Classify `extensions: string[]` frontmatter entries for the loader-level filter.
- *
- * An entry is a PATH iff it contains a path separator or starts with `~`; otherwise
- * it is a NAME. `"*"` sets the wildcard flag (keep all default-discovered extensions).
- *
- * Path entries are resolved (`~` expanded, made absolute against `cwd`) into `paths`
- * — and their canonical name is also added to `names`. The loader override matches
- * everything by canonical name, so path-loaded extensions are matched via their name
- * rather than their post-staging `Extension.path`.
- */
-export function parseExtensionsSpec(
-  entries: string[],
-  cwd: string,
-): { names: Set<string>; paths: string[]; wildcard: boolean } {
-  const names = new Set<string>();
-  const paths: string[] = [];
-  let wildcard = false;
-  for (const entry of entries) {
-    if (!entry) continue;
-    if (entry === "*") {
-      wildcard = true;
-      continue;
-    }
-    const isPathEntry = entry.includes("/") || entry.includes("\\") || entry.startsWith("~");
-    if (!isPathEntry) {
-      names.add(entry.toLowerCase());
-      continue;
-    }
-    let p = entry;
-    if (p === "~" || p.startsWith("~/") || p.startsWith("~\\")) {
-      p = homedir() + p.slice(1);
-    }
-    const abs = isAbsolute(p) ? p : resolve(cwd, p);
-    paths.push(abs);
-    names.add(extensionCanonicalName(abs));
-  }
-  return { names, paths, wildcard };
-}
 
 /** Default max turns. undefined = unlimited (no turn limit). */
 let defaultMaxTurns: number | undefined;
@@ -363,11 +349,10 @@ export async function runAgent(
   // Build prompt extras (skill preloading)
   const extras: PromptExtras = {};
 
-  // Resolve extensions/skills: isolated overrides to false
-  const extensions = options.isolated ? false : config.extensions;
-  // Nulling excludes under isolated also suppresses the orphaned-exclude warning —
-  // isolated is an intentional override, not a misconfiguration.
-  const excludeExtensions = options.isolated ? undefined : config.excludeExtensions;
+  // Resolve access rules: isolated loads no extensions (built-in tools only).
+  const extensionRules: readonly AccessRule[] = options.isolated ? [] : config.extensionRules;
+  const toolRules: readonly AccessRule[] = agentConfig?.toolRules ?? config.toolRules;
+  const gates: ToolAccessGates = { allowNesting: agentConfig?.allowNesting };
   // discover_skills gates the on-demand skill catalog; preload_skills are eagerly
   // injected into the prompt. They are independent — the catalog can be on while
   // some skills are preloaded. isolated overrides both to off.
@@ -381,8 +366,6 @@ export async function runAgent(
       extras.skillBlocks = loaded;
     }
   }
-
-  const toolNames = getToolNamesForType(type);
 
   // Build system prompt from agent config
   let systemPrompt: string;
@@ -423,76 +406,41 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     ? SettingsManager.create(configCwd, agentDir, { projectTrusted: ctx.isProjectTrusted() })
     : SettingsManager.create(configCwd, agentDir);
 
-  // Extension loading:
-  // - true  → all default-discovered extensions
-  // - false → none (noExtensions)
-  // - string[] → loader-level allowlist. Bare names keep the matching
-  //   default-discovered extension; path entries load that extension fresh;
-  //   "*" keeps all default-discovered extensions. Excluded extensions never
-  //   bind handlers or register tools (their factory still runs once).
+  // Extension loading: `extensions:` signed rules (last match wins, empty =
+  // none) select from discovered extensions plus Pi's built-in extensions.
+  // Loading grants nothing — `tools:` rules decide the allowed tools. Rules
+  // without a `+` entry load nothing, so the loader skips discovery. Trusted
+  // inline hooks survive every rule set; discovered session-local/fast copies
+  // never load. Excluded extensions are still evaluated once by Pi's loader
+  // before the override filters them — the filter is not a sandbox.
   //
   // Suppress AGENTS.md/CLAUDE.md and APPEND_SYSTEM.md — upstream's
   // buildSystemPrompt() re-appends both AFTER systemPromptOverride, which
   // would defeat prompt_mode: replace and isolated: true. Parent context, if
   // wanted, reaches the subagent via prompt_mode: append (parentSystemPrompt
   // is embedded in systemPromptOverride) or inherit_context (conversation).
-  // `extension_tools:` filters which extension tools surface to the LLM by TOOL
-  // NAME (exact or trailing-`*` wildcard). It does NOT control loading —
-  // `extensions:` is the sole authority for which extensions load. `isolated`
-  // means no extension tools at all.
-  const noExtensions = extensions === false;
-
-  const extensionsSpec = Array.isArray(extensions)
-    ? parseExtensionsSpec(extensions, configCwd)
-    : undefined;
-  const keepNames = extensionsSpec?.names ?? new Set<string>();
-  // `exclude_extensions:` is a denylist applied AFTER the include set — exclude wins.
-  // Plain canonical names only (case-insensitive). Note: excluded extensions'
-  // factories still run once during reload() (see comment above) — exclusion
-  // suppresses handler binding and tool registration; it is not a sandbox.
-  const excludeNames = new Set((excludeExtensions ?? []).map((n) => n.toLowerCase()));
-  const hasExcludes = excludeNames.size > 0;
-  // Always compose an override so trusted inline hooks survive every loading
-  // mode while discovered session-local copies are removed. Other extensions
-  // retain the existing include/exclude behavior and warning inputs.
-  const loadAll = extensions === true || extensionsSpec?.wildcard === true;
-  const additionalExtensionPaths = extensionsSpec?.paths.length ? extensionsSpec.paths : undefined;
-  const shouldFilterDiscovered = !noExtensions && (!loadAll || hasExcludes);
-  let discoveredNames: Set<string> | undefined;
-  // Pi's built-in codemode loads only for an exact `codemode` extension_tools
-  // entry; wildcards never opt in. Settings `-builtin:codemode` and
-  // `exclude_extensions: builtin:codemode` still disable it.
-  const wantsCodemode = agentConfig?.extensionToolNames?.includes(CODEMODE_TOOL_NAME) === true;
-  const toolPolicy = {
-    builtinToolNames: toolNames,
-    builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
-    extensions,
-    extensionTools: agentConfig?.extensionToolNames,
-    allowNesting: agentConfig?.allowNesting,
-    isolated: options.isolated,
-  };
+  const noExtensions = !extensionRules.some((rule) => rule.sign === "+");
+  // Pre-pass over Pi's built-in extensions so unselected factories never run;
+  // its diagnostics are ignored (the override reports the full resolution).
+  const selectedBuiltins = noExtensions
+    ? new Set<string>()
+    : resolveExtensionAccess(extensionRules, PI_BUILTIN_EXTENSIONS.map(({ name }) => ({ key: `builtin:${name}`, ids: [`builtin:${name}`] }))).selected;
+  let extensionDiagnostics: AccessDiagnostic[] = [];
   const extensionsOverride = (base: LoadExtensionsResult): LoadExtensionsResult => {
-    const discoveredExtensions = base.extensions.filter(
-      (extension) => !TRUSTED_EXTENSION_PATHS.has(extension.path) && !extension.path.startsWith(BUILTIN_EXTENSION_PATH_PREFIX),
-    );
-    if (shouldFilterDiscovered) {
-      discoveredNames = new Set(discoveredExtensions.flatMap((e) => extensionCanonicalNames(e.path)));
+    const candidates: ExtensionCandidate[] = [];
+    for (const extension of base.extensions) {
+      if (TRUSTED_EXTENSION_PATHS.has(extension.path)) continue;
+      const ids = extensionIdsForPath(extension.path);
+      if (ids.includes(TRUSTED_SESSION_LOCAL_EXTENSION_NAME) || ids.includes("fast")) continue;
+      candidates.push({ key: extension.path, ids });
     }
-
+    const { selected, diagnostics } = noExtensions
+      ? { selected: new Set<string>(), diagnostics: [] }
+      : resolveExtensionAccess(extensionRules, candidates);
+    extensionDiagnostics = diagnostics;
     return {
       ...base,
-      extensions: base.extensions.filter((extension) => {
-        if (TRUSTED_EXTENSION_PATHS.has(extension.path)) return true;
-        // Requested Pi built-ins bypass the `extensions:` allowlist but honor excludes.
-        if (extension.path.startsWith(BUILTIN_EXTENSION_PATH_PREFIX)) return !noExtensions && !excludeNames.has(extension.path.toLowerCase());
-
-        const canons = extensionCanonicalNames(extension.path);
-        if (canons.includes(TRUSTED_SESSION_LOCAL_EXTENSION_NAME) || canons.includes("fast")) return false;
-        if (noExtensions) return false;
-        if (!shouldFilterDiscovered) return true;
-        if (canons.some((name) => excludeNames.has(name))) return false;
-        return loadAll || canons.some((name) => keepNames.has(name));
-      }),
+      extensions: base.extensions.filter((extension) => TRUSTED_EXTENSION_PATHS.has(extension.path) || selected.has(extension.path)),
     };
   };
 
@@ -501,15 +449,14 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     agentDir,
     settingsManager,
     noExtensions,
-    additionalExtensionPaths,
     extensionsOverride,
     extensionFactories: [
-      ...(wantsCodemode && !noExtensions ? [{
-        name: CODEMODE_TOOL_NAME,
-        factory: createCodemodeExtension({ models: false }),
+      ...PI_BUILTIN_EXTENSIONS.filter(({ name }) => selectedBuiltins.has(`builtin:${name}`)).map(({ name, create }) => ({
+        name,
+        factory: create(),
         builtin: true,
         replaceable: true,
-      }] : []),
+      })),
       {
         name: "subagent-model-fallback",
         hidden: true,
@@ -551,16 +498,21 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
         },
         hidden: true,
       }] : []),
-      // Codemode scripts call tools through ctx.executeTool(); those nested calls
-      // bypass the session.agent.beforeToolCall veto and reach only `tool_call`.
+      // Enforces `tools:` rules where the session veto cannot reach, against the
+      // live registry. Codemode scripts call tools through ctx.executeTool();
+      // those nested calls bypass the session.agent.beforeToolCall veto and reach
+      // only `tool_call`. The trusted ceiling tool stays active and hides every
+      // ungranted declaration from turn 1 on, including tools activated during
+      // `before_agent_start`.
       ...(noExtensions ? [] : [{
         name: TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_NAME,
         factory: (extensionPi: ExtensionAPI) => {
+          const allowedToolNames = () => resolveToolAccess(toolRules, toolCandidates(extensionPi.getAllTools()), gates).allowed;
           extensionPi.on("tool_call", (event) => {
-            if (event.parentToolCallId === undefined || event.toolName === STRUCTURED_OUTPUT_TOOL_NAME) return;
-            if (isToolReachable(toolPolicy, event.toolName)) return;
+            if (event.parentToolCallId === undefined || allowedToolNames().has(event.toolName)) return;
             return { block: true, reason: `Tool "${event.toolName}" is not available to this subagent.` };
           });
+          extensionPi.registerTool(createToolCeilingTool(TOOL_CEILING_TOOL_NAME, allowedToolNames));
         },
         hidden: true,
       }]),
@@ -574,119 +526,56 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   });
   await loader.reload();
 
-  // Plain entries in `tools:` are expected to be built-in names (extension tools
-  // go through `ext:`), so an unknown name there is unambiguously a typo. Previously
-  // this produced a silently broken agent (#75) — pi-mono accepted the bogus name
-  // into the allowlist, then dropped it at registration with no signal back.
-  if (agentConfig?.builtinToolNames?.length) {
-    const knownBuiltins = new Set(BUILTIN_TOOL_NAMES);
-    for (const name of agentConfig.builtinToolNames) {
-      if (!knownBuiltins.has(name)) {
-        options.onToolActivity?.({
-          type: "diagnostic",
-          toolName: `tools-error:tool "${name}" requested by agent "${type}" is not a known built-in`,
-        });
-      }
-    }
+  // An ambiguous extension id fails the spawn before any session exists; a
+  // zero-match id only warns.
+  const extensionErrors = extensionDiagnostics.filter((d) => d.severity === "error");
+  if (extensionErrors.length > 0) {
+    throw new Error(`Agent "${type}" extensions: ${extensionErrors.map((d) => d.message).join("; ")}`);
   }
-
-  // A subagent spawns mid-task, so a bad `extensions:` entry warns rather than
-  // aborts. Two distinct misconfigurations to catch:
-  //   - `extensions: [foo]` but no extension named foo was discovered (typo or
-  //     path that failed to load — path entries fold their canonical name into
-  //     `keepNames`, so this covers them too).
-  //   - `exclude_extensions:` alongside `extensions: false` is contradictory —
-  //     nothing loads, so there is nothing to exclude.
-  if (wantsCodemode && noExtensions) {
+  for (const diagnostic of extensionDiagnostics) {
     options.onToolActivity?.({
       type: "diagnostic",
-      toolName: `extension-error:extension_tools: "${CODEMODE_TOOL_NAME}" has no effect for agent "${type}" — ${options.isolated ? "isolated" : "extensions: false"} loads no extensions`,
+      toolName: `extension-warning:${diagnostic.message} (agent "${type}")`,
     });
   }
-  if (hasExcludes && noExtensions) {
-    options.onToolActivity?.({
-      type: "diagnostic",
-      toolName: `extension-error:exclude_extensions has no effect for agent "${type}" — extensions: false loads nothing`,
-    });
-  }
-  // Exclude typo check: compares against the PRE-filter discovered set (an excluded
-  // name absent from the surviving set is the exclude working as intended). Also
-  // flags path-like and "*" entries — excludes are plain names only.
-  if (hasExcludes && discoveredNames) {
-    for (const name of excludeNames) {
-      if (!discoveredNames.has(name) && !name.startsWith(BUILTIN_EXTENSION_PATH_PREFIX)) {
-        options.onToolActivity?.({
-          type: "diagnostic",
-          toolName: `extension-error:exclude_extensions: "${name}" for agent "${type}" did not match any discovered extension`,
-        });
-      }
-    }
-  }
-  if (keepNames.size > 0) {
-    const survivingNames = new Set(
-      loader.getExtensions().extensions.flatMap((extension) =>
-        extension.path === TRUSTED_SESSION_LOCAL_EXTENSION_PATH
-          ? [TRUSTED_SESSION_LOCAL_EXTENSION_NAME]
-          : extension.path.startsWith(BUILTIN_EXTENSION_PATH_PREFIX)
-            ? [extension.path.toLowerCase()]
-            : extensionCanonicalNames(extension.path),
-      ),
-    );
-    for (const name of keepNames) {
-      if (!survivingNames.has(name) && !name.startsWith(BUILTIN_EXTENSION_PATH_PREFIX)) {
-        options.onToolActivity?.({
-          type: "diagnostic",
-          toolName: excludeNames.has(name)
-            ? `extension-error:extension "${name}" is in both extensions: and exclude_extensions: for agent "${type}" — exclude wins`
-            : `extension-error:extension "${name}" requested by agent "${type}" was not loaded`,
-        });
-      }
-    }
-  }
-
 
   // ─── Tool scoping ───────────────────────────────────────────────────────
+  //
+  // `tools:` rules decide the allowed set, independent of loading (an extension
+  // that did not load contributes no tools). Built-in tools are name-only, so
+  // their grant resolves up front.
   //
   // Some extensions register their tools ASYNCHRONOUSLY, long after the
   // `loader.reload()` above: pi-mcp calls registerTool from `session_start`
   // (once its MCP servers connect), context-mode from `before_agent_start`.
-  // That is deliberate on their part — eagerly spawning an MCP bridge during
-  // extension discovery orphans child processes on pi's non-agent code paths
-  // (--help, config, trust probing).
-  //
   // So the tool set cannot be snapshotted here. pi's `allowedToolNames` gates
-  // tool *registration* (`_refreshToolRegistry`'s `isAllowedTool`), not merely
-  // the active set, and is frozen at construction — a name absent from the
-  // snapshot is dropped forever, even once the tool actually registers (#125).
+  // tool *registration*, not merely the active set, and is frozen at
+  // construction — a name absent from the snapshot is dropped forever, even
+  // once the tool actually registers (#125).
   //
   // Whenever extensions are in play we therefore:
   //   - leave `allowedToolNames` unset, so pi's live gate admits tools whenever
   //     they register;
   //   - express the name-stable, permanent part of the scope (our own
-  //     orchestration tools and built-ins the agent didn't ask for) as
-  //     `excludeTools`, which pi re-applies on every registry refresh;
-  //   - enforce `extension_tools:` tool-name filtering on the ACTIVE set via the
-  //     live `computeActiveToolNames` re-narrow installed after bind. Registry
-  //     tools with `codemode`/`deferred` exposure stay callable from codemode
-  //     scripts while inactive, so the hidden nested-tool-scope hook blocks
-  //     nested calls the agent's policy does not reach.
+  //     orchestration tools and ungranted built-ins) as `excludeTools`, which
+  //     pi re-applies on every registry refresh;
+  //   - re-resolve the rules against the live registry: the active set is
+  //     re-narrowed after bind and on every turn_end, top-level calls are
+  //     vetoed, and the hidden nested-tool-scope hook blocks nested calls and
+  //     hides ungranted declarations through its ceiling tool.
   //
-  // `noExtensions`/`isolated` keeps the historical static allowlist: nothing
-  // async can appear there, and a hard registry gate is the correct boundary.
-  const builtinToolNameSet = new Set(toolNames);
+  // Without extensions (including `isolated`), the granted built-ins are a
+  // static allowlist: nothing async can appear, and a hard registry gate is the
+  // correct boundary.
+  const grantedBuiltinSet = resolveToolAccess(toolRules, BUILTIN_TOOL_NAMES.map((name) => ({ name, extensionIds: [] })), gates).allowed;
+  const grantedBuiltins = BUILTIN_TOOL_NAMES.filter((name) => grantedBuiltinSet.has(name));
 
   let sessionTools: string[] | undefined;
   let sessionExcludeTools: string[] | undefined;
   if (noExtensions) {
-    // Unknown `builtin_tools` names are diagnosed above, never allowlisted.
-    sessionTools = toolNames.filter((t) => BUILTIN_TOOL_NAMES.includes(t) && !EXCLUDED_TOOL_NAMES.includes(t));
+    sessionTools = grantedBuiltins;
   } else {
-    const denyTools = new Set<string>(EXCLUDED_TOOL_NAMES);
-    // Keep only the built-ins the agent asked for — deny the rest.
-    for (const name of BUILTIN_TOOL_NAMES) {
-      if (!builtinToolNameSet.has(name)) denyTools.add(name);
-    }
-    sessionExcludeTools = [...denyTools];
+    sessionExcludeTools = [...EXCLUDED_TOOL_NAMES, ...BUILTIN_TOOL_NAMES.filter((name) => !grantedBuiltinSet.has(name))];
   }
 
   const configuredSessionDir = resolveConfiguredSessionDir(agentConfig?.sessionDir, effectiveCwd);
@@ -751,9 +640,8 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   );
 
   // Bind extensions so that session_start fires and extensions can initialize
-  // (e.g. loading credentials, setting up state). Tool gating already happened
-  // at session construction via the `tools:` allowlist above — no separate
-  // post-bind filter is needed. All ExtensionBindings fields are optional.
+  // (e.g. loading credentials, setting up state). All ExtensionBindings fields
+  // are optional.
   await session.bindExtensions({
     onError: (err) => {
       options.onToolActivity?.({
@@ -765,18 +653,22 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
 
   // With `allowedToolNames` unset, the registry is scoped by `excludeTools` but
   // the ACTIVE set still needs managing: pi activates only its default built-ins
-  // at turn 1, and `extension_tools:` filtering has no registry-level expression
+  // at turn 1, and rules over extension tools have no registry-level expression
   // (we can't deny the name of a tool that hasn't registered yet). Both are
-  // handled below by re-deriving scope from the session's live tool list —
+  // handled by re-deriving scope from the session's live tool list —
   // `registerTool` grows that list, so late arrivals are judged too.
   if (!noExtensions) {
     installExtensionToolScope(session, {
-      builtinToolNames: toolNames,
-      extensions,
-      extensionTools: agentConfig?.extensionToolNames,
-      allowNesting: agentConfig?.allowNesting,
-      isolated: options.isolated,
-      structuredOutput: structuredCapture !== undefined,
+      toolRules,
+      gates,
+      onDiagnostics: (diagnostics) => {
+        for (const diagnostic of diagnostics) {
+          options.onToolActivity?.({
+            type: "diagnostic",
+            toolName: `tools-${diagnostic.severity}:${diagnostic.message} (agent "${type}")`,
+          });
+        }
+      },
     });
   }
 

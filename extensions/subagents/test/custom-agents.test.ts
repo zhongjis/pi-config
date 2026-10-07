@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BUILTIN_TOOL_NAMES } from "../src/agent-types.js";
 import { loadCustomAgents, loadCustomAgentsWithDiagnostics } from "../src/custom-agents.js";
 
 describe("loadCustomAgents", () => {
@@ -104,7 +103,8 @@ Workspace prompt.`);
   it("loads a basic agent with all frontmatter fields", () => {
     writeAgent("auditor", `---
 description: Security Auditor
-builtin_tools: read, grep, find
+extensions: +@all, -@builtin
+tools: +read, +grep, +find
 model: anthropic/claude-opus-4-6
 thinking: high
 max_turns: 30
@@ -125,8 +125,12 @@ You are a security auditor.`);
     const agent = result.get("auditor")!;
     expect(agent.name).toBe("auditor");
     expect(agent.description).toBe("Security Auditor");
-    expect(agent.builtinToolNames).toEqual(["read", "grep", "find"]);
-    expect(agent.extensionToolNames).toBeUndefined();
+    expect(agent.extensionRules).toEqual([{ sign: "+", selector: "@all" }, { sign: "-", selector: "@builtin" }]);
+    expect(agent.toolRules).toEqual([
+      { sign: "+", selector: "read" },
+      { sign: "+", selector: "grep" },
+      { sign: "+", selector: "find" },
+    ]);
     expect(agent.model).toBe("anthropic/claude-opus-4-6");
     expect(agent.thinking).toBe("high");
     expect(agent.maxTurns).toBe(30);
@@ -151,8 +155,8 @@ Just a prompt.`);
 
     expect(agent.name).toBe("minimal");
     expect(agent.description).toBe("minimal"); // defaults to filename
-    expect(agent.builtinToolNames).toEqual(BUILTIN_TOOL_NAMES); // all tools
-    expect(agent.extensions).toBe(true); // inherit all
+    expect(agent.toolRules).toEqual([]); // no tools
+    expect(agent.extensionRules).toEqual([]); // no extensions load
     expect(agent.discoverSkills).toBe(true); // catalog on by default
     expect(agent.preloadSkills).toEqual([]); // nothing preloaded by default
     expect(agent.model).toBeUndefined();
@@ -176,96 +180,24 @@ Just a prompt.`);
 
     expect(agent.name).toBe("bare");
     expect(agent.description).toBe("bare");
-    expect(agent.builtinToolNames).toEqual(BUILTIN_TOOL_NAMES);
+    expect(agent.toolRules).toEqual([]);
     expect(agent.systemPrompt).toBe("Just a system prompt, no frontmatter.");
   });
 
-  it("handles builtin_tools: none → empty array", () => {
-    writeAgent("notool", `---
-builtin_tools: none
----
-
-No tools.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("notool")!.builtinToolNames).toEqual([]);
-  });
-
-  it("keeps unknown builtin_tools names for the runtime diagnostic", () => {
-    writeAgent("custom-tools", `---
-builtin_tools: read, my_custom_tool, grep
----
-
-Custom tools.`);
-
-    const result = loadCustomAgents(tmpDir);
-    // Unknown names survive parsing; runAgent reports them and policy never grants them.
-    expect(result.get("custom-tools")!.builtinToolNames).toEqual(["read", "my_custom_tool", "grep"]);
-  });
-
-  it("handles extensions: false → no extensions", () => {
-    writeAgent("noext", `---
-extensions: false
----
-
-No extensions.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("noext")!.extensions).toBe(false);
-  });
-
-  it("handles extension allowlist", () => {
+  it("maps extensions: rules from a YAML list", () => {
     writeAgent("partial", `---
-extensions: web-search, mcp-server
+extensions:
+  - +web-search
+  - +mcp-server
 ---
 
 Partial access.`);
 
     const result = loadCustomAgents(tmpDir);
-    expect(result.get("partial")!.extensions).toEqual(["web-search", "mcp-server"]);
-  });
-
-  it("parses extension_tools separately from extensions", () => {
-    writeAgent("extension-picker", `---
-extensions: web-search, mcp-server
-extension_tools: search_web, list_servers
----
-
-Extension tools.`);
-
-    const result = loadCustomAgents(tmpDir);
-    const agent = result.get("extension-picker")!;
-    expect(agent.extensions).toEqual(["web-search", "mcp-server"]);
-    expect(agent.extensionToolNames).toEqual(["search_web", "list_servers"]);
-  });
-
-  it("preserves extension_tools suffix wildcard entries", () => {
-    writeAgent("extension-wildcard", `---
-extension_tools: codegraph_*
----
-
-Extension wildcard.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("extension-wildcard")!.extensionToolNames).toEqual(["codegraph_*"]);
-  });
-
-  it("distinguishes omitted extension_tools from none", () => {
-    writeAgent("extension-default", `---
-extensions: web-search
----
-
-All extension tools.`);
-    writeAgent("extension-none", `---
-extensions: web-search
-extension_tools: none
----
-
-No extension tools.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("extension-default")!.extensionToolNames).toBeUndefined();
-    expect(result.get("extension-none")!.extensionToolNames).toEqual([]);
+    expect(result.get("partial")!.extensionRules).toEqual([
+      { sign: "+", selector: "web-search" },
+      { sign: "+", selector: "mcp-server" },
+    ]);
   });
 
   it("parses delegation and nesting fields", () => {
@@ -282,49 +214,6 @@ Delegates.`);
     expect(agent.allowDelegationTo).toEqual(["Explore", "Plan"]);
     expect(agent.disallowDelegationTo).toEqual(["general-purpose"]);
     expect(agent.allowNesting).toBe(true);
-  });
-
-  it("parses exclude_extensions CSV", () => {
-    writeAgent("no-notify", `---
-extensions: true
-exclude_extensions: pi-notify, telemetry
----
-
-No notifications.`);
-
-    const result = loadCustomAgents(tmpDir);
-    const agent = result.get("no-notify")!;
-    expect(agent.extensions).toBe(true);
-    expect(agent.excludeExtensions).toEqual(["pi-notify", "telemetry"]);
-  });
-
-  it("parses exclude_extensions YAML list", () => {
-    writeAgent("no-notify-yaml", `---
-exclude_extensions:
-  - pi-notify
----
-
-No notifications.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("no-notify-yaml")!.excludeExtensions).toEqual(["pi-notify"]);
-  });
-
-  it("exclude_extensions omitted or none → undefined", () => {
-    writeAgent("plain", `---
-description: plain
----
-
-Plain.`);
-    writeAgent("explicit-none", `---
-exclude_extensions: none
----
-
-None.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("plain")!.excludeExtensions).toBeUndefined();
-    expect(result.get("explicit-none")!.excludeExtensions).toBeUndefined();
   });
 
   it("passes through thinking level as-is (no validation)", () => {
@@ -464,45 +353,12 @@ Should be loaded.`);
   it("handles empty body with frontmatter", () => {
     writeAgent("nobody", `---
 description: No body
-builtin_tools: read
+tools: +read
 ---
 `);
 
     const result = loadCustomAgents(tmpDir);
     expect(result.get("nobody")!.systemPrompt).toBe("");
-  });
-
-  it("supports inherit_extensions as alternative to extensions", () => {
-    writeAgent("altkey", `---
-inherit_extensions: false
----
-
-Alt keys.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("altkey")!.extensions).toBe(false);
-  });
-
-  it("extensions: none → false", () => {
-    writeAgent("extnone", `---
-extensions: none
----
-
-None.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("extnone")!.extensions).toBe(false);
-  });
-
-  it("extensions: true → true (inherit all)", () => {
-    writeAgent("exttrue", `---
-extensions: true
----
-
-All.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("exttrue")!.extensions).toBe(true);
   });
 
   it("handles enabled: false frontmatter", () => {
@@ -528,23 +384,68 @@ Agent prompt.`);
   });
 
   it("skips an agent with an invalid frontmatter field and reports a diagnostic", () => {
-    const file = writeAgent("both", `---
-builtin_tools: bash
-tools: read, grep
+    const file = writeAgent("unsigned", `---
+tools: read
 ---
 
-Both fields.`);
+Unsigned rule.`);
 
     const result = loadCustomAgentsWithDiagnostics(tmpDir);
-    expect(result.agents.has("both")).toBe(false);
+    expect(result.agents.has("unsigned")).toBe(false);
     expect(result.diagnostics).toMatchObject([
       {
         file,
-        agentName: "both",
+        agentName: "unsigned",
         field: "tools",
         severity: "error",
       },
     ]);
+  });
+
+  it("reports every tools: error exactly once", () => {
+    writeAgent("two-unsigned", `---
+tools: read, grep
+---
+
+Two unsigned rules.`);
+
+    const result = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect(result.diagnostics.map((d) => d.message)).toEqual([
+      'unsigned entry "read": prefix + to grant or - to remove, e.g. "+read"',
+      'unsigned entry "grep": prefix + to grant or - to remove, e.g. "+grep"',
+    ]);
+  });
+
+  it("reports a rule warning and keeps the definition", () => {
+    const file = writeAgent("leading-minus", `---
+tools: -bash, +read
+---
+
+Leading minus.`);
+
+    const result = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect({ loaded: result.agents.has("leading-minus"), diagnostics: result.diagnostics }).toEqual({
+      loaded: true,
+      diagnostics: [{
+        file,
+        agentName: "leading-minus",
+        field: "tools",
+        severity: "warning",
+        message: 'leading "-bash" removes nothing from the empty start.',
+      }],
+    });
+  });
+
+  it("reports an extensions: error without skipping the definition (transitional)", () => {
+    writeAgent("boolean-extensions", `---
+extensions: false
+---
+
+Boolean extensions.`);
+
+    const result = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect({ loaded: result.agents.has("boolean-extensions"), diagnostics: result.diagnostics.map((d) => [d.field, d.severity]) })
+      .toEqual({ loaded: true, diagnostics: [["extensions", "error"]] });
   });
 
   // ─── skill fields (discover_skills / preload_skills) ────────────────────

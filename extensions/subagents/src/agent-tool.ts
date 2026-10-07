@@ -2,10 +2,11 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type AgentSession, defineTool, type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { formatAccessRules } from "../../lib/active-tools.js";
 import type { AgentManager } from "./agent-manager.js";
 import { createAgentResultBuilder, formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
 import { getDefaultMaxTurns, normalizeMaxTurns, SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
-import { BUILTIN_TOOL_NAMES, getAgentConfig, getAvailableTypes, resolveType } from "./agent-types.js";
+import { getAgentConfig, getAvailableTypes, resolveType } from "./agent-types.js";
 import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ResolvedDelegationPolicy } from "./delegation-policy.js";
 import { prepareAgentInvocation, resolveJoinMode } from "./invocation-config.js";
 import type { AgentPresentation, createNotificationCoordinator } from "./notification-coordinator.js";
@@ -51,17 +52,9 @@ function buildDelegationPolicyDenialDetails(
   };
 }
 
-/** Advertise configuration, not resolved runtime access. */
-const formatToolsSuffix = (cfg: AgentConfig | undefined): string => {
-  const tools = cfg?.builtinToolNames;
-  const builtins = !tools || (tools.length === BUILTIN_TOOL_NAMES.length
-    && BUILTIN_TOOL_NAMES.every((tool) => tools.includes(tool)))
-    ? "all" : tools.join(", ");
-  const extensions = cfg?.isolated || cfg?.extensions === false
-    ? "unavailable"
-    : cfg?.extensionToolNames?.join(", ") ?? "all available within runtime policy";
-  return `(Built-in tools: ${builtins || "none"}) (Configured extension tools: ${extensions || "none"})`;
-};
+/** Advertise the normalized `tools:` rules, not resolved runtime access. */
+const formatToolsSuffix = (cfg: AgentConfig | undefined): string =>
+  `(tools: ${formatAccessRules(cfg?.toolRules ?? []) || "none"})${cfg?.isolated ? " (isolated: built-in tools only)" : ""}`;
 
 const buildTypeListText = () => getAvailableTypes().map((name) => {
   const cfg = getAgentConfig(name);

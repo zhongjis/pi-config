@@ -3,6 +3,7 @@ import { join } from "node:path";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { expect, it, vi } from "vitest";
 import { createFastSession } from "../../../test/integration/helpers/fast-session.js";
+import { parseAccessRules } from "../../lib/active-tools.js";
 import { registerRuntimeModelFallback } from "../../lib/runtime-model-fallback.js";
 import { registerModeHooks } from "../../modes/src/hooks.js";
 import { ModeStateManager } from "../../modes/src/mode-state.js";
@@ -36,7 +37,7 @@ it("isolated child waits through native retries and gated fallback before final 
 	const t = await createFastSession();
 	vi.stubEnv("PI_CODING_AGENT_DIR", t.cwd);
 	writeFileSync(join(t.cwd, "settings.json"), JSON.stringify({ retry: { enabled: true, maxRetries: 1, baseDelayMs: 1 }, compaction: { enabled: false } }));
-	registerAgents(new Map([["recover", { name: "recover", description: "test", model: chain, extensions: false, excludeExtensions: ["subagent-model-fallback"], discoverSkills: false, preloadSkills: [], builtinToolNames: [], systemPrompt: "test", promptMode: "replace" }]]));
+	registerAgents(new Map([["recover", { name: "recover", description: "test", model: chain, extensionRules: parseAccessRules("extensions", "-subagent-model-fallback").rules, toolRules: [], discoverSkills: false, preloadSkills: [], systemPrompt: "test", promptMode: "replace" }]]));
 	const children: AgentSession[] = [];
 	const success = t.fetchMock.getMockImplementation();
 	if (!success) throw new Error("Missing fetch fixture");
@@ -74,7 +75,7 @@ it("resume waits for a fast fallback and reports only the recovered turn", async
 	const t = await createFastSession();
 	vi.stubEnv("PI_CODING_AGENT_DIR", t.cwd);
 	writeFileSync(join(t.cwd, "settings.json"), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false } }));
-	registerAgents(new Map([["resume-recover", { name: "resume-recover", description: "test", model: "anthropic/claude-sonnet-4-6,anthropic/claude-opus-4-8:high:fast", extensions: false, discoverSkills: false, preloadSkills: [], builtinToolNames: [], systemPrompt: "test", promptMode: "replace" }]]));
+	registerAgents(new Map([["resume-recover", { name: "resume-recover", description: "test", model: "anthropic/claude-sonnet-4-6,anthropic/claude-opus-4-8:high:fast", extensionRules: [], toolRules: [], discoverSkills: false, preloadSkills: [], systemPrompt: "test", promptMode: "replace" }]]));
 	const children: AgentSession[] = [];
 	const success = t.fetchMock.getMockImplementation();
 	if (!success) throw new Error("Missing fetch fixture");
@@ -133,7 +134,7 @@ it("keeps completed tools and defers structured-output repair until recovered ou
 	writeFileSync(join(t.cwd, "settings.json"), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false } }));
 	const path = join(t.cwd, "evidence.txt");
 	writeFileSync(path, "retained evidence");
-	registerAgents(new Map([["structured-recover", { name: "structured-recover", description: "test", model: chain, extensions: false, discoverSkills: false, preloadSkills: [], builtinToolNames: ["read"], systemPrompt: "test", promptMode: "replace" }]]));
+	registerAgents(new Map([["structured-recover", { name: "structured-recover", description: "test", model: chain, extensionRules: [], toolRules: parseAccessRules("tools", "+read").rules, discoverSkills: false, preloadSkills: [], systemPrompt: "test", promptMode: "replace" }]]));
 	const schema = compileJsonSchema({ type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"], additionalProperties: false });
 	if (!schema.ok) throw new Error("Invalid test schema");
 	const success = t.fetchMock.getMockImplementation();

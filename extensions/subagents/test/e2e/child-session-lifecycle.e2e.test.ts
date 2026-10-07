@@ -6,6 +6,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseAccessRules } from "../../../lib/active-tools.js";
 import { disposeChildSession } from "../../src/agent-manager.js";
 import { runAgent } from "../../src/agent-runner.js";
 import { registerAgents } from "../../src/agent-types.js";
@@ -20,12 +21,12 @@ function makePi() {
   return { exec: async () => ({ code: 1, stdout: "", stderr: "" }) } as any;
 }
 
-function registerProbeAgent(extensions: AgentConfig["extensions"]): void {
+function registerProbeAgent(extensions: string): void {
   registerAgents(new Map([["probe", {
     name: "probe",
     description: "probe",
-    builtinToolNames: ["read"],
-    extensions,
+    extensionRules: parseAccessRules("extensions", extensions).rules,
+    toolRules: parseAccessRules("tools", "+read").rules,
     discoverSkills: false,
     preloadSkills: [],
     systemPrompt: "You are probe.",
@@ -73,7 +74,7 @@ export default function(pi: ExtensionAPI) {
   });
 
   async function spawn(projectTrusted: boolean | undefined): Promise<any> {
-    registerProbeAgent(true);
+    registerProbeAgent("+@all, -@builtin");
     const { model, modelRegistry } = fauxRuntime;
     const ctx: any = { cwd, getSystemPrompt: () => "PARENT", model, modelRegistry };
     if (projectTrusted !== undefined) ctx.isProjectTrusted = () => projectTrusted;

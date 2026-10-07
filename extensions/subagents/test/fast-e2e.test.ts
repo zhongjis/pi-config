@@ -12,7 +12,7 @@ import { AgentWidget, type UICtx } from "../src/ui/agent-widget.js";
 
 const beta = "fast-mode-2026-02-01";
 function config(name: string, model: string): AgentConfig {
-	return { name, description: name, model, extensions: false, discoverSkills: false, preloadSkills: [], builtinToolNames: [], systemPrompt: "test", promptMode: "replace" };
+	return { name, description: name, model, extensionRules: [], toolRules: [], discoverSkills: false, preloadSkills: [], systemPrompt: "test", promptMode: "replace" };
 }
 
 it("isolated concurrent children enforce opposite fixed policies with shared registry; direct model cannot bypass frontmatter; resume retains policy", async () => {
@@ -60,10 +60,11 @@ it("unsupported selected fast fails before child creation rather than choosing f
 it("discovered interactive fast copies cannot override the always-retained fixed child policy", async () => {
 	const t = await createFastSession([], { "anthropic-beta": beta });
 	vi.stubEnv("PI_CODING_AGENT_DIR", t.cwd);
-	const ext = join(t.cwd, "fast", "index.ts");
-	mkdirSync(join(t.cwd, "fast"));
+	// A discovered global `fast` extension that the child's rules explicitly select.
+	const ext = join(t.cwd, "extensions", "fast", "index.ts");
+	mkdirSync(join(t.cwd, "extensions", "fast"), { recursive: true });
 	writeFileSync(ext, `export { default } from ${JSON.stringify(resolve("extensions/fast/index.ts"))};`);
-	registerAgents(new Map([["fixed-off", { ...config("fixed-off", "anthropic/claude-opus-4-8"), extensions: [ext] }]]));
+	registerAgents(new Map([["fixed-off", { ...config("fixed-off", "anthropic/claude-opus-4-8"), extensionRules: [{ sign: "+", selector: "fast" }] }]]));
 	const children: AgentSession[] = [];
 	try {
 		await runAgent(t.ctx, "fixed-off", "go", {

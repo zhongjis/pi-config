@@ -1,76 +1,66 @@
 /** agent-tool-scope.ts — narrows the live tool set a subagent may call. */
 
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
-import { computeActiveToolNames, DEFAULT_BUILTIN_TOOL_NAMES } from "../../lib/active-tools.js";
-import { STRUCTURED_OUTPUT_TOOL_NAME } from "./structured-output.js";
+import {
+  type AccessDiagnostic,
+  type AccessRule,
+  resolveToolAccess,
+  selectActiveToolNames,
+  type ToolAccessGates,
+  toolCandidates,
+} from "../../lib/active-tools.js";
 
 /**
- * Keep a subagent's tool scope correct as extensions register tools over time.
+ * Keep a subagent's tool scope equal to its `tools:` rules as extensions
+ * register tools over time.
  *
  * Extensions may call `registerTool` long after load — pi-mcp from `session_start`,
  * context-mode from `before_agent_start` — so scope has to be re-derived rather than
- * snapshotted. This re-reads the session's LIVE tool list on every re-narrow and
- * re-runs the shared `computeActiveToolNames` policy, so late arrivals are judged too.
- * (`computeActiveToolNames` snapshots its input, so the live re-read is what keeps a
- * late-registered MCP/context tool from being dropped forever.)
+ * snapshotted. Every check re-reads the session's LIVE tool list and re-resolves the
+ * shared signed-rule policy (`resolveToolAccess`), so late arrivals are judged too and
+ * `@<extension>` groups pick up tools their extension registers later.
  *
- * Two enforcement points, because neither covers the whole picture:
+ * Two enforcement points here, plus the runner's ceiling tool:
  *
- *   - `turn_end` re-narrows the ACTIVE set. pi emits `turn_end` immediately before
+ *   - `turn_end` re-narrows the ACTIVE set to the allowed tools (exposure-aware via
+ *     `selectActiveToolNames`). pi emits `turn_end` immediately before
  *     `prepareNextTurn` re-snapshots `agent.state.tools`, and session listeners run
  *     synchronously, so the narrow lands in time for turns 2..N.
- *   - `beforeToolCall` blocks out-of-scope calls. Turn 1 cannot be narrowed at all:
- *     `before_agent_start` fires INSIDE `prompt()` and may widen the tool set, but
- *     `createContextSnapshot()` freezes that turn's tools immediately after — there
- *     is no hook in between. A call-time check is the only correct guard there.
+ *   - `beforeToolCall` blocks top-level calls outside the allowed set. Pi activates
+ *     tools registered inside `prompt()` (e.g. during `before_agent_start`), after the
+ *     install-time narrow; the runner's ceiling tool hides their declarations and this
+ *     veto blocks the call.
  *
  * Both are installed on the session and deliberately NOT unsubscribed: they must
  * outlive the `runAgent` call so resumed/steered turns stay scoped. pi's `dispose()`
  * clears `_eventListeners`, so they die with the session rather than leaking.
  *
- * Only meaningful when extensions are loaded — under `noExtensions`/`isolated` the
- * static `tools:` allowlist already gates the registry itself.
+ * Trusted `<inline:`/`<sdk:` tools (StructuredOutput, the ceiling) are always allowed
+ * by the policy. Resolution diagnostics are reported once, at the first computation.
+ *
+ * Only meaningful when extensions are loaded — without them the runner's static
+ * built-in allowlist already gates the registry itself.
  */
 export function installExtensionToolScope(
   session: AgentSession,
   ctx: {
-    builtinToolNames: string[];
-    extensions: true | string[] | false;
-    extensionTools: string[] | undefined;
-    allowNesting: boolean | undefined;
-    isolated: boolean | undefined;
-    structuredOutput?: boolean;
+    toolRules: readonly AccessRule[];
+    gates?: ToolAccessGates;
+    onDiagnostics?: (diagnostics: AccessDiagnostic[]) => void;
   },
 ): void {
-  const { builtinToolNames, extensions, extensionTools, allowNesting, isolated } = ctx;
-
-  // The tools the LLM may call right now, recomputed from the LIVE registry on
-  // every call. `computeActiveToolNames` gates built-ins by `builtinToolNames`,
-  // filters extension tools by `extensionTools` (exact names or trailing-`*`
-  // wildcards), and drops the nested-subagent tools unless `allowNesting`. Its
-  // output order follows the live available list, so this IS the final active set.
-  // Exposure-aware: `codemode`/`deferred` tools stay reachable from codemode
-  // scripts without activation, so only an already-active one stays active.
-  const computeActive = (): string[] => {
-    const tools = session.getAllTools();
-    const exposure = new Map(tools.map((t) => [t.name, t.exposure]));
-    const active = computeActiveToolNames({
-      availableToolNames: tools.map((t) => t.name),
-      builtinToolNames,
-      builtinToolUniverse: DEFAULT_BUILTIN_TOOL_NAMES,
-      extensions,
-      extensionTools,
-      allowNesting,
-      isolated,
-      exposureOf: (name) => exposure.get(name),
-      currentActiveToolNames: session.getActiveToolNames(),
-    });
-    if (ctx.structuredOutput && !active.includes(STRUCTURED_OUTPUT_TOOL_NAME)) active.push(STRUCTURED_OUTPUT_TOOL_NAME);
-    return active;
+  let reported = false;
+  const allowedToolNames = (): Set<string> => {
+    const { allowed, diagnostics } = resolveToolAccess(ctx.toolRules, toolCandidates(session.getAllTools()), ctx.gates);
+    if (!reported) {
+      reported = true;
+      if (diagnostics.length > 0) ctx.onDiagnostics?.(diagnostics);
+    }
+    return allowed;
   };
 
   const renarrow = () => {
-    const next = computeActive();
+    const next = selectActiveToolNames(session.getAllTools(), allowedToolNames(), session.getActiveToolNames());
     const current = session.getActiveToolNames();
     // setActiveToolsByName unconditionally rebuilds the system prompt, so skip
     // the no-op that steady-state turns would otherwise pay for every turn.
@@ -89,7 +79,7 @@ export function installExtensionToolScope(
 
   const priorBeforeToolCall = session.agent.beforeToolCall;
   session.agent.beforeToolCall = async (context, signal) => {
-    if (!new Set(computeActive()).has(context.toolCall.name)) {
+    if (!allowedToolNames().has(context.toolCall.name)) {
       return {
         block: true,
         reason: `Tool "${context.toolCall.name}" is not available to this subagent.`,

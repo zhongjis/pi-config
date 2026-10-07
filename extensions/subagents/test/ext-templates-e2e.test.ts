@@ -1,15 +1,16 @@
 /**
  * ext-templates-e2e.test.ts — Data-driven, headless end-to-end runner for
- * `tools:`/`ext:`/`extensions:` scoping against the REAL pi-mono runtime.
+ * signed-rule `extensions:` / `tools:` scoping against the REAL pi-mono runtime.
  *
  * Unlike agent-runner-e2e.test.ts (which builds AgentConfig objects in code),
  * this exercises the FULL chain from frontmatter onward:
  *
  *   test/fixtures/.pi/agents/*.md         (pre-configured agent templates)
- *     → real loadCustomAgents()           (frontmatter → parseToolsField/ext:)
+ *     → real loadCustomAgents()           (frontmatter → signed rules)
  *     → registerAgents()                  (real registry)
- *     → real runAgent() [headless]        (real DefaultResourceLoader loads the
- *                                          real .mjs extension fixtures)
+ *     → real runAgent() [headless]        (real DefaultResourceLoader discovers
+ *                                          fixtures/.pi/extensions, which
+ *                                          re-export the .mjs fixtures)
  *     → real createAgentSession()         (real pi-mono tool gating)
  *     → session.getActiveToolNames()      (what the LLM could actually call)
  *
@@ -19,7 +20,8 @@
  *
  * Headless: each scenario uses a native faux provider on an isolated
  * `ModelRuntime`; assertions inspect pre-prompt tool gating. cwd is the fixtures
- * dir so relative extension paths resolve against the repo's node_modules.
+ * dir so its `.pi/extensions` (ids `ext-alpha`, `ext-beta`, `ext-lazy`) are
+ * discovered and resolve imports against the repo's node_modules.
  */
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -61,7 +63,7 @@ const SCENARIOS = readdirSync(TEMPLATES_DIR)
 /** Distinctive marker for the parent system prompt (prompt_mode: append asserts it leaks in). */
 const PARENT_PROMPT = "PARENT_PROMPT_MARKER";
 
-describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)", () => {
+describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, headless)", () => {
   let prevAgentDir: string | undefined;
   let prevHome: string | undefined;
   let hermeticDir: string;
@@ -96,7 +98,7 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
       models: [{ id: "faux-1", contextWindow: 200_000 }],
     });
     const { model, modelRegistry } = fauxRuntime;
-    // cwd = fixtures dir so the templates' relative extensions: paths resolve.
+    // cwd = fixtures dir so the templates' extension ids name its discovered extensions.
     // getSystemPrompt returns a distinctive marker so prompt_mode: append can be
     // proven to inherit the parent prompt.
     const ctx: any = { cwd: FIXTURES_DIR, getSystemPrompt: () => PARENT_PROMPT, model, modelRegistry };
@@ -104,7 +106,7 @@ describe("ext: / tools: scoping — template-driven e2e (real pi-mono, headless)
 
     // Mirror production: the caller resolves frontmatter-locked fields (isolated,
     // inherit_context, …) into runAgent options via resolveAgentInvocationConfig.
-    // isolated is the one that affects tool gating (forces extensions:false + drops ext:).
+    // isolated is the one that affects tool gating (loads no extensions).
     const resolved = resolveAgentInvocationConfig(getAgentConfig(agentName), { modelFromParams: false } as any);
 
     let active: string[] = [];

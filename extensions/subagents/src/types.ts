@@ -3,6 +3,7 @@
  */
 
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { AccessRule } from "../../lib/active-tools.js";
 import type { GraphRunEntryData } from "./graph/entry.js";
 import type { LifetimeUsage, SessionLike } from "./usage.js";
 
@@ -34,22 +35,16 @@ export interface AgentConfig {
   name: string;
   displayName?: string;
   description: string;
-  /** Built-in allowlist from `builtin_tools`; undefined = all built-ins. */
-  builtinToolNames?: string[];
-  /** Extension tool allowlist from `extension_tools`; undefined = all extension tools, [] = none.
-   * Matches by tool NAME, with trailing-`*` prefix wildcards (e.g. `codegraph_*`). */
-  extensionToolNames?: string[];
+  /** Signed `extensions:` rules deciding which extensions load; last match wins, empty = none load. */
+  extensionRules: AccessRule[];
+  /** Signed `tools:` rules deciding which tools the agent may use; last match wins, empty = no tools. */
+  toolRules: AccessRule[];
   /** Agent allowlist — only these subagents may be delegated to. */
   allowDelegationTo?: string[];
   /** Agent denylist — these subagents may not be delegated to. */
   disallowDelegationTo?: string[];
   /** Permits allowlisted nested launch, retrieval, steering, and graph-gate resolution tools. */
   allowNesting?: boolean;
-  /** true = inherit all, string[] = only listed, false = none */
-  extensions: true | string[] | false;
-  /** Extension-name denylist applied after the `extensions:` include set. Exclude wins.
-   * Plain canonical names only (case-insensitive); no paths, no wildcard. */
-  excludeExtensions?: string[];
   /** When true, pi's skill catalog is discoverable on demand. Default true. */
   discoverSkills: boolean;
   /** Skill names whose full content is eagerly injected into the system prompt. Default []. */

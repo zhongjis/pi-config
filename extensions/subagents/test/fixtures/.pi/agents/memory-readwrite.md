@@ -1,7 +1,7 @@
 ---
 description: "Unknown memory metadata is inert; built-ins stay explicitly scoped."
 memory: user
-builtin_tools: read, write
+tools: +read, +write
 expect_tools_present: "read, write"
 expect_tools_absent: "bash, edit, grep, find, ls"
 expect_prompt_absent: "Agent Memory, Memory scope: user, persistent memory directory, (read-only)"

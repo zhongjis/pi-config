@@ -1,16 +1,17 @@
 /**
  * codemode-builtin.e2e.test.ts — Pi's built-in codemode in subagents.
  *
- * An exact `codemode` extension_tools entry loads `builtin:codemode` and activates its
- * model-only tool; omitted/wildcard selections, isolation, and `extensions: false` do not.
- * Nested tool calls (how codemode scripts reach tools) can only call tools the
- * agent's policy reaches, even inactive `codemode`-exposure tools.
+ * `builtin:codemode` loads only through `extensions:` rules, like every other
+ * extension; loading grants nothing, so `codemode` is active only when `tools:`
+ * grants it. Nested tool calls (how codemode scripts reach tools) can only call
+ * tools the agent's `tools:` rules grant, even inactive `codemode`-exposure tools.
  */
-import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { parseAccessRules } from "../../../lib/active-tools.js";
 import { disposeChildSession } from "../../src/agent-manager.js";
 import { runAgent } from "../../src/agent-runner.js";
 import { registerAgents } from "../../src/agent-types.js";
@@ -82,12 +83,12 @@ export default function(pi: ExtensionAPI) {
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  async function run(cfg: Partial<AgentConfig>, isolated = false) {
+  async function run(extensions: string, tools: string, options: { isolated?: boolean; probeVeto?: boolean } = {}) {
     registerAgents(new Map([["coder", {
       name: "coder",
       description: "coder",
-      builtinToolNames: ["read"],
-      extensions: true,
+      extensionRules: parseAccessRules("extensions", extensions).rules,
+      toolRules: parseAccessRules("tools", tools).rules,
       discoverSkills: false,
       preloadSkills: [],
       systemPrompt: "You are coder.",
@@ -95,68 +96,54 @@ export default function(pi: ExtensionAPI) {
       inheritContext: false,
       runInBackground: false,
       isolated: false,
-      ...cfg,
-    } as AgentConfig]]));
+    } satisfies AgentConfig]]));
     const { model, modelRegistry } = fauxRuntime;
     const ctx: any = { cwd, getSystemPrompt: () => "PARENT", model, modelRegistry, isProjectTrusted: () => true };
-    const diagnostics: string[] = [];
     let session: any;
     let active: string[] = [];
     try {
       await runAgent(ctx, "coder", "go", {
         pi: makePi(),
         model,
-        isolated,
+        isolated: options.isolated,
         onSessionCreated: (s) => { session = s; active = s.getActiveToolNames(); },
-        onToolActivity: (a) => { if (a.type === "diagnostic") diagnostics.push(a.toolName); },
       });
     } catch {
       // The faux turn may fail; loading and scope are fixed at construction.
     }
     const paths: string[] = session.extensionRunner.getExtensionPaths();
+    const veto = options.probeVeto ? await session.agent.beforeToolCall({ toolCall: { name: "codemode" }, args: {} }) : undefined;
     await disposeChildSession(session);
-    return { active, paths, diagnostics };
+    return { active, loaded: paths.includes("builtin:codemode"), veto };
   }
 
-  it("exact `codemode` loads builtin:codemode and activates its tool", async () => {
-    const { active, paths } = await run({ extensionToolNames: ["codemode", "run_nested"] });
-    expect(paths).toContain("builtin:codemode");
-    expect(active).toContain("codemode");
-    expect(active).not.toContain("code_allowed");
+  it("+builtin:codemode with tools: +codemode loads codemode and activates only its tool", async () => {
+    const { loaded, active } = await run("+builtin:codemode", "+read, +codemode");
+    expect({ loaded, codemode: active.includes("codemode"), codeAllowed: active.includes("code_allowed") })
+      .toEqual({ loaded: true, codemode: true, codeAllowed: false });
   });
 
-  it.each([
-    ["omitted extension_tools", {}],
-    ["wildcard extension_tools", { extensionToolNames: ["*"] }],
-    ["codemode prefix wildcard", { extensionToolNames: ["code*"] }],
-  ])("%s loads no builtin:codemode", async (_label, cfg) => {
-    const { paths, active } = await run(cfg);
-    expect(paths).not.toContain("builtin:codemode");
-    expect(active).not.toContain("codemode");
+  it("+builtin:codemode without a codemode grant loads it but leaves codemode inactive", async () => {
+    const { loaded, active } = await run("+builtin:codemode", "+read");
+    expect({ loaded, codemode: active.includes("codemode") }).toEqual({ loaded: true, codemode: false });
   });
 
-  it.each([
-    ["isolated", {}, true],
-    ["extensions: false", { extensions: false as const }, false],
-  ])("%s loads no builtin:codemode and reports the listing", async (_label, cfg, isolated) => {
-    const { paths, diagnostics } = await run({ extensionToolNames: ["codemode"], ...cfg }, isolated);
-    expect(paths).not.toContain("builtin:codemode");
-    expect(diagnostics.some((d) => d.includes('"codemode" has no effect'))).toBe(true);
+  it("vetoes a codemode call the tools: rules do not grant", async () => {
+    const { veto } = await run("+builtin:codemode", "+read", { probeVeto: true });
+    expect(veto).toMatchObject({ block: true, reason: 'Tool "codemode" is not available to this subagent.' });
   });
 
-  it("exclude_extensions: builtin:codemode disables it without a typo warning", async () => {
-    const { paths, diagnostics } = await run({ extensionToolNames: ["codemode"], excludeExtensions: ["builtin:codemode"] });
-    expect(paths).not.toContain("builtin:codemode");
-    expect(diagnostics.filter((d) => d.includes("exclude_extensions"))).toEqual([]);
+  it("-builtin:codemode after +@all leaves codemode unloaded", async () => {
+    const { loaded } = await run("+@all, -builtin:codemode", "+read, +codemode");
+    expect(loaded).toBe(false);
   });
 
-  it("csv `extensions:` keeps builtin:codemode", async () => {
-    const { paths, active } = await run({ extensions: ["code-probe"], extensionToolNames: ["codemode"] });
-    expect(paths).toContain("builtin:codemode");
-    expect(active).toContain("codemode");
+  it("isolated loads no builtin:codemode", async () => {
+    const { loaded } = await run("+builtin:codemode", "+read, +codemode", { isolated: true });
+    expect(loaded).toBe(false);
   });
 
-  it("nested calls reach allowlisted codemode-exposure tools and block the rest", async () => {
+  it("nested calls reach granted codemode-exposure tools and block the rest", async () => {
     fauxRuntime.faux.setResponses([
       fauxAssistantMessage([
         fauxToolCall("run_nested", { name: "code_denied" }),
@@ -165,9 +152,9 @@ export default function(pi: ExtensionAPI) {
       fauxAssistantMessage([fauxText("done")]),
     ]);
 
-    await run({ extensionToolNames: ["codemode", "run_nested", "code_allowed"] });
+    await run("+builtin:codemode, +code-probe", "+codemode, +run_nested, +code_allowed");
 
-    expect((globalThis as ProbeGlobal)[RAN]).toEqual(["code_allowed"]);
-    expect([...(globalThis as ProbeGlobal)[OUTCOMES]].sort()).toEqual(["code_allowed:ok", "code_denied:error"]);
+    expect({ ran: (globalThis as ProbeGlobal)[RAN], outcomes: [...(globalThis as ProbeGlobal)[OUTCOMES]].sort() })
+      .toEqual({ ran: ["code_allowed"], outcomes: ["code_allowed:ok", "code_denied:error"] });
   });
 });

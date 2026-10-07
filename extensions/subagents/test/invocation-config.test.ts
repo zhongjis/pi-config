@@ -7,8 +7,8 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     name: "Explore",
     description: "Explore",
-    builtinToolNames: ["read"],
-    extensions: false,
+    extensionRules: [],
+    toolRules: [{ sign: "+", selector: "read" }],
     discoverSkills: false,
     preloadSkills: [],
     systemPrompt: "Test agent",

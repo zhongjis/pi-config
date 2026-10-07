@@ -1,11 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { type AccessRuleField, formatAccessRules, parseAccessRules, resolveToolAccess } from "../../lib/active-tools.js";
 import {
-  BUILTIN_TOOL_NAMES,
   getAgentConfig,
   getAvailableTypes,
   getConfig,
   getDefaultAgentNames,
-  getToolNamesForType,
   getUserAgentNames,
   isDefaultsDisabled,
   isValidType,
@@ -16,12 +15,14 @@ import {
 import { DEFAULT_AGENTS } from "../src/default-agents.js";
 import type { AgentConfig } from "../src/types.js";
 
+const rules = (field: AccessRuleField, value: string) => parseAccessRules(field, value).rules;
+
 function makeAgentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
     name: "test-agent",
     description: "Test agent",
-    builtinToolNames: ["read", "grep"],
-    extensions: false,
+    extensionRules: [],
+    toolRules: rules("tools", "+read, +grep"),
     discoverSkills: false,
     preloadSkills: [],
     systemPrompt: "You are a test agent.",
@@ -72,9 +73,16 @@ describe("agent type registry", () => {
     it("returns correct config for default types", () => {
       const config = getConfig("general-purpose");
       expect(config.displayName).toBe("Agent");
-      expect(config.builtinToolNames).toEqual(BUILTIN_TOOL_NAMES);
-      expect(config.extensions).toBe(true);
+      expect(formatAccessRules(config.extensionRules)).toBe("+@all, -@builtin");
+      expect(formatAccessRules(config.toolRules)).toBe("+@all");
       expect(config.discoverSkills).toBe(true);
+    });
+
+    it.each(["Explore", "Plan"])("%s grants every extension tool plus the five read-only built-ins", (name) => {
+      const registry = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls", "codegraph_search"]
+        .map((tool) => ({ name: tool, extensionIds: tool.startsWith("codegraph") ? ["codegraph"] : [] }));
+      const { allowed } = resolveToolAccess(getConfig(name).toolRules, registry);
+      expect([...allowed].sort()).toEqual(["bash", "codegraph_search", "find", "grep", "ls", "read"]);
     });
 
     it("default agents are marked isDefault", () => {
@@ -150,7 +158,8 @@ describe("agent type registry", () => {
 
       const config = getConfig("general-purpose");
       expect(config.displayName).toBe("Agent");
-      expect(config.builtinToolNames).toEqual(BUILTIN_TOOL_NAMES);
+      expect(formatAccessRules(config.extensionRules)).toBe("+@all, -@builtin");
+      expect(formatAccessRules(config.toolRules)).toBe("+@all");
       expect(config.promptMode).toBe("append");
     });
   });
@@ -190,8 +199,8 @@ describe("agent type registry", () => {
       const agents = new Map([["auditor", makeAgentConfig({
         name: "auditor",
         description: "Security auditor",
-        builtinToolNames: ["read", "grep"],
-        extensions: false,
+        extensionRules: [],
+        toolRules: rules("tools", "+read, +grep"),
         discoverSkills: true,
         preloadSkills: [],
       })]]);
@@ -200,45 +209,23 @@ describe("agent type registry", () => {
       const config = getConfig("auditor");
       expect(config.displayName).toBe("auditor");
       expect(config.description).toBe("Security auditor");
-      expect(config.builtinToolNames).toEqual(["read", "grep"]);
-      expect(config.extensions).toBe(false);
+      expect(config.toolRules).toEqual(rules("tools", "+read, +grep"));
+      expect(config.extensionRules).toEqual([]);
       expect(config.discoverSkills).toBe(true);
     });
 
-    it("getConfig returns extension allowlist for user agents", () => {
+    it("getConfig returns extension rules for user agents", () => {
       const agents = new Map([["partial", makeAgentConfig({
         name: "partial",
-        extensions: ["web-search"],
+        extensionRules: rules("extensions", "+web-search"),
         discoverSkills: true,
         preloadSkills: ["planning"],
       })]]);
       registerAgents(agents);
 
       const config = getConfig("partial");
-      expect(config.extensions).toEqual(["web-search"]);
+      expect(config.extensionRules).toEqual(rules("extensions", "+web-search"));
       expect(config.preloadSkills).toEqual(["planning"]);
-    });
-
-    it("getToolNamesForType works for user agents", () => {
-      const agents = new Map([["auditor", makeAgentConfig({
-        name: "auditor",
-        builtinToolNames: ["read", "grep", "find"],
-      })]]);
-      registerAgents(agents);
-
-      const names = getToolNamesForType("auditor");
-      expect(names).toEqual(["read", "grep", "find"]);
-    });
-
-    it("getToolNamesForType honors an explicit empty builtinToolNames as zero built-ins", () => {
-      // `tools: none` and `tools:` with only `ext:` entries both produce `[]`.
-      const agents = new Map([["ext-only", makeAgentConfig({
-        name: "ext-only",
-        builtinToolNames: [],
-      })]]);
-      registerAgents(agents);
-
-      expect(getToolNamesForType("ext-only")).toEqual([]);
     });
 
     it("getConfig falls back to general-purpose for unknown types", () => {
@@ -261,13 +248,13 @@ describe("agent type registry", () => {
       const agents = new Map([["Explore", makeAgentConfig({
         name: "Explore",
         description: "Custom Explore",
-        builtinToolNames: BUILTIN_TOOL_NAMES,
+        toolRules: rules("tools", "+@builtin"),
       })]]);
       registerAgents(agents);
 
       const config = getConfig("Explore");
       expect(config.description).toBe("Custom Explore");
-      expect(config.builtinToolNames).toEqual(BUILTIN_TOOL_NAMES);
+      expect(config.toolRules).toEqual(rules("tools", "+@builtin"));
     });
 
     it("disabled agent is excluded from available types", () => {
@@ -292,25 +279,6 @@ describe("agent type registry", () => {
       // getConfig fallback should still return something reasonable
       const config = getConfig("general-purpose");
       expect(config.displayName).toBe("Agent");
-    });
-  });
-
-  describe("BUILTIN_TOOL_NAMES", () => {
-    // BUILTIN_TOOL_NAMES is derived dynamically from pi's tool factories
-    // (createCodingTools + createReadOnlyTools). This guards against pi-mono
-    // dropping/renaming a built-in: the set must still contain at least these
-    // 7. It's a superset check ("at least") — pi adding a new built-in is fine
-    // and won't fail this test.
-    const EXPECTED = ["read", "bash", "edit", "write", "grep", "find", "ls"];
-
-    it("contains at least the 7 known built-ins", () => {
-      for (const name of EXPECTED) {
-        expect(BUILTIN_TOOL_NAMES).toContain(name);
-      }
-    });
-
-    it("has no duplicate entries", () => {
-      expect(new Set(BUILTIN_TOOL_NAMES).size).toBe(BUILTIN_TOOL_NAMES.length);
     });
   });
 });

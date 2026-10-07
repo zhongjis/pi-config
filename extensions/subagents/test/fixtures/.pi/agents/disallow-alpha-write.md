@@ -1,9 +1,9 @@
 ---
-description: "Allows alpha_read while excluding alpha_write and beta_tool."
-extensions: "./ext-alpha.mjs, ./ext-beta.mjs"
-extension_tools: alpha_read
+description: "Grants alpha's group minus alpha_write; beta stays muted."
+extensions: "+ext-alpha, +ext-beta"
+tools: "+@builtin, +@ext-alpha, -alpha_write"
 expect_tools_present: "read, alpha_read"
 expect_tools_absent: "alpha_write, beta_tool"
 ---
-e2e template: an explicit extension_tools allowlist exposes alpha_read while
-the other loaded extension tools remain muted.
+e2e template: an extension group grant followed by a single-tool removal
+exposes alpha_read while alpha_write and beta_tool remain muted.

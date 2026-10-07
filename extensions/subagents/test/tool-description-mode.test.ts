@@ -94,11 +94,10 @@ describe("toolDescriptionMode", () => {
   it.each(["full", "compact", "custom"])("advertises configured metadata in %s mode", (mode) => {
     const model = "anthropic/claude-sonnet-4-6:high:fast, openai-codex/gpt-5.5:medium, llama-swap/qwen:14b:low";
     const fixtures = [
-      { name: "chain", fields: `model: ${model}\nbuiltin_tools: read,bash\nextension_tools: lsp,codegraph_*,vendor_*`, builtins: "read, bash", extensions: "lsp, codegraph_*, vendor_*" },
-      { name: "inherit", fields: "", builtins: "all", extensions: "all available within runtime policy" },
-      { name: "none", fields: "builtin_tools: none\nextension_tools: none", builtins: "none", extensions: "none" },
-      { name: "isolated", fields: "isolated: true\nextension_tools: vendor_*", builtins: "all", extensions: "unavailable" },
-      { name: "disabled", fields: "extensions: false\nextension_tools: vendor_*", builtins: "all", extensions: "unavailable" },
+      { name: "chain", fields: `model: ${model}\ntools: +read, +bash, +@lsp, +codegraph_*`, tools: "+read, +bash, +@lsp, +codegraph_*" },
+      { name: "inherit", fields: "", tools: "none" },
+      { name: "list", fields: "tools:\n  - +@all\n  - -edit", tools: "+@all, -edit" },
+      { name: "isolated", fields: "isolated: true\ntools: +@builtin", tools: "+@builtin", isolated: "built-in tools only" },
     ];
     const tools = setup({ toolDescriptionMode: mode }, () => {
       const dir = join(tmpDir, ".pi", "agents");
@@ -116,9 +115,9 @@ describe("toolDescriptionMode", () => {
       for (const fixture of fixtures) {
         const row = section.split("\n").find((line) => line.startsWith(`- ${fixture.name}:`));
         expect(row).toBeDefined();
-        const metadata = new Map([...row?.matchAll(/\((Model chain|Built-in tools|Configured extension tools): ([^)]*)\)/g) ?? []].map((match) => [match[1], match[2]]));
-        expect(metadata.get("Built-in tools")).toBe(fixture.builtins);
-        expect(metadata.get("Configured extension tools")).toBe(fixture.extensions);
+        const metadata = new Map([...row?.matchAll(/\((Model chain|tools|isolated): ([^)]*)\)/g) ?? []].map((match) => [match[1], match[2]]));
+        expect(metadata.get("tools")).toBe(fixture.tools);
+        expect(metadata.get("isolated")).toBe(fixture.isolated);
         expect(metadata.get("Model chain")).toBeUndefined();
         expect(row).not.toContain("claude-sonnet-4-6");
       }
