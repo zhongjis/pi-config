@@ -15,7 +15,7 @@
       "type": "agent",
       "name": "Write seed queries",
       "agent": "wenchang",
-      "prompt": "Seed research for: ${question}\nOptional evidence context: ${context}\nWrite 2–4 short, broad search queries that map the topic before any plan exists: the topic itself, its origin or history, and the main sources or viewpoints that compete. Start wide; do not narrow to one source. Choose local for repository evidence, github for external GitHub evidence, web for public sources. Do not search or answer; write queries only. Return only structured JSON {items:[{source,question,purpose}]}.",
+      "prompt": "Seed research for: ${question}\nOptional evidence context: ${context}\nWrite 2–4 short, broad search queries that map the topic before any plan exists: the topic itself, its origin or history, and the main sources or viewpoints that compete. When the question asks for an origin, first use or history, make one query date-bounded to find the earliest known use (for example a before:<year> operator or an archive search). Start wide; do not narrow to one source. Choose local for repository evidence, github for external GitHub evidence, web for public sources. Do not search or answer; write queries only. Return only structured JSON {items:[{source,question,purpose}]}.",
       "input": { "question": { "path": "$.question" }, "context": { "path": "$.context" } },
       "outputSchema": {
         "type": "object", "additionalProperties": false,
@@ -36,14 +36,14 @@
         "required": ["source", "question", "purpose"]
       },
       "dispatch": { "path": "$.source", "cases": { "local": "chengfeng", "github": "wenchang", "web": "wenchang" } },
-      "prompt": "Topic: ${question}\nBroad seed query: ${item}\nRead only. Search broadly, open the 2–4 most relevant primary sources, and return individual one-fact claims with short verbatim excerpt, reference (local path/line or opened URL), and source identity including the publication date the source shows, or 'undated'; never supply a date yourself. Prefer claims that show who uses the topic's terms, when, and where sources disagree. Do not invent citations. Report inaccessible sources and unexplored leads as gaps. Return only structured JSON {claims:[{claim,excerpt,reference,source}],gaps:[string]}.",
+      "prompt": "Topic: ${question}\nBroad seed query: ${item}\nRead only. Search broadly, open the 2–4 most relevant primary sources, and return individual one-fact claims with short verbatim excerpt, reference (local path/line or opened URL), source identity including the publication date the source shows, or 'undated' (never supply a date yourself), and sourceKind: primary when the source originated the fact or is its authoritative record (official docs or spec, source code, the author's own announcement, repository or paper, a standards body or registry); secondary for reporting or commentary about it (news, blogs, social posts, aggregators, wikis, third-party vendor pages). Prefer claims that show who uses the topic's terms, when, and where sources disagree. Do not invent citations. Report inaccessible sources and unexplored leads as gaps. Return only structured JSON {claims:[{claim,excerpt,reference,source,sourceKind}],gaps:[string]}.",
       "input": { "question": { "path": "$.question" } },
       "outputSchema": {
         "type": "object", "additionalProperties": false,
         "properties": {
           "claims": { "type": "array", "items": { "type": "object", "additionalProperties": false,
-            "properties": { "claim": { "type": "string", "minLength": 1 }, "excerpt": { "type": "string", "minLength": 1 }, "reference": { "type": "string", "minLength": 1 }, "source": { "type": "string", "minLength": 1 } },
-            "required": ["claim", "excerpt", "reference", "source"] } },
+            "properties": { "claim": { "type": "string", "minLength": 1 }, "excerpt": { "type": "string", "minLength": 1 }, "reference": { "type": "string", "minLength": 1 }, "source": { "type": "string", "minLength": 1 }, "sourceKind": { "type": "string", "enum": ["primary", "secondary"] } },
+            "required": ["claim", "excerpt", "reference", "source", "sourceKind"] } },
           "gaps": { "type": "array", "items": { "type": "string" } }
         }, "required": ["claims", "gaps"]
       }

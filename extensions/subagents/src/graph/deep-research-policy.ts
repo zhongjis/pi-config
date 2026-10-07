@@ -1,4 +1,4 @@
-import type { FeedbackGap, FeedbackResult } from "./bounded-feedback.js";
+import type { FeedbackDecision, FeedbackGap, FeedbackResult } from "./bounded-feedback.js";
 import type { AgentGraph, FanoutResult } from "./ir.js";
 import type { SchedulerState } from "./scheduler.js";
 
@@ -9,6 +9,7 @@ export interface LedgerClaim {
   readonly excerpt: string;
   readonly reference: string;
   readonly source: string;
+  readonly sourceKind?: "primary" | "secondary";
   /** Later IDs whose normalized reference and excerpt repeat this claim; their partIds are merged into `partIds`. */
   readonly duplicateIds?: readonly string[];
 }
@@ -22,7 +23,19 @@ export interface ResearchLedger {
   readonly failures: readonly LedgerFailure[];
   readonly visited: readonly string[];
 }
-export interface LedgerRound { readonly iteration: number; readonly results: FanoutResult["results"] }
+export interface LedgerRound { readonly iteration: number; readonly results: FanoutResult["results"]; readonly decision?: FeedbackDecision }
+
+// ponytail: gap identity is the exact gapId; a renamed gap evades the limit. Upgrade path: match by `<partId>-` prefix instead.
+const GAP_ATTEMPT_LIMIT = 2;
+
+/** Counts `decision.tasks[].gapId` over every iteration except the last (the active round, whose own decision must not count against itself). */
+export function gapAttempts(iterations: readonly LedgerRound[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const round of iterations.slice(0, -1)) {
+    for (const task of round.decision?.tasks ?? []) counts.set(task.gapId, (counts.get(task.gapId) ?? 0) + 1);
+  }
+  return counts;
+}
 
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -74,7 +87,8 @@ export function researchLedger(seed: unknown, iterations: readonly LedgerRound[]
           for (const part of partIds) if (!first.partIds.includes(part)) first.partIds.push(part);
           return;
         }
-        const claim: Kept = { id, partIds: [...partIds], claim: text(raw.claim), excerpt: text(raw.excerpt), reference, source: text(raw.source) };
+        const sourceKind = raw.sourceKind === "primary" || raw.sourceKind === "secondary" ? raw.sourceKind : undefined;
+        const claim: Kept = { id, partIds: [...partIds], claim: text(raw.claim), excerpt: text(raw.excerpt), reference, source: text(raw.source), ...(sourceKind ? { sourceKind } : {}) };
         kept.set(key, claim); claims.push(claim);
       });
     });
@@ -89,8 +103,10 @@ function planning(value: unknown): { parts: string[]; seed: unknown } {
 }
 
 /** Evaluator `${feedback}`: the ledger plus the previous decision's gaps, never raw rounds. */
-export function evaluatorFeedback(planningOutput: unknown, iterations: readonly LedgerRound[], openGaps: readonly FeedbackGap[]): ResearchLedger & { openGaps: readonly FeedbackGap[] } {
-  return { ...researchLedger(record(planningOutput) ? planningOutput.seed : undefined, iterations), openGaps };
+export function evaluatorFeedback(planningOutput: unknown, iterations: readonly LedgerRound[], openGaps: readonly FeedbackGap[]): ResearchLedger & { openGaps: readonly FeedbackGap[]; exhaustedGaps: readonly { id: string; attempts: number }[] } {
+  const attempts = gapAttempts(iterations);
+  const exhaustedGaps = [...attempts].filter(([, count]) => count >= GAP_ATTEMPT_LIMIT).map(([id, count]) => ({ id, attempts: count }));
+  return { ...researchLedger(record(planningOutput) ? planningOutput.seed : undefined, iterations), openGaps, exhaustedGaps };
 }
 
 /** Writer `${research}`: the ledger plus terminal bounded-feedback metadata. */
@@ -127,15 +143,22 @@ export function checkDeepResearchOutput(context: DeepResearchOutput, value: unkn
     const plan = planning(context.planning);
     const output = record(value) ? value : {};
     if (context.stage === "evaluation") {
-      if (output.decision !== "sufficient") return true;
       const ledger = researchLedger(plan.seed, context.iterations ?? []);
+      if (output.decision === "continue") {
+        const attempts = gapAttempts(context.iterations ?? []);
+        const offending = [...new Set(list(output.tasks).map(task => record(task) ? text(task.gapId) : "").filter(gapId => gapId && (attempts.get(gapId) ?? 0) >= GAP_ATTEMPT_LIMIT))];
+        if (offending.length) throw new TypeError(offending.map(id => `gap ${id} already had ${attempts.get(id)} tasks with no closing claim (limit ${GAP_ATTEMPT_LIMIT}): remove its tasks and keep it in gaps as inaccessible; if no task for another gap remains, return decision 'sufficient' with tasks []`).join("; "));
+        return true;
+      }
+      if (output.decision !== "sufficient") return true;
       const gapIds = list(output.gaps).map(gap => record(gap) ? text(gap.id) : "");
-      const uncovered = plan.parts.filter(part => !ledger.claims.some(claim => claim.partIds.includes(part)) && !gapIds.some(gap => gap.startsWith(`${part}-`)));
-      if (uncovered.length) throw new TypeError(`decision 'sufficient' leaves plan parts with no ledger claim and no reported gap: ${uncovered.join(", ")}. Return decision 'continue' with tasks for them, or list each unresolved part as a gap whose id starts with '<partId>-' (for example '${uncovered[0]}-no-evidence').`);
+      const uncovered = plan.parts.filter(part => !ledger.claims.some(claim => claim.partIds.includes(part) && claim.sourceKind !== "secondary") && !gapIds.some(gap => gap.startsWith(`${part}-`)));
+      if (uncovered.length) throw new TypeError(`decision 'sufficient' leaves plan parts with no primary ledger claim and no reported gap: ${uncovered.join(", ")}. Return decision 'continue' with tasks for them, or list each unresolved part as a gap whose id starts with '<partId>-' (for example '${uncovered[0]}-no-evidence').`);
       return true;
     }
     const ledger = writerResearch(context.planning, context.research);
     const known = new Set(ledger.claims.flatMap(claim => [claim.id, ...(claim.duplicateIds ?? [])]));
+    const kindById = new Map(ledger.claims.flatMap(claim => [claim.id, ...(claim.duplicateIds ?? [])].map(id => [id, claim.sourceKind] as const)));
     const visited = new Set(ledger.visited);
     const errors: string[] = [];
     const unknownIds = new Set<string>();
@@ -153,6 +176,8 @@ export function checkDeepResearchOutput(context: DeepResearchOutput, value: unkn
     if (missing.length || extra.length) errors.push(`verifiedCoverage must list each plan part exactly once (${plan.parts.join(", ")})${missing.length ? `; missing or repeated: ${missing.join(", ")}` : ""}${extra.length ? `; unknown: ${extra.join(", ")}` : ""}`);
     const unsupported = coverage.filter(row => row.status === "supported" && !strings(row.claimIds).length).map(row => text(row.id));
     if (unsupported.length) errors.push(`supported coverage requires at least one claimId: ${unsupported.join(", ")}`);
+    const secondaryOnly = coverage.filter(row => row.status === "supported" && strings(row.claimIds).length > 0 && strings(row.claimIds).every(claimId => kindById.get(claimId) === "secondary")).map(row => text(row.id));
+    if (secondaryOnly.length) errors.push(`supported coverage needs at least one primary claim: ${secondaryOnly.join(", ")}`);
     if (errors.length) throw new TypeError(`${errors.join("; ")}. Cite only ledger claim IDs and their references.`);
     return true;
   } catch (error) {
