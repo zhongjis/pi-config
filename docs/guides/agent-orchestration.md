@@ -62,9 +62,8 @@ Each mode's `allow_delegation_to` / `disallow_delegation_to` frontmatter defines
 which subagents it may delegate to: [`kuafu`](../../modes/kuafu/mode.md),
 [`fuxi`](../../modes/fuxi/mode.md), [`houtu`](../../modes/houtu/mode.md).
 
-Routing intent: `fuxi` excludes `cangjie`; Fu Xi owns plan prose and allows `yunu` only
-for UI feasibility and `huayan` only for visual-review input, never implementation. `yanluo` is fuxi-only
-and `xuannv` is kuafu-only. Every mode allows `panguan` and `simaqian` so saved agent graphs
+Routing intent: `fuxi` excludes `cangjie`; Fu Xi owns plan prose and allows `huayan` only for visual-review input, never implementation. `yanluo` is fuxi-only
+and `xuannv` is kuafu-only. Kua Fu and Hou Tu allow `panguan` and `simaqian` so saved agent graphs
 that use them pass graph delegation preflight. **Hou Tu is never a delegation target** — it is reached
 through the approval → `/handoff:start-work` bridge, not by delegation.
 

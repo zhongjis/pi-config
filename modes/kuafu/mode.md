@@ -6,7 +6,6 @@ tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write, -tool_search
 allow_delegation_to: chengfeng,wenchang,cangjie,xuannv,jintong,juling,yunu,huayan,guangguang,taishang,direnjie,panguan,simaqian
-disallow_delegation_to: houtu
 allow_nesting: true
 ---
 

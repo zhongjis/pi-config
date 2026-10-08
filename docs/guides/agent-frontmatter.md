@@ -375,16 +375,12 @@ tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write, -tool_search
 allow_delegation_to: chengfeng,wenchang,xuannv,jintong,juling,yunu,guangguang,taishang,direnjie
-disallow_delegation_to: houtu
 allow_nesting: true
 ---
 ```
 
 `+@all` grants every registered tool except the subtracted ones, and `allow_nesting: true`
-lets the nested subagent tools through the hard gate, enabling delegation. `disallow_delegation_to: houtu` is a defensive guard: since `houtu` is
-not in this allowlist (and is a mode, not a delegable subagent), it removes nothing
-here, but the allowlist-then-blocklist order means any overlapping entry would be
-dropped. `display_name`/`inherit_context` here are informational — the mode label
+lets the nested subagent tools through the hard gate, enabling delegation. `display_name`/`inherit_context` here are informational — the mode label
 comes from `MODE_META` and `inherit_context` is inert for modes.
 
 ---

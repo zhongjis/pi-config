@@ -7,8 +7,7 @@ tools: |
   -@builtin, +read, +bash, +edit, +write, -tool_search,
   -agent_graph, -resolve_agent_graph_gate, -@pi-interactive-shell,
   -@pi-intercom, -@pi-web-access, -@pi-autoresearch, -@imagegen
-allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,yunu,huayan,panguan,simaqian
-disallow_delegation_to: houtu
+allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,huayan
 allow_nesting: true
 ---
 
