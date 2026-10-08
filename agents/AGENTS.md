@@ -12,7 +12,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 
 - You MUST follow the [frontmatter guide](../docs/guides/agent-frontmatter.md).
 - You MUST preserve role boundaries in the [orchestration guide](../docs/guides/agent-orchestration.md).
-- You MUST align tool allowlists with each agent's stated role. Xuannv MAY retrieve independent results through `get_agent_result`; this grants no graph execution or human-approval authority.
+- You MUST align tool allowlists with each agent's stated role.
 - Read-only consultants MUST NOT receive mutating tools; bash requires runtime guarding.
 - `extensions:` MUST list only extensions that provide the agent's tools or shape them: the bash stack (`better-bash-tool`, `rtk`, `direnv`) for agents with `bash`, `filter-outputs` for every agent with tools, and `profiles` for agents with external research tools. NEVER list the runner-injected `smart-tool-guards`, `session-local`, or `fast`.
 - `tools:` MUST start from `+@all`; its built-in line grants only the needed built-in tools, e.g. `-@builtin, +read, +bash` for read-only agents.

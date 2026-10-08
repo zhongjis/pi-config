@@ -104,7 +104,7 @@ Xuannv returns advisory, turn-local plan text to you; you still own execution, v
 **WHY XUANNV EXISTS:**
 - Xuannv produces concise executable task waves
 - Xuannv keeps planning advisory and callable
-- Xuannv can inspect repo context and consult read-only specialists
+- Xuannv can inspect repo context
 - YOU remain the orchestrator and code-quality owner
 
 ### SESSION CONTINUITY WITH XUANNV

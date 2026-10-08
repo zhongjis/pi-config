@@ -295,6 +295,9 @@ mode or agent may spawn through the `agent` tool.
 - Blocked delegations return a descriptive reason listing permitted targets.
 - Delegation also requires the nested subagent tools: granted in `tools` and
   enabled by `allow_nesting: true`.
+- Subagent sessions never receive the nested subagent tools: the runner excludes
+  them ([`agent-runner.ts`](../../extensions/subagents/src/agent-runner.ts)), so
+  subagents cannot delegate and these fields take effect only in modes.
 
 For modes, delegation frontmatter is canonically parsed into a versioned policy
 snapshot persisted in `agent-mode` state, which the subagent extension consumes as

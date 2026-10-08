@@ -32,8 +32,7 @@ Details of each mode's lifecycle, restrictions, and gates are in
 
 ## Subagent roster (delegation targets)
 
-Orchestrators route to these leaf specialists. Only `xuannv` can itself delegate
-(to read-only recon/research/analysis agents); implementation and writing workers are leaves.
+Orchestrators route to these leaf specialists. No subagent delegates further.
 
 | Agent | Role | Writes code? | Can delegate? |
 |-------|------|:---:|:---:|
@@ -43,7 +42,7 @@ Orchestrators route to these leaf specialists. Only `xuannv` can itself delegate
 | `taishang` | Architecture + debugging consult, plan-compliance | no | no |
 | `direnjie` | Gap analysis (assumptions, guardrails, scope) | no | no |
 | `yanluo` | High-accuracy finalized-plan review | no | no |
-| `xuannv` | Tactical planning advisor (returns plan text) | no | **yes** |
+| `xuannv` | Tactical planning advisor (returns plan text) | no | no |
 | `panguan` | Tool-free judge: typed labels over supplied evidence (graph evaluators, agent gates) | no | no |
 | `simaqian` | Tool-free report writer: one cited report from supplied research evidence (graph writers) | no | no |
 | `guangguang` | Quick, deterministic, naturally single-file implementation | yes | no |
