@@ -15,7 +15,7 @@ export const historyIndices = (value: unknown): value is number[] => Array.isArr
 /** Decode an allowlist, never copy untrusted objects into presentation. */
 export function decodeTopology(value: unknown): HistoryTopology | undefined {
   if (!record(value) || !historyString(value.name)) return;
-  if (value.kind !== "agent" && value.kind !== "fanout" && value.kind !== "bounded_feedback" && value.kind !== "graph" && value.kind !== "expand" && value.kind !== "human_gate" && value.kind !== "agent_gate" && value.kind !== "hybrid_gate") return;
+  if (value.kind !== "agent" && value.kind !== "fanout" && value.kind !== "bounded_feedback" && value.kind !== "graph" && value.kind !== "expand" && value.kind !== "decision_gate") return;
   const topology: HistoryTopology = { kind: value.kind, name: historyText(value.name) };
   for (const key of ["parentIndex", "iteration", "itemIndex"] as const) {
     if (value[key] === undefined) continue;
@@ -23,7 +23,7 @@ export function decodeTopology(value: unknown): HistoryTopology | undefined {
     topology[key] = value[key];
   }
   if (value.role !== undefined) {
-    if (value.role !== "work" && value.role !== "evaluator" && value.role !== "item") return;
+    if (value.role !== "work" && value.role !== "judge" && value.role !== "evaluator" && value.role !== "item") return;
     topology.role = value.role;
   }
   if (value.connections !== undefined) {
@@ -80,7 +80,7 @@ export function validHistoryReferences(nodes: readonly HistoryReferences[]): boo
       const representable = child?.itemIndex !== undefined
         ? child.kind === "agent" && owner?.kind === "fanout"
         : child?.iteration !== undefined && owner?.kind === "bounded_feedback" &&
-          (child.role === "work" ? child.kind === "fanout" : child.role === "evaluator" && child.kind === "agent");
+          (child.role === "work" ? child.kind === "fanout" : child.role === "judge" ? child.kind === "decision_gate" : child.role === "evaluator" && child.kind === "agent");
       if (!representable) return false;
     }
     while (parent !== undefined) {

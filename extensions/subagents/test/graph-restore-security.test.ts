@@ -12,8 +12,8 @@ function directory() { const path = mkdtempSync(join(tmpdir(), "graph-security-"
 afterEach(() => { for (const path of dirs.splice(0)) rmSync(path, { recursive: true, force: true }); });
 const graph: AgentGraph = { nodes: { a: { type: "agent", agent: "worker", prompt: "x", outputSchema: { type: "object", properties: { ok: { type: "boolean" } }, required: ["ok"] } } }, edges: [] };
 const runId = "agr_abcdef123456";
-const gateGraph: AgentGraph = { nodes: { a: { type: "human_gate", prompt: "approve", outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } } }, edges: [] };
-const host = { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }), awaitHumanGate: async () => ({ ok: true, output: '{"approved":true}' }) };
+const gateGraph: AgentGraph = { nodes: { a: { type: "decision_gate", state: {}, questions: { approved: { type: "bool", instructions: "fixture", criteria: { true: "yes", false: "no" } } } } }, edges: [] };
+const host = { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }), decide: async () => ({ ok: true as const, answers: { approved: { value: true, confidence: 1 } }, decidedBy: "classifier" as const, model: "fixture" }) };
 async function checkpoint(cwd: string, source: AgentGraph = graph): Promise<GraphRunSnapshot> {
   let saved: GraphRunSnapshot | undefined;
   await runGraph(source, {}, { runId, onCheckpoint: (state, effective) => { saved = structuredClone({ version: 2, runId, graph: effective, input: {}, waitingGate: "", savedAt: 0, state }); writeGraphSnapshot(cwd, saved); }, host });
@@ -79,7 +79,7 @@ it.each(["missing", "unknown", "status", "attempt", "loops", "output", "gate out
   if (kind === "attempt") saved.state.nodes.a.attempt = -1;
   if (kind === "loops") saved.state.loopCounts["missing->a"] = 1;
   if (kind === "output") saved.state.nodes.a.output = { ok: "forged" };
-  if (kind === "gate output") saved.state.nodes.a.output = { approved: "forged" };
+  if (kind === "gate output") saved.state.nodes.a.output = { answers: { approved: { value: "forged", confidence: 1 } }, decidedBy: "classifier" };
   const spawnAgent = vi.fn(); const onCheckpoint = vi.fn();
   await expect(runGraph(saved.graph, saved.input, { runId: saved.runId, restore: saved.state, host: { spawnAgent }, onCheckpoint })).rejects.toThrow();
   expect(onCheckpoint).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled();

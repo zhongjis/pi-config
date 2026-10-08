@@ -81,7 +81,8 @@ export const feedbackLogic = setup({
         switch (context.request.operation.kind) {
           case "feedback-intent": return context.view.phase !== "absent";
           case "feedback-materialize": return context.view.phase !== "intent";
-          case "feedback-decision": return context.view.phase === "intent" || context.view.phase === "terminal";
+          // A judged step may materialize the judge or evaluator instead of recording the iteration.
+          case "feedback-decision": return ["intent", "judging", "evaluation", "terminal"].includes(context.view.phase);
           default: return false;
         }
       }, target: "observing" },

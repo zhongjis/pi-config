@@ -74,24 +74,31 @@
       }
     },
     "scope": {
-      "type": "agent_gate",
+      "type": "decision_gate",
       "name": "Check plan scope",
-      "agent": "panguan",
-      "prompt": "Autonomous scope check for a research plan. Question: ${question}\nOptional evidence context: ${context}\nPlan: ${plan}\nApprove when every material part of the question has a plan part, every plan part has at least one task, and no part is outside the question's scope. Reject only when a material part is missing, two material parts are merged so one cannot be judged alone, or a part is outside the scope. You MUST decide; undecided is not allowed. When unsure, approve.",
-      "input": { "question": { "path": "$.question" }, "context": { "path": "$.context" }, "plan": { "node": "plan", "path": "$" } },
-      "outputSchema": { "type": "object", "properties": { "approved": { "type": "boolean" } }, "required": ["approved"], "additionalProperties": false }
+      "state": { "question": { "path": "$.question" }, "context": { "path": "$.context" }, "plan": { "node": "plan", "path": "$" } },
+      "questions": {
+        "inScope": {
+          "type": "bool",
+          "instructions": "Check the research plan's scope against the question. Every material part of the question must have a plan part, every plan part must have at least one task, and no part may be outside the question's scope. Answer false only when a material part is missing, two material parts are merged so one cannot be judged alone, or a part is outside the question's scope; otherwise answer true.",
+          "criteria": {
+            "true": "Every material part of the question has its own plan part, every plan part has at least one task, and no part is outside the question's scope.",
+            "false": "A material part of the question is missing, two material parts are merged so one cannot be judged alone, or a part is outside the question's scope."
+          }
+        }
+      }
     }
   },
   "edges": [
     { "from": "seedQueries", "to": "seedSearch" },
     { "from": "seedSearch", "to": "plan" },
     { "from": "plan", "to": "scope" },
-    { "from": "scope", "to": "plan", "when": { "eq": [{ "node": "scope", "path": "$.approved" }, false] }, "loop": { "maxIterations": 1 } }
+    { "from": "scope", "to": "plan", "when": { "eq": [{ "node": "scope", "path": "$.answers.inScope.value" }, false] }, "loop": { "maxIterations": 1 } }
   ],
   "outputs": {
     "parts": { "node": "plan", "path": "$.parts" },
     "tasks": { "node": "plan", "path": "$.tasks" },
     "seed": { "node": "seedSearch", "path": "$" },
-    "approved": { "node": "scope", "path": "$.approved" }
+    "approved": { "node": "scope", "path": "$.answers.inScope.value" }
   }
 }

@@ -2,14 +2,14 @@ import { expect, it } from "vitest";
 import { createActor, toPromise } from "xstate";
 import { graphLogic } from "../src/graph/graph-actor.js";
 
-it.each(["agent", "human_gate"] as const)("dispatches %s through admission and release handshakes", async type => {
+it.each(["agent", "decision_gate"] as const)("dispatches %s through admission and release handshakes", async type => {
   const events: string[] = [];
   const actor = createActor(graphLogic, {
     inspect: event => { if (event.type === "@xstate.event") events.push(event.event.type); },
-    input: { graph: { nodes: { a: type === "agent" ? { type, agent: "worker", prompt: "fixture" } : { type, prompt: "fixture", outputSchema: { type: "object" } } }, edges: [] }, input: {}, depth: 0,
+    input: { graph: { nodes: { a: type === "agent" ? { type, agent: "worker", prompt: "fixture" } : { type: "decision_gate", state: {}, questions: { approved: { type: "bool", instructions: "fixture", criteria: { true: "yes", false: "no" } } } } }, edges: [] }, input: {}, depth: 0,
       options: { onCheckpoint: () => { events.push("checkpoint"); }, host: {
         spawnAgent: async () => { events.push("effect"); return { ok: true }; },
-        awaitHumanGate: async () => { events.push("effect"); return { ok: true, output: '{"approved":true}' }; },
+        awaitEscalation: async () => { events.push("effect"); return { ok: true, output: '{"answers":{"approved":true},"decidedBy":"human"}' }; },
       } } },
   }).start();
   expect((await toPromise(actor)).status).toBe("completed");

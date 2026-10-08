@@ -6,7 +6,7 @@ import { feedbackLogic } from "./feedback-actor.js";
 import { createGraphDomain, type GraphDomain } from "./graph-domain.js";
 import { matchesExecution } from "./graph-execution.js";
 import type { ChildCheckpointRequest, ChildGraphDrained, GraphActorInput, GraphAdmission, GraphEvent, GraphReply } from "./graph-protocol.js";
-import { agentNodeLogic, humanGateNodeLogic } from "./node-lifecycle.js";
+import { agentNodeLogic, decisionGateNodeLogic } from "./node-lifecycle.js";
 import { captureRequest, type NodeRequest, NodeRequestJournal } from "./node-protocol.js";
 import type { GraphControl, RunGraphResult } from "./run-graph.js";
 import { subgraphLogic } from "./subgraph-actor.js";
@@ -123,7 +123,7 @@ function persistenceChart<const T extends PersistenceChartOptions>(options: T) {
 // allow: SIZE_OK — the root machine keeps admission, persistence, cancellation and physical drain in one hierarchy.
 export const graphLogic = setup({
   types: { context: {} as GraphContext, input: {} as GraphActorInput, events: {} as GraphEvent, output: {} as RunGraphResult },
-  actors: { agent: agentNodeLogic, human: humanGateNodeLogic, expand: expandLogic, fanout: fanoutLogic, feedback: feedbackLogic, recovery, persist, publish, get subgraph(): AnyStateMachine { return subgraphLogic; } },
+  actors: { agent: agentNodeLogic, decision: decisionGateNodeLogic, expand: expandLogic, fanout: fanoutLogic, feedback: feedbackLogic, recovery, persist, publish, get subgraph(): AnyStateMachine { return subgraphLogic; } },
   guards: {
     failed: ({ context }) => context.failure !== undefined,
     cancelled: ({ context }) => context.cancellation !== undefined,
@@ -168,7 +168,7 @@ export const graphLogic = setup({
       for (const admission of context.admissions) {
         switch (admission.kind) {
           case "graph": case "feedback": case "fanout": case "expand": context.coordinators.set(admission.id, new CoordinatorRequestJournal(admission.input.receipt)); break;
-          case "agent": case "human": context.journals.set(admission.id, new NodeRequestJournal(admission.input.receipt)); break;
+          case "agent": case "decision": context.journals.set(admission.id, new NodeRequestJournal(admission.input.receipt)); break;
           default: { const exhaustive: never = admission; throw new TypeError(`Unknown admission: ${exhaustive}`); }
         }
       }
@@ -282,7 +282,7 @@ export const graphLogic = setup({
       for (const admission of context.admissions.splice(0)) {
         switch (admission.kind) {
           case "agent": enqueue.spawnChild("agent", { id: `node:${admission.id}`, input: admission.input }); break;
-          case "human": enqueue.spawnChild("human", { id: `node:${admission.id}`, input: admission.input }); break;
+          case "decision": enqueue.spawnChild("decision", { id: `node:${admission.id}`, input: admission.input }); break;
           case "expand": enqueue.spawnChild("expand", { id: `node:${admission.id}`, input: admission.input }); break;
           case "feedback": enqueue.spawnChild("feedback", { id: `node:${admission.id}`, input: admission.input }); break;
           case "fanout": enqueue.spawnChild("fanout", { id: `node:${admission.id}`, input: admission.input }); break;
@@ -298,7 +298,7 @@ export const graphLogic = setup({
               if (admission.kind === "feedback") enqueue.sendTo(`node:${admission.id}`, { type: "COORD.FEEDBACK_VIEW", receipt: admission.input.receipt, view: domainOf(context).feedbackView(admission.id) });
               if (admission.kind === "fanout") enqueue.sendTo(`node:${admission.id}`, { type: "COORD.VIEW", receipt: admission.input.receipt, view: domainOf(context).collectionView(admission.id) });
               break;
-            case "agent": case "human": enqueue.sendTo(`node:${admission.id}`, { type: "NODE.ADMITTED", receipt: admission.input.receipt }); break;
+            case "agent": case "decision": enqueue.sendTo(`node:${admission.id}`, { type: "NODE.ADMITTED", receipt: admission.input.receipt }); break;
             default: { const exhaustive: never = admission; throw new TypeError(`Unknown admission: ${exhaustive}`); }
           }
         }

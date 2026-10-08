@@ -8,10 +8,13 @@ export function createGateResolutionTool(lookup: (id: string) => ReturnType<type
   return defineTool({
     name: SUBAGENT_TOOL_NAMES.RESOLVE_GRAPH_GATE,
     label: "Resolve Graph Gate",
-    description: "Submit the human response collected with ask for a gate returned by get_agent_result. Copy run_id, gate_id and revision exactly; never invent human approval. Then collect with get_agent_result(wait:true).",
+    description: "Submit the decision for an escalated decision_gate returned by get_agent_result. Decide yourself or ask the human with ask; set decidedBy truthfully (\"human\" only when the human chose). Copy run_id, gate_id and revision exactly. Then collect with get_agent_result(wait:true).",
     parameters: Type.Object({
       run_id: Type.String(), gate_id: Type.String(), revision: Type.String(),
-      response: Type.Object({ approved: Type.Boolean() }, { additionalProperties: false }),
+      response: Type.Object({
+        answers: Type.Record(Type.String(), Type.Union([Type.Boolean(), Type.String(), Type.Number()])),
+        decidedBy: Type.Union([Type.Literal("orchestrator"), Type.Literal("human")]),
+      }, { additionalProperties: false }),
     }),
     renderCall(args, theme) { return renderToolCall("resolve_agent_graph_gate", args.run_id, theme); },
     renderResult(result, options, theme) {
@@ -22,7 +25,7 @@ export function createGateResolutionTool(lookup: (id: string) => ReturnType<type
       const gates = lookup(params.run_id);
       if (!gates) throw new Error(`Graph run not found: "${params.run_id}".`);
       const receipt = gates.resolve(params.gate_id, params.revision, params.response);
-      return { content: [{ type: "text" as const, text: "Human response accepted. Collect with get_agent_result(wait:true)." }],
+      return { content: [{ type: "text" as const, text: "Decision accepted. Collect with get_agent_result(wait:true)." }],
         details: { kind: "graph-gate" as const, run_id: params.run_id, ...receipt } };
     },
   });

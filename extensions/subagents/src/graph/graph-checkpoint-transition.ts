@@ -44,12 +44,13 @@ function transition(previous: SchedulerState, next: SchedulerState, graph: Agent
       const feedback = before.feedback?.[key];
       const failures = successor.retryFailures ?? 0;
       if (!Number.isSafeInteger(failures) || failures < 0 || (successor.retryError !== undefined) !== (failures > 0) || (failures > 0 && typeof successor.retryError !== "string")) throw new TypeError("Invalid evaluator failure evidence");
-      // Evidence resets only when a new evaluator is materialized, never at decision/intent.
-      if (!feedback || successor.active && successor.active.evaluator !== feedback.active?.evaluator) {
+      // Evidence resets only when a new iteration or evaluator is materialized, never at decision/intent.
+      if (!feedback || successor.active && (successor.active.iteration !== feedback.active?.iteration || successor.active.evaluator !== feedback.active?.evaluator)) {
         if (failures !== 0) throw new TypeError("Checkpoint initializes evaluator failure evidence");
       } else {
         const delta = failures - (feedback.retryFailures ?? 0);
-        const sameActive = feedback.active !== undefined && successor.active?.evaluator === feedback.active.evaluator;
+        // A judged iteration has no evaluator until its lazy evaluator step.
+        const sameActive = feedback.active?.evaluator !== undefined && successor.active?.evaluator === feedback.active.evaluator;
         if (delta < 0 || delta > (sameActive ? 1 : 0) || (delta === 0 && successor.retryError !== feedback.retryError)) throw new TypeError("Checkpoint rewrites evaluator failure evidence");
         if (sameActive && after.executionProtocolVersion === 1) {
           const instance = before.manifest.find(row => row.binding === feedback.active?.evaluator);

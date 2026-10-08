@@ -4,9 +4,9 @@ import { expect, it, vi } from "vitest";
 import * as persistence from "../src/graph/graph-persist.js";
 import { deferred } from "./graph-drain.fixture.js";
 import { boot, mockRunAgent, session } from "./graph-run-registration.fixture.js";
-import { gateGraph, gateNode, launch, pendingGate, resolveGate, retrieve } from "./gate-tools.fixture.js";
+import { approve, gateGraph, gateNode, launch, pendingGate, reject, resolveGate, retrieve } from "./gate-tools.fixture.js";
 
-it("cancels one parked retrieval without affecting another waiter or a later gate", async () => {
+it("cancels one parked retrieval without affecting another waiter or a later escalation", async () => {
   const host = boot();
   await host.lifecycle("session_start");
   const work = deferred<void>();
@@ -24,7 +24,7 @@ it("cancels one parked retrieval without affecting another waiter or a later gat
   expect((await retrieve(host, id)).details).toMatchObject({ status: "completed" });
 });
 
-it("keeps sibling nested gates distinct and rejects pre-reload nested responses", async () => {
+it("keeps sibling nested escalations distinct and rejects pre-reload nested responses", async () => {
   const first = boot();
   mkdirSync(join(first.ctx.cwd, ".pi", "agent-graphs"), { recursive: true });
   writeFileSync(join(first.ctx.cwd, ".pi", "agent-graphs", "child.graph.json"), JSON.stringify(gateGraph));
@@ -36,24 +36,24 @@ it("keeps sibling nested gates distinct and rejects pre-reload nested responses"
   await second.lifecycle("session_start");
   const left = await pendingGate(second, id);
   await expect(resolveGate(second, old)).rejects.toThrow(/stale/i);
-  await resolveGate(second, left, { approved: true });
+  await resolveGate(second, left, approve);
   const right = await pendingGate(second, id);
   expect(right.gate_id).not.toBe(left.gate_id);
-  await resolveGate(second, right, { approved: false });
+  await resolveGate(second, right, reject);
   const result = await retrieve(second, id);
   expect(result.details).toMatchObject({ status: "completed" });
   const text = result.content.map(part => part.text).join("\n");
-  expect(text).toContain('"approved": true');
-  expect(text).toContain('"approved": false');
+  expect(text).toContain('"decidedBy": "orchestrator"');
+  expect(text).toContain('"decidedBy": "human"');
   expect(second.ui.select).not.toHaveBeenCalled();
 });
 
-it("never publishes a human request when its durable dispatch checkpoint fails", async () => {
+it("never publishes an escalation when its durable dispatch checkpoint fails", async () => {
   const host = boot();
   await host.lifecycle("session_start");
   const write = persistence.writeGraphSnapshot;
   vi.spyOn(persistence, "writeGraphSnapshot").mockImplementation((cwd, snapshot) => {
-    if (snapshot.state.runtime?.executionLedger?.some(row => "payload" in row && row.payload.kind === "dispatched" && row.payload.target === "human-gate")) throw new Error("checkpoint failed");
+    if (snapshot.state.runtime?.executionLedger?.some(row => "payload" in row && row.payload.kind === "dispatched" && row.payload.target === "escalation")) throw new Error("checkpoint failed");
     write(cwd, snapshot);
   });
   const id = await launch(host);

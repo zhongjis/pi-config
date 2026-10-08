@@ -1,10 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { checkContextOutput, validateContextInput } from "./context-gather-policy.js";
-import { checkDeepResearchOutput, evaluatorFeedback, visitedLine, writerResearch } from "./deep-research-policy.js";
+import { checkDeepResearchOutput, evaluatorFeedback, skipsJudge, visitedLine, writerResearch } from "./deep-research-policy.js";
 import { isDeepStrictEqual } from "node:util";
-import { decision, decisionSchema, type FeedbackIteration, type FeedbackReason, type FeedbackState, feedbackBudgetBounds, feedbackContinuation, feedbackTerminal } from "./bounded-feedback.js";
+import { decision, evaluatorTemplate, type FeedbackIteration, type FeedbackReason, type FeedbackState, feedbackBudgetBounds, feedbackContinuation, feedbackTerminal, JUDGED_SUFFICIENT, judgeTemplate, judgeVerdict } from "./bounded-feedback.js";
 import { type CoordinatorReceipt, type CoordinatorRequest, coordinatorReceipt, type FeedbackOwnerView } from "./coordinator-protocol.js";
-import { compileDecisionSchema } from "./decision-gate.js";
+import { compileDerivedSchema, DEFAULT_MIN_CONFIDENCE, decidedByOf, decisionOutputSchema, decisionResponseSchema } from "./decision-gate.js";
 import { prepareFanout } from "./fanout.js";
 import { validateCheckpointTransition } from "./graph-checkpoint-transition.js";
 import { matchesExecution, upgradeLegacyExecution } from "./graph-execution.js";
@@ -59,7 +59,7 @@ function interpolate(prompt: string, input: AgentNode["input"], ctx: ResolutionC
 /** Parse a completed node's output for the projection: JSON when schema'd, else text. */
 function parseOutput(node: GraphNode, result: NodeSpawnResult): unknown {
   if (!result.ok || result.output === undefined) return undefined;
-  if ((node.type === "agent" && node.outputSchema !== undefined) || node.type === "human_gate" || node.type === "agent_gate" || node.type === "hybrid_gate") {
+  if ((node.type === "agent" && node.outputSchema !== undefined) || node.type === "decision_gate") {
     try {
       return JSON.parse(result.output);
     } catch {
@@ -89,6 +89,7 @@ function resolveInputMap(input: Record<string, ValueRef> | undefined, ctx: Resol
 function childOptions(options: RunGraphOptions): RunGraphOptions {
   const child: RunGraphOptions = { host: options.host, now: options.now, authorizeAgent: options.authorizeAgent, reclaimedDeadWriter: options.reclaimedDeadWriter };
   if (options.concurrency !== undefined) child.concurrency = options.concurrency;
+  if (options.decisionGateMinConfidence !== undefined) child.decisionGateMinConfidence = options.decisionGateMinConfidence;
   if (options.signal !== undefined) child.signal = options.signal;
   if (options.loadGraph !== undefined) child.loadGraph = options.loadGraph;
   if (options.resources !== undefined) child.resources = options.resources;
@@ -202,10 +203,9 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       const copy = { ...run }; const identity = executions.current(id);
       delete copy.decisionSource; // Presentation is derived, never restored as authority.
       const type = nodeDefs.get(id)?.type;
-      if (run.status === "completed" && identity && (type === "human_gate" || type === "agent_gate" || type === "hybrid_gate")) {
-        const rows = executions.rows(identity);
-        const dispatch = rows.filter(row => row.payload.kind === "dispatched").at(-1)?.payload;
-        if (dispatch?.kind === "dispatched" && rows.some(row => row.payload.kind === "outcome" && row.payload.status === "success")) copy.decisionSource = dispatch.target === "human-gate" ? "human" : "subagent";
+      if (run.status === "completed" && identity && type === "decision_gate" && executions.rows(identity).some(row => row.payload.kind === "outcome" && row.payload.status === "success")) {
+        const source = decidedByOf(run.output);
+        if (source) copy.decisionSource = source;
       }
       const presentation = presentationOf(id);
       publish(() => options.onNodeUpdate?.(displayId(id), copy, identity, presentation));
@@ -366,20 +366,25 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       feedbackStates[id] = { iterations: [], gaps: [] }; finishFeedback(id, "skipped before admission");
     }
   };
-  const feedbackBudgetExceeded = (id: string, node: BoundedFeedbackNode): boolean => {
-    if (node.deadline === undefined && node.spendLimit === undefined) return false;
+  const feedbackBudget = (id: string, node: BoundedFeedbackNode): string[] => {
+    if (node.deadline === undefined && node.spendLimit === undefined) return [];
     const state = feedbackStates[id]; const now = (options.now ?? Date.now)();
     if (!Number.isSafeInteger(now) || now < 0) throw new TypeError("Invalid feedback budget clock");
     state.budgetCheckedAt = Math.max(now, instances.state.startedAt ?? 0, state.budgetCheckedAt ?? 0);
-    const bounds = feedbackBudgetBounds(state, node, instances.state.startedAt ?? 0, projection.nodes, state.budgetCheckedAt, instances.state);
+    return feedbackBudgetBounds(state, node, instances.state.startedAt ?? 0, projection.nodes, state.budgetCheckedAt, instances.state);
+  };
+  const feedbackBudgetExceeded = (id: string, node: BoundedFeedbackNode): boolean => {
+    const bounds = feedbackBudget(id, node);
     if (!bounds.length) return false;
     finishFeedback(id, "deadline/spend limit", bounds); return true;
   };
   const feedbackView = (id: string): FeedbackOwnerView => {
-    const state = feedbackStates[id];
+    const state = feedbackStates[id]; const active = state?.active;
     const terminal = (binding: string): boolean => ["completed", "failed", "skipped"].includes(projection.nodes.get(binding)?.status ?? "");
-    return { revision: instances.state.revision, iteration: state?.intent?.iteration ?? state?.active?.iteration ?? state?.iterations.length ?? 0,
-      phase: !state ? "absent" : state.terminal ? "terminal" : state.intent ? "intent" : state.active && !terminal(state.active.work) ? "work" : state.active && !terminal(state.active.evaluator) ? "evaluation" : "decision" };
+    return { revision: instances.state.revision, iteration: state?.intent?.iteration ?? active?.iteration ?? state?.iterations.length ?? 0,
+      phase: !state ? "absent" : state.terminal ? "terminal" : state.intent ? "intent" : active && !terminal(active.work) ? "work"
+        : active?.evaluator !== undefined ? terminal(active.evaluator) ? "decision" : "evaluation"
+        : active?.judge !== undefined && !terminal(active.judge) ? "judging" : "decision" };
   };
   const admitFeedback = (id: string): GraphAdmission => {
     if (projection.nodes.get(id)?.status !== "running") startNode(id);
@@ -394,48 +399,99 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     if (intent.iteration > node.maxIterations) { finishFeedback(id, "iteration limit", ["maxIterations"]); return; }
     const total = state.iterations.reduce((sum, row) => sum + row.tasks.length, 0) + intent.tasks.length;
     if (intent.tasks.length > node.maxItemsPerIteration || total > node.maxTotalItems) { finishFeedback(id, "item limit", [intent.tasks.length > node.maxItemsPerIteration ? "maxItemsPerIteration" : "maxTotalItems"]); return; }
-    const count = intent.tasks.length + 2;
+    // A judged iteration reserves room for its lazy judge and evaluator steps.
+    const judged = node.judge !== undefined;
+    const count = intent.tasks.length + (judged ? 3 : 2);
     if (nodeDefs.size + count > MAX_NODES || !projection.canMaterialize(count)) { finishFeedback(id, "materialization failure", [nodeDefs.size + count > MAX_NODES ? "node limit" : "run limit"]); return; }
     const work = `${id}:iteration:${intent.iteration}:work`;
     const evaluator = `${id}:iteration:${intent.iteration}:evaluator`;
     const context = contextOf(projection, input);
     const prepared = prepareFanout({ ...node.work, items: { node: work, path: "$" } }, { ...context, outputs: new Map([...context.outputs, [work, intent.tasks]]) });
     if (!prepared.ok) { finishFeedback(id, "materialization failure", [prepared.error]); return; }
-    const nodes: Record<string, GraphNode> = { [work]: node.work, [evaluator]: { ...node.evaluator, input: { ...node.evaluator.input, feedback: { path: "$" } }, outputSchema: decisionSchema(node.work.itemSchema) } };
+    const nodes: Record<string, GraphNode> = judged ? { [work]: node.work } : { [work]: node.work, [evaluator]: evaluatorTemplate(node) };
     prepared.items.forEach(({ node: child }, index) => { nodes[`${work}:item:${index}`] = { ...child, ...(node.work.name !== undefined ? { name: node.work.name } : {}) }; });
-    if (Object.keys(nodes).some(key => nodeDefs.has(key))) { finishFeedback(id, "materialization failure", ["Generated binding collision"]); return; }
+    if ([...Object.keys(nodes), ...(judged ? [`${id}:iteration:${intent.iteration}:judge`, evaluator] : [])].some(key => nodeDefs.has(key))) { finishFeedback(id, "materialization failure", ["Generated binding collision"]); return; }
     const parentInstanceId = instances.get(id).instanceId;
     const workInstance = instances.add(work, { nodeKey: id, parentInstanceId, iteration: intent.iteration });
-    const evaluatorInstance = instances.add(evaluator, { nodeKey: id, parentInstanceId, iteration: intent.iteration });
+    const evaluatorInstance = judged ? undefined : instances.add(evaluator, { nodeKey: id, parentInstanceId, iteration: intent.iteration });
     const children = prepared.items.map(({ item }, itemIndex) => {
       const nodeId = `${work}:item:${itemIndex}`;
       const provenance = instances.add(nodeId, { nodeKey: id, parentInstanceId: workInstance.instanceId, iteration: intent.iteration, itemIndex });
       return { nodeId, item, ...provenance };
     });
-    const edges = [{ from: work, to: evaluator }];
+    const edges = evaluatorInstance ? [{ from: work, to: evaluator }] : [];
     for (const [key, definition] of Object.entries(nodes)) nodeDefs.set(key, definition);
     materialize({ nodes, edges }); startNode(work);
     projection.apply({ kind: "collection", id: work, children });
     state.retryFailures = 0;
     delete state.retryError;
-    state.active = { iteration: intent.iteration, tasks: intent.tasks, work, evaluator, workInstanceId: workInstance.instanceId, evaluatorInstanceId: evaluatorInstance.instanceId };
+    state.active = evaluatorInstance
+      ? { iteration: intent.iteration, tasks: intent.tasks, work, evaluator, workInstanceId: workInstance.instanceId, evaluatorInstanceId: evaluatorInstance.instanceId }
+      : { iteration: intent.iteration, tasks: intent.tasks, work, workInstanceId: workInstance.instanceId };
     delete state.intent;
     for (const [key, definition] of Object.entries(nodes)) { registerNode(key, definition, { dependencies: key === evaluator ? [work] : [] }); report(key); }
   };
+  /** Ends a judged iteration that cannot take its next step. */
+  const stopFeedback = (id: string, iteration: FeedbackIteration, reason: FeedbackReason, exhaustedBounds: readonly string[]): void => {
+    feedbackStates[id].iterations.push(structuredClone(iteration)); delete feedbackStates[id].active;
+    finishFeedback(id, reason, exhaustedBounds);
+  };
+  /** One lazy root-driven step: commit the judge or evaluator after its predecessor settled. */
+  const materializeStep = (id: string, node: BoundedFeedbackNode, role: "judge" | "evaluator", results: FeedbackIteration["results"]): void => {
+    const state = feedbackStates[id]; const active = state.active;
+    if (!active || !node.judge) throw new TypeError("Missing judged feedback iteration");
+    const binding = `${id}:iteration:${active.iteration}:${role}`;
+    const definition: GraphNode = role === "judge" ? judgeTemplate(node.judge) : evaluatorTemplate(node);
+    if (nodeDefs.size + 1 > MAX_NODES || !projection.canMaterialize(1) || nodeDefs.has(binding)) {
+      const bound = nodeDefs.has(binding) ? "Generated binding collision" : nodeDefs.size + 1 > MAX_NODES ? "node limit" : "run limit";
+      state.iterations.push(structuredClone({ ...active, results })); delete state.active;
+      // Restore prefers an exhausted budget over capacity, as on every other terminal path.
+      if (!feedbackBudgetExceeded(id, node)) finishFeedback(id, "materialization failure", [bound]);
+      return;
+    }
+    const from = active.judge ?? active.work;
+    const instance = instances.add(binding, { nodeKey: id, parentInstanceId: instances.get(id).instanceId, iteration: active.iteration });
+    nodeDefs.set(binding, definition);
+    materialize({ nodes: { [binding]: definition }, edges: [{ from, to: binding }] });
+    state.active = role === "judge" ? { ...active, judge: binding, judgeInstanceId: instance.instanceId } : { ...active, evaluator: binding, evaluatorInstanceId: instance.instanceId };
+    registerNode(binding, definition, { dependencies: [from] }); report(binding);
+  };
+  const recordFeedback = (id: string, node: BoundedFeedbackNode, iteration: FeedbackIteration): void => {
+    const state = feedbackStates[id];
+    state.iterations.push(structuredClone(iteration)); delete state.active;
+    if (iteration.decision) state.gaps = iteration.decision.gaps;
+    if (feedbackBudgetExceeded(id, node)) return;
+    if (!iteration.decision) { finishFeedback(id, "evaluator failure"); return; }
+    const next = feedbackContinuation(state.iterations, node);
+    if ("reason" in next) { finishFeedback(id, next.reason, next.exhaustedBounds); return; }
+    state.intent = { iteration: iteration.iteration + 1, tasks: next.tasks };
+  };
+  /** Step function over durable state; a judged iteration advances at most one step per transaction. */
   const decideFeedback = (id: string, node: BoundedFeedbackNode): void => {
     const state = feedbackStates[id]; const active = state.active;
     if (!active) throw new TypeError("Missing active feedback iteration");
+    const results = feedbackResults(active.work);
+    if (active.evaluator === undefined) {
+      if (active.judge === undefined) {
+        // deep-research-v1 sends an uncovered plan straight to the task writer; no judge this iteration.
+        const direct = skipsJudge(graph, id, projection.nodes.get("planning")?.output, [...state.iterations, { ...active, results }]);
+        materializeStep(id, node, direct ? "evaluator" : "judge", results); return;
+      }
+      const judge = projection.nodes.get(active.judge);
+      const verdict = judge?.status === "completed" ? judgeVerdict(node, judge.output) : undefined;
+      if (verdict === false) {
+        const bounds = feedbackBudget(id, node);
+        if (bounds.length) stopFeedback(id, { ...active, results }, "deadline/spend limit", bounds);
+        else materializeStep(id, node, "evaluator", results);
+        return;
+      }
+      recordFeedback(id, node, { ...active, results, ...(verdict ? { decision: structuredClone(JUDGED_SUFFICIENT) } : { evaluatorError: judge?.error ?? "Judge skipped" }) });
+      return;
+    }
     const evaluator = projection.nodes.get(active.evaluator);
     if (!evaluator) throw new TypeError("Missing feedback evaluator");
     const parsed = evaluator.status === "completed" ? decision(evaluator.output, node) : undefined;
-    const iteration: FeedbackIteration = { ...active, results: feedbackResults(active.work), ...(parsed ? { decision: parsed } : { evaluatorError: evaluator.error ?? "Evaluator skipped" }) };
-    state.iterations.push(structuredClone(iteration)); delete state.active;
-    if (parsed) state.gaps = parsed.gaps;
-    if (feedbackBudgetExceeded(id, node)) return;
-    if (!parsed) { finishFeedback(id, "evaluator failure"); return; }
-    const next = feedbackContinuation(state.iterations, node);
-    if ("reason" in next) { finishFeedback(id, next.reason, next.exhaustedBounds); return; }
-    state.intent = { iteration: active.iteration + 1, tasks: next.tasks };
+    recordFeedback(id, node, { ...active, results, ...(parsed ? { decision: parsed } : { evaluatorError: evaluator.error ?? "Evaluator skipped" }) });
   };
   const cancelFeedback = (): void => {
     for (const [id, node] of nodeDefs) {
@@ -443,7 +499,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       feedbackStates[id] ??= { iterations: [], gaps: [] };
       const state = feedbackStates[id]; if (state.terminal) continue;
       if (state.active) {
-        for (const binding of [state.active.evaluator, ...(projection.collections.get(state.active.work) ?? []).map(child => child.nodeId)]) {
+        for (const binding of [...[state.active.evaluator, state.active.judge].filter(key => key !== undefined), ...(projection.collections.get(state.active.work) ?? []).map(child => child.nodeId)]) {
           const run = projection.nodes.get(binding);
           if (run?.status === "pending" || run?.status === "running") complete(binding, { ok: false, skipped: true, error: "Cancellation" });
         }
@@ -453,12 +509,15 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       finishFeedback(id, "cancellation");
     }
   };
+  /** The active judge or evaluator and the runtime-owned feedback both receive. */
   const evaluationFor = (id: string) => {
-    const parent = Object.keys(feedbackStates).find(parent => feedbackStates[parent].active?.evaluator === id);
+    const parent = Object.keys(feedbackStates).find(parent => feedbackStates[parent].active?.evaluator === id || feedbackStates[parent].active?.judge === id);
     if (parent === undefined) return undefined;
     const state = feedbackStates[parent]; const active = state.active;
     if (!active) throw new TypeError("Missing active evaluator");
-    return { node: feedbackNode(parent), input: { iterations: [...state.iterations, { ...active, results: feedbackResults(active.work) }], gaps: state.gaps } };
+    const iterations = [...state.iterations, { ...active, results: feedbackResults(active.work) }];
+    const feedback = graph.semanticPolicy === "deep-research-v1" && parent === "research" ? evaluatorFeedback(projection.nodes.get("planning")?.output, iterations, state.gaps) : { iterations, gaps: state.gaps };
+    return { node: feedbackNode(parent), role: active.judge === id ? "judge" as const : "evaluator" as const, iterations, feedback };
   };
   const recordFeedbackFailure = (id: string, error: string): void => {
     const state = Object.values(feedbackStates).find(state => state.active?.evaluator === id);
@@ -498,7 +557,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     const admitted = correlation && executions.rows(correlation).find(row => row.payload.kind === "admitted")?.payload;
     return admitted?.kind === "admitted" ? admitted.resources : [];
   };
-  const running = (): string[] => [...new Set([...owned().filter(id => ["agent", "human_gate", "agent_gate", "hybrid_gate", "graph"].includes(nodeDefs.get(id)?.type ?? "")), ...[...projection.nodes].filter(([id, run]) => run.status === "running" && ["agent", "human_gate", "agent_gate", "hybrid_gate", "graph"].includes(nodeDefs.get(id)?.type ?? "")).map(([id]) => id)])];
+  const running = (): string[] => [...new Set([...owned().filter(id => ["agent", "decision_gate", "graph"].includes(nodeDefs.get(id)?.type ?? "")), ...[...projection.nodes].filter(([id, run]) => run.status === "running" && ["agent", "decision_gate", "graph"].includes(nodeDefs.get(id)?.type ?? "")).map(([id]) => id)])];
   const canAdmit = (resources: readonly string[]): boolean => resources.every(name => {
     const capacity = options.resources?.[name]?.capacity;
     return hasCapacity(running().filter(id => resourceNames(id).includes(name)).length, capacity);
@@ -540,26 +599,29 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     publish(() => options.onGateWaiting?.(id, state, definition));
   };
   const admit = (id: string, node: AgentNode | DecisionGateNode): GraphAdmission | undefined => {
-    const denied = node.type !== "human_gate" ? options.authorizeAgent?.(node.agent) : !options.host.awaitHumanGate ? "This host cannot await human input" : undefined;
+    // Decision gates select no configured agent; their decider is runtime-owned.
+    const denied = node.type === "agent" ? options.authorizeAgent?.(node.agent) : undefined;
     if (denied) { complete(id, { ok: false, error: denied }); report(id); return undefined; }
     const previous = executions.current(id);
     const dispatch = previous && executions.rows(previous).filter(row => row.payload.kind === "dispatched").at(-1)?.payload;
-    // An interrupted hybrid human boundary must not become another automated decision.
-    const humanReason = node.type === "hybrid_gate" && (restoringStarts.has(id) || projection.nodes.get(id)?.attemptReason === "restore") && dispatch?.kind === "dispatched" && dispatch.target === "human-gate" ? dispatch.reason : undefined;
+    // An interrupted escalation must not become another automated decision.
+    const escalationReason = node.type === "decision_gate" && (restoringStarts.has(id) || projection.nodes.get(id)?.attemptReason === "restore") && dispatch?.kind === "dispatched" && dispatch.target === "escalation" ? dispatch.reason : undefined;
     startNode(id);
-    const correlation = executions.begin(id, node, humanReason);
+    const correlation = executions.begin(id, node, escalationReason);
     if (!correlation) { complete(id, { ok: false, error: "Execution budget exhausted" }); report(id); return undefined; }
     report(id);
     const receipt = admissionReceipt({ id, incarnation: randomUUID(), correlation, executionSequence: executions.index.consumed(correlation) });
-    if (node.type !== "agent") {
-      const prompt = interpolate(node.prompt, node.input, contextOf(projection, input));
-      const schema = compileDecisionSchema(node.outputSchema);
-      if (node.type === "human_gate" || humanReason !== undefined) gateWaiting(id);
-      return { kind: "human", id, input: { receipt, host: options.host,
-        ...(node.type !== "human_gate" ? { authorize: () => options.authorizeAgent?.(node.agent) } : {}),
-        node: { nodeId: instances.get(id).instanceId, prompt: humanReason ? `${prompt}\n\nSubagent undecided: ${humanReason}` : prompt, schema,
-          ...(node.type === "human_gate" ? { kind: "human" } : { kind: "decision", agentType: node.agent, hybrid: node.type === "hybrid_gate", humanOnly: humanReason !== undefined }),
-        } } };
+    if (node.type === "decision_gate") {
+      // Questions, state and schemas regenerate from the definition and durable outputs; only the reason persists.
+      if (escalationReason !== undefined) gateWaiting(id);
+      const judge = evaluationFor(id);
+      return { kind: "decision", id, input: { receipt, host: options.host, node: {
+        kind: "decision", nodeId: instances.get(id).instanceId, questions: node.questions,
+        state: { ...resolveInputMap(node.state, contextOf(projection, input)), ...(judge?.role === "judge" ? { feedback: judge.feedback } : {}) },
+        minConfidence: node.minConfidence ?? options.decisionGateMinConfidence ?? DEFAULT_MIN_CONFIDENCE,
+        responseSchema: compileDerivedSchema(decisionResponseSchema(node.questions)), schema: compileDerivedSchema(decisionOutputSchema(node.questions)),
+        escalationOnly: escalationReason !== undefined, ...(escalationReason !== undefined ? { escalationReason } : {}),
+      } } };
     }
     const compiled = node.outputSchema === undefined ? undefined : compileJsonSchema(node.outputSchema);
     const exec: { -readonly [Key in keyof AgentLifecycleInput["node"]]: AgentLifecycleInput["node"][Key] } = {
@@ -571,8 +633,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     const evaluation = evaluationFor(id);
     if (evaluation && exec.schema) {
       const context = contextOf(projection, input);
-      const feedbackInput = graph.semanticPolicy === "deep-research-v1" && feedbackStates.research?.active?.evaluator === id ? evaluatorFeedback(projection.nodes.get("planning")?.output, evaluation.input.iterations, evaluation.input.gaps) : evaluation.input;
-      exec.prompt = interpolate(evaluation.node.evaluator.prompt, { ...evaluation.node.evaluator.input, feedback: { node: id, path: "$" } }, { ...context, outputs: new Map([...context.outputs, [id, feedbackInput]]) });
+      exec.prompt = interpolate(evaluation.node.evaluator.prompt, { ...evaluation.node.evaluator.input, feedback: { node: id, path: "$" } }, { ...context, outputs: new Map([...context.outputs, [id, evaluation.feedback]]) });
       const schema = exec.schema;
       exec.schema = { ...schema, check: value => {
         const valid = schema.check(value); if (valid !== true) return valid;
@@ -604,7 +665,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       }
       if ((stage === "evaluation" || stage === "synthesize") && exec.schema) {
         const schema = exec.schema;
-        const iterations = evaluation?.input.iterations;
+        const iterations = evaluation?.iterations;
         exec.schema = { ...schema, check: value => {
           const valid = schema.check(value);
           if (valid !== true) return valid;
@@ -631,7 +692,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
       if (!canAdmit(node.type === "agent" ? node.resources ?? [] : [])) continue;
       changed = true;
       switch (node.type) {
-        case "agent": case "human_gate": case "agent_gate": case "hybrid_gate": { const admission = admit(id, node); if (admission) wave.push(admission); break; }
+        case "agent": case "decision_gate": { const admission = admit(id, node); if (admission) wave.push(admission); break; }
         case "graph": { startNode(id); report(id); const admission = subgraph(id, node); if (admission) wave.push(admission); break; }
         case "bounded_feedback": wave.push(admitFeedback(id)); break;
         case "fanout": wave.push(admitFanout(id)); break;
@@ -682,11 +743,11 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     if (!node || !current || !matchesExecution(current, correlation) || !matchesExecution(receipt.correlation, correlation) || receipt.id !== id || receipt.incarnation !== request.incarnation) throw new TypeError("Stale node transaction identity");
     const intent = disposition(id);
     switch (operation.kind) {
-      case "human":
-        if (node.type !== "hybrid_gate" || !operation.reason.trim() || executions.rows(current).some(row => row.payload.kind === "drain-ack")) throw new TypeError("Invalid human decision boundary");
+      case "escalate":
+        if (node.type !== "decision_gate" || !operation.reason.trim() || executions.rows(current).some(row => row.payload.kind === "drain-ack")) throw new TypeError("Invalid decision escalation boundary");
         if (!intent) {
           executions.cost(id, current, operation.costUsd);
-          executions.emit(id, { ...current, payload: { kind: "dispatched", target: "human-gate", reason: operation.reason } });
+          executions.emit(id, { ...current, payload: { kind: "dispatched", target: "escalation", reason: operation.reason } });
           gateWaiting(id);
         }
         checkpoint(); report(id); return receipt;
@@ -784,7 +845,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     },
     result: (aborted: boolean): RunGraphResult => {
       const feedback = Object.fromEntries(Object.entries(feedbackStates).flatMap(([id, state]) => state.terminal ? [[id, state.terminal]] : []));
-      return { status: aborted ? "aborted" : projection.runStatus(new Set(Object.values(feedbackStates).flatMap(state => [...state.iterations, ...(state.active ? [state.active] : [])].map(row => row.evaluator)))) === "failed" ? "failed" : "completed", outputs: projection.resolveOutputs(), nodes: Object.fromEntries([...projection.nodes].map(([id, run]) => [id, { ...run }])), ...(Object.keys(feedback).length ? { feedback } : {}) };
+      return { status: aborted ? "aborted" : projection.runStatus(new Set(Object.values(feedbackStates).flatMap(state => [...state.iterations, ...(state.active ? [state.active] : [])].flatMap(row => [row.evaluator, row.judge].filter(key => key !== undefined))))) === "failed" ? "failed" : "completed", outputs: projection.resolveOutputs(), nodes: Object.fromEntries([...projection.nodes].map(([id, run]) => [id, { ...run }])), ...(Object.keys(feedback).length ? { feedback } : {}) };
     },
   };
 }

@@ -48,7 +48,7 @@ it("removes a live explicitly-cancelled snapshot before notifying completion", a
   const session = boot();
   await session.lifecycle("session_start");
   const create = vi.spyOn(tasks, "createGraphRunTask");
-  const graph: AgentGraph = { nodes: { gate: { type: "human_gate", prompt: "approve?", outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } }, after: { type: "agent", agent: "fixture", prompt: "after" } }, edges: [{ from: "gate", to: "after" }] };
+  const graph: AgentGraph = { nodes: { gate: { type: "decision_gate", state: {}, minConfidence: 1, questions: { release: { type: "bool", instructions: "Release?", criteria: { true: "Ready", false: "Not ready" } } } }, after: { type: "agent", agent: "fixture", prompt: "after" } }, edges: [{ from: "gate", to: "after" }] };
   const result = await required(session.tools.get("agent_graph")).execute("call", { graph, input: {} }, undefined, undefined, session.ctx);
   const runId = required(result.details?.taskId);
   await vi.waitFor(() => expect(persistence.readGraphSnapshots(session.ctx.cwd).some(snapshot => snapshot.state.nodes.gate?.status === "running")).toBe(true));

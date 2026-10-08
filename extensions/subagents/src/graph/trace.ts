@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 import type { InspectionEvent } from "xstate";
 import { createSessionArtifactPath, sessionArtifactPath } from "../output-file.js";
+import { decisionOutputSchema } from "./decision-gate.js";
 import { isGraphRunId } from "./graph-snapshot-path.js";
 import type { AgentGraph, GraphNode } from "./ir.js";
 import { GRAPH_OUTCOME_KEY, isGraphRunOutcome } from "./outcome.js";
@@ -46,9 +47,10 @@ export function canonicalJson(value: unknown): string {
   }
   return JSON.stringify(value ?? null);
 }
-/** Output-contract identity. Bounded feedback exposes its work and evaluator schemas. */
+/** Output-contract identity. Bounded feedback exposes its work and evaluator schemas; decision gates derive theirs. */
 export function schemaHash(node: GraphNode): string {
-  const schema = node.type === "bounded_feedback" ? { work: node.work.outputSchema ?? null, evaluator: node.evaluator.outputSchema ?? null } : "outputSchema" in node ? node.outputSchema ?? null : null;
+  const schema = node.type === "bounded_feedback" ? { work: node.work.outputSchema ?? null, evaluator: node.evaluator.outputSchema ?? null }
+    : node.type === "decision_gate" ? decisionOutputSchema(node.questions) : "outputSchema" in node ? node.outputSchema ?? null : null;
   return createHash("sha256").update(canonicalJson(schema)).digest("hex");
 }
 

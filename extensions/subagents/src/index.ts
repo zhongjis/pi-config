@@ -10,8 +10,8 @@ import { createSettingsMenu } from "./ui/settings-menu.js";
  *
  * Tools:
  *   agent             — LLM-callable: spawn a sub-agent
- *   get_agent_result     — LLM-callable: collect agent/graph results or pending human gates
- *   resolve_agent_graph_gate — LLM-callable: submit a human gate response
+ *   get_agent_result     — LLM-callable: collect agent/graph results or escalated decisions
+ *   resolve_agent_graph_gate — LLM-callable: submit an escalated decision
  *   steer_subagent       — LLM-callable: send a steering message to a running agent
  *
  * Commands:
@@ -29,6 +29,7 @@ import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
 import { renderDelegationPolicyHint } from "./delegation-hint.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy, resolvePersistedDelegationPolicyContext } from "./delegation-policy.js";
+import { DEFAULT_MIN_CONFIDENCE } from "./graph/decision-gate.js";
 import { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData } from "./graph/entry.js";
 import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
 import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pane/manager.js";
@@ -90,6 +91,8 @@ export default function (pi: ExtensionAPI) {
   // Read when each graph run starts; no reload needed.
   let graphRuntimeTrace = false;
   function setGraphRuntimeTrace(enabled: boolean): void { graphRuntimeTrace = enabled; }
+  let decisionGateMinConfidence = DEFAULT_MIN_CONFIDENCE;
+  function setDecisionGateMinConfidence(value: number): void { decisionGateMinConfidence = value; }
 
   // tool_result runs only for final results, including thrown/cancelled calls.
   // No execute/stream callback drains the pool, so cancellation cannot lose deltas.
@@ -497,6 +500,7 @@ export default function (pi: ExtensionAPI) {
       setReportUsage,
       setShowCost,
       setGraphRuntimeTrace,
+      setDecisionGateMinConfidence,
       setDefaultMaxTurns,
       setGraceTurns,
       setDefaultJoinMode,
@@ -527,7 +531,7 @@ export default function (pi: ExtensionAPI) {
 
   const graphRuntime = createGraphRuntime(
     { pi, manager, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial,
-      runtimeTrace: () => graphRuntimeTrace },
+      runtimeTrace: () => graphRuntimeTrace, decisionGateMinConfidence: () => decisionGateMinConfidence },
     { schedule: scheduleNudge, cancel: cancelNudge },
     surface => {
       if (surface !== "pane") { widget.update(); fleet.update(); }
@@ -575,6 +579,7 @@ export default function (pi: ExtensionAPI) {
       reportUsage,
       showCost,
       graphRuntimeTrace,
+      decisionGateMinConfidence,
       // 0 = unlimited — per SubagentsSettings.defaultMaxTurns docstring and
       // normalizeMaxTurns() in agent-runner.ts (which maps 0 → undefined).
       defaultMaxTurns: getDefaultMaxTurns() ?? 0,

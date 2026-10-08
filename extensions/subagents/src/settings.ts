@@ -17,6 +17,8 @@ export interface SubagentsSettings {
   showCost?: boolean;
   /** Opt-in XState inspection log (`<runId>.runtime.jsonl`) for graph runs started afterwards. Defaults to false. */
   graphRuntimeTrace?: boolean;
+  /** Run-wide decision_gate confidence threshold in [0, 1]; a node's own `minConfidence` wins. Defaults to 0.8. */
+  decisionGateMinConfidence?: number;
   /**
    * 0 = unlimited — the extension's single source of truth for that convention:
    * `normalizeMaxTurns()` in agent-runner.ts treats 0 → `undefined`, and the
@@ -103,6 +105,7 @@ export interface SettingsAppliers {
   setReportUsage?: (b: boolean) => void;
   setShowCost?: (b: boolean) => void;
   setGraphRuntimeTrace?: (b: boolean) => void;
+  setDecisionGateMinConfidence?: (n: number) => void;
   setDefaultMaxTurns: (n: number) => void;
   setGraceTurns: (n: number) => void;
   setDefaultJoinMode: (mode: JoinMode) => void;
@@ -140,6 +143,10 @@ function sanitize(raw: unknown): SubagentsSettings {
   if (typeof r.reportUsage === "boolean") out.reportUsage = r.reportUsage;
   if (typeof r.showCost === "boolean") out.showCost = r.showCost;
   if (typeof r.graphRuntimeTrace === "boolean") out.graphRuntimeTrace = r.graphRuntimeTrace;
+  if (typeof r.decisionGateMinConfidence === "number" && Number.isFinite(r.decisionGateMinConfidence)
+    && r.decisionGateMinConfidence >= 0 && r.decisionGateMinConfidence <= 1) {
+    out.decisionGateMinConfidence = r.decisionGateMinConfidence;
+  }
   if (
     Number.isInteger(r.maxConcurrent) &&
     (r.maxConcurrent as number) >= 1 &&
@@ -236,6 +243,7 @@ export function applySettings(s: SubagentsSettings, appliers: SettingsAppliers):
   if (typeof s.reportUsage === "boolean") appliers.setReportUsage?.(s.reportUsage);
   if (typeof s.showCost === "boolean") appliers.setShowCost?.(s.showCost);
   if (typeof s.graphRuntimeTrace === "boolean") appliers.setGraphRuntimeTrace?.(s.graphRuntimeTrace);
+  if (typeof s.decisionGateMinConfidence === "number") appliers.setDecisionGateMinConfidence?.(s.decisionGateMinConfidence);
   if (typeof s.maxConcurrent === "number") appliers.setMaxConcurrent(s.maxConcurrent);
   if (typeof s.defaultMaxTurns === "number") appliers.setDefaultMaxTurns(s.defaultMaxTurns);
   if (typeof s.graceTurns === "number") appliers.setGraceTurns(s.graceTurns);

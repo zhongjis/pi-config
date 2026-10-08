@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
-import { checkDeepResearchOutput, evaluatorFeedback, type LedgerRound, researchLedger, validateDeepResearchRestore } from "../src/graph/deep-research-policy.js";
+import { describe, expect, it, vi } from "vitest";
+import { checkDeepResearchOutput, evaluatorFeedback, type LedgerRound, researchLedger, skipsJudge, validateDeepResearchRestore } from "../src/graph/deep-research-policy.js";
 import { validateGraphRestore } from "../src/graph/graph-restore-validation.js";
 import type { AgentGraph, FanoutResult, JsonValue } from "../src/graph/ir.js";
+import type { NodeHost } from "../src/graph/node-host.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 import { validateGraph } from "../src/graph/validate.js";
@@ -42,11 +43,14 @@ describe("deep-research-v1 ledger", () => {
 });
 
 describe("deep-research-v1 checks", () => {
-  const evaluation = (value: unknown) => checkDeepResearchOutput({ graph: graphStub, stage: "evaluation", planning: PLANNING, iterations: [{ iteration: 1, results: ROUND1 }] }, value);
-  it("rejects an early sufficient decision unless each part has a claim or a <partId>- gap", () => {
-    expect(evaluation({ decision: "sufficient", gaps: [], tasks: [] })).toMatch(/^deep-research-v1: decision 'sufficient' leaves plan parts with no primary ledger claim and no reported gap: p2\./);
-    expect(evaluation({ decision: "sufficient", gaps: [{ id: "p2-timeout", description: "unreachable" }], tasks: [] })).toBe(true);
-    expect(evaluation({ decision: "continue", gaps: [], tasks: [] })).toBe(true);
+  it("skips the judge until every plan part has a primary ledger claim", () => {
+    const round = (sourceKind?: "primary" | "secondary"): LedgerRound[] => [{ iteration: 1, results: [done(task("q1", ["p1"]), { claims: [claim("https://a.example/x", "alpha", "primary")], gaps: [] }), done(task("q2", ["p2"]), { claims: [claim("https://b.example/y", "beta", sourceKind)], gaps: [] }, 1)] }];
+    expect(skipsJudge(graphStub, "research", PLANNING, round("primary"))).toBe(false);
+    expect(skipsJudge(graphStub, "research", PLANNING, round("secondary"))).toBe(true);
+    expect(skipsJudge(graphStub, "research", PLANNING, round())).toBe(true);
+    expect(skipsJudge(graphStub, "research", PLANNING, [{ iteration: 1, results: ROUND1 }])).toBe(true);
+    expect(skipsJudge({ ...graphStub, semanticPolicy: undefined }, "research", PLANNING, round("secondary"))).toBe(false);
+    expect(skipsJudge(graphStub, "other", PLANNING, round("secondary"))).toBe(false);
   });
 
   const research = { reason: "sufficient", partial: false, gaps: [], counters: { iterations: 1, totalItems: 2 }, iterations: [{ iteration: 1, results: ROUND1 }] };
@@ -107,18 +111,12 @@ describe("deep-research-v1 checks", () => {
     expect(secondaryWriter(["r1-1-1", "r1-1-2"])).toBe(true);
   });
 
-  it("rejects sufficient when a part has only secondary claims and no gap, and accepts it with a <partId>- gap", () => {
-    const secondaryOnlyRound: Results = [done(task("q2", ["p2"]), { claims: [claim("https://b.example/y", "beta", "secondary")], gaps: [] })];
-    const secondaryEvaluation = (value: unknown) => checkDeepResearchOutput({ graph: graphStub, stage: "evaluation", planning: PLANNING, iterations: [{ iteration: 1, results: [...ROUND1, ...secondaryOnlyRound] }] }, value);
-    expect(secondaryEvaluation({ decision: "sufficient", gaps: [], tasks: [] })).toMatch(/plan parts with no primary ledger claim and no reported gap: p2\./);
-    expect(secondaryEvaluation({ decision: "sufficient", gaps: [{ id: "p2-secondary-only", description: "only secondary sources" }], tasks: [] })).toBe(true);
-  });
-
-  it("rejects a continue task for a gap already tried the attempt limit, accepts one prior try, and evaluatorFeedback reports exhaustedGaps", () => {
+  it("rejects a task for a gap already tried the attempt limit, accepts one prior try, and evaluatorFeedback reports exhaustedGaps", () => {
     const priorDecision = (iteration: number): LedgerRound => ({ iteration, results: [], decision: { decision: "continue", gaps: [], tasks: [{ gapId: "p2-none", item: task("q2", ["p2"]) }] } });
-    const continueWith = (iterations: LedgerRound[]) => checkDeepResearchOutput({ graph: graphStub, stage: "evaluation", planning: PLANNING, iterations }, { decision: "continue", gaps: [], tasks: [{ gapId: "p2-none", item: task("q2", ["p2"]) }] });
+    const continueWith = (iterations: LedgerRound[]) => checkDeepResearchOutput({ graph: graphStub, stage: "evaluation", planning: PLANNING, iterations }, { gaps: [{ id: "p2-none", description: "none" }], tasks: [{ gapId: "p2-none", item: task("q2", ["p2"]) }] });
     expect(continueWith([priorDecision(1), { iteration: 2, results: [] }])).toBe(true);
-    expect(continueWith([priorDecision(1), priorDecision(2), { iteration: 3, results: [] }])).toMatch(/^deep-research-v1: gap p2-none already had 2 tasks with no closing claim \(limit 2\)/);
+    expect(continueWith([priorDecision(1), priorDecision(2), { iteration: 3, results: [] }])).toMatch(/^deep-research-v1: gap p2-none already had 2 tasks with no closing claim \(limit 2\).*tasks \[\]$/);
+    expect(checkDeepResearchOutput({ graph: graphStub, stage: "evaluation", planning: PLANNING, iterations: [priorDecision(1), priorDecision(2), { iteration: 3, results: [] }] }, { gaps: [{ id: "p2-none", description: "none" }], tasks: [] })).toBe(true);
 
     const feedback = evaluatorFeedback(PLANNING, [priorDecision(1), priorDecision(2), { iteration: 3, results: [] }], []);
     expect(feedback.exhaustedGaps).toEqual([{ id: "p2-none", attempts: 2 }]);
@@ -155,7 +153,8 @@ describe("deep-research-v1 graph", () => {
       research: {
         type: "bounded_feedback", maxIterations: 3, maxItemsPerIteration: 4, maxTotalItems: 8,
         work: { type: "fanout", items: { node: "planning", path: "$.tasks" }, itemSchema, dispatch: { path: "$.source", cases: { web: "worker" } }, prompt: `Work \${item}`, outputSchema: { type: "object" } },
-        evaluator: { type: "agent", agent: "judge", prompt: `Judge \${feedback}` },
+        evaluator: { type: "agent", agent: "tasker", prompt: `Write tasks \${feedback}` },
+        judge: { type: "decision_gate", state: { question: { path: "$.question" } }, questions: { covered: { type: "bool", instructions: "Covered?", criteria: { true: "Every part answered", false: "A part is unanswered" } } } },
       },
       synthesize: { type: "agent", agent: "writer", prompt: `Write \${research}`, input: { research: { node: "research", path: "$" } }, outputSchema: { type: "object" } },
     },
@@ -168,21 +167,21 @@ describe("deep-research-v1 graph", () => {
     expect(validateGraph({ ...graph, nodes, edges: [{ from: "research", to: "synthesize" }] }).errors).toContain("semanticPolicy: deep-research-v1 requires planning (graph), research (bounded_feedback) and synthesize (agent) nodes");
   });
 
-  it("feeds the ledger to evaluator and writer, lists visited references in later rounds, and rechecks on restore", async () => {
+  it("routes uncovered parts straight to the task writer, judges full coverage, feeds the ledger, and rechecks on restore", async () => {
     const prompts: Record<string, string[]> = {};
     const checkpoints: { state: SchedulerState; graph: AgentGraph }[] = [];
-    let judged = 0;
+    const decide = vi.fn<NonNullable<NodeHost["decide"]>>(async () => ({ ok: true, answers: { covered: { value: true, confidence: 0.95 } }, decidedBy: "classifier", model: "test/classifier" }));
     const result = await runGraph(graph, {}, {
       loadGraph: () => planningGraph,
       onCheckpoint: (state, current) => { validateGraphRestore(state, current, {}); checkpoints.push(structuredClone({ state, graph: current })); },
-      host: { spawnAgent: async request => {
+      host: { decide, spawnAgent: async request => {
         prompts[request.agentType] = [...(prompts[request.agentType] ?? []), request.prompt];
         const outputs: Record<string, unknown> = {
           planner: { ...PLANNING, seed: SEED },
           worker: request.prompt.includes("q1")
-            ? { claims: [claim("https://a.example/x", "alpha")], gaps: [] }
-            : { claims: [claim("https://b.example/y", "beta")], gaps: [] },
-          judge: request.agentType === "judge" && judged++ === 0 ? { decision: "continue", gaps: [{ id: "p2-none", description: "no p2 evidence" }], tasks: [{ gapId: "p2-none", item: task("q2", ["p2"]) }] } : { decision: "sufficient", gaps: [], tasks: [] },
+            ? { claims: [claim("https://a.example/x", "alpha", "primary")], gaps: [] }
+            : { claims: [claim("https://b.example/y", "beta", "primary")], gaps: [] },
+          tasker: { gaps: [{ id: "p2-none", description: "no p2 evidence" }], tasks: [{ gapId: "p2-none", item: task("q2", ["p2"]) }] },
           writer: {
             markdown: "Alpha [r1-1-1], beta [r2-1-1] https://b.example/y", outcome: { status: "succeeded" },
             acceptedFindings: [{ claim: "alpha", claimIds: ["r1-1-1"], verification: "single-source" }],
@@ -193,9 +192,14 @@ describe("deep-research-v1 graph", () => {
       } },
     });
     expect(result.status).toBe("completed");
-    expect(prompts.judge[0]).toContain("\"id\":\"r0-1-1\"");
-    expect(prompts.judge[1]).toContain("\"id\":\"r2-1-1\"");
-    expect(prompts.judge[0]).not.toContain("\"iterations\"");
+    const iterations = result.feedback?.research.iterations ?? [];
+    expect(iterations.map(row => [row.judge !== undefined, row.evaluator !== undefined])).toEqual([[false, true], [true, false]]);
+    expect(result.feedback?.research).toMatchObject({ reason: "sufficient", gaps: [] });
+    expect(prompts.tasker).toHaveLength(1);
+    expect(prompts.tasker[0]).toContain("\"id\":\"r0-1-1\"");
+    expect(prompts.tasker[0]).not.toContain("\"iterations\"");
+    expect(decide).toHaveBeenCalledTimes(1);
+    expect(decide.mock.calls[0][0].state.feedback).toMatchObject({ claims: expect.arrayContaining([expect.objectContaining({ id: "r2-1-1", partIds: ["p2"] })]), openGaps: [{ id: "p2-none", description: "no p2 evidence" }] });
     expect(prompts.writer[0]).toContain("\"id\":\"r2-1-1\"");
     expect(prompts.writer[0]).toContain("\"terminal\":{\"reason\":\"sufficient\"");
     expect(prompts.worker[0]).not.toContain("a.example/x");
@@ -208,5 +212,17 @@ describe("deep-research-v1 graph", () => {
     synthesize.markdown += " [r9-9-9]";
     expect(() => validateDeepResearchRestore(last.graph, state)).toThrow(/Invalid restored semantic output: deep-research-v1: unknown ledger claim IDs: r9-9-9/);
     expect(() => validateGraphRestore(state, last.graph, {})).toThrow(/deep-research-v1/);
+
+    // Judge presence must follow the same deterministic coverage check on restore.
+    const direct = structuredClone(checkpoints.find(row => row.state.runtime?.feedback?.research?.active?.evaluator !== undefined));
+    const judged = structuredClone(checkpoints.find(row => row.state.runtime?.feedback?.research?.active?.judge !== undefined));
+    if (!direct || !judged) throw new Error("Missing judged step checkpoints");
+    const parts = (saved: NonNullable<typeof direct>, ids: string[]) => { saved.state.nodes.planning.output = { ...PLANNING, parts: ids.map(id => ({ id, question: id })) }; };
+    expect(() => validateGraphRestore(direct.state, direct.graph, {})).not.toThrow();
+    parts(direct, ["p1"]);
+    expect(() => validateGraphRestore(direct.state, direct.graph, {})).toThrow(/deterministic coverage/);
+    expect(() => validateGraphRestore(judged.state, judged.graph, {})).not.toThrow();
+    parts(judged, ["p1", "p2", "p3"]);
+    expect(() => validateGraphRestore(judged.state, judged.graph, {})).toThrow(/deterministic coverage/);
   });
 });

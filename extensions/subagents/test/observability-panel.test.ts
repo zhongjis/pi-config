@@ -7,9 +7,15 @@ vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-
 
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
+import { type ExecutionCorrelation, executionAttemptId } from "../src/graph/graph-execution.js";
+import type { NodeInstanceId } from "../src/graph/graph-instance-id.js";
+import { GraphRunReporter } from "../src/graph/graph-run-adapter.js";
+import type { GraphNode } from "../src/graph/ir.js";
 import { renderObservabilityPaneLines } from "../src/graph/pane/render.js";
 import type { GraphRunAgentEntry } from "../src/graph/progress.js";
 import { coerceGraphInput } from "../src/graph/run-graph.js";
+import type { NodeRun } from "../src/graph/scheduler.js";
+import { createGraphRunTask } from "../src/graph/task.js";
 import {
   applyPanelKey,
   initialPanelState,
@@ -295,5 +301,60 @@ describe("Herdr in-Pi controls and detach", () => {
     const detachOpts = { ...opts, detach: true };
     expect(applyPanelKey([liveRun()], onNode(), "o", detachOpts).action).toEqual({ kind: "detach" });
     expect(render(liveRun(), onNode(), detachOpts).at(-1)).toContain("o detach");
+  });
+});
+
+describe("decision gate rows", () => {
+  const instanceId = "11111111-1111-4111-8111-111111111111" as NodeInstanceId;
+  const identity: ExecutionCorrelation = { runId: "run", instanceId, activation: 1, graphAttempt: 1, executionAttemptId: executionAttemptId("22222222-2222-4222-8222-222222222222") };
+  const gate: GraphNode = { type: "decision_gate", name: "Ship gate", state: {}, questions: { ship: { type: "bool", instructions: "Ship?", criteria: { true: "yes", false: "no" } } } };
+  const nodeRun = (status: NodeRun["status"], extra: Partial<NodeRun> = {}): NodeRun => ({
+    status, attempt: 1, activation: 1, graphAttempt: 1, currentExecutionAttemptId: identity.executionAttemptId, ...extra,
+  });
+  function live() {
+    const task = createGraphRunTask({ id: "run", script: "graph" });
+    const reporter = new GraphRunReporter(task, NOW);
+    reporter.registerNode("gate", gate, { dependencies: [], instance: { instanceId, nodeKey: "gate", binding: "gate", ordinal: 0 } });
+    reporter.update("gate", nodeRun("running"), identity, NOW);
+    // A low-confidence attempt is still execution evidence of the model that tried.
+    reporter.setResolved("gate", { modelId: "cls", modelName: "fixture/cls" }, identity, NOW);
+    const lines = (width = 120) => plain(renderPanelLines([{ id: "run", name: "decide", status: "running", source: { progress: task.graphRunProgress, task: { status: "running", startTime: NOW - 1000 } } }], initialPanelState(), { width, now: NOW }));
+    const row = (width = 120) => roster(lines(width)).find(line => line.includes("Ship gate")) ?? "";
+    return { reporter, lines, row };
+  }
+
+  it("shows decidedBy, the deciding model and the lowest answer confidence", () => {
+    const { reporter, row } = live();
+    reporter.update("gate", nodeRun("completed", { decisionSource: "classifier",
+      output: { answers: { ship: { value: true, confidence: 0.9 }, risk: { value: "low", confidence: 0.85 } }, decidedBy: "classifier" } }), identity, NOW);
+    expect(row()).toMatch(/✓ done.*Ship gate.*classifier · fixture\/cls · min confidence 0\.85$/);
+  });
+
+  it("shows awaiting orchestrator while escalated and claims no model for an orchestrator decision", () => {
+    const { reporter, row } = live();
+    reporter.setEscalation(instanceId, identity, true, NOW);
+    expect(row()).toMatch(/running.*Ship gate.*awaiting orchestrator$/);
+    expect(row()).not.toContain("fixture/cls");
+    reporter.setEscalation(instanceId, identity, false, NOW);
+    expect(row()).not.toContain("awaiting orchestrator");
+    reporter.update("gate", nodeRun("completed", { decisionSource: "orchestrator",
+      output: { answers: { ship: { value: false, confidence: 1 } }, decidedBy: "orchestrator" } }), identity, NOW);
+    expect(row()).toMatch(/✓ done.*Ship gate.*orchestrator · min confidence 1\.00$/);
+    expect(row()).not.toContain("fixture/cls");
+  });
+
+  it("ignores an escalation from another execution", () => {
+    const { reporter, row } = live();
+    reporter.setEscalation(instanceId, { ...identity, executionAttemptId: executionAttemptId("33333333-3333-4333-8333-333333333333") }, true, NOW);
+    expect(row()).not.toContain("awaiting orchestrator");
+  });
+
+  it("drops the model before the confidence and stays width-safe", () => {
+    const { reporter, lines, row } = live();
+    reporter.update("gate", nodeRun("completed", { decisionSource: "agent",
+      output: { answers: { ship: { value: true, confidence: 0.9 } }, decidedBy: "agent" } }), identity, NOW);
+    expect(row(64)).toMatch(/agent · min confidence 0\.90$/);
+    expect(row(64)).not.toContain("fixture/cls");
+    for (const width of [30, 64, 120]) for (const line of lines(width)) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
   });
 });

@@ -8,6 +8,9 @@ import type { NodeHost, NodeSpawnRequest } from "../src/graph/node-host.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
 
+const decisionNode = { type: "decision_gate" as const, state: {}, questions: { q: { type: "bool" as const, instructions: "x", criteria: { true: "yes", false: "no" } } } };
+const undecided = async () => ({ ok: false as const, error: "no model" });
+const escalated = async () => ({ ok: true, output: JSON.stringify({ answers: { q: true }, decidedBy: "orchestrator" }) });
 const worker = { type: "agent" as const, agent: "worker", prompt: "x", outputSchema: { type: "object", required: ["ok"], properties: { ok: { type: "boolean" } } }, retry: { maxAttempts: 2 } };
 const graph: AgentGraph = { nodes: { a: worker }, edges: [] };
 function requireValue<T>(value: T | undefined, message = "missing test value"): T {
@@ -61,15 +64,15 @@ it("does not replay the admission committed atomically with a drained repair", a
   await runGraph(graph, {}, { restore: latest, onCheckpoint: () => {}, host: { spawnAgent, reconcileDrain: async () => true } });
   expect(spawnAgent).toHaveBeenCalledTimes(0);
 });
-it.each(["agent", "human-gate", "validation-gate"] as const)("recovery of %s requires proof and positive host reconciliation", async target => {
-  const definition: AgentGraph = { nodes: { a: target === "human-gate" ? { type: "human_gate", prompt: "x", outputSchema: { type: "object" } } : { ...worker, ...(target === "validation-gate" ? { validation: { gate: "true" } } : {}) } }, edges: [] };
+it.each(["agent", "escalation", "validation-gate"] as const)("recovery of %s requires proof and positive host reconciliation", async target => {
+  const definition: AgentGraph = { nodes: { a: target === "escalation" ? decisionNode : { ...worker, ...(target === "validation-gate" ? { validation: { gate: "true" } } : {}) } }, edges: [] };
   let saved: SchedulerState | undefined;
   await runGraph(definition, {}, { onCheckpoint: state => {
     const last = state.runtime?.executionLedger?.at(-1);
     if (!saved && last && "payload" in last && last.payload.kind === "dispatched" && last.payload.target === target) saved = state;
-  }, host: { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }), runGate: async () => ({ ok: true, output: "" }), awaitHumanGate: async () => ({ ok: true, output: "{}" }) } });
+  }, host: { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }), runGate: async () => ({ ok: true, output: "" }), decide: undecided, awaitEscalation: escalated } });
   expect(saved).toBeDefined();
-  const host = { spawnAgent: vi.fn(async () => ({ ok: true, output: '{"ok":true}' })), reconcileDrain: vi.fn(async () => true), awaitHumanGate: vi.fn(async () => ({ ok: true, output: "{}" })), runGate: vi.fn() };
+  const host = { spawnAgent: vi.fn(async () => ({ ok: true, output: '{"ok":true}' })), reconcileDrain: vi.fn(async () => true), decide: vi.fn(undecided), awaitEscalation: vi.fn(escalated), runGate: vi.fn() };
   await expect(runGraph(definition, {}, { restore: saved, onCheckpoint: () => {}, host })).rejects.toThrow(/drain/i);
   expect(host.spawnAgent).not.toHaveBeenCalled(); expect(host.reconcileDrain).not.toHaveBeenCalled();
   host.reconcileDrain.mockResolvedValueOnce(false);
@@ -116,13 +119,13 @@ it("checks live delegation before initial dispatch and before a repair", async (
   await runGraph(graph, {}, { host: { spawnAgent }, authorizeAgent: () => "Policy changed", onCheckpoint: () => {} });
   expect(spawnAgent).toHaveBeenCalledTimes(1);
 });
-it.each(["human-gate", "validation-gate"] as const)("rechecks %s capability after the dispatch checkpoint", async target => {
+it.each(["escalation", "validation-gate"] as const)("rechecks %s capability after the dispatch checkpoint", async target => {
   const gate = vi.fn(async () => ({ ok: true, output: "{}" }));
-  const host: NodeHost = { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }), awaitHumanGate: gate, runGate: gate };
-  const definition: AgentGraph = { nodes: { a: target === "human-gate" ? { type: "human_gate", prompt: "x", outputSchema: { type: "object" } } : { ...worker, retry: { maxAttempts: 1 }, validation: { gate: "true" } } }, edges: [] };
+  const host: NodeHost = { spawnAgent: async () => ({ ok: true, output: '{"ok":true}' }), decide: undecided, awaitEscalation: gate, runGate: gate };
+  const definition: AgentGraph = { nodes: { a: target === "escalation" ? decisionNode : { ...worker, retry: { maxAttempts: 1 }, validation: { gate: "true" } } }, edges: [] };
   const result = await runGraph(definition, {}, { host, onCheckpoint: state => {
     const last = state.runtime?.executionLedger?.at(-1);
-    if (last && "payload" in last && last.payload.kind === "dispatched" && last.payload.target === target) { if (target === "human-gate") delete host.awaitHumanGate; else delete host.runGate; }
+    if (last && "payload" in last && last.payload.kind === "dispatched" && last.payload.target === target) { if (target === "escalation") delete host.awaitEscalation; else delete host.runGate; }
   } });
   expect(result.status).toBe("failed"); expect(gate).not.toHaveBeenCalled();
 });
@@ -151,16 +154,17 @@ it("validates aggregate cost, graph starts, projections, and gated success befor
 });
 it("keeps non-durable correlation transient", async () => {
   let correlation: NodeSpawnRequest["correlation"]; let snapshot: SchedulerState | undefined;
-  await runGraph({ nodes: { a: { type: "human_gate", prompt: "x", outputSchema: { type: "object" } } }, edges: [] }, {}, { host: { spawnAgent: vi.fn(), awaitHumanGate: async request => { correlation = request.correlation; return { ok: true, output: "{}" }; } }, onGateWaiting: (_id, state) => { snapshot = state; } });
+  await runGraph({ nodes: { a: decisionNode }, edges: [] }, {}, { host: { spawnAgent: vi.fn(), decide: undecided, awaitEscalation: async request => { correlation = request.correlation; return escalated(); } }, onGateWaiting: (_id, state) => { snapshot = state; } });
   expect(correlation?.executionAttemptId).toBeDefined(); expect(snapshot).toBeDefined(); expect(snapshot?.runtime).toBeUndefined();
 });
-it.each(["agent", "human_gate"] as const)("failed %s final drain never releases capacity to a sibling", async type => {
+it.each(["agent", "decision_gate"] as const)("failed %s final drain never releases capacity to a sibling", async type => {
   const effect = vi.fn(async () => ({ ok: true, output: '{"ok":true}', costUsd: 1 }));
-  const node = type === "agent" ? { ...worker, resources: ["browser"] } : { type, prompt: "x", outputSchema: { type: "object" } };
-  await expect(runGraph({ nodes: { a: node, b: node }, edges: [] }, {}, { concurrency: 1, resources: { browser: { capacity: 1 } }, host: { spawnAgent: effect, awaitHumanGate: effect }, onCheckpoint: state => {
+  const decide = vi.fn(async () => ({ ok: true as const, answers: { q: { value: true, confidence: 1 } }, decidedBy: "classifier" as const, model: "m", costUsd: 1 }));
+  const node = type === "agent" ? { ...worker, resources: ["browser"] } : decisionNode;
+  await expect(runGraph({ nodes: { a: node, b: node }, edges: [] }, {}, { concurrency: 1, resources: { browser: { capacity: 1 } }, host: { spawnAgent: effect, decide }, onCheckpoint: state => {
     const last = state.runtime?.executionLedger?.at(-1); if (last && "payload" in last && last.payload.kind === "drain-ack") throw new Error("settlement failed");
   } })).rejects.toThrow("settlement failed");
-  expect(effect).toHaveBeenCalledTimes(1);
+  expect(type === "agent" ? effect : decide).toHaveBeenCalledTimes(1);
 });
 it("fails a whole admission batch without dispatch", async () => {
   const spawnAgent = vi.fn();

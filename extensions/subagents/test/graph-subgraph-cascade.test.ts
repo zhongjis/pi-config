@@ -62,8 +62,8 @@ it("commits three-level checkpoints before cascading ACKs, ordinal publication a
   } finally { actor.stop(); }
 });
 
-it.each(["skip", "cancel", "failure"] as const)("retains three-level ownership during %s until a noncooperative human gate drains", async kind => {
-  const gated: AgentGraph = { nodes: { leaf: { type: "human_gate", prompt: "fixture", outputSchema: { type: "object" } } }, edges: [] };
+it.each(["skip", "cancel", "failure"] as const)("retains three-level ownership during %s until a noncooperative escalated gate drains", async kind => {
+  const gated: AgentGraph = { nodes: { leaf: { type: "decision_gate", state: {}, questions: { approved: { type: "bool", instructions: "fixture", criteria: { true: "yes", false: "no" } } } } }, edges: [] };
   const parent: AgentGraph = { ...graph, nodes: { ...graph.nodes, sibling: { type: "agent", agent: "worker", prompt: "fixture" } } };
   let release: (() => void) | undefined;
   let signal: AbortSignal | undefined;
@@ -77,7 +77,7 @@ it.each(["skip", "cancel", "failure"] as const)("retains three-level ownership d
     concurrency: 1, loadGraph: name => name === "leaf" ? gated : loadGraph(name),
     onControl: value => { control = value; },
     onCheckpoint: state => { committed = state; writes++; },
-    host: { spawnAgent, awaitHumanGate: async (_request, abort) => {
+    host: { spawnAgent, awaitEscalation: async (_request, abort) => {
       signal = abort;
       await new Promise<void>(resolve => { release = resolve; });
       return { ok: true, output: "ignored after cancellation" };

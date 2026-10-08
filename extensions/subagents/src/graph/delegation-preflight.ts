@@ -29,8 +29,8 @@ export function checkGraphDelegation(
 
   const walk = (current: AgentGraph): void => {
     for (const [id, node] of Object.entries(current.nodes)) {
-      if (node.type === "agent" || node.type === "agent_gate" || node.type === "hybrid_gate" || node.type === "fanout" || node.type === "bounded_feedback") {
-        const selectors = node.type === "agent" || node.type === "agent_gate" || node.type === "hybrid_gate" ? [node.agent] : node.type === "fanout"
+      if (node.type === "agent" || node.type === "fanout" || node.type === "bounded_feedback") {
+        const selectors = node.type === "agent" ? [node.agent] : node.type === "fanout"
           ? new Set(Object.values(node.dispatch.cases)) : new Set([node.evaluator.agent, ...Object.values(node.work.dispatch.cases)]);
         for (const selector of selectors) {
           const ids = usage.get(selector);
@@ -46,7 +46,7 @@ export function checkGraphDelegation(
         const sub = loadGraph(node.graph);
         if (sub !== undefined) walk(sub);
       }
-      // `expand` and `human_gate` spawn no statically-known agent: ignore.
+      // `expand` and `decision_gate` select no configured agent: ignore.
     }
   };
   walk(graph);

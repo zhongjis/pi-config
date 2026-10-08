@@ -36,7 +36,7 @@ export type Template = string;
 /**
  * A reference to a value produced elsewhere in the run.
  *
- * Canonical, serializable form (the dotted `review.output.approved` seen in prose
+ * Canonical, serializable form (the dotted `review.output.verdict` seen in prose
  * is display shorthand for this). `node` omitted means the graph input; `path` is
  * a JSONPath into that node's validated output, where `$` is the whole value.
  */
@@ -96,19 +96,20 @@ export interface AgentNode {
   resources?: string[];
 }
 
-/** Pauses the run until a person approves or rejects. */
-export interface HumanGateNode {
-  type: "human_gate";
-  prompt: Template;
-  input?: Record<string, ValueRef>;
-  outputSchema: JsonSchema;
-}
+/** One classifier question; mirrors Pi's ClassifierQuestion without importing Pi into the IR. */
+export type ClassifierQuestion =
+  | { type: "bool"; instructions: string; criteria: { true: string; false: string } }
+  | { type: "choice"; instructions: string; criteria: Record<string, string> }
+  | { type: "score"; instructions: string; criteria: string[] };
 
-/** A configured Subagent decides; only hybrid_gate may escalate typed uncertainty. */
-export type AgentGateNode = Omit<HumanGateNode, "type"> & {
-  agent: string;
-} & ({ type: "agent_gate" } | { type: "hybrid_gate" });
-export type DecisionGateNode = HumanGateNode | AgentGateNode;
+/** Classifier-first decision over resolved state; low confidence escalates to the invoking orchestrator. */
+export interface DecisionGateNode {
+  readonly name?: string;
+  type: "decision_gate";
+  state: Record<string, ValueRef>;
+  questions: Record<string, ClassifierQuestion>;
+  minConfidence?: number;
+}
 
 /** Invokes a reusable saved graph as a node — the main composition mechanism. */
 export interface SubgraphNode {
@@ -165,6 +166,8 @@ export interface BoundedFeedbackNode {
   readonly name?: string;
   readonly work: FanoutNode;
   readonly evaluator: AgentNode;
+  /** One-bool sufficiency check after each work round; the runtime injects `state.feedback`. */
+  readonly judge?: DecisionGateNode;
   readonly maxIterations: number;
   readonly maxItemsPerIteration: number;
   readonly maxTotalItems: number;
@@ -212,5 +215,5 @@ export interface GraphFragment {
   outputs?: Record<string, ValueRef>;
 }
 
-export const NODE_TYPES = ["agent", "human_gate", "agent_gate", "hybrid_gate", "graph", "expand", "fanout", "bounded_feedback"] as const;
+export const NODE_TYPES = ["agent", "decision_gate", "graph", "expand", "fanout", "bounded_feedback"] as const;
 export type NodeType = (typeof NODE_TYPES)[number];

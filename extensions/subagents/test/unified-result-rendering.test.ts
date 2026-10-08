@@ -8,11 +8,11 @@ vi.mock("@earendil-works/pi-coding-agent", async importOriginal => {
   return { ...actual, keyHint: (_key: string, label?: string) => label ?? "" };
 });
 
-it("renders canonical calls and graph gates with bounded rows and complete expanded content", async () => {
+it("renders canonical calls and graph escalations with bounded rows and complete expanded content", async () => {
   const host = boot();
   await host.lifecycle("session_start");
-  const prompt = "批准发布🙂é\n" + "a".repeat(200);
-  const id = await launch(host, { nodes: { gate: { ...gateNode, prompt } }, edges: [] });
+  const instructions = "批准发布🙂é" + "a".repeat(200);
+  const id = await launch(host, { nodes: { gate: { ...gateNode, questions: { release: { ...gateNode.questions.release, instructions } } } }, edges: [] });
   const tool = required(host.tools.get("get_agent_result"));
   const call = tool.renderCall({ run_id: id, wait: true }, plainTheme).render(120).join("\n");
   expect(call).toContain(`get_agent_result [graph] · ${id}`);
@@ -24,7 +24,7 @@ it("renders canonical calls and graph gates with bounded rows and complete expan
     for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
   }
   const collapsed = tool.renderResult(result, { expanded: false }, plainTheme, { isError: false }).render(120).join("\n");
-  expect(collapsed).toContain("Human input required");
+  expect(collapsed).toContain("Decision escalated");
   const expanded = tool.renderResult(result, { expanded: true }, plainTheme, { isError: false }).render(240).join("\n");
   expect(expanded).toContain("批准发布");
   expect(expanded.replace(/\n/g, "")).toContain("a".repeat(200));

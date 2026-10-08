@@ -62,7 +62,7 @@ Vendored packages record upstream `repository` metadata in their `package.json`;
 | [herdr-agent-graph-presentation.md](specs/herdr-agent-graph-presentation.md) | Hierarchy-first presentation for the Herdr agent-graph panel |
 | [dynamic-agent-graph-expansion.md](specs/dynamic-agent-graph-expansion.md) | Awaited typed fanout, all-settled collection, persistence, and dynamic monitor |
 | [agent-graph-bounded-feedback.md](specs/agent-graph-bounded-feedback.md) | Bounded feedback with durable runtime identity and partial synthesis |
-| [agent-graph-yaml-invocation-gates.md](specs/agent-graph-yaml-invocation-gates.md) | Saved graph YAML, `$graph:<name>` invocation, and decision gates |
+| [agent-graph-yaml-invocation-gates.md](specs/agent-graph-yaml-invocation-gates.md) | Saved graph YAML and `$graph:<name>` invocation |
 
 ## Guides
 

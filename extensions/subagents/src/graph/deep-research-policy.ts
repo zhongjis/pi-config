@@ -103,7 +103,15 @@ function planning(value: unknown): { parts: string[]; seed: unknown } {
   return { parts, seed: record(value) ? value.seed : undefined };
 }
 
-/** Evaluator `${feedback}`: the ledger plus the previous decision's gaps, never raw rounds. */
+/** Deterministic route: while a plan part lacks a primary ledger claim, skip the judge and write gap tasks directly. */
+export function skipsJudge(graph: AgentGraph, key: string, planningOutput: unknown, rounds: readonly LedgerRound[]): boolean {
+  if (graph.semanticPolicy !== "deep-research-v1" || key !== "research") return false;
+  const parts = record(planningOutput) ? list(planningOutput.parts).map(part => record(part) ? text(part.id) : "").filter(Boolean) : [];
+  const { claims } = researchLedger(record(planningOutput) ? planningOutput.seed : undefined, rounds);
+  return parts.some(part => !claims.some(claim => claim.sourceKind === "primary" && claim.partIds.includes(part)));
+}
+
+/** Evaluator and judge `${feedback}`: the ledger plus the previous decision's gaps, never raw rounds. */
 export function evaluatorFeedback(planningOutput: unknown, iterations: readonly LedgerRound[], openGaps: readonly FeedbackGap[]): ResearchLedger & { openGaps: readonly FeedbackGap[]; exhaustedGaps: readonly { id: string; attempts: number }[] } {
   const attempts = gapAttempts(iterations);
   const exhaustedGaps = [...attempts].filter(([, count]) => count >= GAP_ATTEMPT_LIMIT).map(([id, count]) => ({ id, attempts: count }));
@@ -149,17 +157,9 @@ export function checkDeepResearchOutput(context: DeepResearchOutput, value: unkn
     const plan = planning(context.planning);
     const output = record(value) ? value : {};
     if (context.stage === "evaluation") {
-      const ledger = researchLedger(plan.seed, context.iterations ?? []);
-      if (output.decision === "continue") {
-        const attempts = gapAttempts(context.iterations ?? []);
-        const offending = [...new Set(list(output.tasks).map(task => record(task) ? text(task.gapId) : "").filter(gapId => gapId && (attempts.get(gapId) ?? 0) >= GAP_ATTEMPT_LIMIT))];
-        if (offending.length) throw new TypeError(offending.map(id => `gap ${id} already had ${attempts.get(id)} tasks with no closing claim (limit ${GAP_ATTEMPT_LIMIT}): remove its tasks and keep it in gaps as inaccessible; if no task for another gap remains, return decision 'sufficient' with tasks []`).join("; "));
-        return true;
-      }
-      if (output.decision !== "sufficient") return true;
-      const gapIds = list(output.gaps).map(gap => record(gap) ? text(gap.id) : "");
-      const uncovered = plan.parts.filter(part => !ledger.claims.some(claim => claim.partIds.includes(part) && claim.sourceKind !== "secondary") && !gapIds.some(gap => gap.startsWith(`${part}-`)));
-      if (uncovered.length) throw new TypeError(`decision 'sufficient' leaves plan parts with no primary ledger claim and no reported gap: ${uncovered.join(", ")}. Return decision 'continue' with tasks for them, or list each unresolved part as a gap whose id starts with '<partId>-' (for example '${uncovered[0]}-no-evidence').`);
+      const attempts = gapAttempts(context.iterations ?? []);
+      const offending = [...new Set(list(output.tasks).map(task => record(task) ? text(task.gapId) : "").filter(gapId => gapId && (attempts.get(gapId) ?? 0) >= GAP_ATTEMPT_LIMIT))];
+      if (offending.length) throw new TypeError(offending.map(id => `gap ${id} already had ${attempts.get(id)} tasks with no closing claim (limit ${GAP_ATTEMPT_LIMIT}): remove its tasks and keep it in gaps as inaccessible; if no task for another gap remains, return tasks []`).join("; "));
       return true;
     }
     const ledger = writerResearch(context.planning, context.research);
@@ -203,7 +203,7 @@ export function validateDeepResearchRestore(graph: AgentGraph, state: SchedulerS
     rounds.push({ iteration: feedback.active.iteration, results: list(record(collected) ? collected.results : undefined) as FanoutResult["results"] });
   }
   const checks: [string, DeepResearchOutput][] = rounds.map((_row, index) => [
-    feedback?.active && index === rounds.length - 1 ? feedback.active.evaluator : feedback?.iterations[index].evaluator ?? "",
+    (feedback?.active && index === rounds.length - 1 ? feedback.active.evaluator : feedback?.iterations[index].evaluator) ?? "",
     { graph, stage: "evaluation", planning: planningOutput, iterations: rounds.slice(0, index + 1) },
   ]);
   checks.push(["synthesize", { graph, stage: "synthesize", planning: planningOutput, research: state.nodes.research?.output }]);

@@ -1,6 +1,6 @@
 ---
 name: agent-graphs
-description: Contract for running and authoring typed agent graphs. Use before every `agent_graph` call — running a saved graph or an ad-hoc inline graph, building input, collecting results, answering gates — and when authoring or editing a `.graph.json`, `.graph.yaml`, or inline graph.
+description: Contract for running and authoring typed agent graphs. Use before every `agent_graph` call — running a saved graph or an ad-hoc inline graph, building input, collecting results, resolving decision-gate escalations — and when authoring or editing a `.graph.json`, `.graph.yaml`, or inline graph.
 ---
 
 Every `agent_graph` call runs either a saved graph (`graph: "<name>"`) or an ad-hoc inline graph (`graph: { nodes, edges, outputs }`). Pick the path, follow its steps, then follow the shared steps 3–5.
@@ -75,18 +75,18 @@ Every `agent_graph` call runs either a saved graph (`graph: "<name>"`) or an ad-
 
 Shape errors and delegation-policy preflight failures return as tool errors before any spend. Preflight requires every node agent, including agents inside saved subgraphs, to be permitted by the current mode. A valid graph starts immediately; there is no dry run.
 
-The call returns a run ID in the tool text (`Task ID: <id>`). Continue only non-overlapping work, then MUST call `get_agent_result({run_id, wait:true})`. NEVER end the turn, poll, or sleep while the run is active. `wait: true` returns when the run settles or a gate is pending. Supervise the live run in `/agents → Graph runs`.
+The call returns a run ID in the tool text (`Task ID: <id>`). Continue only non-overlapping work, then MUST call `get_agent_result({run_id, wait:true})`. NEVER end the turn, poll, or sleep while the run is active. `wait: true` returns when the run settles or an escalation is pending. Supervise the live run in `/agents → Graph runs`.
 
-## 4. Gates
+## 4. Escalations
 
-A pending gate includes `gate_id`, `revision`, `kind`, `prompt`, and `response_schema`. MUST use `ask` for the human's choice, then:
+A `decision_gate` that cannot decide confidently escalates to you. `wait: true` returns the pending escalation: `kind: "decision_gate"`, `gate_id`, `revision`, `reason`, `questions`, `state`, and `response_schema`. Decide yourself, or use `ask` when the human must choose, then:
 
 ```ts
-resolve_agent_graph_gate({ run_id, gate_id, revision, response: { approved: true } })
+resolve_agent_graph_gate({ run_id, gate_id, revision, response: { answers: { <questionId>: value }, decidedBy: "orchestrator" } })
 get_agent_result({ run_id, wait: true })
 ```
 
-Copy `run_id`, `gate_id`, and `revision` exactly. Submit the actual human response; NEVER invent approval. `response` MUST match `response_schema`; decision gates expose `{ approved: boolean }`. Retrieval does not consume a gate. Identical responses are idempotent within the activation; stale or conflicting responses fail. Reload gives pending gates fresh revisions, including nested gates; retrieve again before asking. Cancelling retrieval stops only that wait.
+Copy `run_id`, `gate_id`, and `revision` exactly. `response` MUST match `response_schema`. Set `decidedBy` truthfully: `"human"` only when the human chose, otherwise `"orchestrator"`. Retrieval does not consume an escalation. Identical responses are idempotent within the activation; stale or conflicting responses fail. Reload gives pending escalations fresh revisions, including nested ones; retrieve again before resolving. Cancelling retrieval stops only that wait.
 
 ## 5. Read the result
 

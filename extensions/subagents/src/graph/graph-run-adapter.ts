@@ -63,6 +63,8 @@ export class GraphRunReporter {
   /** Transient v2 execution identity lookup; never emitted or persisted. */
   private readonly executionIndex = new Map<string, number>();
   private readonly resolved = new Map<string, { model?: string; modelId?: string; recordId?: string }>();
+  /** Committed decision escalations awaiting the orchestrator, by node and execution. */
+  private readonly escalations = new Map<string, ExecutionCorrelation>();
   private readonly lastRun = new Map<string, Readonly<NodeRun>>();
   private readonly lastUpdateAt = new Map<string, number>();
   /** Last-emitted activity counts per node, so `refresh` only re-emits on a real change. */
@@ -122,8 +124,8 @@ export class GraphRunReporter {
     this.deps.set(nodeId, dependencies);
     const previousStage = this.stage.get(nodeId);
     const previousTitle = this.explicitPhase.get(nodeId)?.title ?? (previousStage !== undefined ? `Stage ${previousStage + 1}` : undefined);
-    this.agentType.set(nodeId, node.type === "agent" || node.type === "agent_gate" || node.type === "hybrid_gate" ? node.agent : node.type);
-    if (node.type === "agent" || node.type === "human_gate" || node.type === "agent_gate" || node.type === "hybrid_gate" || node.type === "fanout") {
+    this.agentType.set(nodeId, node.type === "agent" ? node.agent : node.type);
+    if (node.type === "agent" || node.type === "fanout") {
       this.prompt.set(nodeId, node.prompt);
     }
     if (metadata.phase !== undefined && metadata.instance === undefined) this.explicitPhase.set(nodeId, metadata.phase);
@@ -205,6 +207,19 @@ export class GraphRunReporter {
     }
   }
 
+  /** Mark a committed escalation (by decision instance) as awaiting, or no longer awaiting, the orchestrator. */
+  setEscalation(instanceId: string, correlation: ExecutionCorrelation | undefined, awaiting: boolean, now: number = Date.now()): void {
+    const nodeId = [...this.identities].find(([, instance]) => instance.instanceId === instanceId)?.[0];
+    if (nodeId === undefined || correlation === undefined) return;
+    if (awaiting) this.escalations.set(nodeId, correlation);
+    else this.escalations.delete(nodeId);
+    const run = this.lastRun.get(nodeId);
+    if (run !== undefined) {
+      this.lastUpdateAt.set(nodeId, now);
+      updateGraphRunProgressBatch(this.task, [this.entry(nodeId, run, now)]);
+    }
+  }
+
   /** Recompute non-explicit topological stages after every dynamic registration. */
   private recomputeStages(): string[] {
     const previous = new Map([...this.index.keys()].map(id => [id, {
@@ -248,6 +263,11 @@ export class GraphRunReporter {
     // recordId) add nothing; `toolCalls` keeps a real 0, `tokens` only shows once it is non-zero.
     const act = res?.recordId !== undefined && this.getActivity !== undefined ? this.getActivity(res.recordId) : undefined;
     const prompt = this.prompt.get(nodeId);
+    const current = this.current.get(nodeId);
+    const escalation = this.escalations.get(nodeId);
+    const awaiting = run.status === "running" && current !== undefined && escalation !== undefined && matchesExecution(current, escalation);
+    // Only a model that decided is shown; orchestrator/human decisions and pending escalations claim none.
+    const modelEvidence = !awaiting && run.decisionSource !== "orchestrator" && run.decisionSource !== "human" ? res : undefined;
     const base: GraphRunAgentEntry = {
       type: "graph_run_agent",
       index: this.index.get(nodeId) ?? 0,
@@ -262,7 +282,7 @@ export class GraphRunReporter {
       state: "start",
       phaseIndex: stage,
       phaseTitle: this.explicitPhase.get(nodeId)?.title ?? `Stage ${stage + 1}`,
-      agentType: run.decisionSource === "human" ? "human" : this.agentType.get(nodeId),
+      agentType: awaiting ? "awaiting orchestrator" : run.decisionSource ?? this.agentType.get(nodeId),
       // ponytail: the pre-interpolation template (`${ref}` unresolved — P2 per ir.ts); good enough, upgrade = capture the resolved NodeSpawnRequest.prompt via onResolved.
       ...(prompt ? { promptPreview: promptPreview(prompt) } : {}),
       deps,
@@ -270,8 +290,8 @@ export class GraphRunReporter {
       queuedAt: this.queuedAt,
       ...(run.attempt > 0 ? { attempt: run.attempt } : {}),
       ...(run.attemptReason !== undefined ? { lastAttemptReason: run.attemptReason } : {}),
-      ...(res?.model !== undefined ? { model: res.model } : {}),
-      ...(res?.modelId !== undefined ? { modelId: res.modelId } : {}),
+      ...(modelEvidence?.model !== undefined ? { model: modelEvidence.model } : {}),
+      ...(modelEvidence?.modelId !== undefined ? { modelId: modelEvidence.modelId } : {}),
       ...(res?.recordId !== undefined ? { recordId: res.recordId } : {}),
       ...(act?.toolCalls !== undefined ? { toolCalls: act.toolCalls } : {}),
       ...(act?.tokens ? { tokens: act.tokens } : {}),

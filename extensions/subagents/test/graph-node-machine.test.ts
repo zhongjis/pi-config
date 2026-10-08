@@ -1,11 +1,11 @@
 import { setImmediate } from "node:timers/promises";
 import { expect, it, vi } from "vitest";
 import type { NodeHost, NodeSpawnRequest } from "../src/graph/node-host.js";
-import { agentInput, humanInput, machine, repaired, schema, terminal } from "./graph-node-machine.fixture.js";
+import { agentInput, decisionInput, escalationInput, escalationResponse, machine, repaired, schema, terminal } from "./graph-node-machine.fixture.js";
 
-it.each(["agent", "human"] as const)("waits for committed admission before the %s effect", async kind => {
-  const effect = vi.fn(async () => ({ ok: true }));
-  const input = kind === "agent" ? agentInput({ host: { spawnAgent: effect } }) : humanInput({ host: { spawnAgent: effect, awaitHumanGate: effect } });
+it.each(["agent", "escalation"] as const)("waits for committed admission before the %s effect", async kind => {
+  const effect = vi.fn(async () => ({ ok: true, output: escalationResponse }));
+  const input = kind === "agent" ? agentInput({ host: { spawnAgent: effect } }) : escalationInput({ host: { spawnAgent: effect, awaitEscalation: effect } });
   const actor = machine(input);
   await setImmediate();
   expect(effect).not.toHaveBeenCalled();
@@ -15,9 +15,9 @@ it.each(["agent", "human"] as const)("waits for committed admission before the %
   actor.parent.stop();
 });
 
-it.each(["agent", "human"] as const)("rejects mismatched %s admission without a host effect", async kind => {
-  const effect = vi.fn(async () => ({ ok: true }));
-  const input = kind === "agent" ? agentInput({ host: { spawnAgent: effect } }) : humanInput({ host: { spawnAgent: effect, awaitHumanGate: effect } });
+it.each(["agent", "escalation"] as const)("rejects mismatched %s admission without a host effect", async kind => {
+  const effect = vi.fn(async () => ({ ok: true, output: escalationResponse }));
+  const input = kind === "agent" ? agentInput({ host: { spawnAgent: effect } }) : escalationInput({ host: { spawnAgent: effect, awaitEscalation: effect } });
   const actor = machine(input);
   actor.send({ type: "NODE.ADMITTED", receipt: { ...input.receipt, incarnation: "stale" } });
   expect((await actor.next("NODE.DRAINED")).failure.error).toBeInstanceOf(TypeError);
@@ -33,16 +33,40 @@ const outputs = [
   { name: "host failure", result: { ok: false, error: "host failed" }, structured: true, expected: { ok: false, error: "host failed" } },
   { name: "dismissal", result: { ok: false, skipped: true }, structured: true, expected: { ok: false, skipped: true } },
 ];
-it.each((["agent", "human"] as const).flatMap(kind => outputs.map(output => ({ kind, ...output }))))("preserves $kind $name output", async ({ kind, result, structured, expected }) => {
-  const effect = async () => result;
-  const input = kind === "agent" ? agentInput({ host: { spawnAgent: effect } }) : humanInput({ host: { spawnAgent: effect, awaitHumanGate: effect } });
+it.each(outputs)("preserves agent $name output", async ({ result, structured, expected }) => {
+  const input = agentInput({ host: { spawnAgent: async () => result } });
   const run = await terminal({ ...input, node: { ...input.node, ...(structured ? { schema: schema() } : {}) } });
   expect(run.result).toMatchObject(expected);
 });
 
-it.each(["agent", "human", "gate"] as const)("converts a rejected %s host effect into a node failure", async kind => {
+const escalations = [
+  { name: "valid response", result: { ok: true, output: escalationResponse }, expected: { ok: true, output: JSON.stringify({ decidedBy: "orchestrator", answers: { q: { value: true, confidence: 1 } } }) } },
+  { name: "invalid JSON", result: { ok: true, output: "invalid" }, expected: { ok: false } },
+  { name: "wrong answer", result: { ok: true, output: JSON.stringify({ answers: { q: "yes" }, decidedBy: "orchestrator" }) }, expected: { ok: false, error: expect.stringContaining("Invalid escalation answer") } },
+  { name: "host failure", result: { ok: false, error: "host failed" }, expected: { ok: false, error: "host failed" } },
+  { name: "dismissal", result: { ok: false, skipped: true }, expected: { ok: false, skipped: true } },
+];
+it.each(escalations)("maps escalation $name", async ({ result, expected }) => {
+  const run = await terminal(escalationInput({ host: { spawnAgent: async () => ({ ok: true }), awaitEscalation: async () => result } }));
+  expect(run.result).toMatchObject(expected);
+});
+
+it("requests an escalation after an undecided model chain and awaits it only after ACK", async () => {
+  const awaitEscalation = vi.fn(async () => ({ ok: true, output: escalationResponse }));
+  const input = decisionInput({ host: { spawnAgent: async () => ({ ok: true }), decide: async () => ({ ok: false, error: "no model" }), awaitEscalation } });
+  const actor = machine(input); actor.admit();
+  const request = await actor.next("NODE.REQUEST");
+  expect(request.operation).toMatchObject({ kind: "escalate", reason: expect.any(String) });
+  expect(awaitEscalation).not.toHaveBeenCalled();
+  actor.ack(request);
+  expect((await actor.next("NODE.REQUEST", 1)).operation).toMatchObject({ kind: "settle", result: { ok: true } });
+  expect(awaitEscalation).toHaveBeenCalledTimes(1);
+  actor.parent.stop();
+});
+
+it.each(["agent", "escalation", "gate"] as const)("converts a rejected %s host effect into a node failure", async kind => {
   const rejection = async () => { throw new TypeError("host rejection"); };
-  const input = kind === "human" ? humanInput({ host: { spawnAgent: rejection, awaitHumanGate: rejection } }) : agentInput({
+  const input = kind === "escalation" ? escalationInput({ host: { spawnAgent: rejection, awaitEscalation: rejection } }) : agentInput({
     host: { spawnAgent: kind === "agent" ? rejection : async () => ({ ok: true, costUsd: 0.4 }), runGate: rejection },
     node: { ...agentInput().node, ...(kind === "gate" ? { gate: "check" } : {}) },
   });
@@ -74,9 +98,9 @@ it.each(["absent", "revoked"] as const)("fails closed when gate capability is %s
   expect(runGate).not.toHaveBeenCalled(); actor.parent.stop();
 });
 
-it("fails a missing human prompt capability without spawning an agent", async () => {
+it("fails a missing escalation capability without spawning an agent", async () => {
   const spawnAgent = vi.fn(async () => ({ ok: true }));
-  expect((await terminal(humanInput({ host: { spawnAgent } }))).result).toMatchObject({ ok: false, error: "This host cannot await human input" });
+  expect((await terminal(escalationInput({ host: { spawnAgent } }))).result).toMatchObject({ ok: false, error: "This host cannot escalate decisions" });
   expect(spawnAgent).not.toHaveBeenCalled();
 });
 

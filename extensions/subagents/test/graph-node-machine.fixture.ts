@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { createActor, setup } from "xstate";
+import { compileDerivedSchema, decisionOutputSchema, decisionResponseSchema } from "../src/graph/decision-gate.js";
 import { executionAttemptId } from "../src/graph/graph-execution.js";
 import { GraphInstances } from "../src/graph/graph-instance-id.js";
+import type { ClassifierQuestion } from "../src/graph/ir.js";
 import { compileJsonSchema } from "../src/graph/json-schema.js";
-import { agentNodeLogic, humanGateNodeLogic } from "../src/graph/node-lifecycle.js";
-import type { AgentLifecycleInput, HumanGateLifecycleInput, NodeLifecycleInput } from "../src/graph/node-lifecycle-session.js";
+import { agentNodeLogic, decisionGateNodeLogic } from "../src/graph/node-lifecycle.js";
+import type { AgentLifecycleInput, DecisionLifecycleInput, NodeLifecycleInput } from "../src/graph/node-lifecycle-session.js";
 import { admissionReceipt, type NodeAck, type NodeAdmissionReceipt, type NodeChildEvent, type NodeParentEvent, type NodeRequest } from "../src/graph/node-protocol.js";
 
 export function receipt(): NodeAdmissionReceipt {
@@ -21,9 +23,18 @@ export function agentInput(overrides: Partial<AgentLifecycleInput> = {}): AgentL
   return { receipt: receipt(), host: { spawnAgent: async () => ({ ok: true }) },
     node: { kind: "agent", nodeId: "a", agentType: "worker", prompt: "fixture" }, ...overrides };
 }
-export function humanInput(overrides: Partial<HumanGateLifecycleInput> = {}): HumanGateLifecycleInput {
-  return { receipt: receipt(), host: { spawnAgent: async () => { throw new TypeError("Unexpected spawn"); }, awaitHumanGate: async () => ({ ok: true }) },
-    node: { kind: "human", nodeId: "a", prompt: "fixture" }, ...overrides };
+const questions: Record<string, ClassifierQuestion> = { q: { type: "bool", instructions: "fixture", criteria: { true: "yes", false: "no" } } };
+export const escalationResponse = JSON.stringify({ answers: { q: true }, decidedBy: "orchestrator" });
+/** A lifecycle-resumed escalation: no model decision, straight to the host handoff. */
+export function escalationInput(overrides: Partial<DecisionLifecycleInput> = {}): DecisionLifecycleInput {
+  return { receipt: receipt(), host: { spawnAgent: async () => { throw new TypeError("Unexpected spawn"); }, awaitEscalation: async () => ({ ok: true, output: escalationResponse }) },
+    node: { kind: "decision", nodeId: "a", questions, state: {}, minConfidence: 0.8, escalationOnly: true, escalationReason: "fixture reason",
+      responseSchema: compileDerivedSchema(decisionResponseSchema(questions)), schema: compileDerivedSchema(decisionOutputSchema(questions)) }, ...overrides };
+}
+/** A decision that runs the model chain first. */
+export function decisionInput(overrides: Partial<DecisionLifecycleInput> = {}): DecisionLifecycleInput {
+  const { escalationReason: _, ...node } = escalationInput().node;
+  return { ...escalationInput(), node: { ...node, escalationOnly: false }, ...overrides };
 }
 export function schema() {
   const result = compileJsonSchema({ type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"], additionalProperties: false });
@@ -34,7 +45,7 @@ export function machine(input: NodeLifecycleInput) {
   const events: NodeParentEvent[] = [];
   const listeners = new Set<(event: NodeParentEvent) => void>();
   const record = (event: NodeParentEvent) => { events.push(event); for (const listener of listeners) listener(event); };
-  const logic = setup({ actors: { node: input.node.kind === "agent" ? agentNodeLogic : humanGateNodeLogic },
+  const logic = setup({ actors: { node: input.node.kind === "agent" ? agentNodeLogic : decisionGateNodeLogic },
     types: { events: {} as NodeParentEvent },
   }).createMachine({
     invoke: { id: "node", src: "node", input },

@@ -36,6 +36,8 @@ export interface GraphExecutionHost extends Readonly<Pick<NodeHostOptions, "pi" 
   readonly delegationDenial: (ctx: ExtensionContext, type: string) => string | undefined;
   /** Opt-in XState inspection log; read when each run starts. */
   readonly runtimeTrace: () => boolean;
+  /** Run-wide decision_gate threshold; read when each run starts. */
+  readonly decisionGateMinConfidence: () => number;
 }
 
 /** Held delivery is shared with ordinary background-agent completions. */
@@ -114,7 +116,12 @@ export function createGraphRuntime(
     const handoff = createGateHandoff(() => results.changed(task.id), delivery);
     gates.set(task.id, handoff);
     const host = createNodeHost({
-      awaitHumanGate: handoff.awaitHumanGate,
+      // Only committed escalations reach the handoff; the monitor shows them as awaiting the orchestrator.
+      awaitEscalation: async (request, signal) => {
+        const awaiting = (pending: boolean) => { reporter.setEscalation(request.nodeId, request.correlation, pending); refresh("pane"); };
+        awaiting(true);
+        try { return await handoff.awaitEscalation(request, signal); } finally { awaiting(false); }
+      },
       pi,
       ctx,
       manager,
@@ -145,6 +152,7 @@ export function createGraphRuntime(
         host,
         runId: task.id,
         reclaimedDeadWriter: releaseCheckpoint.reclaimedDeadWriter,
+        decisionGateMinConfidence: execution.decisionGateMinConfidence(),
         authorizeAgent: agent => execution.delegationDenial(ctx, agent),
         onCheckpoint: (state, effectiveGraph) => {
           writeGraphSnapshot(ctx.cwd, {
@@ -226,7 +234,7 @@ export function createGraphRuntime(
 
   /** Resume the last complete checkpoint, including gates and feedback transitions. */
   function resume(ctx: ExtensionContext): void {
-    for (const snap of readGraphSnapshots(ctx.cwd, message => ctx.ui.notify(message, "error"))) {
+    for (const snap of readGraphSnapshots(ctx.cwd, message => ctx.ui.notify(message, "error"), ctx.sessionManager.getSessionId())) {
       if (!snap.ownerSessionId || snap.ownerSessionId !== ctx.sessionManager.getSessionId() || tasks.has(snap.runId)) continue;
       if (graphRunHasLiveWriter(ctx.cwd, snap.runId)) continue; // another live process still owns this run
       try {
@@ -419,7 +427,7 @@ export function createGraphRuntime(
             `Agent graph "${graphName}" started in the background.\n` +
             `Task ID: ${runId}\n` +
             `\nCollect with get_agent_result({run_id: "${runId}", wait: true}). Do not end the turn, poll or sleep.\n` +
-            `If human input is required, use ask then resolve_agent_graph_gate; collect again. A completion notification is sent only if the run was not already collected.`,
+            `If a decision escalates, decide yourself or ask the human with ask, then resolve_agent_graph_gate; collect again. A completion notification is sent only if the run was not already collected.`,
         }],
         details: { taskId: runId },
       };

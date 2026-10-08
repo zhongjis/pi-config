@@ -1,3 +1,4 @@
+import type { DecisionAnswer } from "./decision-gate.js";
 import type { ExecutionCorrelation } from "./graph-execution.js";
 /**
  * node-host.ts — the seam between a graph node and the subagent execution core.
@@ -5,14 +6,15 @@ import type { ExecutionCorrelation } from "./graph-execution.js";
  * A graph-native replacement for the script runtime's `WorkflowHost`. The node
  * effects (node-effects.ts) know only this interface, so typed lifecycle actors
  * run against a test stub or the real `AgentManager` adapter. Deliberately free
- * of XState or IR types: each effect takes a request and AbortSignal, and must
- * physically settle even after the lifecycle actor acknowledges cancellation.
+ * of XState and graph-node types: each effect takes a request and AbortSignal, and
+ * must physically settle even after the lifecycle actor acknowledges cancellation.
  *
  * The real adapter (host.ts, reworked in a later phase) implements this by
  * resolving the agent type/model, spawning through `AgentManager`, and mapping
  * the record back to {@link NodeSpawnResult}.
  */
 
+import type { ClassifierQuestion } from "./ir.js";
 import type { CompiledSchema } from "./json-schema.js";
 
 /** What the host reports once the child's effective config is known. */
@@ -66,14 +68,30 @@ export interface NodeGateResult {
   output: string;
 }
 
-/** A pause point awaiting a human decision (approve / reject / supply data). */
-export interface HumanGateRequest {
+/** One decision-model chain run over a decision_gate's resolved state. */
+export interface DecisionRequest {
   correlation?: ExecutionCorrelation;
-  kind?: "human_gate" | "hybrid_gate";
   nodeId: string;
-  prompt: string;
-  /** The shape the human's response must satisfy. */
-  schema?: CompiledSchema;
+  state: Record<string, unknown>;
+  questions: Record<string, ClassifierQuestion>;
+  /** Called once the deciding model is known. */
+  onResolved?(info: NodeResolvedInfo): void;
+}
+
+/** `costUsd` absent means cost is unavailable; 0 is a real zero. */
+export type DecisionResult =
+  | { readonly ok: true; readonly answers: Record<string, DecisionAnswer>; readonly decidedBy: "classifier" | "agent"; readonly model: string; readonly costUsd?: number }
+  | { readonly ok: false; readonly error: string; readonly skipped?: boolean; readonly costUsd?: number };
+
+/** An undecided decision_gate awaiting the invoking orchestrator. */
+export interface EscalationRequest {
+  correlation?: ExecutionCorrelation;
+  nodeId: string;
+  reason: string;
+  questions: Record<string, ClassifierQuestion>;
+  state: Record<string, unknown>;
+  /** The shape the orchestrator's response must satisfy. */
+  schema: CompiledSchema;
 }
 
 /**
@@ -85,13 +103,15 @@ export interface HumanGateRequest {
  */
 export interface NodeHost {
   /** Invoked only after the previous checkpoint writer has been proven dead. */
-  reconcileDrain?(correlation: ExecutionCorrelation, target: "agent" | "human-gate" | "validation-gate"): Promise<boolean>;
+  reconcileDrain?(correlation: ExecutionCorrelation, target: "agent" | "escalation" | "validation-gate"): Promise<boolean>;
   spawnAgent(request: NodeSpawnRequest, signal: AbortSignal): Promise<NodeSpawnResult>;
   runGate?(command: string, options: { cwd?: string; signal: AbortSignal; correlation?: ExecutionCorrelation }): Promise<NodeGateResult>;
+  /** Run the decision-model chain for a decision_gate. A host without it escalates every decision. */
+  decide?(request: DecisionRequest, signal: AbortSignal): Promise<DecisionResult>;
   /**
-   * Await a human decision for a `human_gate` node. The result's `output` is the
-   * human-supplied value (JSON when a schema is set). A host without this fails a
-   * human_gate loudly rather than passing it unattended.
+   * Await the orchestrator's decision for an escalated decision_gate. The result's
+   * `output` is the response JSON. A host without this fails the escalation loudly
+   * rather than passing it unattended.
    */
-  awaitHumanGate?(request: HumanGateRequest, signal: AbortSignal): Promise<NodeSpawnResult>;
+  awaitEscalation?(request: EscalationRequest, signal: AbortSignal): Promise<NodeSpawnResult>;
 }

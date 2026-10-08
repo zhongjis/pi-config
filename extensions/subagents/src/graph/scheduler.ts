@@ -1,3 +1,4 @@
+import type { DecidedBy } from "./decision-gate.js";
 import type { FanoutChild } from "./fanout.js";
 import type { ExecutionAttemptId } from "./graph-execution.js";
 import type { GraphRuntimeState } from "./graph-instance-id.js";
@@ -6,8 +7,8 @@ import type { NodeId } from "./ir.js";
 export type NodeStatus = "pending" | "running" | "completed" | "failed" | "skipped";
 
 export interface NodeRun {
-  /** Presentation only, derived from committed execution dispatch evidence. */
-  decisionSource?: "human" | "subagent";
+  /** Presentation only, derived from a successfully settled decision output. */
+  decisionSource?: DecidedBy;
   activation?: number;
   graphAttempt?: number;
   currentExecutionAttemptId?: ExecutionAttemptId;

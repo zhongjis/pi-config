@@ -12,7 +12,7 @@
  * author sees all of them at once instead of one per round-trip.
  */
 
-import { compileDecisionSchema, decisionValueSchema } from "./decision-gate.js";
+import { decisionOutputSchema, validateQuestions } from "./decision-gate.js";
 import { type GraphNode, NODE_TYPES, type NodeId } from "./ir.js";
 import { compileInputSchema, compileJsonSchema } from "./json-schema.js";
 import { isJsonPath, tokenize } from "./value-ref.js";
@@ -41,7 +41,6 @@ function isPositiveInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value > 0;
 }
 
-const DECISION_NODE_TYPES = new Set(["human_gate", "agent_gate", "hybrid_gate"]);
 const SCALAR_TYPES = new Set(["string", "number", "integer", "boolean", "null"]);
 const OPAQUE_SCHEMA_KEYS = ["patternProperties", "allOf", "anyOf", "oneOf", "if", "then", "else", "$ref", "unevaluatedProperties", "dependentSchemas"] as const;
 
@@ -120,8 +119,8 @@ class Validator {
     if (node.type === "agent") {
       return node.outputSchema === undefined ? undefined : { schema: node.outputSchema, where: `"${ref.node}" output schema` };
     }
-    if (typeof node.type === "string" && DECISION_NODE_TYPES.has(node.type)) {
-      return { schema: decisionValueSchema, where: `"${ref.node}" output schema` };
+    if (node.type === "decision_gate") {
+      return validateQuestions("", node.questions, () => {}) ? { schema: decisionOutputSchema(node.questions), where: `"${ref.node}" output schema` } : undefined;
     }
     return undefined;
   }
@@ -246,7 +245,7 @@ class Validator {
         }
         if (node.deadline !== undefined && (!isPositiveInt(node.deadline) || !Number.isSafeInteger(node.deadline))) this.err(`${path}.deadline`, "must be positive safe integer milliseconds");
         if (node.spendLimit !== undefined && (typeof node.spendLimit !== "number" || !Number.isFinite(node.spendLimit) || node.spendLimit <= 0)) this.err(`${path}.spendLimit`, "must be positive finite USD");
-        for (const key of Object.keys(node)) if (!["type", "name", "work", "evaluator", "maxIterations", "maxItemsPerIteration", "maxTotalItems", "deadline", "spendLimit"].includes(key)) this.err(`${path}.${key}`, "unknown bounded-feedback field");
+        for (const key of Object.keys(node)) if (!["type", "name", "work", "evaluator", "judge", "maxIterations", "maxItemsPerIteration", "maxTotalItems", "deadline", "spendLimit"].includes(key)) this.err(`${path}.${key}`, "unknown bounded-feedback field");
         if (!isPlainObject(node.work) || node.work.type !== "fanout") this.err(`${path}.work`, "must be a fixed fanout template");
         else {
           this.node(`${id}.work`, node.work);
@@ -257,6 +256,16 @@ class Validator {
           this.node(`${id}.evaluator`, { ...node.evaluator, input: { ...(isPlainObject(node.evaluator.input) ? node.evaluator.input : {}), feedback: { path: "$" } } });
           if (isPlainObject(node.evaluator.input) && Object.hasOwn(node.evaluator.input, "feedback")) this.err(path, "evaluator.input.feedback is reserved");
           if (node.evaluator.outputSchema !== undefined) this.err(path, "evaluator outputSchema is runtime-owned");
+        }
+        if (node.judge !== undefined) {
+          const judge = node.judge;
+          if (!isPlainObject(judge) || judge.type !== "decision_gate") this.err(`${path}.judge`, "must be a fixed decision_gate template");
+          else {
+            this.node(`${id}.judge`, { ...judge, state: { ...(isPlainObject(judge.state) ? judge.state : {}), feedback: { path: "$" } } });
+            if (isPlainObject(judge.state) && Object.hasOwn(judge.state, "feedback")) this.err(path, "judge.state.feedback is reserved");
+            const questions = isPlainObject(judge.questions) ? Object.values(judge.questions) : [];
+            if (questions.length !== 1 || !isPlainObject(questions[0]) || questions[0].type !== "bool") this.err(`${path}.judge.questions`, "must declare exactly one bool question");
+          }
         }
         break;
       case "fanout":
@@ -292,19 +301,13 @@ class Validator {
           }
         }
         break;
-      case "agent_gate": case "hybrid_gate": case "human_gate":
-        if (type !== "human_gate" && !isNonEmptyString(node.agent)) this.err(`${path}.agent`, "must be a non-empty agent selector");
-        if (type === "human_gate" && node.agent !== undefined) this.err(`${path}.agent`, "human_gate cannot select an agent");
-        if (!isNonEmptyString(node.prompt)) this.err(`${path}.prompt`, "must be a non-empty prompt");
-        this.inputMap(`${path}.input`, node.input);
-        this.promptPlaceholders(path, node.prompt, node.input);
-        if (node.outputSchema === undefined) this.err(`${path}.outputSchema`, "is required for a decision gate node");
-        else {
-          this.schema(`${path}.outputSchema`, node.outputSchema, true);
-          try {
-            const schema = compileDecisionSchema(node.outputSchema);
-            if (schema.check({ approved: true }) !== true && schema.check({ approved: false }) !== true) this.err(`${path}.outputSchema`, "must accept an approve/reject decision { approved: boolean }");
-          } catch (error) { this.err(`${path}.outputSchema`, error instanceof Error ? error.message : String(error)); }
+      case "decision_gate":
+        for (const key of Object.keys(node)) if (!["type", "name", "state", "questions", "minConfidence"].includes(key)) this.err(`${path}.${key}`, "unknown decision_gate field");
+        if (node.state === undefined) this.err(`${path}.state`, "is required (an object of { name: ValueRef }, may be empty)");
+        else this.inputMap(`${path}.state`, node.state);
+        validateQuestions(`${path}.questions`, node.questions, (where, message) => this.err(where, message));
+        if (node.minConfidence !== undefined && (typeof node.minConfidence !== "number" || !Number.isFinite(node.minConfidence) || node.minConfidence < 0 || node.minConfidence > 1)) {
+          this.err(`${path}.minConfidence`, "must be a finite number from 0 to 1");
         }
         break;
       case "graph":
@@ -437,6 +440,7 @@ export function validateGraph(graph: unknown, materializedPrompts: ReadonlySet<N
       [nodes.plan, nodes.synthesize].some(node => !isPlainObject(node) || node.type !== "agent" || node.outputSchema === undefined)) {
       errors.push("semanticPolicy: context-gather-v1 requires plan/research/synthesize structured nodes");
     }
+    if (isPlainObject(nodes.research) && nodes.research.judge !== undefined) errors.push("semanticPolicy: context-gather-v1 research must not declare a judge");
   }
   if (graph.semanticPolicy === "deep-research-v1") {
     const nodes = isPlainObject(graph.nodes) ? graph.nodes : {};
@@ -444,6 +448,7 @@ export function validateGraph(graph: unknown, materializedPrompts: ReadonlySet<N
       !isPlainObject(nodes.synthesize) || nodes.synthesize.type !== "agent") {
       errors.push("semanticPolicy: deep-research-v1 requires planning (graph), research (bounded_feedback) and synthesize (agent) nodes");
     }
+    if (isPlainObject(nodes.research) && nodes.research.type === "bounded_feedback" && nodes.research.judge === undefined) errors.push("semanticPolicy: deep-research-v1 requires a research judge");
   }
   if (graph.inputSchema !== undefined) {
     const compiled = compileInputSchema(graph.inputSchema);

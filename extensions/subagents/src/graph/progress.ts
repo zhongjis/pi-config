@@ -60,7 +60,7 @@ export interface GraphNodePresentation {
   historyConnections?: readonly { index: number; direction: "upstream" | "downstream"; kind: "conditional" | "loop" }[];
   iteration?: number;
   itemIndex?: number;
-  role?: "work" | "evaluator" | "item";
+  role?: "work" | "judge" | "evaluator" | "item";
   connections?: readonly { binding: string; direction: "upstream" | "downstream"; kind: "conditional" | "loop" }[];
   iterations?: readonly { iteration: number; decision?: "continue" | "sufficient" }[];
 }

@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import type { CancellationReason } from "./graph-execution.js";
+import type { ClassifierQuestion } from "./ir.js";
 import type { CompiledSchema } from "./json-schema.js";
 import type { NodeHost, NodeSpawnResult } from "./node-host.js";
 import { admissionReceipt, type NodeAck, type NodeAdmissionReceipt, type NodeChildEvent, type NodeEnvelope, type NodeOperation, type NodeParentEvent, type NodeRequest, NodeRequestJournal } from "./node-protocol.js";
@@ -9,18 +10,28 @@ interface NodeInput {
   readonly host: NodeHost;
   readonly authorize?: () => string | undefined;
 }
-interface Prompt {
-  readonly nodeId: string;
-  readonly prompt: string;
-  readonly schema?: CompiledSchema;
-}
 export interface AgentLifecycleInput extends NodeInput {
-  readonly node: Prompt & { readonly kind: "agent"; readonly agentType: string; readonly gate?: string; readonly maxAttempts?: number };
+  readonly node: { readonly kind: "agent"; readonly nodeId: string; readonly prompt: string; readonly schema?: CompiledSchema;
+    readonly agentType: string; readonly gate?: string; readonly maxAttempts?: number };
 }
-export interface HumanGateLifecycleInput extends NodeInput {
-  readonly node: Prompt & ({ readonly kind: "human" } | { readonly kind: "decision"; readonly agentType: string; readonly hybrid: boolean; readonly humanOnly: boolean });
+export interface DecisionLifecycleInput extends NodeInput {
+  readonly node: {
+    readonly kind: "decision";
+    readonly nodeId: string;
+    readonly questions: Readonly<Record<string, ClassifierQuestion>>;
+    /** Resolved from the gate's ValueRefs at admission; never persisted. */
+    readonly state: Readonly<Record<string, unknown>>;
+    readonly minConfidence: number;
+    /** What the orchestrator must answer when the decision escalates. */
+    readonly responseSchema: CompiledSchema;
+    /** The exposed output, checked before settlement. */
+    readonly schema: CompiledSchema;
+    /** A lifecycle-interrupted escalation resumes without another model decision. */
+    readonly escalationOnly: boolean;
+    readonly escalationReason?: string;
+  };
 }
-export type NodeLifecycleInput = AgentLifecycleInput | HumanGateLifecycleInput;
+export type NodeLifecycleInput = AgentLifecycleInput | DecisionLifecycleInput;
 export type NodeResolution = Extract<NodeParentEvent, { type: "NODE.RESOLVED" }>;
 export type NodeLifecycleEvent = NodeChildEvent | NodeResolution;
 
@@ -35,7 +46,7 @@ export interface NodeSession {
   executed: boolean;
   requestSequence: number;
   pending?: NodeRequest;
-  continuation?: "spawn" | "gate" | "human";
+  continuation?: "spawn" | "gate" | "escalate";
   // ponytail: actor-local; a restored execution has no remembered failure and uses the original prompt.
   repairError?: string;
   undecidedReason?: string;
@@ -87,7 +98,7 @@ export function acceptAck(context: NodeSession, ack: NodeAck): void {
   switch (ack.operation.kind) {
     case "repair": context.repairError = context.result.error; context.continuation = "spawn"; context.executed = false; break;
     case "gate": context.continuation = "gate"; break;
-    case "human": context.continuation = "human"; break;
+    case "escalate": context.continuation = "escalate"; break;
     case "cancel": context.cancelAcknowledged = true; context.controller.abort(context.cancellation?.reason); break;
     case "settle": context.settled = true; break;
     default: { const exhaustive: never = ack.operation; throw new TypeError(`Unknown node operation: ${exhaustive}`); }

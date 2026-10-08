@@ -168,12 +168,13 @@ describe("graph retrieval text", () => {
     const task = completed(feedbackValue, "agr_0123456789ab");
     task.resultPath = "/tmp/agr_0123456789ab.graph-result.txt";
     const request: GateRequest = {
-      gate_id: "g1", revision: "r1", kind: "human_gate", prompt: "Approve?", response_schema: { type: "object" },
+      gate_id: "g1", revision: "r1", kind: "decision_gate", reason: "low confidence", questions: {}, state: {}, response_schema: { type: "object" },
     };
     const result = await createGraphResultObserver(() => task, () => request, () => {}, () => {}).retrieve(task.id, false);
     const text = result.content.map(part => part.text ?? "").join("\n");
     expect(text).toContain("resolve_agent_graph_gate");
-    expect(text).toContain(JSON.stringify(request));
+    expect(text).toContain(request.gate_id);
+    expect(text).toContain(request.revision);
     expect(text).not.toContain(task.resultPath ?? "");
     expect(text).not.toContain("round-secret");
   });

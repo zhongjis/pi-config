@@ -40,3 +40,25 @@ _Avoid_: sub-workflow, child graph
 **Expand**:
 A node that splices a runtime-generated graph fragment into the running agent graph.
 _Avoid_: dynamic node, expansion
+
+**Decision gate**:
+A `decision_gate` node that answers typed questions about supplied state, each answer with a confidence, and records who decided.
+_Avoid_: human gate, approval gate, agent gate, hybrid gate
+
+**Judge**:
+The optional decision gate inside a bounded feedback node that decides whether an iteration's evidence is sufficient; the evaluator then only writes gaps and tasks.
+_Avoid_: evaluator (for the sufficiency decision), reviewer
+
+## Decisions
+
+**Classifier model**:
+A non-chat model that answers typed questions with probabilities; the preferred decider for a decision gate.
+_Avoid_: classifier agent, judge model
+
+**Agent fallback**:
+The runtime-internal, unregistered agent that emulates a classifier model on a chat model when no classifier decides.
+_Avoid_: Panguan, gate agent
+
+**Escalation**:
+Handing a decision gate that is undecided or below its confidence threshold to the orchestrator that invoked the agent graph, which decides or asks the human.
+_Avoid_: human approval, human gate, fallback

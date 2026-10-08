@@ -198,7 +198,7 @@ function presentationTree(agents: readonly GraphRunAgentEntry[]): TreeNode {
     if (parent !== node && parent?.entry?.presentation?.kind === "fanout" && meta?.kind === "agent" && meta.itemIndex !== undefined) {
       node.label = `item ${meta.itemIndex + 1}`;
       parent.children.push(node);
-    } else if (parent !== node && parent?.entry?.presentation?.kind === "bounded_feedback" && meta?.iteration !== undefined && (meta.kind === "fanout" || meta.kind === "agent")) {
+    } else if (parent !== node && parent?.entry?.presentation?.kind === "bounded_feedback" && meta?.iteration !== undefined && (meta.kind === "fanout" || meta.kind === "decision_gate" || meta.kind === "agent")) {
       iteration(parent, meta.iteration).children.push(node);
     } else root.children.push(node);
   }
@@ -243,6 +243,18 @@ function withTrailing(line: GraphRunCardLine, metadata: string | readonly string
   if (chosen !== undefined) line.push({ text: " ".repeat(width - used - visibleWidth(chosen)) + chosen, color: "dim" });
   return clampLine(line, width);
 }
+/** Lowest answer confidence of a completed decision_gate, read from its retained live output. */
+function decisionConfidence(entry: GraphRunAgentEntry): string | undefined {
+  if (entry.presentation?.kind !== "decision_gate" || entry.state !== "done" || !entry.resultPreview) return undefined;
+  try {
+    const answers: unknown = JSON.parse(entry.resultPreview)?.answers;
+    const values: unknown[] = answers !== null && typeof answers === "object" ? Object.values(answers).map(answer => answer?.confidence) : [];
+    if (values.length === 0 || !values.every((value): value is number => typeof value === "number" && Number.isFinite(value))) return undefined;
+    return `min confidence ${Math.min(...values).toFixed(2)}`;
+  } catch {
+    return undefined;
+  }
+}
 function rosterLines(plan: PanelPlan, state: PanelState): { lines: GraphRunCardLine[]; selectedRow?: number } {
   const { width, ascii, visible, resolvedCursor, run } = plan;
   const lines: GraphRunCardLine[] = [];
@@ -277,8 +289,10 @@ function rosterLines(plan: PanelPlan, state: PanelState): { lines: GraphRunCardL
           trailing = coord;
         } else {
           const model = node.entry.model ?? node.entry.modelId;
+          const confidence = decisionConfidence(node.entry);
           trailing = [
-            [node.entry.agentType, model, ...annotations].filter(Boolean).join(" · "),
+            [node.entry.agentType, model, confidence, ...annotations].filter(Boolean).join(" · "),
+            [node.entry.agentType, confidence, ...annotations].filter(Boolean).join(" · "),
             [node.entry.agentType, ...annotations].filter(Boolean).join(" · "),
             annotations.join(" · "),
           ].filter((candidate, i, all) => candidate.length > 0 && all.indexOf(candidate) === i);

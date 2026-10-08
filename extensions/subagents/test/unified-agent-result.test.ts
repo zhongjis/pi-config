@@ -7,15 +7,15 @@ describe("registered result retrieval", () => {
     const host = boot();
     await host.lifecycle("session_start");
     const launched = await required(host.tools.get("agent_graph")).execute("launch", {
-      graph: { nodes: { gate: { type: "human_gate", prompt: "Approve release?", outputSchema: {
-        type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"], additionalProperties: false,
+      graph: { nodes: { gate: { type: "decision_gate", state: {}, questions: {
+        approved: { type: "bool", instructions: "Approve release?", criteria: { true: "yes", false: "no" } },
       } } }, edges: [], outputs: { decision: { node: "gate", path: "$" } } },
     }, undefined, undefined, host.ctx);
     const run_id = required(launched.details?.taskId);
     const result = await required(host.tools.get("get_agent_result")).execute("read", { run_id, wait: true }, undefined, undefined, host.ctx);
     expect(result.details, JSON.stringify(result)).toMatchObject({ kind: "graph", status: "running", gate: {
-      gate_id: expect.any(String), revision: expect.any(String), kind: "human_gate", prompt: "Approve release?",
-      response_schema: { allOf: expect.arrayContaining([expect.objectContaining({ properties: { approved: { type: "boolean" } } })]) },
+      gate_id: expect.any(String), revision: expect.any(String), kind: "decision_gate", reason: expect.any(String),
+      questions: { approved: expect.objectContaining({ type: "bool" }) }, response_schema: expect.any(Object),
     } });
     expect(host.ui.select).not.toHaveBeenCalled();
     const again = await required(host.tools.get("get_agent_result")).execute("again", { run_id, wait: true }, undefined, undefined, host.ctx);

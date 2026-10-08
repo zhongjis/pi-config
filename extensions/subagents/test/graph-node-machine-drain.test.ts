@@ -1,10 +1,10 @@
 import { setImmediate } from "node:timers/promises";
 import { expect, it, vi } from "vitest";
-import type { HumanGateRequest, NodeSpawnRequest, NodeSpawnResult } from "../src/graph/node-host.js";
+import type { EscalationRequest, NodeSpawnRequest, NodeSpawnResult } from "../src/graph/node-host.js";
 import { deferred } from "./graph-drain.fixture.js";
-import { agentInput, humanInput, machine, repaired } from "./graph-node-machine.fixture.js";
+import { agentInput, escalationInput, machine, repaired } from "./graph-node-machine.fixture.js";
 
-const kinds = ["agent", "human", "gate"] as const;
+const kinds = ["agent", "escalation", "gate"] as const;
 function parked(kind: typeof kinds[number]) {
   const physical = deferred<NodeSpawnResult>();
   const entered = deferred<AbortSignal>();
@@ -15,9 +15,9 @@ function parked(kind: typeof kinds[number]) {
   const runGate = vi.fn(async (_command: string, options: { signal: AbortSignal }) => {
     entered.resolve(options.signal); await physical.promise; return { ok: false, output: "gate failed" };
   });
-  const awaitHumanGate = vi.fn(async (_request: HumanGateRequest, signal: AbortSignal) => { entered.resolve(signal); return physical.promise; });
-  const host = { spawnAgent, runGate, awaitHumanGate };
-  const input = kind === "human" ? humanInput({ host }) : agentInput({ host, node: { ...agentInput().node, gate: "check", maxAttempts: 3 } });
+  const awaitEscalation = vi.fn(async (_request: EscalationRequest, signal: AbortSignal) => { entered.resolve(signal); return physical.promise; });
+  const host = { spawnAgent, runGate, awaitEscalation };
+  const input = kind === "escalation" ? escalationInput({ host }) : agentInput({ host, node: { ...agentInput().node, gate: "check", maxAttempts: 3 } });
   const actor = machine(input);
   actor.admit();
   return { actor, input, physical, entered, spawnAgent, runGate };
@@ -61,7 +61,7 @@ it.each(kinds)("holds a %s result arriving before cancel ACK without gates, repa
   actor.ack(cancel);
   const settle = await actor.next("NODE.REQUEST", offset + 1);
   expect(settle.operation).toMatchObject({ kind: "settle", cancelled: true, projection: "retain" });
-  expect(spawnAgent).toHaveBeenCalledTimes(kind === "human" ? 0 : 1);
+  expect(spawnAgent).toHaveBeenCalledTimes(kind === "escalation" ? 0 : 1);
   expect(runGate).toHaveBeenCalledTimes(kind === "gate" ? 1 : 0);
   actor.parent.stop();
 });
@@ -159,11 +159,11 @@ it.each(kinds)("aborts the %s host signal on explicit actor stop", async kind =>
   await setImmediate();
 });
 
-it.each(["agent", "human"] as const)("drains a rejecting noncooperative %s after cancellation ACK", async kind => {
+it.each(["agent", "escalation"] as const)("drains a rejecting noncooperative %s after cancellation ACK", async kind => {
   const physical = deferred<void>();
   const entered = deferred<void>();
   const effect = async () => { entered.resolve(); await physical.promise; throw new TypeError("late rejection"); };
-  const input = kind === "agent" ? agentInput({ host: { spawnAgent: effect } }) : humanInput({ host: { spawnAgent: effect, awaitHumanGate: effect } });
+  const input = kind === "agent" ? agentInput({ host: { spawnAgent: effect } }) : escalationInput({ host: { spawnAgent: effect, awaitEscalation: effect } });
   const actor = machine(input); actor.admit(); await entered.promise;
   actor.send({ type: "CANCEL", disposition: "cancel" });
   actor.ack(await actor.next("NODE.REQUEST"));

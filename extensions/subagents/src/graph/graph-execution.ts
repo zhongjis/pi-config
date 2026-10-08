@@ -15,7 +15,7 @@ export interface ExecutionBudget { readonly maxExecutions: number }
 export type CancellationReason = "skip" | "retry" | "lifecycle" | "cancel";
 export type ExecutionPayload =
   | { readonly kind: "admitted"; readonly resources: readonly string[]; readonly budget: ExecutionBudget }
-  | { readonly kind: "dispatched"; readonly target: "agent" | "human-gate" | "validation-gate"; readonly reason?: string }
+  | { readonly kind: "dispatched"; readonly target: "agent" | "escalation" | "validation-gate"; readonly reason?: string }
   | { readonly kind: "cost"; readonly costUsd?: number; readonly unavailable?: true }
   | { readonly kind: "cancel-requested"; readonly reason: CancellationReason }
   | { readonly kind: "outcome"; readonly status: "success" | "failure" | "cancelled" }
@@ -92,7 +92,7 @@ function validateRow(value: unknown): asserts value is ExecutionLedgerEntry {
     case "admitted":
       requireValid(keys(p, ["kind", "resources", "budget"]) && Array.isArray(p.resources) && p.resources.every(v => typeof v === "string" && v.length > 0) && new Set(p.resources).size === p.resources.length);
       requireValid(record(p.budget) && keys(p.budget, ["maxExecutions"]) && natural(p.budget.maxExecutions) && p.budget.maxExecutions > 0); break;
-    case "dispatched": requireValid(keys(p, ["kind", "target", "reason"]) && ["agent", "human-gate", "validation-gate"].includes(String(p.target)) && (p.reason === undefined || p.target === "human-gate" && typeof p.reason === "string" && p.reason.trim().length > 0)); break;
+    case "dispatched": requireValid(keys(p, ["kind", "target", "reason"]) && ["agent", "escalation", "validation-gate"].includes(String(p.target)) && (p.target === "escalation" ? typeof p.reason === "string" && p.reason.trim().length > 0 : p.reason === undefined)); break;
     case "cost": requireValid(keys(p, ["kind", "costUsd", "unavailable"]) && (p.costUsd === undefined || money(p.costUsd)) && (p.unavailable === undefined || p.unavailable === true) && (p.costUsd !== undefined || p.unavailable === true)); break;
     case "outcome": requireValid(keys(p, ["kind", "status"]) && ["success", "failure", "cancelled"].includes(String(p.status))); break;
     case "cancel-requested": requireValid(keys(p, ["kind", "reason"]) && typeof p.reason === "string" && ["skip", "retry", "lifecycle", "cancel"].includes(p.reason)); break;
@@ -141,7 +141,7 @@ function appendRow(ledger: readonly ExecutionLedgerEntry[], row: ExecutionLedger
     else {
       requireValid(!has("outcome"));
       if (has("cancel-requested")) requireValid(p.kind === "outcome" && p.status === "cancelled");
-      else if (p.kind === "dispatched") requireValid(p.target === "validation-gate" || p.target === "human-gate" && p.reason !== undefined && host !== undefined ? host?.payload.kind === "dispatched" && host.payload.target === "agent" && !execution.some(prior => prior.payload.kind === "dispatched" && prior.payload.target !== "agent") : !host);
+      else if (p.kind === "dispatched") requireValid(p.target === "validation-gate" || p.target === "escalation" && host !== undefined ? host?.payload.kind === "dispatched" && host.payload.target === "agent" && !execution.some(prior => prior.payload.kind === "dispatched" && prior.payload.target !== "agent") : !host);
       else if (p.kind === "cost") requireValid(host?.payload.kind === "dispatched" && host.payload.target === "agent" && !execution.some(prior => prior.payload.kind === "dispatched" && prior.payload.target === "validation-gate"));
       else if (p.kind === "outcome") requireValid(!!host && p.status !== "cancelled");
     }
@@ -197,22 +197,22 @@ export function validateExecutionState(state: SchedulerState, graph: AgentGraph)
         costUsd += row.costUsd; costAttempts += row.costAttempts; unavailable ||= row.costUnavailable;
         graphStarts = row.consumedExecutions; if (graphStarts) scopes.add(`${row.activation}:${row.graphAttempt}`);
       } else if (row.payload.kind === "admitted") {
-        requireValid(node.type === "agent" || node.type === "human_gate" || node.type === "agent_gate" || node.type === "hybrid_gate");
+        requireValid(node.type === "agent" || node.type === "decision_gate");
         requireValid(row.payload.budget.maxExecutions === (node.type === "agent" ? node.retry?.maxAttempts ?? 1 : 1));
         requireValid(equal(row.payload.resources, node.type === "agent" ? node.resources ?? [] : []));
         const scope = `${row.activation}:${row.graphAttempt}`;
         if (!scopes.has(scope)) { scopes.add(scope); graphStarts++; }
       } else if (row.payload.kind === "dispatched") {
-        requireValid(row.payload.target === "human-gate" ? node.type === "human_gate" || node.type === "hybrid_gate" : node.type === "agent" || node.type === "agent_gate" || node.type === "hybrid_gate");
-        requireValid(row.payload.reason === undefined ? !(node.type === "hybrid_gate" && row.payload.target === "human-gate") : node.type === "hybrid_gate");
+        // Escalation carries a reason and exists only after this execution's model chain or as a lifecycle resume.
+        requireValid(row.payload.target === "escalation" ? node.type === "decision_gate" : node.type === "agent" || node.type === "decision_gate");
         if (row.payload.target === "validation-gate") requireValid(node.type === "agent" && !!node.validation?.gate);
-        if (node.type === "hybrid_gate") {
+        if (node.type === "decision_gate") {
           const prior = rows.filter((entry): entry is ExecutionEvent => !baseline(entry) && entry.activation === row.activation && entry.graphAttempt === row.graphAttempt - 1);
-          const previousHuman = prior.find(entry => entry.payload.kind === "dispatched" && entry.payload.target === "human-gate")?.payload;
-          const resumingHuman = previousHuman?.kind === "dispatched" && prior.some(entry => entry.payload.kind === "cancel-requested" && entry.payload.reason === "lifecycle");
-          const spawned = rows.some(entry => !baseline(entry) && matchesExecution(entry, row) && entry.payload.kind === "dispatched" && entry.payload.target === "agent");
-          if (row.payload.target === "human-gate" && !spawned) requireValid(resumingHuman && row.payload.reason === previousHuman.reason);
-          if (row.payload.target === "agent") requireValid(!resumingHuman);
+          const previousEscalation = prior.find(entry => entry.payload.kind === "dispatched" && entry.payload.target === "escalation")?.payload;
+          const resumingEscalation = previousEscalation?.kind === "dispatched" && prior.some(entry => entry.payload.kind === "cancel-requested" && entry.payload.reason === "lifecycle");
+          const decided = rows.some(entry => !baseline(entry) && matchesExecution(entry, row) && entry.payload.kind === "dispatched" && entry.payload.target === "agent");
+          if (row.payload.target === "escalation" && !decided) requireValid(resumingEscalation && row.payload.reason === previousEscalation.reason);
+          if (row.payload.target === "agent") requireValid(!resumingEscalation);
         }
       } else if (row.payload.kind === "cost") {
         costUsd += row.payload.costUsd ?? 0; costAttempts++; unavailable ||= row.payload.unavailable === true;
@@ -222,7 +222,7 @@ export function validateExecutionState(state: SchedulerState, graph: AgentGraph)
     }
     if (runtime.executionProtocolVersion === 1) requireValid(money(costUsd) && costUsd === (run?.costUsd ?? 0) && costAttempts === (run?.costAttempts ?? 0) && unavailable === (run?.costUnavailable === true));
     const latest = rows.filter((row): row is ExecutionEvent => !baseline(row) && row.payload.kind === "admitted").at(-1);
-    if (runtime.executionProtocolVersion === 1 && (node?.type === "agent" || node?.type === "human_gate" || node?.type === "agent_gate" || node?.type === "hybrid_gate") && !rows.length) requireValid(run.attempt === 0);
+    if (runtime.executionProtocolVersion === 1 && (node?.type === "agent" || node?.type === "decision_gate") && !rows.length) requireValid(run.attempt === 0);
     if (!latest) requireValid(run?.currentExecutionAttemptId === undefined);
     if (latest) {
       requireValid(run.attempt === graphStarts && run.activation === latest.activation && run.graphAttempt === latest.graphAttempt && run.currentExecutionAttemptId === latest.executionAttemptId);

@@ -156,13 +156,13 @@ export function renderGetAgentResult(result: TextToolResult, options: { expanded
   const text = extractToolText(result);
   if (options.expanded) return renderToolExpanded(text || "No output.");
   const gate = "gate" in details ? details.gate : undefined;
-  const prompt = gate && typeof gate === "object" && "prompt" in gate && typeof gate.prompt === "string" ? gate.prompt : undefined;
+  const reason = gate && typeof gate === "object" && "reason" in gate && typeof gate.reason === "string" ? gate.reason : undefined;
   const error = "error" in details && typeof details.error === "string" ? details.error : undefined;
-  const status = options.isPartial ? "Retrieving graph result" : prompt !== undefined ? "Human input required" : `Execution: ${details.status}`;
+  const status = options.isPartial ? "Retrieving graph result" : reason !== undefined ? "Decision escalated" : `Execution: ${details.status}`;
   const outcome = "outcome" in details ? details.outcome : undefined;
   const verdict = outcome && typeof outcome === "object" && "status" in outcome && typeof outcome.status === "string"
     ? `Outcome: ${outcome.status}${"reason" in outcome && typeof outcome.reason === "string" ? ` — ${outcome.reason}` : ""}` : undefined;
-  return renderToolSummary([status, prompt ?? error ?? verdict ?? "Expand for graph output and outcome"], theme, { expandable: true });
+  return renderToolSummary([status, reason ?? error ?? verdict ?? "Expand for graph output and outcome"], theme, { expandable: true });
 }
 
 const MESSAGE_PREVIEW_CHARS = 72;

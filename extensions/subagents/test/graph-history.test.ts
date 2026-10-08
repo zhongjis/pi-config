@@ -6,6 +6,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NodeInstance } from "../src/graph/graph-instance-id.js";
 import { GraphRunReporter } from "../src/graph/graph-run-adapter.js";
 import { boundHistory, decodeHistory, GraphHistoryStore, HISTORY_FILE_BYTES, snapshotHistory } from "../src/graph/history.js";
+import type { AgentGraph } from "../src/graph/ir.js";
+import { runGraph } from "../src/graph/run-graph.js";
 import { createGraphRunTask } from "../src/graph/task.js";
 
 function required<T>(value: T | null | undefined): T {
@@ -210,4 +212,31 @@ it("discards injected topology fields on v2 decode", () => {
   const decoded = decodeHistory(JSON.stringify({ version: 2, runs: [injected] }));
   expect(decoded.runs).toHaveLength(1);
   expect(JSON.stringify(decoded)).not.toContain("PRIVATE_");
+});
+
+it("captures a run with an authored decision_gate and a bounded-feedback judge", async () => {
+  const value = createGraphRunTask({ id: "judged", script: "" });
+  const reporter = new GraphRunReporter(value);
+  const covered = { covered: { type: "bool" as const, instructions: "Covered?", criteria: { true: "Yes", false: "No" } } };
+  const graph: AgentGraph = { nodes: {
+    scope: { type: "decision_gate", name: "Scope", state: {}, questions: { inScope: { type: "bool", instructions: "In scope?", criteria: { true: "Yes", false: "No" } } } },
+    research: { type: "bounded_feedback", name: "Research", maxIterations: 2, maxItemsPerIteration: 1, maxTotalItems: 2,
+      work: { type: "fanout", name: "Work", items: { path: "$.tasks" }, itemSchema: { type: "object", properties: { kind: { type: "string" } }, required: ["kind"] }, dispatch: { path: "$.kind", cases: { x: "worker" } }, prompt: `\${item}`, outputSchema: { type: "object" } },
+      evaluator: { type: "agent", name: "Tasks", agent: "tasker", prompt: `\${feedback}` },
+      judge: { type: "decision_gate", name: "Judge", state: {}, questions: covered } },
+  }, edges: [{ from: "scope", to: "research" }] };
+  const result = await runGraph(graph, { tasks: [{ kind: "x" }] }, { onCheckpoint: () => {},
+    onNodeAdded: (id, node, metadata) => reporter.registerNode(id, node, metadata),
+    onNodeUpdate: (id, run, correlation, presentation) => reporter.update(id, run, correlation, undefined, presentation),
+    host: {
+      decide: async request => ({ ok: true, answers: Object.fromEntries(Object.keys(request.questions).map(id => [id, { value: true, confidence: 0.9 }])), decidedBy: "classifier", model: "test/classifier" }),
+      spawnAgent: async () => ({ ok: true, output: "{}" }),
+    } });
+  expect(result.status).toBe("completed");
+  Object.assign(value, { status: "completed", endTime: Date.now() });
+  const snapshot = required(snapshotHistory(value));
+  expect(snapshot.nodes.map(node => node.topology && [node.topology.kind, node.topology.role, node.topology.parentIndex === undefined ? undefined : snapshot.nodes[node.topology.parentIndex]?.topology?.kind])).toEqual([
+    ["decision_gate", undefined, undefined], ["bounded_feedback", undefined, undefined], ["fanout", "work", "bounded_feedback"], ["agent", "item", "fanout"], ["decision_gate", "judge", "bounded_feedback"],
+  ]);
+  expect(decodeHistory(JSON.stringify({ version: 2, runs: [snapshot] })).runs).toEqual([snapshot]);
 });

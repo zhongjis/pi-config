@@ -43,7 +43,7 @@ export interface CollectionOwnerView {
 }
 export interface FeedbackOwnerView {
   readonly revision: number;
-  readonly phase: "absent" | "intent" | "work" | "evaluation" | "decision" | "terminal";
+  readonly phase: "absent" | "intent" | "work" | "judging" | "evaluation" | "decision" | "terminal";
   readonly iteration: number;
 }
 export type CoordinatorChildEvent = CoordinatorAck |

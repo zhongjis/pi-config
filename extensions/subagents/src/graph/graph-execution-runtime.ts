@@ -36,7 +36,7 @@ export class GraphExecutions {
   }
   current(id: string): ExecutionCorrelation | undefined { return this.latest.get(id); }
   rows(correlation: ExecutionCorrelation): readonly ExecutionEvent[] { return this.index.executions.get(correlation.executionAttemptId) ?? []; }
-  begin(id: string, node: AgentNode | DecisionGateNode, humanReason?: string): ExecutionCorrelation | undefined {
+  begin(id: string, node: AgentNode | DecisionGateNode, escalationReason?: string): ExecutionCorrelation | undefined {
     const run = this.nodes.get(id);
     if (!run || run.activation === undefined || run.graphAttempt === undefined) throw new TypeError(`Missing execution state for ${id}`);
     const scope = { runId: this.runtime.runId, instanceId: this.identity(id), activation: run.activation, graphAttempt: run.graphAttempt };
@@ -44,7 +44,7 @@ export class GraphExecutions {
     if (this.index.consumed(scope) >= budget.maxExecutions) return undefined;
     const correlation = Object.freeze({ ...scope, executionAttemptId: executionAttemptId(randomUUID()) });
     this.index.append({ ...correlation, payload: { kind: "admitted", resources: node.type === "agent" ? [...node.resources ?? []] : [], budget } });
-    this.index.append({ ...correlation, payload: { kind: "dispatched", target: node.type === "human_gate" || humanReason !== undefined ? "human-gate" : "agent", ...(humanReason !== undefined ? { reason: humanReason } : {}) } });
+    this.index.append({ ...correlation, payload: escalationReason !== undefined ? { kind: "dispatched", target: "escalation", reason: escalationReason } : { kind: "dispatched", target: "agent" } });
     this.latest.set(id, correlation); run.currentExecutionAttemptId = correlation.executionAttemptId;
     return correlation;
   }

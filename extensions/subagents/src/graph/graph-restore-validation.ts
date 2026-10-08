@@ -1,7 +1,7 @@
 import { isDeepStrictEqual } from "node:util";
 import { validateContextRestore } from "./context-gather-policy.js";
-import { validateDeepResearchRestore } from "./deep-research-policy.js";
-import { canonical, decision, decisionSchema, type FeedbackIteration, type FeedbackState, feedbackBudgetBounds, feedbackContinuation } from "./bounded-feedback.js";
+import { skipsJudge, validateDeepResearchRestore } from "./deep-research-policy.js";
+import { canonical, decision, evaluatorTemplate, type FeedbackIteration, type FeedbackState, feedbackBudgetBounds, feedbackContinuation, JUDGED_SUFFICIENT, judgeTemplate, judgeVerdict } from "./bounded-feedback.js";
 import { prepareFanout } from "./fanout.js";
 import { consumedExecutions } from "./graph-execution.js";
 import { type NestedCheckpoint, validateManifest } from "./graph-instance-id.js";
@@ -84,7 +84,7 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
     if (feedback.retryFailures !== undefined && (!Number.isSafeInteger(feedback.retryFailures) || feedback.retryFailures < 0 || runtime.executionProtocolVersion !== 1 && feedback.retryFailures > (node.evaluator.retry?.maxAttempts ?? 1))) throw new TypeError("Invalid evaluator retry budget");
     if (!feedback.terminal && (state.nodes[key].status !== "running" || runtime.cancelled)) throw new TypeError("Invalid active feedback ownership");
     if ((feedback.retryError !== undefined) !== ((feedback.retryFailures ?? 0) > 0) || (feedback.retryError !== undefined && typeof feedback.retryError !== "string")) throw new TypeError("Invalid evaluator retry error");
-    const evaluation = feedback.active?.evaluator ?? feedback.iterations.at(-1)?.evaluator;
+    const evaluation = feedback.active ? feedback.active.evaluator : feedback.iterations.at(-1)?.evaluator;
     if ((feedback.retryFailures ?? 0) > (evaluation ? runtime.executionProtocolVersion === 1 ? consumedExecutions(runtime, evaluation) : state.nodes[evaluation]?.attempt ?? 0 : 0)) throw new TypeError("Evaluator repair count exceeds attempts");
     if (evaluation && runtime.executionProtocolVersion === 1) {
       const instance = instances.get(evaluation);
@@ -99,15 +99,29 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
       const failures = feedback.retryFailures ?? 0;
       if (failures < outcomes || failures > outcomes + historical) throw new TypeError("Evaluator retry failures disagree with execution outcomes");
     }
-    const binding = (row: Omit<FeedbackIteration, "results">, iteration: number): void => {
-      if (!row || row.iteration !== iteration || !Array.isArray(row.tasks) || row.work !== `${key}:iteration:${iteration}:work` || row.evaluator !== `${key}:iteration:${iteration}:evaluator`) throw new TypeError("Invalid feedback topology binding");
-      const work = instances.get(row.work); const evaluator = instances.get(row.evaluator); const parent = instances.get(key);
-      if (!work || !evaluator || !parent || work.instanceId !== row.workInstanceId || evaluator.instanceId !== row.evaluatorInstanceId || [work, evaluator].some(instance => instance.parentInstanceId !== parent.instanceId || instance.nodeKey !== key || instance.iteration !== iteration || instance.itemIndex !== undefined) || executionTemplate(graph.nodes[row.work]) !== executionTemplate(node.work) || executionTemplate(graph.nodes[row.evaluator]) !== executionTemplate({ ...node.evaluator, input: { ...node.evaluator.input, feedback: { path: "$" } }, outputSchema: decisionSchema(node.work.itemSchema) })) throw new TypeError("Invalid feedback manifest binding");
+    const judged = node.judge !== undefined;
+    const binding = (row: Omit<FeedbackIteration, "results">, iteration: number, results: unknown): void => {
+      const step = (role: "judge" | "evaluator"): string => `${key}:iteration:${iteration}:${role}`;
+      // Without a judge the evaluator materializes with the work; judged steps are optional and lazy.
+      if (!row || row.iteration !== iteration || !Array.isArray(row.tasks) || row.work !== `${key}:iteration:${iteration}:work` || (row.evaluator !== undefined && row.evaluator !== step("evaluator")) || (row.judge !== undefined && row.judge !== step("judge")) ||
+        (row.evaluator === undefined) !== (row.evaluatorInstanceId === undefined) || (row.judge === undefined) !== (row.judgeInstanceId === undefined) || (!judged && (row.evaluator === undefined || row.judge !== undefined))) throw new TypeError("Invalid feedback topology binding");
+      const work = instances.get(row.work); const parent = instances.get(key);
+      const evaluator = row.evaluator === undefined ? undefined : instances.get(row.evaluator);
+      const judge = row.judge === undefined ? undefined : instances.get(row.judge);
+      const owned = [work, ...(row.evaluator === undefined ? [] : [evaluator]), ...(row.judge === undefined ? [] : [judge])];
+      if (!parent || owned.some(instance => !instance || instance.parentInstanceId !== parent.instanceId || instance.nodeKey !== key || instance.iteration !== iteration || instance.itemIndex !== undefined) || work?.instanceId !== row.workInstanceId || evaluator?.instanceId !== row.evaluatorInstanceId || judge?.instanceId !== row.judgeInstanceId ||
+        executionTemplate(graph.nodes[row.work]) !== executionTemplate(node.work) || (row.evaluator !== undefined && executionTemplate(graph.nodes[row.evaluator]) !== executionTemplate(evaluatorTemplate(node))) ||
+        (row.judge !== undefined && (!node.judge || executionTemplate(graph.nodes[row.judge]) !== executionTemplate(judgeTemplate(node.judge))))) throw new TypeError("Invalid feedback manifest binding");
       const children = state.collections?.[row.work];
       if (!children || children.length !== row.tasks.length || children.some((child, index) => !isDeepStrictEqual(child.item, row.tasks[index])) || row.tasks.length > node.maxItemsPerIteration) throw new TypeError("Invalid feedback child collection");
+      if (!judged || (row.judge === undefined && row.evaluator === undefined)) return;
+      // A lazy step follows its settled predecessor; the same deterministic route decides judge presence.
+      const verdict = row.judge === undefined ? undefined : state.nodes[row.judge]?.status === "completed" ? judgeVerdict(node, state.nodes[row.judge].output) : undefined;
+      if (state.nodes[row.work]?.status !== "completed" || !Array.isArray(results) || (row.judge !== undefined && row.evaluator !== undefined && verdict !== false)) throw new TypeError("Invalid judged feedback step");
+      if ((row.judge !== undefined) === skipsJudge(graph, key, state.nodes.planning?.output, [...feedback.iterations.slice(0, iteration - 1), { ...row, results }])) throw new TypeError("Judge presence contradicts deterministic coverage");
     };
     feedback.iterations.forEach((row, index) => {
-      binding(row, index + 1);
+      binding(row, index + 1, row.results);
       if (index > 0) {
         const history = feedback.iterations.slice(0, index);
         if (feedbackBudgetBounds({ iterations: history, gaps: [] }, node, runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), runtime.startedAt ?? 0, runtime).length > 0) throw new TypeError("Iteration exceeds prior spend budget");
@@ -117,14 +131,26 @@ export function validateGraphRestore(state: SchedulerState, graph: AgentGraph, i
       if (state.nodes[row.work].status !== "completed" || !Array.isArray(row.results) || row.results.length !== row.tasks.length) throw new TypeError("Invalid completed iteration");
       const collected = state.nodes[row.work].output;
       if (!isDeepStrictEqual(collected, { results: row.results })) throw new TypeError("Forged accumulated child outcomes");
-      const evaluator = state.nodes[row.evaluator];
+      const evaluator = row.evaluator === undefined ? undefined : state.nodes[row.evaluator];
+      const judge = row.judge === undefined ? undefined : state.nodes[row.judge];
+      const verdict = judge?.status === "completed" ? judgeVerdict(node, judge.output) : undefined;
+      const last = index === feedback.iterations.length - 1;
       if (row.decision) {
-        if (evaluator.status !== "completed" || !isDeepStrictEqual(decision(evaluator.output, node), row.decision) || row.evaluatorError !== undefined) throw new TypeError("Forged evaluator decision");
-      } else if (feedback.terminal?.reason === "cancellation" && index === feedback.iterations.length - 1) {
-        if (evaluator.status === "pending" || evaluator.status === "running") throw new TypeError("Unsettled cancelled evaluator");
-      } else if (!["failed", "skipped"].includes(evaluator.status) || row.evaluatorError !== (evaluator.error ?? "Evaluator skipped")) throw new TypeError("Forged evaluator failure");
+        const decided = evaluator ? evaluator.status === "completed" && isDeepStrictEqual(decision(evaluator.output, node), row.decision) : verdict === true && isDeepStrictEqual(row.decision, JUDGED_SUFFICIENT);
+        if (!decided || row.evaluatorError !== undefined) throw new TypeError("Forged evaluator decision");
+      } else if (feedback.terminal?.reason === "cancellation" && last) {
+        if ([evaluator, judge].some(run => run?.status === "pending" || run?.status === "running")) throw new TypeError("Unsettled cancelled evaluator");
+      } else if (evaluator) {
+        if (!["failed", "skipped"].includes(evaluator.status) || row.evaluatorError !== (evaluator.error ?? "Evaluator skipped")) throw new TypeError("Forged evaluator failure");
+      } else if (judge && verdict !== false) {
+        if (!["failed", "skipped"].includes(judge.status) || row.evaluatorError !== (judge.error ?? "Judge skipped")) throw new TypeError("Forged judge failure");
+        // A judged iteration stopped before its next step only by budget or capacity; validateTerminal recomputes which.
+      } else if (!judged || !last || row.evaluatorError !== undefined || !["deadline/spend limit", "materialization failure"].includes(feedback.terminal?.reason ?? "")) throw new TypeError("Forged evaluator failure");
     });
-    if (feedback.active) binding(feedback.active, feedback.iterations.length + 1);
+    if (feedback.active) {
+      const collected = state.nodes[feedback.active.work]?.output;
+      binding(feedback.active, feedback.iterations.length + 1, collected !== null && typeof collected === "object" && "results" in collected ? collected.results : undefined);
+    }
     const count = feedback.iterations.length + (feedback.active || feedback.intent ? 1 : 0);
     if (count > node.maxIterations) throw new TypeError("Feedback iteration limit exceeded");
     const total = feedback.iterations.reduce((sum, row) => sum + row.tasks.length, 0) + (feedback.active?.tasks.length ?? 0);
@@ -156,7 +182,13 @@ function validateTerminal({ state, graph, key, feedback, node, next, context }: 
     const owner = state.runtime?.manifest.find(row => row.binding === key);
     if (state.nodes[key].attempt !== 0 || feedback.iterations.length || feedback.stoppedIntent || feedback.retryFailures !== undefined || feedback.retryError !== undefined || feedback.budgetCheckedAt !== undefined || state.runtime?.manifest.some(row => row.parentInstanceId === owner?.instanceId)) throw new TypeError("Invalid never-admitted feedback skip");
   }
-  let expected: { reason: string; exhaustedBounds: readonly string[] } | undefined = next && "reason" in next ? next : undefined;
+  const last = feedback.iterations.at(-1);
+  // A judged iteration that stopped before its judge/evaluator step has no decision to continue from.
+  const step = node.judge && last && !last.decision && last.evaluatorError === undefined && last.evaluator === undefined
+    ? `${key}:iteration:${last.iteration}:${last.judge !== undefined || skipsJudge(graph, key, state.nodes.planning?.output, feedback.iterations) ? "evaluator" : "judge"}` : undefined;
+  const runCount = Object.values(state.nodes).reduce((sum, run) => sum + run.attempt + Number(run.status === "pending"), 0);
+  const stepBound = step === undefined ? undefined : Object.hasOwn(graph.nodes, step) ? "Generated binding collision" : Object.keys(graph.nodes).length + 1 > MAX_NODES ? "node limit" : runCount + 1 > 1000 ? "run limit" : undefined;
+  let expected: { reason: string; exhaustedBounds: readonly string[] } | undefined = step !== undefined ? stepBound === undefined ? undefined : { reason: "materialization failure", exhaustedBounds: [stepBound] } : next && "reason" in next ? next : undefined;
   const exhausted = state.runtime && feedback.budgetCheckedAt !== undefined ? feedbackBudgetBounds(feedback, node, state.runtime.startedAt ?? 0, new Map(Object.entries(state.nodes)), feedback.budgetCheckedAt, state.runtime) : [];
   if (exhausted.length > 0) expected = { reason: "deadline/spend limit", exhaustedBounds: exhausted };
   if (terminal.reason === "deadline/spend limit") {
@@ -182,11 +214,10 @@ function validateTerminal({ state, graph, key, feedback, node, next, context }: 
       const stopped = feedback.stoppedIntent;
       if (!stopped || stopped.iteration !== feedback.iterations.length + 1 || !isDeepStrictEqual(stopped.tasks, tasks)) throw new TypeError("Missing stopped materialization intent");
       const total = feedback.iterations.reduce((sum, row) => sum + row.tasks.length, 0) + tasks.length;
-      const count = tasks.length + 2;
-      const runs = Object.values(state.nodes).reduce((sum, run) => sum + run.attempt + Number(run.status === "pending"), 0);
+      const count = tasks.length + (node.judge ? 3 : 2);
       if (tasks.length > node.maxItemsPerIteration || total > node.maxTotalItems) expected = { reason: "item limit", exhaustedBounds: [tasks.length > node.maxItemsPerIteration ? "maxItemsPerIteration" : "maxTotalItems"] };
-      else if (Object.keys(graph.nodes).length + count > MAX_NODES || runs + count > 1000) expected = { reason: "materialization failure", exhaustedBounds: [Object.keys(graph.nodes).length + count > MAX_NODES ? "node limit" : "run limit"] };
-      else if ([`${key}:iteration:${stopped.iteration}:work`, `${key}:iteration:${stopped.iteration}:evaluator`, ...tasks.map((_, index) => `${key}:iteration:${stopped.iteration}:work:item:${index}`)].some(binding => Object.hasOwn(graph.nodes, binding))) expected = { reason: "materialization failure", exhaustedBounds: ["Generated binding collision"] };
+      else if (Object.keys(graph.nodes).length + count > MAX_NODES || runCount + count > 1000) expected = { reason: "materialization failure", exhaustedBounds: [Object.keys(graph.nodes).length + count > MAX_NODES ? "node limit" : "run limit"] };
+      else if ([`${key}:iteration:${stopped.iteration}:work`, ...(node.judge ? [`${key}:iteration:${stopped.iteration}:judge`] : []), `${key}:iteration:${stopped.iteration}:evaluator`, ...tasks.map((_, index) => `${key}:iteration:${stopped.iteration}:work:item:${index}`)].some(binding => Object.hasOwn(graph.nodes, binding))) expected = { reason: "materialization failure", exhaustedBounds: ["Generated binding collision"] };
     }
   }
   const partial = terminal.reason !== "sufficient" || feedback.gaps.length > 0 || feedback.iterations.some(row => row.results.some(result => result.status !== "completed"));

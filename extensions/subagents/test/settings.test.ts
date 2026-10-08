@@ -215,6 +215,20 @@ describe("settings persistence", () => {
       expect(loadSettings(projectDir)).toEqual({ scopeModels: false });
     });
 
+    it("accepts decisionGateMinConfidence within [0, 1]", () => {
+      for (const value of [0, 0.65, 1]) {
+        writeProject({ decisionGateMinConfidence: value });
+        expect(loadSettings(projectDir)).toEqual({ decisionGateMinConfidence: value });
+      }
+    });
+
+    it("drops out-of-range or non-numeric decisionGateMinConfidence", () => {
+      for (const value of [-0.1, 1.5, "0.8", null, true]) {
+        writeProject({ decisionGateMinConfidence: value });
+        expect(loadSettings(projectDir).decisionGateMinConfidence).toBeUndefined();
+      }
+    });
+
     it("drops non-boolean scopeModels", () => {
       writeProject({ scopeModels: "yes" });
       expect(loadSettings(projectDir).scopeModels).toBeUndefined();
@@ -404,6 +418,14 @@ describe("settings persistence", () => {
       expect(appliers.setToolDescriptionMode).toHaveBeenCalledWith("compact");
       expect(appliers.setFleetView).toHaveBeenCalledWith(false);
       expect(appliers.setWidgetMode).toHaveBeenCalledWith("off");
+    });
+
+    it("applies decisionGateMinConfidence, including 0; skips it when absent", () => {
+      const setDecisionGateMinConfidence = vi.fn();
+      applySettings({ decisionGateMinConfidence: 0 }, { ...appliers, setDecisionGateMinConfidence });
+      applySettings({}, { ...appliers, setDecisionGateMinConfidence });
+      expect(setDecisionGateMinConfidence).toHaveBeenCalledOnce();
+      expect(setDecisionGateMinConfidence).toHaveBeenCalledWith(0);
     });
 
     it("applies widgetMode; skips it when absent", () => {

@@ -1,14 +1,17 @@
 import { isDeepStrictEqual } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import { matchesExecution, type ExecutionCorrelation } from "./graph-execution.js";
-import type { HumanGateRequest, NodeSpawnResult } from "./node-host.js";
+import type { ClassifierQuestion } from "./ir.js";
+import type { EscalationRequest, NodeSpawnResult } from "./node-host.js";
 import type { SchedulerState } from "./scheduler.js";
 
 export interface GateRequest {
   readonly gate_id: string;
   readonly revision: string;
-  readonly kind: "human_gate" | "hybrid_gate";
-  readonly prompt: string;
+  readonly kind: "decision_gate";
+  readonly reason: string;
+  readonly questions: Readonly<Record<string, ClassifierQuestion>>;
+  readonly state: Readonly<Record<string, unknown>>;
   readonly response_schema: Record<string, unknown>;
 }
 
@@ -21,7 +24,7 @@ function scope(state: SchedulerState | undefined, runId: string): SchedulerState
   return undefined;
 }
 
-/** Only committed execution evidence can authorize an actionable human request. */
+/** Only committed execution evidence can authorize an actionable escalation. */
 export function createGateHandoff(changed: () => void, delivery: {
   publish: (gate: GateRequest) => void; observed: (gateId: string) => void; close: () => void;
 }) {
@@ -32,7 +35,7 @@ export function createGateHandoff(changed: () => void, delivery: {
   function current(correlation: ExecutionCorrelation): boolean {
     const state = scope(checkpoint, correlation.runId);
     const rows = state?.runtime?.executionLedger?.filter(row => !("kind" in row) && matchesExecution(row, correlation)) ?? [];
-    return rows.some(row => "payload" in row && row.payload.kind === "dispatched" && row.payload.target === "human-gate") &&
+    return rows.some(row => "payload" in row && row.payload.kind === "dispatched" && row.payload.target === "escalation") &&
       !rows.some(row => "payload" in row && ["cancel-requested", "outcome", "drain-ack"].includes(row.payload.kind));
   }
   return {
@@ -41,41 +44,41 @@ export function createGateHandoff(changed: () => void, delivery: {
     observed: delivery.observed,
     pending(): GateRequest | undefined { return [...pending.values()].find(entry => current(entry.correlation))?.request; },
     resolve(gateId: string, token: string, response: unknown) {
-      if (token !== revision) throw new Error("Stale human gate revision.");
+      if (token !== revision) throw new Error("Stale gate revision.");
       const receipt = { gate_id: gateId, revision, accepted: true };
       if (accepted.has(gateId)) {
-        if (!isDeepStrictEqual(accepted.get(gateId), response)) throw new Error("Conflicting human gate response.");
+        if (!isDeepStrictEqual(accepted.get(gateId), response)) throw new Error("Conflicting gate response.");
         return receipt;
       }
       const entry = pending.get(gateId);
-      if (!entry || !current(entry.correlation)) throw new Error("Stale or unavailable human gate.");
+      if (!entry || !current(entry.correlation)) throw new Error("Stale or unavailable gate.");
       entry.answer(response);
       accepted.set(gateId, structuredClone(response));
       return receipt;
     },
-    async awaitHumanGate(request: HumanGateRequest, signal: AbortSignal): Promise<NodeSpawnResult> {
+    async awaitEscalation(request: EscalationRequest, signal: AbortSignal): Promise<NodeSpawnResult> {
       signal.throwIfAborted();
       const correlation = request.correlation;
-      if (!correlation || !request.schema || !current(correlation)) throw new Error("Human gate has no committed current dispatch.");
+      if (!correlation || !current(correlation)) throw new Error("Escalation has no committed current dispatch.");
       const gate_id = createHash("sha256").update(JSON.stringify(correlation)).digest("hex");
-      if (pending.has(gate_id)) throw new Error("Duplicate live human gate dispatch.");
+      if (pending.has(gate_id)) throw new Error("Duplicate live escalation dispatch.");
       return new Promise<NodeSpawnResult>(resolve => {
         const cancel = () => {
           signal.removeEventListener("abort", cancel);
           pending.delete(gate_id);
-          resolve({ ok: false, skipped: true, error: "Human gate cancelled." });
+          resolve({ ok: false, skipped: true, error: "Escalation cancelled." });
           changed();
         };
         const answer = (response: unknown) => {
-          const valid = request.schema?.check(response);
+          const valid = request.schema.check(response);
           if (valid !== true) throw new Error(`Invalid gate response: ${valid}`);
           signal.removeEventListener("abort", cancel);
           pending.delete(gate_id);
           resolve({ ok: true, output: JSON.stringify(response) });
           changed();
         };
-        pending.set(gate_id, { correlation, cancel, answer, request: { gate_id, revision, kind: request.kind ?? "human_gate",
-          prompt: request.prompt, response_schema: request.schema?.schema ?? {} } });
+        pending.set(gate_id, { correlation, cancel, answer, request: { gate_id, revision, kind: "decision_gate",
+          reason: request.reason, questions: request.questions, state: request.state, response_schema: request.schema.schema } });
         signal.addEventListener("abort", cancel, { once: true });
         const published = pending.get(gate_id);
         if (published) delivery.publish(published.request);

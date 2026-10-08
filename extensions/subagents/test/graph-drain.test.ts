@@ -48,12 +48,12 @@ it.each((["agent", "validation", "human"] as const).flatMap(kind => [false, true
     return { ok: true };
   });
   const run = runGraph({ nodes: {
-    a: kind === "human" ? { type: "human_gate", prompt: "fixture", outputSchema: { type: "object" } } : { type: "agent", agent: "worker", prompt: "fixture", ...(kind === "validation" ? { validation: { gate: "true" } } : {}) },
+    a: kind === "human" ? { type: "decision_gate", state: {}, questions: { approved: { type: "bool", instructions: "fixture", criteria: { true: "yes", false: "no" } } } } : { type: "agent", agent: "worker", prompt: "fixture", ...(kind === "validation" ? { validation: { gate: "true" } } : {}) },
     b: { type: "agent", agent: "worker", prompt: "fixture" },
   }, edges: [{ from: "a", to: "b" }] }, {}, {
     signal: controller.signal, host: { spawnAgent: spawn,
       runGate: async () => { admitted.resolve(); await pending.promise; return { ok: true, output: "" }; },
-      awaitHumanGate: async () => { admitted.resolve(); return pending.promise; },
+      awaitEscalation: async () => { admitted.resolve(); return pending.promise; },
     },
   });
   await admitted.promise;
@@ -68,12 +68,12 @@ it.each((["agent", "validation", "human"] as const).flatMap(kind => [false, true
   expect(spawn).toHaveBeenCalledTimes(kind === "human" ? 0 : 1);
 });
 
-it("skip preserves the existing human-gate drain boundary", async () => {
+it("skip preserves the existing escalation drain boundary", async () => {
   const pending = deferred<NodeSpawnResult>();
   let control: GraphControl | undefined;
   let finished = false;
-  const run = runGraph({ nodes: { gate: { type: "human_gate", prompt: "fixture", outputSchema: { type: "object" } } }, edges: [] }, {}, {
-    onControl: value => { control = value; }, host: { spawnAgent: async () => ({ ok: true }), awaitHumanGate: () => pending.promise },
+  const run = runGraph({ nodes: { gate: { type: "decision_gate", state: {}, questions: { approved: { type: "bool", instructions: "fixture", criteria: { true: "yes", false: "no" } } } } }, edges: [] }, {}, {
+    onControl: value => { control = value; }, host: { spawnAgent: async () => ({ ok: true }), awaitEscalation: () => pending.promise },
   }).then(result => { finished = true; return result; });
   await vi.waitFor(() => expect(control).toBeDefined());
   expect(control?.skip(0)).toBe(true);

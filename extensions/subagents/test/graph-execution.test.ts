@@ -28,12 +28,15 @@ it("accepts legal dispatch/cost/validation/outcome/drain and exact duplicates on
   expect(projectExecution(ledger, identity)).toMatchObject({ consumedExecutions: 1, costUsd: 0.2, costAttempts: 1 });
   expect(remainingExecutions(ledger, identity, { maxExecutions: 2 })).toBe(1);
 });
-it("rejects illegal ordering and supports human gates without cost", () => {
+it("rejects illegal ordering and supports escalations without cost", () => {
+  const escalate = event({ kind: "dispatched", target: "escalation", reason: "undecided" });
   for (const row of [dispatch, cost, outcome, drain]) expect(() => append(row)).toThrow();
   for (const row of [cost, outcome, drain, event({ kind: "dispatched", target: "validation-gate" })]) expect(() => append(admitted, row)).toThrow();
   expect(() => append(admitted, dispatch, outcome, cost)).toThrow();
-  expect(() => append(admitted, event({ kind: "dispatched", target: "human-gate" }), cost)).toThrow();
-  expect(append(admitted, event({ kind: "dispatched", target: "human-gate" }), outcome, drain)).toHaveLength(4);
+  expect(() => append(admitted, escalate, cost)).toThrow();
+  expect(append(admitted, escalate, outcome, drain)).toHaveLength(4);
+  expect(() => append(admitted, event({ kind: "dispatched", target: "escalation" }))).toThrow();
+  expect(() => append(admitted, event({ kind: "dispatched", target: "agent", reason: "undecided" }))).toThrow();
 });
 it("cancellation accepts only cancelled outcome and drain, including before dispatch", () => {
   const cancel = event({ kind: "cancel-requested", reason: "skip" });

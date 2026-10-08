@@ -214,13 +214,13 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
   const getAgentResult = defineTool({
     name: SUBAGENT_TOOL_NAMES.GET_AGENT_RESULT,
     label: "Get Agent Result",
-    description: "Retrieve a background run. Use wait:true when no non-overlapping work remains; never end the turn or poll while work runs. Cancellation stops only retrieval. Accepts independent agent and agr_* graph run IDs. A graph wait returns on completion or human input: use ask, then resolve_agent_graph_gate.",
+    description: "Retrieve a background run. Use wait:true when no non-overlapping work remains; never end the turn or poll while work runs. Cancellation stops only retrieval. Accepts independent agent and agr_* graph run IDs. A graph wait returns on completion or an escalated decision: decide yourself or ask the human with ask, then resolve_agent_graph_gate.",
     promptSnippet: "Collect background results; wait instead of polling",
     renderCall: renderGetAgentResultCall,
     renderResult: renderGetAgentResult,
     parameters: Type.Object({
       run_id: Type.String({ description: "Independent agent ID or agr_* graph run ID." }),
-      wait: Type.Optional(Type.Boolean({ description: "Wait for completion or actionable human input. Cancellation stops only this wait." })),
+      wait: Type.Optional(Type.Boolean({ description: "Wait for completion or an escalated decision. Cancellation stops only this wait." })),
       verbose: Type.Optional(Type.Boolean({ description: "Include an independent agent's conversation." })),
     }),
     execute: async (_id, params, signal, _onUpdate, ctx) => {

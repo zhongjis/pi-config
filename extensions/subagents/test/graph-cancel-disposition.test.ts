@@ -46,25 +46,25 @@ it.each(["skip", "retry"] as const)("restores durable %s before and after recove
   }
 });
 
-it.each((["reload", "switch", "shutdown"] as const).flatMap(reason => (["agent", "human_gate"] as const).map(type => ({ reason, type }))))("$reason restarts one-attempt $type in a new graph attempt", async ({ reason, type }) => {
-  const graph: AgentGraph = { nodes: { a: type === "agent" ? { ...agent, retry: { maxAttempts: 1 } } : { type, prompt: "x", outputSchema: { type: "object" } } }, edges: [] };
+it.each((["reload", "switch", "shutdown"] as const).flatMap(reason => (["agent", "decision_gate"] as const).map(type => ({ reason, type }))))("$reason restarts one-attempt $type in a new graph attempt", async ({ reason, type }) => {
+  const graph: AgentGraph = { nodes: { a: type === "agent" ? { ...agent, retry: { maxAttempts: 1 } } : { type: "decision_gate", state: {}, questions: { approved: { type: "bool", instructions: "fixture", criteria: { true: "yes", false: "no" } } } } }, edges: [] };
   const controller = new AbortController(); let release: (() => void) | undefined; const frames: SchedulerState[] = [];
   const effect = async () => { await new Promise<void>(resolve => { release = resolve; }); return { ok: true, output: "{}" }; };
-  const running = runGraph(graph, {}, { signal: controller.signal, onCheckpoint: state => frames.push(state), host: { spawnAgent: effect, awaitHumanGate: effect } });
+  const running = runGraph(graph, {}, { signal: controller.signal, onCheckpoint: state => frames.push(state), host: { spawnAgent: effect, awaitEscalation: effect } });
   await vi.waitFor(() => expect(release).toBeDefined()); controller.abort(reason); requireValue(release, "missing release")(); await running;
   const before = requireValue(frames.find(state => !drained(state) && ledger(state).some(row => "payload" in row && row.payload.kind === "cancel-requested")), "missing cancellation checkpoint");
   for (const saved of [before, requireValue(frames.at(-1), "missing terminal checkpoint")]) {
     let latest: SchedulerState | undefined; let admission: SchedulerState | undefined; const identities: ExecutionCorrelation[] = [];
-    const replacement = async (request: { correlation?: ExecutionCorrelation }) => { identities.push(requireValue(request.correlation, "missing execution correlation")); return { ok: true, output: type === "human_gate" ? '{"approved":true}' : "{}" }; };
-    const result = await runGraph(graph, {}, { restore: saved, reclaimedDeadWriter: true, onCheckpoint: state => { validateGraphRestore(state, graph); latest = state; if (state.nodes.a.status === "running" && state.nodes.a.graphAttempt === 2) admission ??= state; }, host: { reconcileDrain: async () => true, spawnAgent: replacement, awaitHumanGate: replacement } });
+    const replacement = async (request: { correlation?: ExecutionCorrelation }) => { identities.push(requireValue(request.correlation, "missing execution correlation")); return { ok: true, output: type === "decision_gate" ? '{"answers":{"approved":true},"decidedBy":"human"}' : "{}" }; };
+    const result = await runGraph(graph, {}, { restore: saved, reclaimedDeadWriter: true, onCheckpoint: state => { validateGraphRestore(state, graph); latest = state; if (state.nodes.a.status === "running" && state.nodes.a.graphAttempt === 2) admission ??= state; }, host: { reconcileDrain: async () => true, spawnAgent: replacement, awaitEscalation: replacement } });
     expect(result.nodes.a).toMatchObject({ status: "completed", activation: 1, graphAttempt: 2, attempt: 2, attemptReason: "restore" });
     expect(identities).toHaveLength(1); expect(identities[0].executionAttemptId).not.toBe(saved.nodes.a.currentExecutionAttemptId);
-    const effect = vi.fn(); await runGraph(graph, {}, { restore: latest, onCheckpoint: () => {}, host: { spawnAgent: effect, awaitHumanGate: effect } });
+    const effect = vi.fn(); await runGraph(graph, {}, { restore: latest, onCheckpoint: () => {}, host: { spawnAgent: effect, awaitEscalation: effect } });
     expect(effect).not.toHaveBeenCalled();
     // Crashing the replacement is not another lifecycle request: its restart label cannot replenish scope 2.
     let recovery: SchedulerState | undefined;
     for (const interrupted of [requireValue(admission, "missing replacement admission"), undefined]) {
-      const resumed = await runGraph(graph, {}, { restore: interrupted ?? requireValue(recovery, "missing recovery checkpoint"), reclaimedDeadWriter: true, onCheckpoint: state => { recovery ??= state; }, host: { reconcileDrain: async () => true, spawnAgent: effect, awaitHumanGate: effect } });
+      const resumed = await runGraph(graph, {}, { restore: interrupted ?? requireValue(recovery, "missing recovery checkpoint"), reclaimedDeadWriter: true, onCheckpoint: state => { recovery ??= state; }, host: { reconcileDrain: async () => true, spawnAgent: effect, awaitEscalation: effect } });
       expect(resumed.nodes.a).toMatchObject({ status: "failed", activation: 1, graphAttempt: 2, attempt: 2 });
       expect(effect).not.toHaveBeenCalled();
     }

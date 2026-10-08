@@ -38,6 +38,8 @@ export interface RunGraphOptions {
   /** Synchronous durable commit; throwing prevents further dispatch. Omitted means a no-op writer. */
   onCheckpoint?(state: SchedulerState, graph: AgentGraph): void;
   concurrency?: number;
+  /** Run-wide decision_gate threshold; a node's own `minConfidence` wins. */
+  decisionGateMinConfidence?: number;
   signal?: AbortSignal;
   /**
    * Resolves a `graph` node's saved-graph reference to an inline {@link AgentGraph}.
@@ -63,7 +65,7 @@ export interface RunGraphOptions {
   onControl?(control: GraphControl): void;
   /** Restore progress from a prior run's snapshot (durable resume). */
   restore?: SchedulerState;
-  /** Fired when a human_gate begins awaiting, carrying the run state to persist. */
+  /** Fired when a decision_gate escalation begins awaiting, carrying the run state to persist. */
   onGateWaiting?(nodeId: string, state: SchedulerState, effectiveGraph: AgentGraph): void;
   /** System-wide XState inspection (covers nested graph actors); passed only when provided. */
   inspect?(event: InspectionEvent): void;

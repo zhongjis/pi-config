@@ -1,6 +1,6 @@
 {
   "name": "deep-research",
-  "description": "Seed broad searches, plan and scope-check autonomously, research in bounded rounds judged by Panguan, and return a cited report with explicit gaps.",
+  "description": "Seed broad searches, plan and scope-check autonomously, research in bounded rounds with a coverage judge and a gap-task writer, and return a cited report with explicit gaps.",
   "semanticPolicy": "deep-research-v1",
   "inputSchema": {
     "type": "object",
@@ -42,9 +42,23 @@
           }, "required": ["claims", "gaps"]
         }
       },
+      "judge": {
+        "type": "decision_gate", "name": "Judge coverage",
+        "state": { "question": { "path": "$.question" }, "plan": { "node": "planning", "path": "$.parts" } },
+        "questions": {
+          "covered": {
+            "type": "bool",
+            "instructions": "Is every plan part answered directly by opened primary-source claims in the evidence ledger? The feedback holds the ledger: claims with ids r<round>-<item>-<claim> (round 0 = seed), tasks already run, failures, opened references, openGaps and exhaustedGaps. Worker excerpts, snippets and schema validity do not prove facts; secondary claims (reporting or commentary) do not answer a part on their own; absence of evidence is not disproof.",
+            "criteria": {
+              "true": "Every plan part has at least one opened primary-source claim that answers it directly, and no material gap or disputed claim about a part remains open.",
+              "false": "Some plan part has no opened primary-source claim that answers it directly, rests only on secondary claims, or still has a material open gap or disputed claim."
+            }
+          }
+        }
+      },
       "evaluator": {
-        "type": "agent", "name": "Assess coverage and selected checks", "agent": "panguan",
-        "prompt": "Judge research coverage from supplied evidence only; you have no tools. Original question: ${question}\nPlan: ${plan}\nEvidence ledger (claim ids r<round>-<item>-<claim>, round 0 = seed; duplicates merged; tasks already run; failures; opened references; openGaps from your previous decision; exhaustedGaps already had two tasks with no closing claim): ${feedback}\nFor each plan part decide supported (opened-source claims answer it directly), partial, or missing; prioritize the central product/scope question over citation polish or commit pins. Every plan part is material; never call a plan part immaterial. A part supported only by secondary claims is partial; create a task for a primary source. Carry every worker-reported gap forward and list it until a later claim closes it; name gaps <partId>-<slug>. Worker excerpts, snippets and schema validity do not prove facts; do not count two views of one source as independent; absence of evidence is not disproof. For a material gap, create one task with a distinct access route not yet tried: another primary source, the site's public API or mirror, an archive copy, an omitted upstream README or API/CLI source, or backward chaining when an opened source points to earlier mentions (a cited post, a linked paper, 'surfaced this weekend'). To check a disputed, consequential or weak claim, create a task that reopens its reference and quotes the passage. For UI existence, task routes, assets or official product boundaries. Never repeat a task listed in the ledger's tasks. Never create a task for a gap in exhaustedGaps; it already had two tasks without a closing claim. Keep it in gaps as inaccessible. A gap is inaccessible only after a distinct route failed. Decision rule: return decision:'continue' with linked tasks when any part is not supported and a gap has an untried accessible route; otherwise return decision:'sufficient', tasks:[], listing every remaining open or inaccessible gap. Return gaps:[] only when every part is supported and no worker gap remains open. Never stop because a round or task bound is reached; the runtime handles bounds. Return only {decision:'sufficient'|'continue',gaps:[{id,description}],tasks:[{gapId,item:{source,question,purpose,partIds}}]}.",
+        "type": "agent", "name": "Write gap tasks", "agent": "wenchang",
+        "prompt": "Write follow-up research tasks for the gaps in supplied evidence. Do not search, open sources or answer the question; write tasks only. Original question: ${question}\nPlan: ${plan}\nEvidence ledger (claim ids r<round>-<item>-<claim>, round 0 = seed; duplicates merged; tasks already run; failures; opened references; openGaps from the previous round; exhaustedGaps already had two tasks with no closing claim): ${feedback}\nA plan part counts as answered only by an opened primary-source claim; a part supported only by secondary claims needs a task for a primary source. Carry every worker-reported gap forward and list it until a later claim closes it; name gaps <partId>-<slug>. Worker excerpts, snippets and schema validity do not prove facts; do not count two views of one source as independent; absence of evidence is not disproof. For each material gap, write one task with a distinct access route not yet tried: another primary source, the site's public API or mirror, an archive copy, an omitted upstream README or API/CLI source, or backward chaining when an opened source points to earlier mentions (a cited post, a linked paper, 'surfaced this weekend'). To check a disputed, consequential or weak claim, write a task that reopens its reference and quotes the passage. For UI existence, task routes, assets or official product boundaries. Never repeat a task listed in the ledger's tasks. Never write a task for a gap in exhaustedGaps; keep it in gaps as inaccessible. A gap is inaccessible only after a distinct route failed. Return tasks:[] when no untried accessible route remains, still listing every open or inaccessible gap. Never stop because a round or task bound is reached; the runtime handles bounds. Return only {gaps:[{id,description}],tasks:[{gapId,item:{source,question,purpose,partIds}}]}.",
         "input": { "question": { "path": "$.question" }, "plan": { "node": "planning", "path": "$.parts" } },
         "retry": { "maxAttempts": 2 }
       }

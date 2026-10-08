@@ -106,14 +106,14 @@ describe("runGraph — end to end via XState actors", () => {
     expect(result.status).toBe("aborted");
   });
 
-  it("fails a human_gate when the host cannot await human input", async () => {
+  it("fails an escalated decision_gate when the host cannot await escalation", async () => {
     const graph: AgentGraph = {
-      nodes: { g: { type: "human_gate", prompt: "approve?", outputSchema: { type: "object" } } },
+      nodes: { g: { type: "decision_gate", state: {}, questions: { approved: { type: "bool", instructions: "fixture", criteria: { true: "yes", false: "no" } } } } },
       edges: [],
     };
     const result = await runGraph(graph, {}, { ...scripted(() => okText("x")) });
     expect(result.status).toBe("failed");
-    expect(result.nodes.g.error).toContain("await human input");
+    expect(result.nodes.g.error).toContain("cannot escalate");
   });
 
   it("reports node updates as the run progresses", async () => {

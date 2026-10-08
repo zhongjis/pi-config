@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { compileDecisionSchema } from "./decision-gate.js";
+import { decisionOutputSchema } from "./decision-gate.js";
 import { validateExecutionState } from "./graph-execution.js";
 import type { AgentGraph, FanoutResult } from "./ir.js";
 import { compileJsonSchema } from "./json-schema.js";
@@ -18,12 +18,12 @@ export function validateSchedulerState(state: SchedulerState, graph: AgentGraph,
   let attempts = 0;
   for (const [key, run] of Object.entries(state.nodes)) {
     if (!Object.hasOwn(graph.nodes, key) || !record(run) || !["pending", "running", "completed", "failed", "skipped"].includes(run.status) || !Number.isSafeInteger(run.attempt) || run.attempt < 0 || ((run.status === "running" || run.status === "completed") && run.attempt === 0) || (run.error !== undefined && typeof run.error !== "string") || (run.attemptReason !== undefined && !["loop", "user-retry", "restore"].includes(run.attemptReason))) throw new TypeError("Invalid restored node state");
-    if ((run.costUsd !== undefined && (typeof run.costUsd !== "number" || !Number.isFinite(run.costUsd) || run.costUsd < 0)) || (run.costUnavailable !== undefined && run.costUnavailable !== true) || (run.costAttempts !== undefined && (!Number.isSafeInteger(run.costAttempts) || run.costAttempts < 1 || (state.runtime?.executionProtocolVersion !== 1 && run.costAttempts > run.attempt))) || (!["agent", "agent_gate", "hybrid_gate"].includes(graph.nodes[key].type) && (run.costUsd !== undefined || run.costUnavailable !== undefined || run.costAttempts !== undefined))) throw new TypeError("Invalid restored cost accounting");
+    if ((run.costUsd !== undefined && (typeof run.costUsd !== "number" || !Number.isFinite(run.costUsd) || run.costUsd < 0)) || (run.costUnavailable !== undefined && run.costUnavailable !== true) || (run.costAttempts !== undefined && (!Number.isSafeInteger(run.costAttempts) || run.costAttempts < 1 || (state.runtime?.executionProtocolVersion !== 1 && run.costAttempts > run.attempt))) || (!["agent", "decision_gate"].includes(graph.nodes[key].type) && (run.costUsd !== undefined || run.costUnavailable !== undefined || run.costAttempts !== undefined))) throw new TypeError("Invalid restored cost accounting");
     attempts += run.attempt;
     const node = graph.nodes[key];
-    if (run.status === "completed" && (node.type === "agent" || node.type === "human_gate" || node.type === "agent_gate" || node.type === "hybrid_gate") && node.outputSchema !== undefined) {
-      const schema = node.type === "agent" ? compileJsonSchema(node.outputSchema) : { ok: true, compiled: compileDecisionSchema(node.outputSchema) };
-      if (!schema.ok || schema.compiled?.check(run.output) !== true) throw new TypeError("Invalid restored structured output");
+    if (run.status === "completed" && ((node.type === "agent" && node.outputSchema !== undefined) || node.type === "decision_gate")) {
+      const schema = compileJsonSchema(node.type === "agent" ? node.outputSchema : decisionOutputSchema(node.questions));
+      if (!schema.ok || schema.compiled.check(run.output) !== true) throw new TypeError("Invalid restored structured output");
     }
   }
   if (attempts > 1000) throw new TypeError("Restored run count exceeds limit");

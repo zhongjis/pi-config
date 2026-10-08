@@ -72,8 +72,30 @@ export function deleteGraphSnapshot(cwd: string, runId: string): void {
   }
 }
 
-/** Read every well-formed snapshot in the runs directory, skipping corrupt files. */
-export function readGraphSnapshots(cwd: string, onInvalid: (message: string) => void = console.warn): GraphRunSnapshot[] {
+const REMOVED_NODE_TYPES = new Set(["human_gate", "agent_gate", "hybrid_gate"]);
+function record(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+/** Names a removed node type in an unvalidated graph or any nested checkpoint graph. */
+function removedNodeType(graph: unknown, state: unknown): string | undefined {
+  for (const node of record(graph) && record(graph.nodes) ? Object.values(graph.nodes) : []) {
+    if (record(node) && typeof node.type === "string" && REMOVED_NODE_TYPES.has(node.type)) return node.type;
+  }
+  const runtime = record(state) ? state.runtime : undefined;
+  for (const nested of record(runtime) && record(runtime.nested) ? Object.values(runtime.nested) : []) {
+    for (const checkpoint of record(nested) ? [...(Array.isArray(nested.previous) ? nested.previous : []), nested] : []) {
+      const found = record(checkpoint) ? removedNodeType(checkpoint.graph, checkpoint.state) : undefined;
+      if (found) return found;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Read every well-formed snapshot in the runs directory, skipping corrupt files.
+ * With `ownerSessionId`, foreign and ownerless snapshots are skipped silently before validation.
+ */
+export function readGraphSnapshots(cwd: string, onInvalid: (message: string) => void = console.warn, ownerSessionId?: string): GraphRunSnapshot[] {
   let dir: string;
   try { dir = snapshotDirectory(cwd); }
   catch { onInvalid("Unsafe graph checkpoint directory"); return []; }
@@ -84,7 +106,13 @@ export function readGraphSnapshots(cwd: string, onInvalid: (message: string) => 
     try {
       const stem = entry.slice(0, -5);
       const parsed: unknown = JSON.parse(readFileSync(snapshotPath(cwd, stem), "utf-8"));
+      if (ownerSessionId !== undefined && (!record(parsed) || parsed.ownerSessionId !== ownerSessionId)) continue;
       if (isSnapshot(parsed) && parsed.runId === stem) {
+        const removed = removedNodeType(parsed.graph, parsed.state);
+        if (removed) {
+          onInvalid(`Cannot resume graph ${parsed.runId}: Graph checkpoint uses removed node type "${removed}"; start a new run.`);
+          continue;
+        }
         if (parsed.version === 1) validateSchedulerState(parsed.state, parsed.graph);
         if (parsed.version === 2) {
           if (!parsed.state.runtime) throw new TypeError("Missing v2 manifest");

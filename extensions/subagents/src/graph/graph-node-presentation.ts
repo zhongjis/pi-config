@@ -21,7 +21,7 @@ export function nodePresentation(node: GraphNode, instance: NodeInstance, runtim
     ...(instance.parentInstanceId ? { parentInstanceId: instance.parentInstanceId } : {}),
     ...(instance.iteration !== undefined ? { iteration: instance.iteration } : {}),
     ...(instance.itemIndex !== undefined ? { itemIndex: instance.itemIndex, role: "item" as const } :
-      round?.work === instance.binding ? { role: "work" as const } : round?.evaluator === instance.binding ? { role: "evaluator" as const } : {}),
+      round?.work === instance.binding ? { role: "work" as const } : round?.judge === instance.binding ? { role: "judge" as const } : round?.evaluator === instance.binding ? { role: "evaluator" as const } : {}),
     ...(owned ? { iterations: [...owned.iterations.map(row => ({ iteration: row.iteration, ...(row.decision ? { decision: row.decision.decision } : {}) })),
       ...(owned.active ? [{ iteration: owned.active.iteration }] : [])] } : {}),
   };

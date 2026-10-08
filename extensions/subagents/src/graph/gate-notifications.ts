@@ -14,11 +14,11 @@ export function createGateNotifications(pi: ExtensionAPI, notifications: GraphRu
       scheduled.set(gate.gate_id, key);
       notifications.schedule(key, () => {
         if (!scheduled.delete(gate.gate_id) || !isPending(gate.gate_id)) return;
-        const next = `Call get_agent_result with run_id "${task.id}" and wait:true; ask the human, then resolve_agent_graph_gate.`;
+        const next = `Call get_agent_result with run_id "${task.id}" and wait:true for the questions and state; decide yourself or ask the human with ask, then resolve_agent_graph_gate.`;
         pi.sendMessage<NotificationDetails>({
           customType: "subagent-notification", display: true,
-          content: `<task-notification>\n<task-id>${task.id}</task-id>\n<status>Human input required</status>\n${next}\n</task-notification>`,
-          details: { id: task.id, description: "Graph requires human input", status: "running", toolUses: task.totalToolCalls,
+          content: `<task-notification>\n<task-id>${task.id}</task-id>\n<status>Decision escalated</status>\nReason: ${gate.reason}\n${next}\n</task-notification>`,
+          details: { id: task.id, description: "Graph decision escalated", status: "running", toolUses: task.totalToolCalls,
             turnCount: 0, totalTokens: task.totalTokens, durationMs: Date.now() - task.startTime, resultPreview: next },
         }, { deliverAs: "followUp", triggerTurn: true });
       });

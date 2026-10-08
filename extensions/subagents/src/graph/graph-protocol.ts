@@ -3,7 +3,7 @@ import type { ExpandInput } from "./expand-actor.js";
 import type { FanoutInput } from "./fanout-actor.js";
 import type { FeedbackInput } from "./feedback-actor.js";
 import type { AgentGraph } from "./ir.js";
-import type { AgentLifecycleInput, HumanGateLifecycleInput } from "./node-lifecycle-session.js";
+import type { AgentLifecycleInput, DecisionLifecycleInput } from "./node-lifecycle-session.js";
 import type { NodeAck, NodeParentEvent } from "./node-protocol.js";
 import type { RunGraphOptions, RunGraphResult } from "./run-graph.js";
 import type { SchedulerState } from "./scheduler.js";
@@ -30,7 +30,7 @@ export interface ChildCheckpointRequest {
   readonly frame: CheckpointFrame;
 }
 export type GraphAdmission = { readonly kind: "agent"; readonly id: string; readonly input: AgentLifecycleInput } |
-  { readonly kind: "human"; readonly id: string; readonly input: HumanGateLifecycleInput } |
+  { readonly kind: "decision"; readonly id: string; readonly input: DecisionLifecycleInput } |
   { readonly kind: "expand"; readonly id: string; readonly input: ExpandInput } |
   { readonly kind: "feedback"; readonly id: string; readonly input: FeedbackInput } |
   { readonly kind: "fanout"; readonly id: string; readonly input: FanoutInput } |

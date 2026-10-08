@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { type GraphRunSnapshot, graphRunsDir, readGraphSnapshots, writeGraphSnapshot } from "../src/graph/graph-persist.js";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost } from "../src/graph/node-host.js";
 import { runGraph } from "../src/graph/run-graph.js";
@@ -11,17 +15,17 @@ const gateGraph: AgentGraph = {
   nodes: {
     a: agent(),
     gate: {
-      type: "human_gate",
-      prompt: "approve?",
-      outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] },
+      type: "decision_gate",
+      state: {},
+      questions: { approved: { type: "bool", instructions: "approve?", criteria: { true: "yes", false: "no" } } },
     },
     done: agent(),
   },
   edges: [
     { from: "a", to: "gate" },
-    { from: "gate", to: "done", when: { eq: [{ node: "gate", path: "$.approved" }, true] } },
+    { from: "gate", to: "done", when: { eq: [{ node: "gate", path: "$.answers.approved.value" }, true] } },
   ],
-  outputs: { decision: { node: "gate", path: "$.approved" } },
+  outputs: { decision: { node: "gate", path: "$.answers.approved.value" } },
 };
 
 describe("Scheduler snapshot/hydrate", () => {
@@ -55,12 +59,49 @@ describe("runGraph durable resume", () => {
     const captured: { id: string; state: SchedulerState }[] = [];
     const host: NodeHost = {
       spawnAgent: async () => ({ ok: true, output: "a-out" }),
-      awaitHumanGate: async () => ({ ok: true, output: '{"approved":true}' }),
+      decide: async () => ({ ok: false, error: "unavailable" }),
+      awaitEscalation: async () => ({ ok: true, output: '{"answers":{"approved":true},"decidedBy":"human"}' }),
     };
     await runGraph(gateGraph, {}, { host, onGateWaiting: (id, state) => captured.push({ id, state }) });
     expect(captured).toHaveLength(1);
     expect(captured[0].id).toBe("gate");
     expect(captured[0].state.nodes.a.status).toBe("completed");
     expect(captured[0].state.nodes.gate.status).toBe("running");
+  });
+});
+
+describe("graph checkpoint snapshots", () => {
+  const dirs: string[] = [];
+  afterEach(() => { for (const path of dirs.splice(0)) rmSync(path, { recursive: true, force: true }); });
+  async function saved(owner: string): Promise<{ cwd: string; snapshot: GraphRunSnapshot }> {
+    const cwd = mkdtempSync(join(tmpdir(), "graph-persist-")); dirs.push(cwd);
+    const graph: AgentGraph = { nodes: { a: agent() }, edges: [] };
+    const runId = "agr_abcdef123456";
+    let snapshot: GraphRunSnapshot | undefined;
+    await runGraph(graph, {}, { runId, host: { spawnAgent: async () => ({ ok: true, output: "x" }) }, onCheckpoint: (state, effective) => {
+      snapshot = structuredClone({ version: 2, runId, ownerSessionId: owner, graph: effective, input: {}, waitingGate: "", savedAt: 0, state });
+      writeGraphSnapshot(cwd, snapshot);
+    } });
+    if (!snapshot) throw new Error("missing fixture");
+    return { cwd, snapshot };
+  }
+
+  it("skips a snapshot owned by another session", async () => {
+    const { cwd, snapshot } = await saved("owner");
+    const invalid = vi.fn();
+    expect(readGraphSnapshots(cwd, invalid, "someone-else")).toEqual([]);
+    expect(readGraphSnapshots(cwd, invalid, "owner")).toEqual([snapshot]);
+    expect(invalid).not.toHaveBeenCalled();
+  });
+
+  it.each(["human_gate", "agent_gate", "hybrid_gate"])("reports a checkpoint using the removed %s node type", async type => {
+    const { cwd, snapshot } = await saved("owner");
+    const file = join(graphRunsDir(cwd), `${snapshot.runId}.json`);
+    const forged = JSON.parse(readFileSync(file, "utf8"));
+    forged.graph.nodes.a.type = type;
+    writeFileSync(file, JSON.stringify(forged));
+    const invalid = vi.fn();
+    expect(readGraphSnapshots(cwd, invalid)).toEqual([]);
+    expect(invalid).toHaveBeenCalledWith(expect.stringContaining(`removed node type "${type}"; start a new run.`));
   });
 });

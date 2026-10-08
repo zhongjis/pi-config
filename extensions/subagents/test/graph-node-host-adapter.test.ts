@@ -1,12 +1,15 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ClassifierResult, Usage } from "@earendil-works/pi-ai";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import * as agentTypes from "../src/agent-types.js";
-import { agentDecisionSchema, decisionValueSchema } from "../src/graph/decision-gate.js";
-import type { AgentGraph } from "../src/graph/ir.js";
+import { loadGraphClassifierAgent } from "../src/builtin-agents.js";
+import { agentAnswerSchema } from "../src/graph/decision-gate.js";
+import type { AgentGraph, ClassifierQuestion } from "../src/graph/ir.js";
+import type { DecisionRequest } from "../src/graph/node-host.js";
 import { createNodeHost, type NodeHostOptions } from "../src/graph/node-host-adapter.js";
 import { runGraph } from "../src/graph/run-graph.js";
 import type { AgentConfig } from "../src/types.js";
@@ -72,7 +75,7 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
-function setup(responseText = "done", options: { context?: ExtensionContext; scopeModels?: () => boolean; awaitHumanGate?: NodeHostOptions["awaitHumanGate"] } = {}) {
+function setup(responseText = "done", options: { context?: ExtensionContext; scopeModels?: () => boolean; awaitEscalation?: NodeHostOptions["awaitEscalation"] } = {}) {
   manager = new AgentManager();
   const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: "passed", stderr: "", killed: false });
   const pi: Pick<ExtensionAPI, "exec"> = { exec };
@@ -83,7 +86,7 @@ function setup(responseText = "done", options: { context?: ExtensionContext; sco
     graphRunId: "wf",
     outputTranscript: () => false,
     scopeModels: options.scopeModels,
-    awaitHumanGate: options.awaitHumanGate,
+    awaitEscalation: options.awaitEscalation,
   });
   vi.mocked(runAgent).mockImplementation(async () => ({ session: session(), responseText, aborted: false, steered: false }));
   return { host, exec };
@@ -238,41 +241,253 @@ it("preserves case-insensitive valid names and resolves the agent's frontmatter 
   await host.dispose();
 });
 
-it.each(["agent_gate", "hybrid_gate"] as const)("runs %s through AgentManager with the private schema", async type => {
-  configureAgent(agentConfig());
-  const select = vi.fn<ExtensionContext["ui"]["select"]>();
-  const { host } = setup(JSON.stringify({ status: "decided", decision: { approved: false } }), { context: { ...ctx, ui: { ...ctx.ui, select } } });
-  const graph: AgentGraph = { nodes: { gate: { type, agent: "fixture", prompt: "Decide", outputSchema: decisionValueSchema } }, edges: [], outputs: { result: { node: "gate", path: "$" } } };
-  const result = await runGraph(graph, {}, { host });
-  expect(result.outputs).toEqual({ result: { approved: false } });
-  expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3].structuredOutput?.schema).toEqual(agentDecisionSchema);
-  expect(select).not.toHaveBeenCalled();
-  await host.dispose();
-});
+describe("decision chain", () => {
+  const questions: Record<string, ClassifierQuestion> = {
+    ship: { type: "bool", instructions: "Is the draft ready to ship?", criteria: { true: "ready", false: "not ready" } },
+  };
+  const request = (over: Partial<DecisionRequest> = {}): DecisionRequest => ({ nodeId: "gate", state: { draft: "fixture draft" }, questions, ...over });
+  const usage = (total: number): Usage => ({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total } });
+  // 15/16 and 7/8 keep |2p-1| exact in binary floating point.
+  const classified = (probability: number, over: Partial<ClassifierResult> = {}): ClassifierResult => ({
+    api: "fixture-classify", provider: "fixture", model: "cls", answers: { ship: { type: "bool", probability } }, stopReason: "stop", timestamp: 0, ...over,
+  });
+  const failed = (over: Partial<ClassifierResult> = {}): ClassifierResult => ({ ...classified(0.5), answers: {}, stopReason: "error", errorMessage: "boom", ...over });
+  const evidence = (provider: string, id: string) => ({
+    dispose: vi.fn(), thinkingLevel: "low",
+    subscribe: vi.fn((listener: (event: unknown) => void) => {
+      listener({ type: "message_end", message: { role: "assistant", provider, model: id } });
+      return () => {};
+    }),
+  }) as unknown as AgentSession;
+  const answered = (structuredJson: string | undefined, cost = 0.25) => vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
+    const child = evidence("fixture", "chat");
+    options.onSessionCreated?.(child);
+    options.onAssistantUsage?.({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost });
+    return { session: child, responseText: "", aborted: false, steered: false, structuredJson };
+  });
 
-it.each(["unknown", "disabled", "execution"])("hybrid never opens UI for %s agent failure", async failure => {
-  const select = vi.fn<ExtensionContext["ui"]["select"]>();
-  const { host } = setup("invalid decision", { context: { ...ctx, ui: { ...ctx.ui, select } } });
-  if (failure === "unknown") vi.spyOn(agentTypes, "resolveType").mockReturnValue(undefined);
-  else configureAgent(agentConfig({ enabled: failure !== "disabled" }));
-  if (failure === "execution") vi.mocked(runAgent).mockRejectedValue(new Error("executor failed"));
-  const graph: AgentGraph = { nodes: { gate: { type: "hybrid_gate", agent: "fixture", prompt: "Decide", outputSchema: decisionValueSchema } }, edges: [] };
-  const result = await runGraph(graph, {}, { host });
-  expect(result.nodes.gate.status).toBe("failed");
-  expect(select).not.toHaveBeenCalled();
-  await host.dispose();
-});
+  let cwd: string;
+  beforeEach(() => {
+    cwd = mkdtempSync(join(tmpdir(), "subagents-decision-"));
+    mkdirSync(join(cwd, ".pi"));
+    mkdirSync(join(cwd, "agent"));
+    vi.stubEnv("PI_CODING_AGENT_DIR", join(cwd, "agent"));
+  });
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    rmSync(cwd, { recursive: true, force: true });
+  });
 
-it("hybrid hands off typed uncertainty without opening UI", async () => {
-  configureAgent(agentConfig());
-  const select = vi.fn<ExtensionContext["ui"]["select"]>();
-  const awaitHumanGate = vi.fn<NonNullable<NodeHostOptions["awaitHumanGate"]>>().mockResolvedValue({ ok: true, output: '{"approved":false}' });
-  const { host } = setup(JSON.stringify({ status: "undecided", reason: "Need approval" }), { context: { ...ctx, ui: { ...ctx.ui, select } }, awaitHumanGate });
-  const graph: AgentGraph = { nodes: { gate: { type: "hybrid_gate", agent: "fixture", prompt: "Decide", outputSchema: decisionValueSchema } }, edges: [], outputs: { result: { node: "gate", path: "$" } } };
-  const result = await runGraph(graph, {}, { host });
-  expect(result.outputs).toEqual({ result: { approved: false } });
-  expect(select).not.toHaveBeenCalled();
-  expect(awaitHumanGate).toHaveBeenCalledWith(expect.objectContaining({ kind: "hybrid_gate", prompt: expect.stringContaining("Need approval"), correlation: expect.any(Object) }), expect.any(AbortSignal));
-  expect(runAgent).toHaveBeenCalledOnce();
-  await host.dispose();
+  function chain(value: string | null): void {
+    writeFileSync(join(cwd, ".pi", "tool_models.json"), JSON.stringify({ version: 1, tools: { "subagents.decision_gate": value === null ? null : { chain: value } } }));
+  }
+
+  type Classify = (signal: AbortSignal | undefined) => ClassifierResult | Promise<ClassifierResult>;
+  function decisionContext({ classifiers = {}, chat = [], locked = [], lockedClassifiers = [] }: { classifiers?: Record<string, Classify>; chat?: string[]; locked?: string[]; lockedClassifiers?: string[] } = {}) {
+    const models = [...chat, ...locked].map(key => {
+      const [provider, id] = key.split("/");
+      return { provider, id, name: id, api: "fixture-chat" };
+    });
+    const authed = (model: { provider: string; id: string }) => chat.includes(`${model.provider}/${model.id}`);
+    const classify = vi.fn(async (model: { provider: string; id: string }, _context: unknown, options?: { signal?: AbortSignal }) => classifiers[`${model.provider}/${model.id}`](options?.signal));
+    const modelRegistry = {
+      findOfType: (type: string, provider: string, id: string) => type === "classifier" && `${provider}/${id}` in classifiers ? { type, provider, id, api: "fixture-classify" } : undefined,
+      getAvailableOfType: async (type: string, provider: string) => type !== "classifier" ? [] : Object.keys(classifiers)
+        .filter(key => key.startsWith(`${provider}/`) && !lockedClassifiers.includes(key))
+        .map(key => ({ type, provider, id: key.slice(provider.length + 1), api: "fixture-classify" })),
+      classify,
+      find: (provider: string, id: string) => models.find(model => model.provider === provider && model.id === id),
+      hasConfiguredAuth: authed,
+      isUsingOAuth: () => false,
+      getAll: () => models,
+      getAvailable: () => models.filter(authed),
+    };
+    return { context: { ...ctx, cwd, modelRegistry: modelRegistry as unknown as ExtensionContext["modelRegistry"] }, classify, models };
+  }
+
+  it("returns a confident classifier answer without spawning an agent", async () => {
+    chain("fixture/cls,fixture/chat");
+    const { context, classify } = decisionContext({ classifiers: { "fixture/cls": () => classified(0.9375, { usage: usage(0.5) }) }, chat: ["fixture/chat"] });
+    const { host } = setup("", { context });
+    const spawnInternal = vi.spyOn(manager, "spawnInternalAndWait");
+    const onResolved = vi.fn();
+    const signal = new AbortController().signal;
+    const result = await host.decide?.(request({ onResolved }), signal);
+    expect(result).toEqual({ ok: true, answers: { ship: { value: true, confidence: 0.875 } }, decidedBy: "classifier", model: "fixture/cls", costUsd: 0.5 });
+    expect(classify).toHaveBeenCalledWith(expect.objectContaining({ provider: "fixture", id: "cls" }), { state: { draft: "fixture draft" }, questions }, { signal });
+    expect(onResolved).toHaveBeenCalledWith({ modelId: "cls", modelName: "fixture/cls" });
+    expect(spawnInternal).not.toHaveBeenCalled();
+    expect(runAgent).not.toHaveBeenCalled();
+    await host.dispose();
+  });
+
+  it("advances past a classifier error and sums every attempted entry's known cost", async () => {
+    chain("fixture/cls-a,fixture/missing,fixture/cls-b");
+    const { context } = decisionContext({ classifiers: {
+      "fixture/cls-a": () => failed({ usage: usage(0.25) }),
+      "fixture/cls-b": () => classified(0.0625, { usage: usage(0.5) }),
+    } });
+    const { host } = setup("", { context });
+    const result = await host.decide?.(request(), new AbortController().signal);
+    expect(result).toEqual({ ok: true, answers: { ship: { value: false, confidence: 0.875 } }, decidedBy: "classifier", model: "fixture/cls-b", costUsd: 0.75 });
+    await host.dispose();
+  });
+
+  it("reports unknown cost when a completed classifier call reports no usage", async () => {
+    chain("fixture/cls-a,fixture/cls-b");
+    const { context } = decisionContext({ classifiers: { "fixture/cls-a": () => classified(0.9375, { answers: {} }), "fixture/cls-b": () => classified(0.9375, { usage: usage(0.5) }) } });
+    const { host } = setup("", { context });
+    const result = await host.decide?.(request(), new AbortController().signal);
+    expect(result).toMatchObject({ ok: true, decidedBy: "classifier", model: "fixture/cls-b" });
+    expect(result?.costUsd).toBeUndefined();
+    await host.dispose();
+  });
+
+  it("skips a catalog classifier without credentials before classifying", async () => {
+    chain("fixture/cls,fixture/chat");
+    const { context, classify } = decisionContext({ classifiers: { "fixture/cls": () => classified(0.9375) }, lockedClassifiers: ["fixture/cls"], chat: ["fixture/chat"] });
+    const { host } = setup("", { context });
+    answered('{"ship":{"probability":0.9375}}');
+    const result = await host.decide?.(request(), new AbortController().signal);
+    expect(result).toMatchObject({ ok: true, decidedBy: "agent", model: "fixture/chat", costUsd: 0.25 });
+    expect(classify).not.toHaveBeenCalled();
+    await host.dispose();
+  });
+
+  it("charges nothing for a failed classifier call that reports no usage", async () => {
+    chain("fixture/cls,fixture/chat");
+    const { context } = decisionContext({ classifiers: { "fixture/cls": () => failed() }, chat: ["fixture/chat"] });
+    const { host } = setup("", { context });
+    answered('{"ship":{"probability":0.9375}}');
+    const result = await host.decide?.(request(), new AbortController().signal);
+    expect(result).toMatchObject({ ok: true, decidedBy: "agent", costUsd: 0.25 });
+    await host.dispose();
+  });
+
+  it("falls back to the internal agent on the chat entry's exact model and thinking", async () => {
+    chain("fixture/chat:low");
+    const { context, models } = decisionContext({ chat: ["fixture/chat"] });
+    const { host } = setup("", { context });
+    const spawnInternal = vi.spyOn(manager, "spawnInternalAndWait");
+    answered('{"ship":{"probability":0.9375}}');
+    const onResolved = vi.fn();
+    const result = await host.decide?.(request({ onResolved }), new AbortController().signal);
+    expect(result).toEqual({ ok: true, answers: { ship: { value: true, confidence: 0.875 } }, decidedBy: "agent", model: "fixture/chat", costUsd: 0.25 });
+    expect(spawnInternal).toHaveBeenCalledOnce();
+    const [, , config, prompt, options] = spawnInternal.mock.calls[0];
+    expect(config).toBe(loadGraphClassifierAgent());
+    expect(prompt).toContain("Questions:");
+    expect(prompt).toContain("fixture draft");
+    expect(options).toMatchObject({ graphRunId: "wf", description: "gate", model: models[0], selectedModel: { model: models[0], thinkingLevel: "low" }, thinkingLevel: "low" });
+    expect(options.structuredOutput?.schema).toEqual(agentAnswerSchema(questions));
+    expect(vi.mocked(runAgent).mock.calls[0]?.[3]).toMatchObject({ agentConfig: config, graphRun: true, selectedModel: { model: models[0] } });
+    expect(onResolved).toHaveBeenCalledWith({ recordId: manager.listAgents()[0]?.id });
+    expect(onResolved).toHaveBeenCalledWith({ modelId: "chat", modelName: "fixture/chat", thinking: "low" });
+    await host.dispose();
+  });
+
+  it("advances past invalid agent output to the next entry", async () => {
+    chain("fixture/chat,fixture/cls");
+    const { context } = decisionContext({ classifiers: { "fixture/cls": () => classified(0.9375, { usage: usage(0.5) }) }, chat: ["fixture/chat"] });
+    const { host } = setup("", { context });
+    answered('{"ship":{"probability":2}}');
+    const result = await host.decide?.(request(), new AbortController().signal);
+    expect(result).toMatchObject({ ok: true, decidedBy: "classifier", model: "fixture/cls", costUsd: 0.75 });
+    expect(runAgent).toHaveBeenCalledOnce();
+    await host.dispose();
+  });
+
+  it("aggregates every entry failure once the chain is exhausted", async () => {
+    chain("fixture/cls,fixture/locked,fixture/missing,missing-bare");
+    const { context } = decisionContext({ classifiers: { "fixture/cls": () => failed({ usage: usage(0) }) }, locked: ["fixture/locked"] });
+    const { host } = setup("", { context });
+    const result = await host.decide?.(request(), new AbortController().signal);
+    expect(result).toEqual({
+      ok: false, costUsd: 0,
+      error: "fixture/cls: boom; fixture/locked: unavailable; fixture/missing: unavailable; missing-bare: unavailable",
+    });
+    expect(runAgent).not.toHaveBeenCalled();
+    await host.dispose();
+  });
+
+  it("reports an empty chain without trying any model", async () => {
+    chain(null);
+    const { context, classify } = decisionContext();
+    const { host } = setup("", { context });
+    expect(await host.decide?.(request(), new AbortController().signal))
+      .toEqual({ ok: false, error: "No decision models configured (tool_models key subagents.decision_gate)", costUsd: 0 });
+    expect(classify).not.toHaveBeenCalled();
+    await host.dispose();
+  });
+
+  it("skips without trying further entries once aborted", async () => {
+    chain("fixture/cls,fixture/chat");
+    const controller = new AbortController();
+    const { context, classify } = decisionContext({
+      classifiers: { "fixture/cls": () => { controller.abort(); return failed({ stopReason: "aborted" }); } },
+      chat: ["fixture/chat"],
+    });
+    const { host } = setup("", { context });
+    const result = await host.decide?.(request(), controller.signal);
+    expect(result).toMatchObject({ ok: false, skipped: true, error: "Aborted." });
+    expect(classify).toHaveBeenCalledOnce();
+    expect(runAgent).not.toHaveBeenCalled();
+    expect(await host.decide?.(request(), controller.signal)).toEqual({ ok: false, skipped: true, error: "Aborted.", costUsd: 0 });
+    expect(classify).toHaveBeenCalledOnce();
+    await host.dispose();
+  });
+
+  it("dispose aborts and drains an in-flight agent fallback", async () => {
+    chain("fixture/chat");
+    const { context } = decisionContext({ chat: ["fixture/chat"] });
+    const { host } = setup("", { context });
+    let started!: () => void;
+    const running = new Promise<void>(resolve => { started = resolve; });
+    let childSignal: AbortSignal | undefined;
+    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
+      childSignal = options.signal;
+      started();
+      await new Promise(resolve => options.signal?.addEventListener("abort", resolve, { once: true }));
+      return { session: session(), responseText: "", aborted: true, steered: false };
+    });
+    const pending = host.decide?.(request(), new AbortController().signal);
+    await running;
+    await host.dispose();
+    expect(childSignal?.aborted).toBe(true);
+    expect(manager.listAgents()[0]?.status).toBe("stopped");
+    await expect(pending).resolves.toMatchObject({ ok: false, skipped: true });
+  });
+
+  it("runs a decision_gate through the real adapter's agent fallback without opening UI", async () => {
+    chain("fixture/chat");
+    const { context } = decisionContext({ chat: ["fixture/chat"] });
+    const select = vi.fn<ExtensionContext["ui"]["select"]>();
+    const { host } = setup("", { context: { ...context, ui: { ...context.ui, select } } });
+    answered('{"ship":{"probability":0.9375}}');
+    const graph: AgentGraph = { nodes: { gate: { type: "decision_gate", state: { draft: { path: "$.draft" } }, questions } }, edges: [], outputs: { result: { node: "gate", path: "$" } } };
+    const result = await runGraph(graph, { draft: "fixture draft" }, { host });
+    expect(result.outputs).toEqual({ result: { answers: { ship: { value: true, confidence: 0.875 } }, decidedBy: "agent" } });
+    expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3].structuredOutput?.schema).toEqual(agentAnswerSchema(questions));
+    expect(select).not.toHaveBeenCalled();
+    await host.dispose();
+  });
+
+  it.each([
+    ["an exhausted chain", "fixture/missing", /No decision model answered/],
+    ["a low-confidence answer", "fixture/cls", /Confidence below 0\.8 \(classifier fixture\/cls\)/],
+  ] as const)("escalates %s to the orchestrator without opening UI", async (_label, value, reason) => {
+    chain(value);
+    const { context } = decisionContext({ classifiers: { "fixture/cls": () => classified(0.875, { usage: usage(0) }) } });
+    const select = vi.fn<ExtensionContext["ui"]["select"]>();
+    const awaitEscalation = vi.fn<NonNullable<NodeHostOptions["awaitEscalation"]>>()
+      .mockResolvedValue({ ok: true, output: JSON.stringify({ answers: { ship: false }, decidedBy: "orchestrator" }) });
+    const { host } = setup("", { context: { ...context, ui: { ...context.ui, select } }, awaitEscalation });
+    const graph: AgentGraph = { nodes: { gate: { type: "decision_gate", state: {}, questions } }, edges: [], outputs: { result: { node: "gate", path: "$" } } };
+    const result = await runGraph(graph, {}, { host });
+    expect(result.outputs).toEqual({ result: { answers: { ship: { value: false, confidence: 1 } }, decidedBy: "orchestrator" } });
+    expect(awaitEscalation).toHaveBeenCalledWith(expect.objectContaining({ reason: expect.stringMatching(reason), questions, correlation: expect.any(Object) }), expect.any(AbortSignal));
+    expect(select).not.toHaveBeenCalled();
+    expect(runAgent).not.toHaveBeenCalled();
+    await host.dispose();
+  });
 });

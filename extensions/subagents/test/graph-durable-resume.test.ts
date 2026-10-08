@@ -1,33 +1,29 @@
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { LiveWriterError } from "../src/graph/graph-checkpoint-owner.js";
 import * as persistence from "../src/graph/graph-persist.js";
 import { readGraphSnapshots } from "../src/graph/graph-persist.js";
 import * as tasks from "../src/graph/task.js";
-import { pendingGate, resolveGate } from "./gate-tools.fixture.js";
+import { gateNode, pendingGate, resolveGate } from "./gate-tools.fixture.js";
 import { boot, required } from "./graph-run-registration.fixture.js";
 
 const gateGraph = {
   name: "gated",
   nodes: {
     a: { type: "agent", agent: "fixture", prompt: "step a" },
-    gate: {
-      type: "human_gate",
-      prompt: "approve?",
-      outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] },
-    },
+    gate: gateNode,
     done: { type: "agent", agent: "fixture", prompt: "finish" },
   },
   edges: [
     { from: "a", to: "gate" },
-    { from: "gate", to: "done", when: { eq: [{ node: "gate", path: "$.approved" }, true] } },
+    { from: "gate", to: "done", when: { eq: [{ node: "gate", path: "$.answers.release.value" }, true] } },
   ],
 };
 
-describe("agent_graph durable human_gate resume", () => {
-  it("resumes a drained human gate under a new graph attempt on restart", async () => {
+describe("agent_graph durable decision_gate resume", () => {
+  it("resumes a drained escalation under a new graph attempt on restart", async () => {
     // Session 1 parks at the gate until shutdown requests cancellation.
     const s1 = boot();
     await s1.lifecycle("session_start");
@@ -242,4 +238,29 @@ it("keeps checkpoint session ownership immutable under replacement", async () =>
   writeFileSync(path, JSON.stringify(saved));
   expect(() => persistence.writeGraphSnapshot(session.ctx.cwd, next)).toThrow();
   expect(readFileSync(path, "utf8")).toBe(JSON.stringify(saved));
+});
+
+it.each([
+  ["top-level", { nodes: { gate: { type: "hybrid_gate", agent: "fixture", prompt: "Approve?", outputSchema: { type: "object" } } }, edges: [] }, {}],
+  ["nested", { nodes: { sub: { type: "graph", graph: "child" } }, edges: [] }, { nested: { sub: { graph: { nodes: { gate: { type: "human_gate", prompt: "Approve?", outputSchema: { type: "object" } } }, edges: [] }, state: { nodes: {}, loopCounts: {} }, ordinals: {} } } }],
+] as const)("rejects an owned %s checkpoint with a removed gate type before side effects", async (_label, graph, runtime) => {
+  const session = boot();
+  const runId = "agr_abcdef123456";
+  mkdirSync(persistence.graphRunsDir(session.ctx.cwd), { recursive: true });
+  writeFileSync(join(persistence.graphRunsDir(session.ctx.cwd), `${runId}.json`), JSON.stringify({ version: 2, runId, ownerSessionId: "parent", graph, input: {}, waitingGate: "",
+    state: { nodes: {}, loopCounts: {}, runtime: { version: 2, runId, revision: 1, manifest: [], ...runtime } }, savedAt: 0 }));
+  const create = vi.spyOn(tasks, "createGraphRunTask"); const lease = vi.spyOn(persistence, "ownGraphRun");
+  await session.lifecycle("session_start");
+  expect([create.mock.calls.length, lease.mock.calls.length, session.ui.notify.mock.calls.map(([message]) => message)])
+    .toEqual([0, 0, [expect.stringMatching(/removed node type "(hybrid|human)_gate"/)]]);
+});
+
+it("skips a foreign checkpoint with a removed gate type silently", async () => {
+  const session = boot();
+  const runId = "agr_abcdef123456";
+  mkdirSync(persistence.graphRunsDir(session.ctx.cwd), { recursive: true });
+  writeFileSync(join(persistence.graphRunsDir(session.ctx.cwd), `${runId}.json`), JSON.stringify({ version: 2, runId, ownerSessionId: "foreign", input: {}, waitingGate: "", savedAt: 0,
+    graph: { nodes: { gate: { type: "hybrid_gate", agent: "fixture", prompt: "Approve?", outputSchema: { type: "object" } } }, edges: [] }, state: { nodes: {}, loopCounts: {} } }));
+  await session.lifecycle("session_start");
+  expect(session.ui.notify).not.toHaveBeenCalled();
 });

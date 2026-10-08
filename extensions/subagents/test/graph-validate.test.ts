@@ -32,7 +32,7 @@ function reviewLoopGraph(): AgentGraph {
         },
       },
       fix: { type: "agent", agent: "jintong", prompt: "Fix the issues" },
-      approve: { type: "human_gate", prompt: "Approve?", outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] } },
+      approve: { type: "decision_gate", state: {}, questions: { approved: { type: "bool", instructions: "ok?", criteria: { true: "yes", false: "no" } } } },
     },
     edges: [
       { from: "implement", to: "review" },
@@ -50,7 +50,7 @@ describe("validateGraph — accepts well-formed graphs", () => {
     expect(result).toEqual({ ok: true, errors: [] });
   });
 
-  it("accepts a review->fix loop with conditions, gate, loop, human gate, and outputs", () => {
+  it("accepts a review->fix loop with conditions, gate, loop, decision gate, and outputs", () => {
     const result = validateGraph(reviewLoopGraph());
     expect(result.ok).toBe(true);
     expect(result.errors).toEqual([]);
@@ -112,7 +112,7 @@ describe("validateGraph — rejects malformed graphs", () => {
 
   it("rejects an unknown node type", () => {
     const errors = bad({ nodes: { a: { type: "action", action: "sh" } }, edges: [] });
-    expect(errors.some(e => e.includes("nodes.a.type") && e.includes("agent | human_gate | agent_gate | hybrid_gate | graph | expand"))).toBe(true);
+    expect(errors.some(e => e.includes("nodes.a.type") && e.includes("agent | decision_gate | graph | expand"))).toBe(true);
   });
 
   it("rejects an agent prompt whose placeholder is not wired in input", () => {
@@ -124,29 +124,35 @@ describe("validateGraph — rejects malformed graphs", () => {
     expect(errors.some(e => e.includes(`\${task}`))).toBe(false);
   });
 
-  it("rejects a human_gate prompt placeholder that is not wired in input", () => {
-    const errors = bad({
-      nodes: {
-        g: {
-          type: "human_gate",
-          prompt: `Approve \${plan}?`,
-          outputSchema: { type: "object", properties: { approved: { type: "boolean" } }, required: ["approved"] },
-        },
-      },
-      edges: [],
-    });
-    expect(errors).toContain(`nodes.g.prompt: references \${plan} but node.input has no "plan" mapping`);
-  });
-
   it("rejects an agent node missing agent/prompt", () => {
     const errors = bad({ nodes: { a: { type: "agent" } }, edges: [] });
     expect(errors).toContain("nodes.a.agent: must be a non-empty agent selector");
     expect(errors).toContain("nodes.a.prompt: must be a non-empty prompt");
   });
 
-  it("requires outputSchema on a human_gate", () => {
-    const errors = bad({ nodes: { g: { type: "human_gate", prompt: "ok?" } }, edges: [] });
-    expect(errors).toContain("nodes.g.outputSchema: is required for a decision gate node");
+  it.each(["human_gate", "agent_gate", "hybrid_gate"])("rejects the removed %s node type", type => {
+    const errors = bad({ nodes: { g: { type, prompt: "ok?" } }, edges: [] });
+    expect(errors.some(e => e.includes("nodes.g.type"))).toBe(true);
+  });
+
+  it("requires a non-empty questions object on a decision_gate", () => {
+    const errors = bad({ nodes: { g: { type: "decision_gate", state: {}, questions: {} } }, edges: [] });
+    expect(errors).toContain("nodes.g.questions: must be a non-empty object of { id: question }");
+  });
+
+  it("rejects a malformed decision_gate question", () => {
+    const errors = bad({ nodes: { g: { type: "decision_gate", state: {}, questions: { q: { type: "essay", instructions: "x" } } } }, edges: [] });
+    expect(errors.some(e => e.startsWith("nodes.g.questions.q"))).toBe(true);
+  });
+
+  it("rejects an unknown decision_gate field", () => {
+    const errors = bad({ nodes: { g: { type: "decision_gate", state: {}, questions: { q: { type: "bool", instructions: "ok?", criteria: { true: "yes", false: "no" } } }, prompt: "legacy" } }, edges: [] });
+    expect(errors).toContain("nodes.g.prompt: unknown decision_gate field");
+  });
+
+  it.each([-0.1, 1.1, Number.NaN, "high"])("rejects decision_gate minConfidence %s", minConfidence => {
+    const errors = bad({ nodes: { g: { type: "decision_gate", state: {}, questions: { q: { type: "bool", instructions: "ok?", criteria: { true: "yes", false: "no" } } }, minConfidence } }, edges: [] });
+    expect(errors).toContain("nodes.g.minConfidence: must be a finite number from 0 to 1");
   });
 
   it("rejects edges referencing unknown nodes", () => {
@@ -442,22 +448,15 @@ describe("validateGraph — edge guard paths", () => {
     }
   });
 
-  it("checks decision-gate paths against the exposed approved boolean", () => {
-    for (const type of ["human_gate", "agent_gate", "hybrid_gate"] as const) {
-      const gate = {
-        type,
-        prompt: "Decide",
-        outputSchema: { type: "object" },
-        ...(type === "human_gate" ? {} : { agent: "reviewer" }),
-      };
-      const graph = (path: string) => validateGraph({
-        nodes: { gate, next: { type: "agent", agent: "x", prompt: "p" } },
-        edges: [{ from: "gate", to: "next", when: { eq: [{ node: "gate", path }, true] } }],
-      });
-      expect(graph("$.approved")).toEqual({ ok: true, errors: [] });
-      expect(graph("$.aproved").errors).toContain('edges[0].when.eq[0].path: "$.aproved" cannot exist in "gate" output schema');
-      expect(graph("$.approved.extra").errors).toContain('edges[0].when.eq[0].path: "$.approved.extra" cannot exist in "gate" output schema');
-    }
+  it("checks decision-gate paths against the exposed answers", () => {
+    const gate = { type: "decision_gate" as const, state: {}, questions: { approved: { type: "bool", instructions: "ok?", criteria: { true: "yes", false: "no" } } } };
+    const graph = (path: string) => validateGraph({
+      nodes: { gate, next: { type: "agent", agent: "x", prompt: "p" } },
+      edges: [{ from: "gate", to: "next", when: { eq: [{ node: "gate", path }, true] } }],
+    });
+    expect(graph("$.answers.approved.value")).toEqual({ ok: true, errors: [] });
+    expect(graph("$.answers.aproved.value").errors).toContain('edges[0].when.eq[0].path: "$.answers.aproved.value" cannot exist in "gate" output schema');
+    expect(graph("$.answers.approved.value.extra").errors).toContain('edges[0].when.eq[0].path: "$.answers.approved.value.extra" cannot exist in "gate" output schema');
   });
 
   it("checks a node-less guard against a closed graph input schema", () => {
