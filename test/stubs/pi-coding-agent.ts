@@ -252,6 +252,19 @@ export function parseFrontmatter<T extends Record<string, unknown> = Record<stri
     const key = line.slice(0, colon).trim();
     const value = line.slice(colon + 1).trim();
     if (!key) continue;
+    // YAML block scalar: indented lines belong to this key; `|` keeps line breaks, `>` folds them.
+    const blockScalar = /^([|>])[-+]?$/.exec(value);
+    if (blockScalar) {
+      const lines: string[] = [];
+      let j = i + 1;
+      while (j < raw.length && (raw[j].trim() === "" || /^\s/.test(raw[j]))) {
+        lines.push(raw[j].trim());
+        j++;
+      }
+      frontmatter[key] = lines.join(blockScalar[1] === "|" ? "\n" : " ").trim();
+      i = j - 1;
+      continue;
+    }
     if (value === "") {
       // YAML block list: subsequent indented "- item" lines belong to this key.
       const items: string[] = [];
