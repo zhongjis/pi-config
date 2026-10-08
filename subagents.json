@@ -2,5 +2,6 @@
   "maxConcurrentForeground": 4,
   "reportUsage": true,
   "showCost": true,
-  "graphRuntimeTrace": true
+  "graphRuntimeTrace": true,
+  "disableDefaultAgents": true
 }
