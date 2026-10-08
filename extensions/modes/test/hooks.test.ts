@@ -160,14 +160,13 @@ type TestMode = "kuafu" | "fuxi" | "houtu";
 type PromptConfig = {
 	body: string;
 	overlays?: string;
-	promptMode?: "replace" | "append";
 };
 
 async function renderInjectedPrompt({
 	mode,
 	family = "default",
 	basePrompt = "Base prompt",
-	defaultConfig = { body: "Default body", promptMode: "replace" },
+	defaultConfig = { body: "Default body" },
 	familyConfig,
 }: {
 	mode: TestMode;
@@ -175,19 +174,25 @@ async function renderInjectedPrompt({
 	basePrompt?: string;
 	defaultConfig?: PromptConfig;
 	familyConfig?: PromptConfig;
-}): Promise<string> {
+}): Promise<string | undefined> {
 	const mock = createMockPi();
 	const state = new ModeStateManager(mock.pi as never);
 	state.currentMode = mode;
 	state.resolvedFamily = family;
 	state.cachedConfigs[`${mode}:default`] = { ...defaultConfig, toolRules: [] };
 	if (family !== "default") {
-		state.cachedConfigs[`${mode}:${family}`] = { ...(familyConfig ?? { body: `${family} body`, promptMode: "replace" }), toolRules: [] };
+		state.cachedConfigs[`${mode}:${family}`] = { ...(familyConfig ?? { body: `${family} body` }), toolRules: [] };
 	}
 
 	registerModeHooks(mock.pi as never, state);
-	const [result] = await mock.fire("before_agent_start", { systemPrompt: basePrompt }, { hasUI: false });
-	return (result as { systemPrompt: string }).systemPrompt;
+	const event = beforeAgentStartEvent(basePrompt);
+	const [result] = await mock.fire("before_agent_start", event, { hasUI: false });
+	expect(result).toBeUndefined();
+	return event.systemPromptOptions.sections.modes;
+}
+
+function beforeAgentStartEvent(systemPrompt: string, sections: Record<string, string> = {}) {
+	return { type: "before_agent_start", prompt: "", systemPrompt, systemPromptOptions: { sections } };
 }
 
 describe("mode hooks", () => {
@@ -236,7 +241,7 @@ describe("mode hooks", () => {
 			expect(state.planContent).toBe(restores ? "plan" : undefined);
 		},
 	);
-	it("appends mode prompt with HTML markers during before_agent_start", async () => {
+	it("publishes the mode body as the modes prompt section during before_agent_start", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
@@ -244,10 +249,38 @@ describe("mode hooks", () => {
 
 		registerModeHooks(mock.pi as never, state);
 
-		const [result] = await mock.fire("before_agent_start", { systemPrompt: "Base prompt" }, { hasUI: false });
-		expect(result).toEqual({
-			systemPrompt: "Base prompt\n\n<!-- mode:fuxi -->\nFu Xi prompt\n<!-- /mode:fuxi -->",
+		const event = beforeAgentStartEvent("Base prompt", { other: "kept" });
+		const [result] = await mock.fire("before_agent_start", event, { hasUI: false });
+		expect(result).toBeUndefined();
+		expect(event.systemPrompt).toBe("Base prompt");
+		expect(event.systemPromptOptions.sections).toEqual({ other: "kept", modes: "Fu Xi prompt" });
+	});
+
+	it("sets no modes section when the mode has no body", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs["kuafu:default"] = { body: "", toolRules: [] };
+		registerModeHooks(mock.pi as never, state);
+
+		const event = beforeAgentStartEvent("Base");
+		const [result] = await mock.fire("before_agent_start", event, { hasUI: false });
+		expect(result).toBeUndefined();
+		expect(event.systemPromptOptions.sections).toEqual({});
+	});
+
+	it("sets no modes section in subagent sessions", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs["kuafu:default"] = { body: "Kua Fu build prompt", toolRules: [] };
+		registerModeHooks(mock.pi as never, state);
+
+		const event = beforeAgentStartEvent("Base");
+		const [result] = await mock.fire("before_agent_start", event, {
+			hasUI: false,
+			sessionManager: { getSessionFile: () => "/tmp/subagent-sessions/child.jsonl" },
 		});
+		expect(result).toBeUndefined();
+		expect(event.systemPromptOptions.sections).toEqual({});
 	});
 
 	it("blocks plan-mode writes outside local://PLAN.md", async () => {
@@ -367,31 +400,23 @@ describe("mode hooks", () => {
 
 
 
-	it("HTML marker round-trip: strips mode A body when switching to mode B", async () => {
+	it("switching mode replaces the modes section content", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi planning prompt", promptMode: "replace", toolRules: [] };
-		state.cachedConfigs["kuafu:default"] = { body: "Kua Fu build prompt", promptMode: "replace", toolRules: [] };
+		state.cachedConfigs["fuxi:default"] = { body: "Fu Xi planning prompt", toolRules: [] };
+		state.cachedConfigs["kuafu:default"] = { body: "Kua Fu build prompt", toolRules: [] };
 
 		registerModeHooks(mock.pi as never, state);
 
-		// First call injects fuxi body
-		const [result1] = await mock.fire("before_agent_start", { systemPrompt: "Base" }, { hasUI: false });
-		const systemPromptAfterFuxi = (result1 as { systemPrompt: string }).systemPrompt;
-		expect(systemPromptAfterFuxi).toContain("<!-- mode:fuxi -->");
-		expect(systemPromptAfterFuxi).toContain("Fu Xi planning prompt");
+		const sections: Record<string, string> = { other: "kept" };
+		await mock.fire("before_agent_start", beforeAgentStartEvent("Base", sections), { hasUI: false });
+		expect(sections.modes).toBe("Fu Xi planning prompt");
 
-		// Switch to kuafu — should strip fuxi body and inject kuafu body
 		state.currentMode = "kuafu";
-		const [result2] = await mock.fire("before_agent_start", { systemPrompt: systemPromptAfterFuxi }, { hasUI: false });
-		const systemPromptAfterKuafu = (result2 as { systemPrompt: string }).systemPrompt;
-
-		expect(systemPromptAfterKuafu).not.toContain("<!-- mode:fuxi -->");
-		expect(systemPromptAfterKuafu).not.toContain("Fu Xi planning prompt");
-		expect(systemPromptAfterKuafu).toContain("<!-- mode:kuafu -->");
-		expect(systemPromptAfterKuafu).toContain("Kua Fu build prompt");
-		expect(systemPromptAfterKuafu).toContain("Base");
+		await mock.fire("before_agent_start", beforeAgentStartEvent("Base", sections), { hasUI: false });
+		expect(sections.modes).toBe("Kua Fu build prompt");
+		expect(sections.other).toBe("kept");
 	});
 
 
@@ -627,10 +652,10 @@ describe("mode hooks", () => {
 
 		registerModeHooks(mock.pi as never, state);
 
-		const [result] = await mock.fire("before_agent_start", { systemPrompt: "Base" }, { hasUI: false });
-		expect(result).toEqual({
-			systemPrompt: "Base\n\n<!-- mode:kuafu -->\nGPT variant body\n<!-- /mode:kuafu -->",
-		});
+		const event = beforeAgentStartEvent("Base");
+		const [result] = await mock.fire("before_agent_start", event, { hasUI: false });
+		expect(result).toBeUndefined();
+		expect(event.systemPromptOptions.sections.modes).toBe("GPT variant body");
 	});
 
 	it("injects gemini overlays before <critical> when resolvedFamily is gemini", async () => {
@@ -647,8 +672,10 @@ describe("mode hooks", () => {
 
 		registerModeHooks(mock.pi as never, state);
 
-		const [result] = await mock.fire("before_agent_start", { systemPrompt: "" }, { hasUI: false });
-		const sp = (result as { systemPrompt: string }).systemPrompt;
+		const event = beforeAgentStartEvent("");
+		const [result] = await mock.fire("before_agent_start", event, { hasUI: false });
+		expect(result).toBeUndefined();
+		const sp = event.systemPromptOptions.sections.modes ?? "";
 		expect(sp).toContain("<GEMINI_INTENT_GATE>must classify</GEMINI_INTENT_GATE>");
 		const overlayPos = sp.indexOf("<GEMINI_INTENT_GATE>");
 		const criticalPos = sp.indexOf("<critical>");
@@ -657,16 +684,15 @@ describe("mode hooks", () => {
 
 	it("injects gemini overlays after </role> when no <critical> anchor exists", async () => {
 		const overlay = "<GEMINI_ROLE_FALLBACK>after role</GEMINI_ROLE_FALLBACK>";
-		const prompt = await renderInjectedPrompt({
+		const prompt = (await renderInjectedPrompt({
 			mode: "kuafu",
 			family: "gemini",
-			defaultConfig: { body: "<role>\nRole only\n</role>\n\nBody", promptMode: "replace" },
+			defaultConfig: { body: "<role>\nRole only\n</role>\n\nBody" },
 			familyConfig: {
 				body: "<role>\nRole only\n</role>\n\nBody",
 				overlays: overlay,
-				promptMode: "replace",
 			},
-		});
+		})) ?? "";
 
 		expect(prompt.indexOf(overlay)).toBeGreaterThan(prompt.indexOf("</role>"));
 		expect(prompt.indexOf(overlay)).toBeLessThan(prompt.indexOf("Body"));
@@ -674,15 +700,15 @@ describe("mode hooks", () => {
 
 	it("appends gemini overlays when no <critical> or </role> anchors exist", async () => {
 		const overlay = "<GEMINI_APPEND_FALLBACK>append</GEMINI_APPEND_FALLBACK>";
-		const prompt = await renderInjectedPrompt({
+		const prompt = (await renderInjectedPrompt({
 			mode: "kuafu",
 			family: "gemini",
-			defaultConfig: { body: "Plain body", promptMode: "replace" },
-			familyConfig: { body: "Plain body", overlays: overlay, promptMode: "replace" },
-		});
+			defaultConfig: { body: "Plain body" },
+			familyConfig: { body: "Plain body", overlays: overlay },
+		})) ?? "";
 
 		expect(prompt.indexOf(overlay)).toBeGreaterThan(prompt.indexOf("Plain body"));
-		expect(prompt).toContain(`${overlay}\n<!-- /mode:kuafu -->`);
+		expect(prompt.endsWith(overlay)).toBe(true);
 	});
 });
 
@@ -824,7 +850,7 @@ describe("mode tool ceiling", () => {
 		await mock.fire("session_start", {}, createSessionCtx());
 		mock.addTool({ name: "web_enable", sourceInfo: { path: "/fixture/pi-web-access/index.ts" } });
 
-		await mock.fire("before_agent_start", { systemPrompt: "Base" }, createSessionCtx());
+		await mock.fire("before_agent_start", beforeAgentStartEvent("Base"), createSessionCtx());
 
 		expect(mock.hiddenDeclarations()).toContain("web_enable");
 	});

@@ -46,6 +46,11 @@ async function registerLocalBtw(
 	await Reflect.apply(registerBtwExtension, undefined, [pi, options]);
 }
 
+function startEvent() {
+	const sections: Record<string, string> = { other: "kept" };
+	return { sections, event: { type: "before_agent_start", prompt: "", systemPrompt: "child", systemPromptOptions: { sections } } };
+}
+
 const ui = { setTitle() {}, setWidget() {}, setEditorText() {}, notify() {}, theme: { fg: (_color: string, text: string) => text } };
 
 describe("inherit availability", () => {
@@ -113,7 +118,7 @@ describe("inherit availability", () => {
 		mock.api.setActiveTools([...selected, "web_search", "web_fetch"]);
 		const activated = mock.api.getActiveTools();
 		await mock.fireLifecycle("resources_discover");
-		await mock.fireLifecycle("before_agent_start", { systemPrompt: "child" }, { model: { provider: "test", id: "model" } });
+		await mock.fireLifecycle("before_agent_start", startEvent().event, { model: { provider: "test", id: "model" } });
 		await mock.fireLifecycle("context", { messages: [] });
 		expect(mock.api.getActiveTools()).toEqual(activated);
 		for (const reason of ["reload", "resume", "new", "fork"]) {
@@ -128,6 +133,24 @@ describe("inherit availability", () => {
 		await mock.fireLifecycle("session_start", { reason }, { mode: "tui", ui });
 		await mock.fireLifecycle("resources_discover");
 		expect(mock.api.getActiveTools()).toEqual(available);
+	});
+
+	it("replays the exact parent prompt in native mode and sets only a section in fallback mode", async () => {
+		const run = async (mock: Awaited<ReturnType<typeof child>>, activeTools: string[]) => {
+			mock.api.setActiveTools(activeTools);
+			const { sections, event } = startEvent();
+			const [handler] = mock.lifecycleHandlers.get("before_agent_start") ?? [];
+			const result = await handler(event, { model: { provider: "test", id: "model" } });
+			return { sections, result };
+		};
+		const native = await run(await child(), selected);
+		expect(native.result).toEqual({ systemPrompt: "parent system" });
+		expect(native.sections).toEqual({ other: "kept" });
+		const fallback = await run(await child(), [...selected].reverse());
+		expect(fallback.result).toBeUndefined();
+		expect(fallback.sections.other).toBe("kept");
+		expect(fallback.sections.herdr_btw).toContain("focused /btw side pane");
+		expect(fallback.sections.herdr_btw).toBe(fallback.sections.herdr_btw?.trim());
 	});
 
 	it.each(["print", "rpc"])("does not restore in %s descendants", async mode => {

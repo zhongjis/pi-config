@@ -148,11 +148,12 @@ async function configureChild(
 		cache.mode = decision.mode;
 		cache.reason = decision.reason;
 		if (cache.mode === "native") {
-			// Replay the parent's exact system prompt; side-pane policy moves to
-			// a suffix message so the cached prefix stays byte-identical.
+			// Exact parent replay is the one returned-systemPrompt exception: prompt sections would
+			// change the cached prefix. Side-pane policy moves to a suffix message so the cached
+			// prefix stays byte-identical.
 			return { systemPrompt: payload.parentSystemPrompt as string };
 		}
-		return { systemPrompt: `${event.systemPrompt}\n\n${SIDE_PANE_INSTRUCTIONS}` };
+		event.systemPromptOptions.sections.herdr_btw = SIDE_PANE_INSTRUCTIONS.trim();
 	});
 
 	pi.on("context", (event) => {

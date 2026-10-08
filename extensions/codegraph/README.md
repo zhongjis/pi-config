@@ -21,13 +21,14 @@ This extension is based on a vendored copy of `@vndv/pi-codegraph`, combined wit
 - Actionable spawn / uninitialized-index error guidance — adapted from `gripebomb/pi-codegraph-extension`.
 - Monorepo `.codegraph` ancestor discovery (`findCodeGraphRoot`) — adapted from `viniraioli/pi-codegraph`.
 - Same-project call serialization queue, `ctx.cwd` default project path, directory entrypoint, and lint-compliance — locally authored.
+- Guidance injected as the `codegraph` system-prompt section instead of appended to the system prompt — locally authored.
 
 `AGENTS.md` holds the per-change table (what / why / origin) and is the source of truth for divergences.
 
 ## Entry Points
 
 - `codegraph_*` tools — search, callers/callees, impact, explore, node, status, and files. All accept optional `projectPath`; without it they use the active Pi `ctx.cwd`. Tool schemas and the `before_agent_start` guidance hook are registered in [`index.ts`](index.ts).
-- When the active project has a valid `.codegraph/` marker, CodeGraph-first guidance is appended to the system prompt each turn.
+- When the active project has a valid `.codegraph/` marker, CodeGraph-first guidance is added as the `codegraph` system-prompt section each turn.
 
 ## Configuration / Requirements
 

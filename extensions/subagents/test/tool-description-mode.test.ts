@@ -134,7 +134,7 @@ describe("toolDescriptionMode", () => {
     expect(parameterDescription).not.toContain("chengfeng");
   });
 
-  it("replaces the current permitted-target hint as mode policy changes", async () => {
+  it("sets the subagents prompt section as mode policy changes", async () => {
     const tools = setup({ toolDescriptionMode: "full" }, () => {
       const dir = join(tmpDir, ".pi", "agents");
       mkdirSync(dir);
@@ -147,28 +147,30 @@ describe("toolDescriptionMode", () => {
     ];
     const ctx = { sessionManager: { getEntries: () => entries } };
     const beforeAgentStart = currentHandlers.get("before_agent_start");
+    const run = async () => {
+      const sections: Record<string, string> = { other: "kept" };
+      const result = await beforeAgentStart({ systemPrompt: "BASE", systemPromptOptions: { sections } }, ctx);
+      return { result, sections };
+    };
 
-    const first = await beforeAgentStart({ systemPrompt: "BASE" }, ctx);
-    expect(first.systemPrompt.match(/<!-- subagents:delegation-policy -->/g)).toHaveLength(1);
-    expect(first.systemPrompt).toContain("alpha");
-    expect(first.systemPrompt).not.toContain("beta");
-    const unchanged = await beforeAgentStart({ systemPrompt: first.systemPrompt }, ctx);
-    expect(unchanged.systemPrompt).toBe(first.systemPrompt);
+    const first = await run();
+    expect(first.result).toBeUndefined();
+    expect(first.sections.subagents).toBe("Current mode kuafu permitted delegation targets: alpha");
+    expect(first.sections.other).toBe("kept");
 
     entries = [
       { type: "custom", customType: "agent-mode", data: { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: ["beta"], disallowDelegationTo: [] } } },
     ];
-    const second = await beforeAgentStart({ systemPrompt: first.systemPrompt }, ctx);
-    expect(second.systemPrompt.match(/<!-- subagents:delegation-policy -->/g)).toHaveLength(1);
-    expect(second.systemPrompt).toContain("beta");
-    expect(second.systemPrompt).not.toContain("alpha");
+    expect((await run()).sections.subagents).toBe("Current mode fuxi permitted delegation targets: beta");
 
     entries = [{ type: "custom", customType: "agent-mode", data: { mode: "fuxi" } }];
-    const unresolved = await beforeAgentStart({ systemPrompt: second.systemPrompt }, ctx);
-    expect(unresolved.systemPrompt).toContain("permitted delegation targets: none");
+    expect((await run()).sections.subagents).toContain("permitted delegation targets: none");
 
     currentActiveTools.length = 0;
-    expect(await beforeAgentStart({ systemPrompt: "BASE" }, ctx)).toBeUndefined();
+    const inactive = await run();
+    expect(inactive.result).toBeUndefined();
+    expect(inactive.sections.subagents).toBeUndefined();
+    expect(inactive.sections.other).toBe("kept");
   });
 
   it("background guidance blocks instead of ending the turn", () => {

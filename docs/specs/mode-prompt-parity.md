@@ -38,7 +38,7 @@ Audit-only findings for [`agents/yanluo.md`](../../agents/yanluo.md) and [`modes
 - `mode.md`: default body. Frontmatter + body parsed. Default/unknown family uses this body unchanged.
 - `gpt.md`: body-only replacement. If present and non-empty, it replaces the `mode.md` body while retaining parsed frontmatter config from `mode.md`. A mode without a `gpt.md` uses the default `mode.md` body for GPT-family runs.
 - `gemini.md`: body-only overlay. If present and non-empty, it is injected into the default `mode.md` body before `<critical>`, else after `</role>`, else appended.
-- Hook behavior: resolved model family is applied before prompt injection. Active mode body is wrapped in `<!-- mode:<mode> --> ... <!-- /mode:<mode> -->`; stale mode blocks are stripped before replacement.
+- Hook behavior: resolved model family is applied before prompt injection. The active mode body becomes the `modes` system-prompt section, so switching modes replaces it.
 
 ## File Matrix
 

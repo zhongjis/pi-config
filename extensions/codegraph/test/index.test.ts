@@ -36,7 +36,10 @@ type ToolDefinition = {
   ) => Promise<{ content: Array<{ type: "text"; text: string }>; details: Record<string, unknown> }>;
 };
 
-type Handler = (event: { systemPrompt?: string }, ctx?: { cwd: string }) => Promise<{ systemPrompt?: string }>;
+type Handler = (
+  event: { systemPrompt?: string; systemPromptOptions?: { sections: Record<string, string> } },
+  ctx?: { cwd: string },
+) => Promise<unknown>;
 
 type MockPi = {
   tools: Map<string, ToolDefinition>;
@@ -378,12 +381,13 @@ describe("codegraph extension", () => {
     codegraphExtension(mock.pi as never);
     const handler = mock.handlers.get("before_agent_start");
     expect(handler).toBeDefined();
-    const result = await handler!({ systemPrompt: "base" }, { cwd: tempRoot });
-    const appended = result.systemPrompt?.slice("base\n\n".length);
+    const sections: Record<string, string> = { existing: "keep" };
+    const result = await handler!({ systemPrompt: "base", systemPromptOptions: { sections } }, { cwd: tempRoot });
 
-    expect(result.systemPrompt).toBeDefined();
-    expect(result.systemPrompt?.startsWith("base\n\n")).toBe(true);
-    expect(appended?.length).toBeGreaterThan(0);
+    expect(result).toBeUndefined();
+    expect(Object.keys(sections).sort()).toEqual(["codegraph", "existing"]);
+    expect(sections.codegraph.length).toBeGreaterThan(0);
+    expect(sections.existing).toBe("keep");
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
@@ -394,9 +398,11 @@ describe("codegraph extension", () => {
     codegraphExtension(mock.pi as never);
     const handler = mock.handlers.get("before_agent_start");
     expect(handler).toBeDefined();
-    const result = await handler!({ systemPrompt: "base" }, { cwd: tempRoot });
+    const sections: Record<string, string> = {};
+    const result = await handler!({ systemPrompt: "base", systemPromptOptions: { sections } }, { cwd: tempRoot });
 
-    expect(result.systemPrompt).toBeUndefined();
+    expect(result).toBeUndefined();
+    expect(sections).toEqual({});
     expect(spawnMock).not.toHaveBeenCalled();
   });
 
@@ -1028,9 +1034,11 @@ describe("codegraph extension", () => {
     const handler = mock.handlers.get("before_agent_start");
     expect(handler).toBeDefined();
 
-    const result = await handler!({ systemPrompt: "base" }, { cwd: nested });
+    const sections: Record<string, string> = {};
+    const result = await handler!({ systemPrompt: "base", systemPromptOptions: { sections } }, { cwd: nested });
 
-    expect(result.systemPrompt).toBeUndefined();
+    expect(result).toBeUndefined();
+    expect(sections).toEqual({});
     expect(spawnMock).not.toHaveBeenCalled();
   });
 

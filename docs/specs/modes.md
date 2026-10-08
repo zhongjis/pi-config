@@ -55,7 +55,7 @@ Each mode reads its prompt and settings from `~/.pi/agent/modes/<mode>/mode.md` 
 
 [`agent-frontmatter.ts`](../../extensions/lib/agent-frontmatter.ts) defines the frontmatter fields and how they are parsed. The [agent frontmatter guide](../guides/agent-frontmatter.md) explains how to author them. Mode-specific rules:
 
-- `prompt_mode` defaults to `replace`, which strips earlier mode bodies and then appends the wrapped current body. `append` adds the wrapped body without stripping, and `system_instructions` is treated as `replace`. Modes always run with project AGENTS.md present; `prompt_mode` does not control AGENTS.md injection.
+- `prompt_mode` has no effect on modes; see [Prompt Injection](#prompt-injection). Modes always run with project AGENTS.md present.
 - `tools` is the mode's permission ceiling, not activation: Pi and owning extensions decide what's active; unpermitted tools are hidden from the model by `mode_tool_ceiling`, and every unpermitted call is blocked, top-level and nested. A mode file without `tools` permits no tools, and so does a missing or invalid mode file (whose errors are notified). `extensions` is an error in a mode file.
 - `allow_nesting` permits nested subagent controls only when `tools` also grants them.
 - `disallow_delegation_to` is applied as exclusions from `allow_delegation_to` when both are set.
@@ -63,7 +63,7 @@ Each mode reads its prompt and settings from `~/.pi/agent/modes/<mode>/mode.md` 
 
 ### Prompt Injection
 
-The mode body is wrapped in HTML comment markers (`<!-- mode:<name> -->`) and injected into the system prompt. When `prompt_mode` is `replace`, any existing mode body markers are stripped before injection.
+On every top-level prompt, the active mode's body, with model-family overlays applied, becomes the `modes` system-prompt section (`<modes>…</modes>`), following the [extension prompt-section contract](../../extensions/AGENTS.md). Switching modes replaces that section. Pi records the change as a transcript delta instead of rewriting the prompt head. Subagent sessions get no mode section.
 
 ---
 

@@ -10,6 +10,12 @@ Vendored `pi-boomerang` extension for token-efficient autonomous task execution.
 - License: not declared upstream
 - Local changes: adds `/boomerang:commit` and local tool rendering; README is in local repo format; upstream package files are omitted because root dependencies provide the required packages.
 
+## Local Tweaks
+
+Current divergences from upstream; re-apply each on upstream sync:
+
+- **Patched:** `index.ts` `before_agent_start` sets the `boomerang` prompt section (tool guidance, boomerang instructions, rethrow context, and the one-shot skill block) instead of returning a rewritten `systemPrompt`; it sets nothing when none applies.
+
 ## Entry Points
 
 - `/boomerang <task>` — run a task autonomously, then summarize the branch. Supports `--rethrow N` passes and `/a -> /b` prompt-template chains.

@@ -2263,7 +2263,7 @@ export default function (pi: ExtensionAPI) {
   }
 
   pi.on("before_agent_start", async (event, ctx) => {
-    let systemPrompt = event.systemPrompt;
+    const parts: string[] = [];
 
     if (autoBoomerangCandidate && autoBoomerangEnabled && !boomerangActive && !pendingCollapse && !rethrowState && !chainState && !toolCollapsePending && !toolQueuedTask && !toolAnchorEntryId) {
       const candidate = autoBoomerangCandidate;
@@ -2293,25 +2293,25 @@ export default function (pi: ExtensionAPI) {
       const guidance = toolGuidance
         ? `The boomerang tool is available for token-efficient task execution. ${toolGuidance}`
         : "The boomerang tool is available for token-efficient task execution. Use it for large, multi-step tasks where collapsing context afterward would be beneficial.";
-      systemPrompt += `\n\n${guidance}`;
+      parts.push(guidance);
     }
 
     if (boomerangActive) {
-      systemPrompt += "\n\n" + BOOMERANG_INSTRUCTIONS;
+      parts.push(BOOMERANG_INSTRUCTIONS);
 
       if (rethrowState) {
-        systemPrompt += `\n\nRETHROW ${rethrowState.currentRethrow}/${rethrowState.rethrowCount}\nYou are on rethrow ${rethrowState.currentRethrow} of ${rethrowState.rethrowCount}. Previous rethrows made changes that are already applied to the codebase. Build on that work.`;
+        parts.push(`RETHROW ${rethrowState.currentRethrow}/${rethrowState.rethrowCount}\nYou are on rethrow ${rethrowState.currentRethrow} of ${rethrowState.rethrowCount}. Previous rethrows made changes that are already applied to the codebase. Build on that work.`);
       }
 
       if (pendingSkill) {
         ctx.ui.notify(`Skill "${pendingSkill.name}" loaded`, "info");
-        systemPrompt += `\n\n<skill name="${pendingSkill.name}">\n${pendingSkill.content}\n</skill>`;
+        parts.push(`<skill name="${pendingSkill.name}">\n${pendingSkill.content}\n</skill>`);
         pendingSkill = null;
       }
     }
 
-    if (systemPrompt !== event.systemPrompt) {
-      return { systemPrompt };
+    if (parts.length > 0) {
+      event.systemPromptOptions.sections.boomerang = parts.join("\n\n");
     }
   });
 

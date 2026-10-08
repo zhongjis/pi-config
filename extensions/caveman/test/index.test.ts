@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 
-type BeforeAgentStartResult = { systemPrompt: string } | undefined;
+type BeforeAgentStartResult = Record<string, unknown> | undefined;
+
+let lastSections: Record<string, string> = {};
 
 let originalHome: string | undefined;
 let tempHome = "";
@@ -62,7 +64,11 @@ async function fireBeforeAgentStart(
 ): Promise<BeforeAgentStartResult> {
 	const handlers = mock.lifecycleHandlers.get("before_agent_start") ?? [];
 	expect(handlers.length).toBeGreaterThan(0);
-	return (await handlers[0]({ systemPrompt }, ctx)) as BeforeAgentStartResult;
+	lastSections = { existing: "keep" };
+	return (await handlers[0](
+		{ type: "before_agent_start", prompt: "", systemPrompt, systemPromptOptions: { sections: lastSections } },
+		ctx,
+	)) as BeforeAgentStartResult;
 }
 
 function getCavemanCommand(mock: ReturnType<typeof createMockPi>) {
@@ -94,9 +100,10 @@ describe("caveman extension", () => {
 
 		const result = await fireBeforeAgentStart(mock, ctx);
 
-		expect(result).toBeDefined();
-		expect(result?.systemPrompt.startsWith("Base prompt\n\n")).toBe(true);
-		expect(result?.systemPrompt.length).toBeGreaterThan("Base prompt\n\n".length);
+		expect(result).toBeUndefined();
+		expect(Object.keys(lastSections).sort()).toEqual(["caveman", "existing"]);
+		expect(lastSections.caveman.length).toBeGreaterThan(0);
+		expect(lastSections.existing).toBe("keep");
 	});
 
 	it("injects into non-persisted subagent sessions", async () => {
@@ -108,9 +115,10 @@ describe("caveman extension", () => {
 
 		const result = await fireBeforeAgentStart(mock, ctx);
 
-		expect(result).toBeDefined();
-		expect(result?.systemPrompt.startsWith("Base prompt\n\n")).toBe(true);
-		expect(result?.systemPrompt.length).toBeGreaterThan("Base prompt\n\n".length);
+		expect(result).toBeUndefined();
+		expect(Object.keys(lastSections).sort()).toEqual(["caveman", "existing"]);
+		expect(lastSections.caveman.length).toBeGreaterThan(0);
+		expect(lastSections.existing).toBe("keep");
 	});
 
 	it("does not inject when the caveman level is off", async () => {
@@ -154,7 +162,8 @@ describe("caveman extension", () => {
 		const command = getCavemanCommand(mock);
 
 		const beforeOff = await fireBeforeAgentStart(mock, ctx);
-		expect(beforeOff?.systemPrompt.startsWith("Base prompt\n\n")).toBe(true);
+		expect(beforeOff).toBeUndefined();
+		expect(lastSections.caveman.length).toBeGreaterThan(0);
 
 		await command.handler("off", ctx);
 

@@ -239,4 +239,21 @@ describe("session-local extension composition", () => {
     // input untouched — the read never proceeds
     expect(event.input.path).toBe("local://missing.md");
   });
+
+  it("sets the session_local prompt section without returning a systemPrompt", async () => {
+    const mock = createMockPi();
+    sessionLocalTools(mock.pi as never);
+    const sections: Record<string, string> = { existing: "keep" };
+
+    const results = await mock.fire(
+      "before_agent_start",
+      { type: "before_agent_start", prompt: "", systemPrompt: "Base", systemPromptOptions: { sections } },
+      createCtx(),
+    );
+
+    expect(results).toEqual([undefined]);
+    expect(Object.keys(sections).sort()).toEqual(["existing", "session_local"]);
+    expect(sections.session_local.length).toBeGreaterThan(0);
+    expect(sections.existing).toBe("keep");
+  });
 });

@@ -43,11 +43,7 @@ interface CavemanCommandContext {
 }
 
 interface BeforeAgentStartEvent {
-  systemPrompt: string;
-}
-
-interface BeforeAgentStartResult {
-  systemPrompt: string;
+  systemPromptOptions: { sections: Record<string, string> };
 }
 
 interface CommandArgumentCompletion {
@@ -65,7 +61,7 @@ interface CavemanExtensionApi {
     handler: (
       event: BeforeAgentStartEvent,
       ctx: CavemanSessionContext,
-    ) => Promise<BeforeAgentStartResult | void> | BeforeAgentStartResult | void,
+    ) => Promise<void> | void,
   ): void;
   on(
     event: "session_shutdown",
@@ -190,12 +186,7 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
     }
 
     try {
-      const injectedPrompt = buildInjectedPrompt(level);
-      return {
-        systemPrompt: event.systemPrompt
-          ? `${event.systemPrompt}\n\n${injectedPrompt}`
-          : injectedPrompt,
-      };
+      event.systemPromptOptions.sections.caveman = buildInjectedPrompt(level).trim();
     } catch {
       return;
     }

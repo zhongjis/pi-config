@@ -453,8 +453,16 @@ describe("Boomerang Extension", () => {
     await getCommand("boomerang-retry-summary")("", ctx);
   }
 
-  async function fireBeforeAgentStart(systemPrompt = "original") {
-    return await getHandler("before_agent_start")({ systemPrompt }, mockCtx);
+  // Runs before_agent_start and returns the `boomerang` prompt section (undefined when unset).
+  async function fireBeforeAgentStart(systemPrompt = "original", ctx: ExtensionContext = mockCtx) {
+    const sections: Record<string, string> = { other: "kept" };
+    const result = await getHandler("before_agent_start")(
+      { type: "before_agent_start", prompt: "", systemPrompt, systemPromptOptions: { sections } },
+      ctx,
+    );
+    expect(result).toBeUndefined();
+    expect(sections.other).toBe("kept");
+    return sections.boomerang;
   }
 
   async function fireInput(text: string, source: "interactive" | "rpc" | "extension" = "interactive") {
@@ -551,10 +559,8 @@ describe("Boomerang Extension", () => {
     }
   }
 
-  function expectPromptPatch(result: { systemPrompt: string } | undefined, basePrompt = "original") {
-    expect(result).toBeDefined();
-    expect(result?.systemPrompt.startsWith(basePrompt)).toBe(true);
-    expect(result?.systemPrompt).not.toBe(basePrompt);
+  function expectPromptPatch(section: string | undefined) {
+    expect(section).toBeTruthy();
   }
 
   beforeEach(() => {
@@ -922,7 +928,7 @@ describe("Boomerang Extension", () => {
       const result = await fireBeforeAgentStart();
 
       expectPromptPatch(result);
-      expect(result.systemPrompt).toContain('<skill name="git-master">\nUse git carefully.\n</skill>');
+      expect(result).toContain('<skill name="git-master">\nUse git carefully.\n</skill>');
       expect(uiMock.notify).toHaveBeenCalledWith('Skill "git-master" loaded', "info");
     });
 
@@ -931,7 +937,7 @@ describe("Boomerang Extension", () => {
       const prompts: string[] = [];
       waitForIdleMock.mockImplementation(async () => {
         const beforeStart = await fireBeforeAgentStart("original");
-        prompts.push(beforeStart?.systemPrompt ?? "original");
+        prompts.push(beforeStart ?? "");
         agentIdle = true;
       });
 
@@ -1282,7 +1288,7 @@ describe("Boomerang Extension", () => {
       const result = await fireBeforeAgentStart();
 
       expectPromptPatch(result);
-      expect(result.systemPrompt).toContain(
+      expect(result).toContain(
         '<skill name="git-workflow">\nUse careful git commits.\n</skill>',
       );
       expect(uiMock.notify).toHaveBeenCalledWith('Skill "git-workflow" loaded', "info");
@@ -1296,7 +1302,7 @@ describe("Boomerang Extension", () => {
 
       expect(uiMock.notify).toHaveBeenCalledWith('Skill "missing-skill" not found', "warning");
       expect(sentMessages).toEqual(["Commit fix auth"]);
-      expect(result.systemPrompt).not.toContain("<skill");
+      expect(result).not.toContain("<skill");
     });
 
     it("warns and preserves details when a skill file cannot be read", async () => {
@@ -1310,7 +1316,7 @@ describe("Boomerang Extension", () => {
         level === "warning" && message.startsWith('Failed to read skill "broken-skill":')
       )).toBe(true);
       expect(sentMessages).toEqual(["Commit fix auth"]);
-      expect(result.systemPrompt).not.toContain("<skill");
+      expect(result).not.toContain("<skill");
     });
   });
 
@@ -1981,14 +1987,14 @@ describe("Boomerang Extension", () => {
       const prompts: string[] = [];
       waitForIdleMock.mockImplementation(async () => {
         const beforeStart = await fireBeforeAgentStart("original");
-        prompts.push(beforeStart?.systemPrompt ?? "original");
+        prompts.push(beforeStart ?? "");
         agentIdle = true;
       });
 
       await runBoomerang("/task --rethrow 2");
 
       expect(prompts).toHaveLength(2);
-      expect(prompts.every((prompt) => prompt.startsWith("original") && prompt !== "original")).toBe(true);
+      expect(prompts.every((prompt) => prompt.length > 0)).toBe(true);
       expect(prompts[0]).not.toBe(prompts[1]);
     });
   });
@@ -2806,7 +2812,7 @@ describe("Boomerang Extension", () => {
       await getShortcut("ctrl+alt+b")(noUiCtx);
 
       await getHandler("input")({ type: "input", text: "no ui shortcut task", source: "interactive" }, noUiCtx);
-      const beforeStart = await getHandler("before_agent_start")({ systemPrompt: "original" }, noUiCtx);
+      const beforeStart = await fireBeforeAgentStart("original", noUiCtx);
       addSessionEntry({
         type: "message",
         message: { role: "user", content: "no ui shortcut task", timestamp: Date.now() },
@@ -3371,7 +3377,7 @@ describe("Boomerang Extension", () => {
 
       const result = await fireBeforeAgentStart("original prompt");
 
-      expect(result?.systemPrompt).toContain("Use for tasks that modify 3+ files");
+      expect(result).toContain("Use for tasks that modify 3+ files");
     });
 
     it("uses default guidance when tool enabled without custom guidance", async () => {
@@ -3379,7 +3385,7 @@ describe("Boomerang Extension", () => {
 
       const result = await fireBeforeAgentStart("original prompt");
 
-      expectPromptPatch(result, "original prompt");
+      expectPromptPatch(result);
     });
 
     it("does not inject guidance when tool is disabled", async () => {

@@ -84,11 +84,11 @@ Fields whose purpose the code does not make obvious:
 
 ## Mode frontmatter
 
-A mode file uses the **same parser**, but `parseModeAgentConfig` reads only
-`tools`, the delegation fields, `allow_nesting`, `prompt_mode`, and `model`.
+A mode file uses the **same parser**, but [`parseModeAgentConfig`](../../extensions/modes/src/config-loader.ts) reads only
+`tools`, the delegation fields, `allow_nesting`, and `model`.
 Mode-specific differences:
 
-- `prompt_mode` collapses `system_instructions` to `replace`, and does **not** control AGENTS.md injection — modes always run with project AGENTS.md present.
+- The body becomes the `modes` system-prompt section; modes always run with project AGENTS.md present.
 - `model` is overridable per session with `/mode-model`.
 - `extensions` is an error: the main session cannot unload an extension.
 - A mode file without `tools` grants no tools.
@@ -102,7 +102,7 @@ These commonly appear in `mode.md` frontmatter for parity/documentation but are
   [`extensions/modes/src/constants.ts`](../../extensions/modes/src/constants.ts),
   not the frontmatter.
 - `inherit_context`, `run_in_background`, `isolated`, `max_turns`,
-  `discover_skills`, `preload_skills`, `enabled` — ignored by `parseModeAgentConfig`.
+  `discover_skills`, `preload_skills`, `enabled`, `prompt_mode` — ignored by `parseModeAgentConfig`.
 
 Mode-scoped skills are handled separately through `<mode>/skills/*/SKILL.md`
 (see [`modes/AGENTS.md`](../../modes/AGENTS.md)), not the `discover_skills`/`preload_skills` frontmatter keys.
@@ -125,13 +125,13 @@ the active model id.
 
 ## prompt_mode
 
-`prompt_mode` decides how the body becomes the system prompt.
+`prompt_mode` decides how a subagent body becomes the system prompt. Modes ignore it ([Mode frontmatter](#mode-frontmatter)).
 
-| Value | Subagent behavior | Mode behavior |
-|-------|-------------------|---------------|
-| `replace` (default) | Body **is** the full system prompt. No parent identity, no AGENTS.md. | Strips previous mode bodies, then injects this body. |
-| `append` | Body appended to the parent system prompt (parent identity **and** AGENTS.md preserved). | Injects body without stripping prior mode bodies. |
-| `system_instructions` | Body is the full system prompt (no parent identity bleed), but pi auto-injects AGENTS.md as a `# Project Context` block after the body. | Coerced to `replace`. |
+| Value | Behavior |
+|-------|----------|
+| `replace` (default) | Body **is** the full system prompt. No parent identity, no AGENTS.md. |
+| `append` | Body appended to the parent system prompt (parent identity **and** AGENTS.md preserved). |
+| `system_instructions` | Body is the full system prompt (no parent identity bleed), but pi auto-injects AGENTS.md as a `# Project Context` block after the body. |
 
 Guidance for subagents:
 

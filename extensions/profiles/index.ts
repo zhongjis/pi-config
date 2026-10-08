@@ -436,13 +436,6 @@ export default function profilesExtension(pi: ExtensionAPI): void {
 
   let notifiedSessionStart = false;
 
-  function appendSystemPrompt(systemPrompt: string, extra: string): string {
-    if (systemPrompt.includes(extra)) return systemPrompt;
-    return systemPrompt.trimEnd()
-      ? `${systemPrompt.trimEnd()}\n\n${extra}`
-      : extra;
-  }
-
   pi.on("session_start", async (_event, ctx) => {
     notifiedSessionStart = false;
     await applyProfile(ctx, { restoreSession: true });
@@ -457,12 +450,7 @@ export default function profilesExtension(pi: ExtensionAPI): void {
     await applyProfile(ctx);
     const active = getActiveConfig();
     if (active.systemPrompt) {
-      return {
-        systemPrompt: appendSystemPrompt(
-          event.systemPrompt,
-          active.systemPrompt,
-        ),
-      };
+      event.systemPromptOptions.sections.profiles = active.systemPrompt;
     }
   });
 

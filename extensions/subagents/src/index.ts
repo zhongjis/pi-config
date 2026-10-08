@@ -27,7 +27,7 @@ import { getDefaultMaxTurns, getGraceTurns, SUBAGENT_TOOL_NAMES, setDefaultMaxTu
 import { getAvailableTypes, isDefaultsDisabled, registerAgents, setDefaultsDisabled } from "./agent-types.js";
 import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
-import { replaceDelegationPolicyHint } from "./delegation-hint.js";
+import { renderDelegationPolicyHint } from "./delegation-hint.js";
 import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy, resolvePersistedDelegationPolicyContext } from "./delegation-policy.js";
 import { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData } from "./graph/entry.js";
 import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
@@ -270,7 +270,7 @@ export default function (pi: ExtensionAPI) {
       entries: readModeEntries(ctx),
       availableTypes: getAvailableTypes(),
     });
-    return { systemPrompt: replaceDelegationPolicyHint(event.systemPrompt, policy) };
+    event.systemPromptOptions.sections.subagents = renderDelegationPolicyHint(policy);
   });
 
   // Expose manager via Symbol.for() global registry for cross-package access.

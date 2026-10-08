@@ -177,11 +177,19 @@ describe("tool_result rewrite", () => {
 });
 
 describe("before_agent_start", () => {
-  it("appends a non-empty patch while preserving the base system prompt", async () => {
+  it("sets the github_fs section without returning a systemPrompt or touching other sections", async () => {
+    const mock = setup();
+    const sections: Record<string, string> = { existing: "keep" };
+    const [patch] = await mock.fire("before_agent_start", { systemPrompt: "BASE", systemPromptOptions: { sections } });
+    expect(patch).toBeUndefined();
+    expect(Object.keys(sections).sort()).toEqual(["existing", "github_fs"]);
+    expect(sections.github_fs.length).toBeGreaterThan(0);
+    expect(sections.existing).toBe("keep");
+  });
+
+  it("is a no-op when the event lacks systemPromptOptions", async () => {
     const mock = setup();
     const [patch] = await mock.fire("before_agent_start", { systemPrompt: "BASE" });
-    const typed = patch as { systemPrompt: string };
-    expect(typed.systemPrompt.startsWith("BASE")).toBe(true);
-    expect(typed.systemPrompt.length).toBeGreaterThan("BASE".length);
+    expect(patch).toBeUndefined();
   });
 });

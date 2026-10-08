@@ -37,7 +37,7 @@ interface ToolExecutionEndEvent {
 }
 
 interface BeforeAgentStartEvent {
-  systemPrompt: string;
+  systemPromptOptions?: { sections?: Record<string, string> };
 }
 
 interface ToolResultTextBlock {
@@ -87,8 +87,6 @@ const LOCAL_ROOT_LISTING_FILE = ".local-root-listing.md";
 const SESSION_LOCAL_TOOL_NAMES = new Set(["read", "write", "edit"]);
 
 const PROMPT_GUIDE = [
-  "",
-  "",
   "## Agent-tree-local storage (session-local)",
   "Read and write scratch/working files at `local://` paths with the `read`, `write`, and `edit` tools — no separate tool:",
   "- `write` to a `local://<rel/path>` path creates or overwrites a file; `read` and `edit` take the same `local://` paths.",
@@ -327,9 +325,11 @@ export default function sessionLocalTools(pi: ExtensionAPI): void {
   // Teach the model the local:// path grammar (part of the cacheable system prompt).
   pi.on("before_agent_start", async (rawEvent) => {
     const event = rawEvent as BeforeAgentStartEvent | null;
-    if (!event || typeof event.systemPrompt !== "string") {
+    const sections = event?.systemPromptOptions?.sections;
+    if (!sections) {
       return undefined;
     }
-    return { systemPrompt: event.systemPrompt + PROMPT_GUIDE };
+    sections.session_local = PROMPT_GUIDE;
+    return undefined;
   });
 }

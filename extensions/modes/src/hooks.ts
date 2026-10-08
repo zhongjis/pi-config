@@ -74,20 +74,6 @@ async function refreshPlanStateFromLocalPlan(ctx: Parameters<typeof readLocalPla
 	state.planTitleSource = title ? "content-h1" : undefined;
 }
 
-// ─── HTML comment markers for mode body injection ────────────────────────────
-
-function modeMarkerStart(mode: Mode): string {
-	return `<!-- mode:${mode} -->`;
-}
-
-function modeMarkerEnd(mode: Mode): string {
-	return `<!-- /mode:${mode} -->`;
-}
-
-function stripModeBodiesFromSystemPrompt(systemPrompt: string): string {
-	return systemPrompt.replace(/<!-- mode:\w+ -->[\s\S]*?<!-- \/mode:\w+ -->/g, "").trim();
-}
-
 function injectOverlays(body: string, overlays: string): string {
 	// Inject overlays BEFORE <critical> section (lost-in-the-middle fix)
 	const anchor = "<critical>";
@@ -104,27 +90,6 @@ function injectOverlays(body: string, overlays: string): string {
 	}
 	// Last resort: append at end
 	return `${body}\n\n${overlays}`;
-}
-
-function buildModeSystemPrompt(
-	systemPrompt: string,
-	state: ModeStateManager,
-	config: ReturnType<ModeStateManager["loadConfig"]>,
-): string {
-	if (!config.body) {
-		return systemPrompt;
-	}
-
-	// Apply Gemini overlays into body before wrapping
-	const effectiveBody = config.overlays ? injectOverlays(config.body, config.overlays) : config.body;
-	const wrappedBody = `${modeMarkerStart(state.currentMode)}\n${effectiveBody}\n${modeMarkerEnd(state.currentMode)}`;
-
-	if (config.promptMode === "replace") {
-		const strippedBasePrompt = stripModeBodiesFromSystemPrompt(systemPrompt).trimEnd();
-		return strippedBasePrompt ? `${strippedBasePrompt}\n\n${wrappedBody}` : wrappedBody;
-	}
-
-	return `${systemPrompt}\n\n${wrappedBody}`;
 }
 
 // ─── Session start sub-steps ─────────────────────────────────────────────────
@@ -283,9 +248,9 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		// Second pass: reload with resolved family (picks up gpt.md body or gemini.md overlays)
 		const config = state.loadConfig(state.currentMode, state.resolvedFamily);
 
-		const systemPrompt = buildModeSystemPrompt(event.systemPrompt, state, config);
-		if (systemPrompt === event.systemPrompt) return;
-		return { systemPrompt };
+		if (config.body) {
+			event.systemPromptOptions.sections.modes = config.overlays ? injectOverlays(config.body, config.overlays) : config.body;
+		}
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {

@@ -15,8 +15,7 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 
 - Mode prompts MUST retain global AGENTS rules and shared frontmatter semantics.
 - Mode tool access MUST resolve `tools:` rules through shared `resolveToolAccess`; this decides permission only, never activation — Pi and owning extensions activate tools (see [`active-tools.ts`](../lib/active-tools.ts)). `mode_tool_ceiling` MUST stay active (re-added on `turn_end` when replaced) to hide declared-but-unpermitted tools; the `tool_call` guard MUST veto every unpermitted call, top-level and nested. NEVER prune the active set per turn. A missing or invalid mode file MUST fail closed (no tools permitted; invalid-file errors notified). Fu Xi plan tools are permitted only in `fuxi`; subagent sessions are left to their own frontmatter scope.
-- Replacement MUST strip prior mode bodies; append mode stacks them.
-- `system_instructions` prompt mode is coerced to replacement here.
+- The mode body MUST be published only as `event.systemPromptOptions.sections.modes` (never a returned `systemPrompt`); `prompt_mode` does not apply to modes.
 - Session model and effort (thinking-level) overrides MUST NOT rewrite mode frontmatter; they are captured from `/mode-model` and manual mid-session model/effort picks, persist with mode state, and clear via `/mode-model --reset`.
 - Model reapplication MUST compare provider, ID, and API; reload replaces same-ID models when the registry transport changes.
 - Runtime quota/rate-limit/access-denied fallback MUST use the override or active mode chain after native settlement, with the shared lib coordinator; no chain means no recovery. Apply the next candidate's thinking/Fast defaults without replaying the prompt.

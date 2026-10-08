@@ -1077,7 +1077,7 @@ export default function codegraphExtension(pi: ExtensionAPI): void {
     // Only steer toward CodeGraph when the active project has a valid .codegraph project marker.
     // This hook fires once per user turn and ctx.cwd is read fresh each time, so a
     // marker created mid-session is picked up next turn.
-    if (!findCodeGraphRoot(ctx.cwd)) return {};
+    if (!findCodeGraphRoot(ctx.cwd)) return;
 
     const guidance = [
       "For architecture, flow, where-is-symbol, impact, and codebase navigation questions, use CodeGraph (codegraph_* tools) directly before grep/read.",
@@ -1089,9 +1089,7 @@ export default function codegraphExtension(pi: ExtensionAPI): void {
       "Otherwise use grep/read only after CodeGraph is insufficient or when the user asks for literal text matching.",
     ].join("\n");
 
-    return {
-      systemPrompt: event.systemPrompt ? `${event.systemPrompt}\n\n${guidance}` : guidance,
-    };
+    event.systemPromptOptions.sections.codegraph = guidance;
   });
 
   for (const tool of ToolDefinitions) {

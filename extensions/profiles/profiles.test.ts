@@ -383,23 +383,30 @@ describe("--profile CLI flag", () => {
 // Offline behavior merged into local profile
 // ---------------------------------------------------------------------------
 
+function beforeAgentStartEvent() {
+	return { type: "before_agent_start", prompt: "", systemPrompt: "Base", systemPromptOptions: { sections: { other: "kept" } as Record<string, string> } };
+}
+
 describe("local profile offline guards", () => {
 	it("injects offline system prompt via before_agent_start when local profile is active", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness();
 		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
-		const [result] = await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx) as [{ systemPrompt: string }];
-		expect(result.systemPrompt).toContain("Base");
-		expect(result.systemPrompt).toContain(OFFLINE_SYSTEM_PROMPT);
+		const event = beforeAgentStartEvent();
+		const [result] = await harness.fire("before_agent_start", event, ctx);
+		expect(result).toBeUndefined();
+		expect(event.systemPromptOptions.sections).toEqual({ other: "kept", profiles: OFFLINE_SYSTEM_PROMPT });
 	});
 
 	it("does not inject system prompt for default profile", async () => {
 		const harness = createHarness();
 		const ctx = createContext(anthropicModel);
 		await harness.fire("session_start", {}, ctx);
-		const [result] = await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx);
+		const event = beforeAgentStartEvent();
+		const [result] = await harness.fire("before_agent_start", event, ctx);
 		expect(result).toBeUndefined();
+		expect(event.systemPromptOptions.sections).toEqual({ other: "kept" });
 	});
 
 	it("blocks external research tools and wenchang delegation when local profile is active", async () => {
@@ -412,6 +419,8 @@ describe("local profile offline guards", () => {
 			const [result] = await harness.fire("tool_call", { type: "tool_call", toolCallId: toolName, toolName, input: {} }, ctx);
 			expect(result).toMatchObject({ block: true, reason: expect.stringContaining(toolName) });
 		}
+		const [allowedResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "read", toolName: "read", input: {} }, ctx);
+		expect(allowedResult).toBeUndefined();
 		const [agentResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent", toolName: "agent", input: { subagent_type: "wenchang" } }, ctx);
 		expect(agentResult).toMatchObject({ block: true, reason: expect.stringContaining("wenchang") });
 	});
@@ -419,8 +428,6 @@ describe("local profile offline guards", () => {
 	it("allows allowed agent calls through when local profile is active", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness();
-		const [allowedResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "read", toolName: "read", input: {} }, ctx);
-		expect(allowedResult).toBeUndefined();
 		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
 		const [result] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent-1", toolName: "agent", input: { subagent_type: "chengfeng" } }, ctx);
@@ -440,8 +447,8 @@ describe("local profile offline guards", () => {
 		const harness = createHarness();
 		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
-		await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx);
-		await harness.fire("before_agent_start", { systemPrompt: "Base" }, ctx);
+		await harness.fire("before_agent_start", beforeAgentStartEvent(), ctx);
+		await harness.fire("before_agent_start", beforeAgentStartEvent(), ctx);
 		expect(ctx.ui.notify).toHaveBeenCalledTimes(1);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
 			expect.stringContaining("local models only"),

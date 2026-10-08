@@ -5,11 +5,8 @@ type ThinkingLevel = ReturnType<ExtensionAPI["getThinkingLevel"]>;
 
 export type Mode = "kuafu" | "fuxi" | "houtu";
 
-export type ModePromptMode = "append" | "replace";
-
 export interface ModeConfig {
   body: string;
-  promptMode?: ModePromptMode;
   /** Signed `tools:` rules; `[]` grants no tools. */
   toolRules: AccessRule[];
   /** Error diagnostics of an invalid mode file, which grants no tools. */

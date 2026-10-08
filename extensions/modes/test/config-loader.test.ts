@@ -24,7 +24,6 @@ Mode prompt.`);
 
 		expect(config).toMatchObject({
 			body: "Mode prompt.",
-			promptMode: "replace",
 			toolRules: [
 				{ sign: "+", selector: "@all" },
 				{ sign: "-", selector: "edit" },
@@ -46,7 +45,6 @@ Prompt only.`);
 
 		expect(config).toMatchObject({
 			body: "Prompt only.",
-			promptMode: "append",
 			toolRules: [],
 		});
 	});
@@ -150,7 +148,6 @@ Base mode body.`;
 		const config = loadAgentConfig("kuafu", "gpt");
 		expect(config?.body).toBe("GPT body override.");
 		expect(config?.model).toBe("anthropic/claude-sonnet-4-6:medium");
-		expect(config?.promptMode).toBe("replace");
 	});
 
 	it("gpt family falls back to base body when gpt.md is absent", () => {

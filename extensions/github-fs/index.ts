@@ -48,7 +48,7 @@ interface ToolResultEvent {
 }
 
 interface BeforeAgentStartEvent {
-  systemPrompt?: string;
+  systemPromptOptions?: { sections?: Record<string, string> };
 }
 
 interface GithubFsContext {
@@ -69,8 +69,6 @@ const GITHUB_FS_TOOL_NAMES = new Set(["read", "write", "edit"]);
 const GITHUB_SELECTOR_RE = /(:(?:raw|conflicts|\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)*(?::raw)?|raw:\d+(?:[-+]\d+)?))$/;
 
 const PROMPT_GUIDE = [
-  "",
-  "",
   "## GitHub virtual paths (github-fs)",
   "Read GitHub issues and pull requests as paths with the `read` tool — no separate GitHub tool:",
   "- `issue://<n>` / `pr://<n>` — single item in the current repo (repo + host derived from the git remote)",
@@ -261,7 +259,9 @@ export default function githubFsTools(pi: ExtensionAPI): void {
   // Teach the model the path grammar (part of the cacheable system prompt).
   pi.on("before_agent_start", async (rawEvent) => {
     const event = rawEvent as BeforeAgentStartEvent | null;
-    if (!event || typeof event.systemPrompt !== "string") return undefined;
-    return { systemPrompt: event.systemPrompt + PROMPT_GUIDE };
+    const sections = event?.systemPromptOptions?.sections;
+    if (!sections) return undefined;
+    sections.github_fs = PROMPT_GUIDE;
+    return undefined;
   });
 }

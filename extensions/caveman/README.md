@@ -1,6 +1,6 @@
 # Caveman
 
-Token-compression prompt injection for Pi. Appends terse-communication rules to every agent session's system prompt (top-level and spawned subagents) whenever a caveman level is configured. Three local levels: `lite` (professional but tight), `full` (classic caveman), `ultra` (maximum concise clarity without rewriting code symbols).
+Token-compression prompt injection for Pi. Adds terse-communication rules as the `caveman` system-prompt section of every agent session (top-level and spawned subagents) whenever a caveman level is configured. Three local levels: `lite` (professional but tight), `full` (classic caveman), `ultra` (maximum concise clarity without rewriting code symbols).
 
 ## Upstream
 
@@ -16,6 +16,10 @@ Token-compression prompt injection for Pi. Appends terse-communication rules to 
 ## Configuration
 
 Persisted in `~/.pi/agent/caveman.json`; keys and defaults are defined in [`config.ts`](config.ts).
+
+## Local Tweaks
+
+- Rules are injected as the `caveman` prompt section (`event.systemPromptOptions.sections.caveman`) instead of being appended to the system prompt; the handler returns no `systemPrompt`.
 
 ## Local Additions
 
