@@ -5,7 +5,7 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
+import { type ParsedAgentFrontmatter, parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
 import { normalizeThinkingLevel } from "./thinking-level.js";
 import type {
   AgentConfig,
@@ -78,36 +78,41 @@ function loadFromDir(
     // a worker under a misread access contract.
     if (parsed.invalidFields.length > 0) continue;
 
-    // NEW-local fields the shared schema does not model. Parsed directly from
-    // the raw frontmatter. `thinking` is normalized (legacy "none" -> "off")
-    // via the shared thinking-level helper.
-    const fm = parsed.frontmatter;
-
-    agents.set(name, {
-      name,
-      displayName: parsed.displayName,
-      description: parsed.description ?? name,
-      extensionRules: parsed.extensionRules,
-      toolRules: parsed.toolRules,
-      allowDelegationTo: parsed.allowDelegationTo,
-      disallowDelegationTo: parsed.disallowDelegationTo,
-      allowNesting: parsed.allowNesting,
-      discoverSkills: parsed.discoverSkills,
-      preloadSkills: parsed.preloadSkills,
-      model: parsed.model,
-      thinking: normalizeThinkingLevel(str(fm.thinking)),
-      maxTurns: parsed.maxTurns,
-      outputTranscript: fm.output_transcript != null ? fm.output_transcript !== false : undefined,
-      sessionDir: str(fm.session_dir),
-      systemPrompt: parsed.body.trim(),
-      promptMode: parsed.promptMode,
-      inheritContext: parsed.inheritContext,
-      runInBackground: parsed.runInBackground,
-      isolated: parsed.isolated,
-      enabled: parsed.enabled,
-      source,
-    });
+    agents.set(name, toAgentConfig(name, parsed, source));
   }
+}
+
+/** Convert a valid parsed definition into its runtime agent config. */
+export function toAgentConfig(name: string, parsed: ParsedAgentFrontmatter, source: AgentConfig["source"]): AgentConfig {
+  // NEW-local fields the shared schema does not model. Parsed directly from
+  // the raw frontmatter. `thinking` is normalized (legacy "none" -> "off")
+  // via the shared thinking-level helper.
+  const fm = parsed.frontmatter;
+
+  return {
+    name,
+    displayName: parsed.displayName,
+    description: parsed.description ?? name,
+    extensionRules: parsed.extensionRules,
+    toolRules: parsed.toolRules,
+    allowDelegationTo: parsed.allowDelegationTo,
+    disallowDelegationTo: parsed.disallowDelegationTo,
+    allowNesting: parsed.allowNesting,
+    discoverSkills: parsed.discoverSkills,
+    preloadSkills: parsed.preloadSkills,
+    model: parsed.model,
+    thinking: normalizeThinkingLevel(str(fm.thinking)),
+    maxTurns: parsed.maxTurns,
+    outputTranscript: fm.output_transcript != null ? fm.output_transcript !== false : undefined,
+    sessionDir: str(fm.session_dir),
+    systemPrompt: parsed.body.trim(),
+    promptMode: parsed.promptMode,
+    inheritContext: parsed.inheritContext,
+    runInBackground: parsed.runInBackground,
+    isolated: parsed.isolated,
+    enabled: parsed.enabled,
+    source,
+  };
 }
 
 /** Extract a string or undefined. */

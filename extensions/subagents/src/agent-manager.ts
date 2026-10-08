@@ -16,7 +16,7 @@ import { isValidType } from "./agent-types.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import type { SelectedAgentModel } from "./model-resolution.js";
 import { getSessionFast } from "./session-fast.js";
-import type { AgentActivity, AgentInvocation, AgentRecord, EvictedAgent, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
+import type { AgentActivity, AgentConfig, AgentInvocation, AgentRecord, EvictedAgent, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage, type LifetimeUsage } from "./usage.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
@@ -73,6 +73,8 @@ interface SpawnArgs {
   options: SpawnOptions;
   /** Internal only (never RPC-reachable): reopen an evicted run under its public id. */
   restore?: { id: string; sessionFile: string; toolUses: number; lifetimeUsage: LifetimeUsage };
+  /** Internal only (never RPC-reachable): unregistered definition that replaces registry lookup and delegation policy. */
+  agentConfig?: AgentConfig;
 }
 
 export interface SpawnOptions {
@@ -294,7 +296,7 @@ export class AgentManager {
   }
 
   private spawnRecord(args: SpawnArgs, foreground = false, onSpawned?: (id: string) => void): string {
-    const { ctx, type, options, restore } = args;
+    const { ctx, type, options, restore, agentConfig } = args;
     if (this.disposed) throw new Error("Agent manager is disposed");
     // Validate before the queue branch — a queued spawn should fail at the
     // call, not minutes later at drain. Throw (not warn): programmatic callers
@@ -304,7 +306,8 @@ export class AgentManager {
     // Delegation-policy gate (injected — the manager never reads session state).
     // Fail closed: throw before any record is created so no orphan lands in
     // listAgents() and the RPC layer converts the throw into an error envelope.
-    const policyDenial = this.policyCheck?.(ctx, type);
+    // Internal runtime agents are not delegation targets.
+    const policyDenial = agentConfig ? undefined : this.policyCheck?.(ctx, type);
     if (policyDenial) throw new Error(policyDenial);
 
     const id = restore?.id ?? randomUUID().slice(0, 17);
@@ -426,7 +429,7 @@ export class AgentManager {
   }
 
   /** Actually start an agent (called immediately or from queue drain). */
-  private startAgent(id: string, record: AgentRecord, { pi, ctx, type, prompt, options, restore }: SpawnArgs) {
+  private startAgent(id: string, record: AgentRecord, { pi, ctx, type, prompt, options, restore, agentConfig }: SpawnArgs) {
     // Re-validate a caller-supplied cwd: queued spawns can start minutes after
     // spawn()'s check, and the directory may be gone by then (TOCTOU). Same
     // curated errors; drainQueue parks a throw on the record as an error.
@@ -451,6 +454,7 @@ export class AgentManager {
     const execute = () => runAgent(ctx, type, prompt, {
       pi,
       agentId: id,
+      agentConfig,
       graphRun: options.graphRunId !== undefined,
       structuredOutput: options.structuredOutput,
       model: options.model,
@@ -617,6 +621,34 @@ export class AgentManager {
     onSpawned?: (id: string) => void,
   ): Promise<{ id: string; record: AgentRecord }> {
     const id = this.spawnRecord({ pi, ctx, type, prompt, options: { ...options, isBackground: false } }, true, onSpawned);
+    const record = this.agents.get(id);
+    if (!record) throw new Error(`Agent record disappeared: ${id}`);
+    await record.promise;
+    return { id, record };
+  }
+
+  /**
+   * Spawn an unregistered internal agent (graph runtime machinery) and wait for
+   * physical settlement. Its definition replaces registry lookup and skips the
+   * delegation policy; the caller supplies the exact model and thinking. It runs
+   * graph-owned and isolated, without inherited context.
+   */
+  async spawnInternalAndWait(
+    pi: ExtensionAPI,
+    ctx: ExtensionContext,
+    agentConfig: AgentConfig,
+    prompt: string,
+    options: Omit<SpawnOptions, "isBackground"> & { graphRunId: string },
+    onSpawned?: (id: string) => void,
+  ): Promise<{ id: string; record: AgentRecord }> {
+    const id = this.spawnRecord({
+      pi,
+      ctx,
+      type: agentConfig.name,
+      prompt,
+      options: { ...options, isBackground: false, isolated: true, inheritContext: false },
+      agentConfig,
+    }, true, onSpawned);
     const record = this.agents.get(id);
     if (!record) throw new Error(`Agent record disappeared: ${id}`);
     await record.promise;

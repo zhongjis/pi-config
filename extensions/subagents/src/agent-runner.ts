@@ -51,7 +51,7 @@ import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { sessionFastPolicies } from "./session-fast.js";
 import { preloadSkills } from "./skill-loader.js";
 import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, repairStructuredOutput, STRUCTURED_OUTPUT_TOOL_NAME, structuredFailure, takeStructuredCapture } from "./structured-output.js";
-import type { InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
+import type { AgentConfig, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
 import type { LifetimeUsage } from "./usage.js";
 
 const TRUSTED_FALLBACK_EXTENSION_PATH = "<inline:subagent-model-fallback>";
@@ -159,6 +159,8 @@ export interface RunOptions {
   pi: ExtensionAPI;
   /** Manager-assigned id; suffixes session name to disambiguate parallel spawns (e.g. `Explore#a1b2c3d4`). */
   agentId?: string;
+  /** Internal unregistered definition replacing every registry lookup; never reachable from tool or RPC options. */
+  agentConfig?: AgentConfig;
   model?: Model<any>;
   selectedModel?: SelectedAgentModel;
   maxTurns?: number;
@@ -402,10 +404,12 @@ export async function runAgent(
   prompt: string,
   options: RunOptions,
 ): Promise<RunResult> {
-  const canonicalType = resolveType(type) ?? type;
+  // An internal definition replaces registry lookup, including the general-purpose fallback.
+  const override = options.agentConfig;
+  const canonicalType = override?.name ?? resolveType(type) ?? type;
   const guardBash = GUARDED_CANONICAL_AGENT_TYPES.has(canonicalType.toLowerCase());
-  const config = getConfig(type);
-  const agentConfig = getAgentConfig(type);
+  const config = override ?? getConfig(type);
+  const agentConfig = override ?? getAgentConfig(type);
   // Preserve an already selected candidate, but never let direct options bypass frontmatter.
   const selected: SelectedAgentModel = options.selectedModel && options.selectedModel.modelInput === agentConfig?.model
     ? options.selectedModel
