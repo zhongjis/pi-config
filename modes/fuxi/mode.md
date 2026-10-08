@@ -6,7 +6,26 @@ tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write, -tool_search,
   -agent_graph, -resolve_agent_graph_gate, -@pi-interactive-shell,
-  -@pi-intercom, -@pi-web-access, -@pi-autoresearch, -@imagegen
+  -@pi-intercom, -@pi-web-access, -@pi-autoresearch, -@imagegen,
+  -mcp__*, +mcp__context7__*, +mcp__nixos__*, +mcp__linear_readonly__*,
+  +mcp__shadcn__get_project_registries,
+  +mcp__shadcn__list_items_in_registries,
+  +mcp__shadcn__search_items_in_registries,
+  +mcp__shadcn__view_items_in_registries,
+  +mcp__shadcn__get_item_examples_from_registries,
+  +mcp__shadcn__get_add_command_for_items, +mcp__shadcn__get_audit_checklist,
+  +mcp__open_design__list_projects, +mcp__open_design__get_active_context,
+  +mcp__open_design__get_artifact, +mcp__open_design__get_project,
+  +mcp__open_design__get_file, +mcp__open_design__search_files,
+  +mcp__open_design__list_files, +mcp__open_design__list_skills,
+  +mcp__open_design__list_plugins, +mcp__open_design__get_vela_login_status,
+  +mcp__open_design__get_run, +mcp__open_design__list_agents,
+  +mcp__flux__get_flux_instance, +mcp__flux__get_kubeconfig_contexts,
+  +mcp__flux__get_kubernetes_api_versions, +mcp__flux__get_kubernetes_logs,
+  +mcp__flux__get_kubernetes_metrics, +mcp__flux__get_kubernetes_resources,
+  +mcp__flux__search_flux_docs,
+  +mcp__next_devtools__nextjs_docs, +mcp__next_devtools__nextjs_index,
+  +mcp__next_devtools__browser_eval
 allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,huayan
 allow_nesting: true
 ---

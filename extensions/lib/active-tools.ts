@@ -149,7 +149,7 @@ function escapeRegExpLiteral(s: string): string {
 }
 
 /** `*` matches any run of characters, including empty; every other character is literal. */
-function matchesNameOrGlob(selector: string, value: string): boolean {
+export function matchesNameOrGlob(selector: string, value: string): boolean {
   if (!selector.includes("*")) return selector === value;
   const pattern = selector.split("*").map(escapeRegExpLiteral).join(".*");
   return new RegExp(`^${pattern}$`).test(value);

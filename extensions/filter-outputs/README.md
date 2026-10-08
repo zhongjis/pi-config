@@ -23,7 +23,7 @@ The `tool_result` hook, redaction patterns, and scan bounds are defined in [`ind
 
 ## Limits
 
-- Temp files that tools write with full output (`pi-bash-*.log`, `pi-mcp-*.txt`, `pi-codemode-*.txt`, `pi-mcporter-*/output.txt`) keep the raw text.
+- Temp files that tools write with full output (`pi-bash-*.log`, `pi-mcp-*.txt`, `pi-codemode-*.txt`) keep the raw text.
 - Streaming `tool_execution_update` output is not redacted.
 - Tools that truncate output before this hook runs can split a secret so that no pattern matches it.
 - Scans are bounded: database URL user and password parts match up to 256 characters each, and private-key bodies up to 16384 characters. Longer values are not redacted.

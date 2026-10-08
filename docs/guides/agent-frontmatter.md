@@ -207,6 +207,8 @@ extensions: +builtin:codemode, +better-bash-tool, +codegraph, +lsp
 | name | A Pi tool name, e.g. `read`, `codemode` |
 | glob | `*` matches any characters, e.g. `codegraph_*`, `mcp__ctx__*` |
 
+MCP tools are named `mcp__<server>__<tool>`, with every character outside `[A-Za-z0-9_]` mapped to `_` (server `open-design` → `mcp__open_design__*`).
+
 ```yaml
 tools: +@all, -@builtin, +read, +bash, +edit, +write, -web_enable
 ```

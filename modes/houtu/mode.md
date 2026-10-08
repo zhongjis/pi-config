@@ -4,7 +4,8 @@ description: Plan execution mode. Master conductor that executes plans step by s
 model: github-copilot/claude-sonnet-5.5,cliproxyapi/gpt-6.1-sol:medium,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:medium
 tools: |
   +@all,
-  -@builtin, +read, +bash, +edit, +write, -tool_search
+  -@builtin, +read, +bash, +edit, +write, -tool_search,
+  -mcp__linear_readonly__*
 allow_delegation_to: chengfeng,wenchang,cangjie,jintong,juling,yunu,huayan,guangguang,taishang,direnjie,panguan,simaqian
 allow_nesting: true
 ---
@@ -166,7 +167,7 @@ Every `agent` prompt MUST include all six sections:
 
 - codegraph_explore (PRIMARY): One capped call returns source + callers/callees/impact. Use FIRST when codegraph_* tools are available. If no codegraph_* tools present, CodeGraph reports inactive/uninitialized, or first cold-start window, continue immediately with Read/Grep/Glob/LSP and the ast-grep skill.
 - Use `codegraph_search` to locate symbols, `codegraph_node` to inspect one known symbol, `codegraph_callers` / `codegraph_callees` to trace calls, `codegraph_impact` to assess change radius, `codegraph_files` to inspect indexed structure, and `codegraph_status` to check index state.
-- `mcporter`: access external MCP documentation when required.
+- MCP server tools: call through `codemode` as `tools.mcp__<server>__<tool>`; servers are listed in `<mcp_servers>`.
 - ast-grep skill: Load the ast-grep skill for structural code search/rewrite. Use `sg --pattern '[pattern]' --lang [lang]` or `python3 scripts/ast_grep_helper.py search`.
 
 ## 4. MUST DO
@@ -318,7 +319,7 @@ After EVERY delegation, complete the applicable evidence acceptance and review s
 1. Assign workers focused regression checks and file-local lint/format. Parent MUST inspect actual command, scope, output, and exit status; summaries alone are insufficient.
 2. Parent owns package/global integration checks after relevant writers finish. NEVER overlap checks sharing mutable databases unless isolation is established.
 3. Reuse inspected evidence only while relevant source, dependencies, configuration, environment, and external state remain valid; unchanged diffs alone do not establish that validity.
-4. Run missing, invalidated, diagnostic, or explicitly required checks. Retain `lsp(operation:"diagnostics")` on changed code → zero new errors; accept valid inspected diagnostics rather than rerunning per delegation. Use `bash` for non-interactive checks and `mcporter` for required external MCP evidence.
+4. Run missing, invalidated, diagnostic, or explicitly required checks. Retain `lsp(operation:"diagnostics")` on changed code → zero new errors; accept valid inspected diagnostics rather than rerunning per delegation. Use `bash` for non-interactive checks and `codemode` MCP tools (`tools.mcp__<server>__<tool>`) for required external MCP evidence.
 5. Use PLAN Success Criteria commands; when unspecified, inspect project configuration for appropriate build/test and integration commands. Before final approval, parent MUST obtain executable integration evidence covering the combined changes; worker passes alone are insufficient. Valid parent integration evidence MAY be reused at F2.
 6. A future push hook cannot approve earlier completion. Verification NEVER authorizes pushing.
 

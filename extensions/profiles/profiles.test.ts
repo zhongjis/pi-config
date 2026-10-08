@@ -407,7 +407,7 @@ describe("local profile offline guards", () => {
 		const harness = createHarness();
 		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
-		const blockedResearchTools = ["web_search", "code_search", "fetch_content", "get_search_content", "mcporter", "mcp"];
+		const blockedResearchTools = ["web_search", "code_search", "fetch_content", "get_search_content", "mcp__srv__tool", "list_mcp_resources", "read_mcp_resource"];
 		for (const toolName of blockedResearchTools) {
 			const [result] = await harness.fire("tool_call", { type: "tool_call", toolCallId: toolName, toolName, input: {} }, ctx);
 			expect(result).toMatchObject({ block: true, reason: expect.stringContaining(toolName) });
@@ -419,6 +419,8 @@ describe("local profile offline guards", () => {
 	it("allows allowed agent calls through when local profile is active", async () => {
 		process.env.PI_PROFILE = "local";
 		const harness = createHarness();
+		const [allowedResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "read", toolName: "read", input: {} }, ctx);
+		expect(allowedResult).toBeUndefined();
 		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
 		const [result] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent-1", toolName: "agent", input: { subagent_type: "chengfeng" } }, ctx);

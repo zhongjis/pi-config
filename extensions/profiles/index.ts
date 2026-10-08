@@ -2,6 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
+import { matchesNameOrGlob } from "../lib/active-tools.js";
 import { resolveModel } from "../lib/model-selection.js";
 
 // ---------------------------------------------------------------------------
@@ -96,8 +97,10 @@ export const DEFAULT_PROFILES_CONFIG: ProfilesConfig = {
         "code_search",
         "fetch_content",
         "get_search_content",
-        "mcporter",
-        "mcp",
+        "mcp__*",
+        "list_mcp_resources",
+        "list_mcp_resource_templates",
+        "read_mcp_resource",
       ],
       systemPrompt: OFFLINE_SYSTEM_PROMPT,
       notifyOnSessionStart: true,
@@ -468,7 +471,9 @@ export default function profilesExtension(pi: ExtensionAPI): void {
     const active = getActiveConfig();
 
     if (
-      active.blockedTools?.map(normalize).includes(normalize(event.toolName))
+      active.blockedTools?.some((pattern) =>
+        matchesNameOrGlob(normalize(pattern), normalize(event.toolName)),
+      )
     ) {
       return {
         block: true,

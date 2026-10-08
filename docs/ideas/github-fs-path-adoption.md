@@ -48,7 +48,7 @@ hooks and grammar.
 
 4. **Routing mismatch.** `wenchang` — the external-research worker most likely to
    fetch GitHub content — is tool-scoped to
-   `web_search,code_search,fetch_content,get_search_content,mcporter`, and its prompt
+   `web_search,code_search,fetch_content,get_search_content` plus MCP tools (`mcp__<server>__<tool>`), and its prompt
    pushes commit-pinned GitHub permalinks via `fetch_content` / `code_search`,
    steering away from `github://`. `chengfeng` is local-only recon
    (`codegraph_*` plus guarded built-in `bash`) and rarely reaches remote GitHub. Even though the

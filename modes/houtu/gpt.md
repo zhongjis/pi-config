@@ -104,7 +104,7 @@ Worker summaries are claims, not evidence. For each changed workstream, you MUST
 5. Use `bash` for non-interactive verification commands.
 6. Use `interactive_shell` only when manual QA requires interaction.
 7. Exercise changed user-visible surfaces and affected interactions yourself with applicable browser, CLI, or API checks; reuse valid parent QA evidence.
-8. Use `mcporter` when external MCP evidence is required.
+8. Use MCP tools through `codemode` (`tools.mcp__<server>__<tool>`; servers listed in `<mcp_servers>`) when external MCP evidence is required.
 9. Re-read relevant shared notes, Task state, and the exact PLAN path.
 
 You MUST mark `completed` plus the PLAN checkbox only after parent verification. Rejection MUST leave both `in_progress` and unchecked.
