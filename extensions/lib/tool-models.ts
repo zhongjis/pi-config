@@ -333,3 +333,15 @@ export function resolveToolModelCandidates(
 	if (ctx.model) candidates.push({ model: ctx.model });
 	return { candidates, chain: selection?.chain };
 }
+
+/**
+ * Raw ordered chain entries for a tool, in written order. No availability
+ * filtering and no session-model fallback; callers classify and skip entries.
+ */
+export function resolveToolModelChain(
+	cwd: string,
+	toolKey: string,
+): { entries: readonly ModelCandidate[]; chain?: string } {
+	const selection = getToolModelSelection(loadToolModelsConfig(cwd), toolKey);
+	return { entries: selection?.candidates ?? [], chain: selection?.chain };
+}

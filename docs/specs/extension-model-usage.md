@@ -39,7 +39,7 @@ Rules:
 
 ## Built-in tool keys
 
-Each extension-owned call reads one tool key, named `<extension>.<purpose>`. The built-in keys and their roles are defined in [`tool-model-defaults.ts`](../../extensions/lib/tool-model-defaults.ts). The consumers are [`smart-sessions`](../../extensions/smart-sessions/index.ts), [`boomerang`](../../extensions/boomerang/commit.ts), [`smart-tool-guards`](../../extensions/smart-tool-guards/src/classifier.ts), and [`multimodal-look`](../../extensions/multimodal-look/index.ts).
+Each extension-owned call reads one tool key, named `<extension>.<purpose>`. The built-in keys and their roles are defined in [`tool-model-defaults.ts`](../../extensions/lib/tool-model-defaults.ts). The consumers are [`smart-sessions`](../../extensions/smart-sessions/index.ts), [`boomerang`](../../extensions/boomerang/commit.ts), [`smart-tool-guards`](../../extensions/smart-tool-guards/src/classifier.ts), [`multimodal-look`](../../extensions/multimodal-look/index.ts), and the `decision_gate` agent-graph node, which reads `subagents.decision_gate` through `resolveToolModelChain` in [`tool-models.ts`](../../extensions/lib/tool-models.ts).
 
 ## Extension behavior
 
@@ -62,6 +62,10 @@ When either field is blank or missing, `smart-sessions` resolves `smart-sessions
 ### `multimodal-look`
 
 `look_at` resolves `multimodal-look.inspect` through `vision.inspect`; global and project layers may replace the role, repoint the tool, or set a preferred direct chain. If no configured candidate resolves, it uses the current model only when that model declares image input support; otherwise an explicit error is thrown before a child session is created.
+
+### `subagents`
+
+The `decision_gate` node resolves `subagents.decision_gate` as one mixed chain walked in written order. An entry that `ctx.modelRegistry.findOfType("classifier", provider, id)` resolves is a classifier model; any other entry is a chat model that runs the decision-gate agent fallback. Unavailable or failed entries advance to the next. When the chain is exhausted the gate escalates to the orchestrator; the current session model is never a fallback. `resolveToolModelChain` returns the raw parsed entries without availability filtering.
 
 ## Related docs
 

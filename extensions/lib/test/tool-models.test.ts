@@ -7,6 +7,7 @@ import {
 	BUILTIN_TOOL_MODELS_FILE,
 	getToolModelSelection,
 	loadToolModelsConfig,
+	resolveToolModelChain,
 	resolveToolModelCandidates,
 	resolveToolModelSelection,
 } from "../tool-models.js";
@@ -255,5 +256,36 @@ describe("tool model config", () => {
 		);
 
 		expect(result.candidates).toEqual([]);
+	});
+
+	it("resolveToolModelChain returns every entry in written order without filtering or session fallback", () => {
+		writeSummaryChain(agentDir);
+		const result = resolveToolModelChain(cwd, "smart-sessions.summary");
+
+		expect(result.entries.map((entry) => entry.model)).toEqual([
+			"fixture/missing",
+			"fixture/summary",
+		]);
+		expect(result.chain).toBe("fixture/missing,fixture/summary");
+	});
+
+	it("resolveToolModelChain lets a project direct chain win", () => {
+		writeSummaryChain(agentDir);
+		writeJson(join(cwd, ".pi", "tool_models.json"), {
+			version: 1,
+			tools: { "smart-sessions.summary": { chain: "fixture/b,fixture/a" } },
+		});
+		const result = resolveToolModelChain(cwd, "smart-sessions.summary");
+
+		expect(result.entries.map((entry) => entry.model)).toEqual(["fixture/b", "fixture/a"]);
+	});
+
+	it("resolveToolModelChain yields no entries for a cleared tool", () => {
+		writeJson(join(cwd, ".pi", "tool_models.json"), {
+			version: 1,
+			tools: { "smart-sessions.summary": null },
+		});
+
+		expect(resolveToolModelChain(cwd, "smart-sessions.summary")).toEqual({ entries: [], chain: undefined });
 	});
 });

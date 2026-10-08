@@ -7,6 +7,7 @@ export const BUILTIN_TOOL_MODELS_FILE = {
 		commit: "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b",
 		"guard.tool": "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5",
 		"vision.inspect": "gpt-5.5:medium,mimo-v2.5,kimi-k2.6,glm-4.6v,gpt-5-nano",
+		"decision.gate": "typesafe/jev-latest,openai/gpt-6-luna,github-copilot/gpt-6-luna:medium,cliproxyapi/gpt-6-luna:medium:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
 	},
 	tools: {
 		"smart-sessions.summary": { role: "summary.session" },
@@ -14,5 +15,6 @@ export const BUILTIN_TOOL_MODELS_FILE = {
 		"boomerang.commit": { role: "commit" },
 		"smart-tool-guards.classifier": { role: "guard.tool" },
 		"multimodal-look.inspect": { role: "vision.inspect" },
+		"subagents.decision_gate": { role: "decision.gate" },
 	},
 } as const satisfies ToolModelsFile;
