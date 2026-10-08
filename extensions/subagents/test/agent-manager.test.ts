@@ -720,7 +720,7 @@ describe("AgentManager — cleanup timer", () => {
     expect((manager as any).cleanupInterval.hasRef()).toBe(false);
   });
 
-  it("retains terminal foreground and background sessions for 30 minutes, then disposes them", async () => {
+  it("retains terminal foreground and background sessions for 15 minutes, then disposes them", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
     const foregroundSession = mockSession();
@@ -759,11 +759,11 @@ describe("AgentManager — cleanup timer", () => {
     expect(foreground.record.resultConsumed).toBe(true);
     expect(manager.getRecord(backgroundId)!.resultConsumed).toBeFalsy();
 
-    await vi.advanceTimersByTimeAsync(20 * 60_000);
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
     expect(manager.getRecord(foreground.id)).toBeDefined();
     expect(manager.getRecord(backgroundId)).toBeDefined();
 
-    await vi.advanceTimersByTimeAsync(11 * 60_000);
+    await vi.advanceTimersByTimeAsync(6 * 60_000);
     expect(manager.getRecord(foreground.id)).toBeUndefined();
     expect(manager.getRecord(backgroundId)).toBeUndefined();
     expect(foregroundSession.dispose).toHaveBeenCalledOnce();

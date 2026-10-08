@@ -37,7 +37,7 @@ export type SpawnPolicyChecker = (
 const DEFAULT_MAX_CONCURRENT = 4;
 
 /** How long terminal agent sessions remain resumable before cleanup. */
-const COMPLETED_AGENT_RETENTION_MS = 30 * 60_000;
+const COMPLETED_AGENT_RETENTION_MS = 15 * 60_000;
 
 /**
  * Validate a caller-supplied SpawnOptions.cwd. `undefined`/`null` mean "unset"
@@ -752,7 +752,7 @@ export class AgentManager {
    * Remove all completed/stopped/errored records immediately.
    * Called on session start/switch so tasks from a prior session don't persist.
    * Pass skipUnconsumed=true to preserve records the LLM hasn't read yet
-   * (resultConsumed=false) — they will be evicted by the 30-minute cleanup timer instead.
+   * (resultConsumed=false) — they will be evicted by the 15-minute cleanup timer instead.
    */
   clearCompleted(skipUnconsumed = false): void {
     for (const [id, record] of this.agents) {
