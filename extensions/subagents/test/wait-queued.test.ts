@@ -10,7 +10,7 @@
  * queues, call the real tool with wait:true, drain the queue, and assert the
  * call returns the final result.
  */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -22,6 +22,7 @@ vi.mock("../src/agent-runner.js", async () => {
 
 import { runAgent } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
+import { QUEUE_WAIT_POLL_MS } from "../src/notification-coordinator.js";
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -91,6 +92,10 @@ async function spawnBackground(tools: Map<string, any>): Promise<{ id: string; q
 }
 
 describe("get_agent_result wait:true on a queued agent", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("queued_retrieval_retains_default_intent_without_claiming_actual_thinking", async () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
@@ -131,6 +136,7 @@ describe("get_agent_result wait:true on a queued agent", () => {
   });
 
   it("waits through queue start and returns the result (no 'still running')", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
@@ -155,22 +161,27 @@ describe("get_agent_result wait:true on a queued agent", () => {
     for (let i = 0; i < 40 && !settled; i++) {
       while (resolvers.length > 0) resolvers.shift()!();
       await flush();
-      await new Promise((r) => setTimeout(r, 100)); // outlive one 250ms poll tick
+      await vi.advanceTimersByTimeAsync(QUEUE_WAIT_POLL_MS); // one queue poll tick
     }
 
     const result = await waitPromise;
     expect(textOf(result)).toContain("THE-RESULT-PAYLOAD");
     expect(textOf(result)).not.toContain("still running");
 
-    await new Promise((r) => setTimeout(r, 350));
+    await vi.runOnlyPendingTimersAsync(); // batch debounce and notification hold
     expect(JSON.stringify(pi.sendMessage.mock.calls)).not.toContain(queuedId);
 
     await lifecycle.get("session_shutdown")?.();
   }, 20_000);
 
   it("aborts a running result wait without aborting or consuming the child", async () => {
+    // The smart-join batch debounce is armed at spawn, so timers are faked from the start.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
+    const completed = new Promise<void>((resolve) => {
+      pi.events.emit.mockImplementation((name: string) => { if (name === "subagents:completed") resolve(); });
+    });
 
     let resolveRun: (() => void) | undefined;
     let childSignal: AbortSignal | undefined;
@@ -208,7 +219,9 @@ describe("get_agent_result wait:true on a queued agent", () => {
     resolveRun?.();
     await flush();
     await waitOutcome;
-    await new Promise((r) => setTimeout(r, 350));
+    await completed;
+    await vi.runOnlyPendingTimersAsync(); // smart-join batch debounce schedules the held nudge
+    await vi.runOnlyPendingTimersAsync(); // the nudge hold elapses
 
     const completedResult = await tools
       .get("get_agent_result")

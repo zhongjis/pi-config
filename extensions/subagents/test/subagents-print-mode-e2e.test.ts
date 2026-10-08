@@ -156,18 +156,19 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
   });
 
   it("the hold condition is load-bearing: it keeps a BACKGROUND child alive (vs abandoned without it)", async () => {
-    // The child takes a beat to "think" (a real delay in its faux turn). That
-    // delay is what makes the contrast causal and deterministic:
-    //   - WITHOUT the hold, the parent's turn ends and the runner tears down
-    //     before the child ever streams → the child is abandoned (2 model calls:
-    //     parent's tool-call turn + its summary turn; the child never runs).
+    // The child's reply waits on `childGate`, which opens only after the no-hold run
+    // returns. That is what makes the contrast causal and deterministic:
+    //   - WITHOUT the hold, the parent's turn ends while the child is still parked
+    //     → the child is abandoned (2 model calls: parent's tool-call turn + its
+    //     summary turn; the child never replies).
     //   - WITH the hold, the parent loop blocks in waitForAll() until the child
     //     finishes → the child's own model turn actually runs (≥3 calls).
-    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    let openChildGate: (() => void) | undefined;
+    const childGate = new Promise<void>((resolve) => { openChildGate = resolve; });
     const respond = async (ctx: TranscriptContext) => {
       const isParent = getCurrentTools(ctx.messages).some((t) => t.name === "agent");
       if (!isParent) {
-        await sleep(80); // child takes long enough that a non-held parent exits first
+        await childGate; // a non-held parent exits before the child can reply
         return "CHILD_BG_RAN";
       }
       const spawned = ctx.messages.some(
@@ -183,6 +184,7 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
     // result), so draining afterwards to tear down cleanly doesn't change it.
     const noHold = await runPrintMode({ prompt: "go", hold: false, respond });
     const abandonedCalls = noHold.modelCalls;
+    openChildGate?.();
     await noHold.manager?.waitForAll(); // let the orphan finish before dispose (avoids stale-ctx)
     await noHold.dispose();
 

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import initExtension from "../src/index.js";
 import { TaskStore } from "../src/task-store.js";
 import type { Task } from "../src/types.js";
@@ -10,7 +10,8 @@ vi.mock("../../lib/warn.js", async (importOriginal) => ({
   installPandaWarnFileSink: vi.fn(),
 }));
 
-beforeEach(() => { process.env.PI_TASKS = "off"; });
+beforeEach(() => { vi.stubEnv("PI_TASKS", "off"); });
+afterEach(() => { vi.unstubAllEnvs(); });
 
 
 function mockCtx() {

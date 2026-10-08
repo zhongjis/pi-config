@@ -1,6 +1,10 @@
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { boot } from "./graph-run-registration.fixture.js";
 import { gateNode, launch, pendingGate, resolveGate, retrieve } from "./gate-tools.fixture.js";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 it("resolves matching human input through the registered tool and completes the graph", async () => {
   const host = boot();
@@ -50,17 +54,25 @@ it("notifies a human gate when no waiter exists and does not duplicate a retriev
   await host.lifecycle("session_start");
   const id = await launch(host);
   await vi.waitFor(() => expect(host.api.sendMessage.mock.calls.some(([message]) => message.content.includes("Human input required"))).toBe(true));
+  // Graph actor delays also run on timers: fake them only around the nudge windows,
+  // and restore real timers before the run resumes past its gate.
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   const gate = await pendingGate(host, id);
   await pendingGate(host, id);
-  await new Promise(resolve => setTimeout(resolve, 250));
+  await vi.runOnlyPendingTimersAsync();
   expect(host.api.sendMessage.mock.calls.filter(([message]) => message.content.includes("Human input required"))).toHaveLength(1);
+  vi.useRealTimers();
   await resolveGate(host, gate);
   await retrieve(host, id);
   host.api.sendMessage.mockClear();
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   const watched = await launch(host);
-  const observed = await pendingGate(host, watched);
-  await new Promise(resolve => setTimeout(resolve, 250));
+  const watching = pendingGate(host, watched);
+  await vi.runOnlyPendingTimersAsync();
+  const observed = await watching;
+  await vi.runOnlyPendingTimersAsync();
   expect(host.api.sendMessage.mock.calls.some(([message]) => message.content.includes("Human input required"))).toBe(false);
+  vi.useRealTimers();
   await resolveGate(host, observed);
 });
 

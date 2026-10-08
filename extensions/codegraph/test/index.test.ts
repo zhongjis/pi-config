@@ -146,12 +146,18 @@ function createChild(options: CreateChildOptions = {}): FakeChild {
   return child;
 }
 
-async function waitFor(condition: () => boolean): Promise<void> {
-  const deadline = Date.now() + 1000;
-  while (!condition()) {
-    if (Date.now() > deadline) throw new Error("Timed out waiting for condition.");
-    await new Promise((resolve) => setTimeout(resolve, 1));
-  }
+function signalOnFirstSpawn(...factories: Array<() => FakeChild>): Promise<void> {
+  let signal!: () => void;
+  const spawned = new Promise<void>((resolve) => {
+    signal = resolve;
+  });
+  factories.forEach((factory, index) => {
+    spawnMock.mockImplementationOnce(() => {
+      if (index === 0) signal();
+      return factory();
+    });
+  });
+  return spawned;
 }
 
 function getToolCall(child: FakeChild): { params: { name: string; arguments: Record<string, unknown> } } {
@@ -482,12 +488,12 @@ describe("codegraph extension", () => {
       releaseInit = resolve;
     });
     const child = createChild({ kind: "init", initExitDelay });
-    spawnMock.mockReturnValue(child);
+    const spawned = signalOnFirstSpawn(() => child);
     const { initCodeGraphProject } = await loadExtension();
 
     const first = initCodeGraphProject(nested);
     const second = initCodeGraphProject(projectRoot);
-    await waitFor(() => spawnMock.mock.calls.length === 1);
+    await spawned;
 
     expect(spawnMock).toHaveBeenCalledWith("codegraph", ["init", projectRoot], {
       cwd: projectRoot,
@@ -550,14 +556,12 @@ describe("codegraph extension", () => {
 
   it("kills init on abort and clears the aborted promise", async () => {
     const abortedChild = createChild({ kind: "init", initExitDelay: new Promise<void>(() => { /* never settles */ }) });
-    spawnMock
-      .mockImplementationOnce(() => abortedChild)
-      .mockImplementationOnce(() => createChild({ kind: "init" }));
+    const spawned = signalOnFirstSpawn(() => abortedChild, () => createChild({ kind: "init" }));
     const controller = new AbortController();
     const { initCodeGraphProject } = await loadExtension();
 
     const result = initCodeGraphProject(tempRoot, controller.signal);
-    await waitFor(() => spawnMock.mock.calls.length === 1);
+    await spawned;
     controller.abort(new Error("user abort"));
 
     await expect(result).rejects.toThrow("user abort");
@@ -652,8 +656,13 @@ describe("codegraph extension", () => {
       releaseFirst = resolve;
     });
     let spawnCount = 0;
+    let signalFirstSpawn!: () => void;
+    const firstSpawned = new Promise<void>((resolve) => {
+      signalFirstSpawn = resolve;
+    });
     spawnMock.mockImplementation(() => {
       spawnCount += 1;
+      if (spawnCount === 1) signalFirstSpawn();
       return createChild({
         resultText: `ok ${spawnCount}`,
         toolResponseDelay: spawnCount === 1 ? firstToolResponse : undefined,
@@ -664,9 +673,9 @@ describe("codegraph extension", () => {
     codegraphExtension(mock.pi as never);
 
     const first = mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
-    await waitFor(() => spawnMock.mock.calls.length === 1);
+    await firstSpawned;
     const second = mock.tools.get("codegraph_files")!.execute("tool-2", {}, undefined, undefined, { cwd: tempRoot });
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise(setImmediate);
 
     expect(spawnMock).toHaveBeenCalledTimes(1);
     releaseFirst();
@@ -710,7 +719,16 @@ describe("codegraph extension", () => {
     const toolResponse = new Promise<void>((resolve) => {
       releaseTools = resolve;
     });
-    spawnMock.mockImplementation(() => createChild({ toolResponseDelay: toolResponse }));
+    let spawnCount = 0;
+    let signalBothSpawned!: () => void;
+    const bothSpawned = new Promise<void>((resolve) => {
+      signalBothSpawned = resolve;
+    });
+    spawnMock.mockImplementation(() => {
+      spawnCount += 1;
+      if (spawnCount === 2) signalBothSpawned();
+      return createChild({ toolResponseDelay: toolResponse });
+    });
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
     codegraphExtension(mock.pi as never);
@@ -723,7 +741,7 @@ describe("codegraph extension", () => {
       undefined,
       { cwd: tempRoot },
     );
-    await waitFor(() => spawnMock.mock.calls.length === 2);
+    await bothSpawned;
 
     releaseTools();
     await Promise.all([first, second]);
@@ -793,6 +811,13 @@ describe("codegraph extension", () => {
     vi.spyOn(Math, "random").mockReturnValue(0);
     try {
       const child = createChild({ toolResponseDelay: new Promise<void>(() => { /* never settles; forces a timeout */ }) });
+      const killed = new Promise<void>((resolve) => {
+        child.kill.mockImplementationOnce(() => {
+          child.killed = true;
+          resolve();
+          return true;
+        });
+      });
       spawnMock.mockReturnValue(child);
       const controller = new AbortController();
       const mock = createMockPi();
@@ -800,7 +825,7 @@ describe("codegraph extension", () => {
       codegraphExtension(mock.pi as never);
 
       const result = mock.tools.get("codegraph_status")!.execute("tool-1", {}, controller.signal, undefined, { cwd: tempRoot });
-      await waitFor(() => child.kill.mock.calls.length === 1);
+      await killed;
       controller.abort(new Error("user abort"));
 
       await expect(result).rejects.toThrow("user abort");

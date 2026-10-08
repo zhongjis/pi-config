@@ -40,31 +40,32 @@ process.stdin.on('data', (chunk) => {
 });
 `;
 
-async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (predicate()) return;
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-  throw new Error('Timed out waiting for condition');
-}
-
 describe('LspConnection process lifecycle', () => {
   it('clears exited child so the connection can respawn', async () => {
     const conn = new LspConnection(process.execPath, ['-e', exitingServerScript]);
-    const exits: (number | null)[] = [];
-    conn.setExitHandler((code) => {
-      exits.push(code);
+    let exitCount = 0;
+    let onExit = () => {};
+    conn.setExitHandler(() => {
+      exitCount += 1;
+      onExit();
+    });
+    const nextExit = () => new Promise<void>((resolve) => {
+      onExit = resolve;
     });
 
     try {
+      let exited = nextExit();
       conn.spawn();
       await expect(conn.sendRequest('first', null, 1000)).resolves.toBe('first');
-      await waitFor(() => exits.length === 1 && !conn.alive);
+      await exited;
+      expect(conn.alive).toBe(false);
 
+      exited = nextExit();
       conn.spawn();
       await expect(conn.sendRequest('second', null, 1000)).resolves.toBe('second');
-      await waitFor(() => exits.length === 2 && !conn.alive);
+      await exited;
+      expect(conn.alive).toBe(false);
+      expect(exitCount).toBe(2);
     } finally {
       conn.dispose();
     }

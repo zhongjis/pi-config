@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { boot, mockRunAgent, required, session } from "./graph-run-registration.fixture.js";
 
 describe("registered result retrieval", () => {
@@ -117,18 +117,32 @@ describe("turn-boundary completion notifications", () => {
     message: { role: "assistant", stopReason: "stop", content: [] },
     toolResults: [],
   };
-  const waitPastHold = () => new Promise((resolve) => setTimeout(resolve, 500));
+  const fakeTimers = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  const waitPastHold = async () => {
+    await vi.runOnlyPendingTimersAsync(); // smart-join batch debounce schedules the held nudge
+    await vi.runOnlyPendingTimersAsync(); // the nudge hold elapses
+  };
+  const completed = (host: ReturnType<typeof boot>) => new Promise<void>((resolve) => {
+    host.api.events.emit.mockImplementation((name: string) => { if (name === "subagents:completed") resolve(); });
+  });
   const notified = (host: ReturnType<typeof boot>, id: string) =>
     host.api.sendMessage.mock.calls.some(([message]) => String(message.content).includes(`<task-id>${id}</task-id>`));
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
   it("omits a collected background notification at the final turn", async () => {
     const host = boot();
     await host.lifecycle("session_start");
     await host.lifecycle("turn_start", turnStart);
+    fakeTimers();
+    const done = completed(host);
     const launched = await required(host.tools.get("agent")).execute("launch", {
       subagent_type: "fixture", prompt: "bg-result", description: "parked", run_in_background: true,
     }, undefined, undefined, host.ctx);
     const id = required(/Agent ID: (\S+)/.exec(launched.content.map((part) => part.text ?? "").join("\n"))?.[1]);
+    await done;
     await waitPastHold();
     const result = await required(host.tools.get("get_agent_result")).execute("read", { run_id: id, wait: true }, undefined, undefined, host.ctx);
     expect(result.content.map((part) => part.text ?? "").join("\n")).toContain("bg-result");
@@ -140,10 +154,13 @@ describe("turn-boundary completion notifications", () => {
     const host = boot();
     await host.lifecycle("session_start");
     await host.lifecycle("turn_start", turnStart);
+    fakeTimers();
+    const done = completed(host);
     const launched = await required(host.tools.get("agent")).execute("launch", {
       subagent_type: "fixture", prompt: "bg-open", description: "still parked", run_in_background: true,
     }, undefined, undefined, host.ctx);
     const id = required(/Agent ID: (\S+)/.exec(launched.content.map((part) => part.text ?? "").join("\n"))?.[1]);
+    await done;
     await waitPastHold();
     expect(notified(host, id)).toBe(false);
     await host.lifecycle("turn_end", finalTurn);
@@ -156,6 +173,7 @@ describe("turn-boundary completion notifications", () => {
     const host = boot();
     await host.lifecycle("session_start");
     await host.lifecycle("turn_start", turnStart);
+    fakeTimers();
     let release: (() => void) | undefined;
     const parked = new Promise<void>((resolve) => { release = resolve; });
     mockRunAgent(async () => {
@@ -168,10 +186,10 @@ describe("turn-boundary completion notifications", () => {
     const id = required(launched.details?.taskId);
     const waiting = required(host.tools.get("get_agent_result")).execute("read", { run_id: id, wait: true }, undefined, undefined, host.ctx);
     required(release)();
+    await waitPastHold(); // graph settlement also runs on timers; collection lands in the same drain as its nudge
     const result = await waiting;
     expect(result.content.map((part) => part.text ?? "").join("\n")).toContain("graph-result");
     expect(result.content.map((part) => part.text ?? "").join("\n")).toContain("completed");
-    await waitPastHold();
     await host.lifecycle("turn_end", finalTurn);
     expect(notified(host, id)).toBe(false);
   });

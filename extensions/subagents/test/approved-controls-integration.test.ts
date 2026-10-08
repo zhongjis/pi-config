@@ -46,6 +46,7 @@ beforeEach(() => {
   });
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await cleanup?.(); cleanup = undefined;
   process.chdir(cwd); vi.unstubAllEnvs(); vi.restoreAllMocks();
   rmSync(dir, { recursive: true, force: true });
@@ -163,6 +164,8 @@ it("returns background resume immediately with the same ID and delivers once", a
   const original = await execute();
   const id = original.details?.agentId;
   if (!id) throw new Error("Missing agent ID");
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
+  const completed = new Promise<void>(resolve => vi.mocked(pi.events.emit).mockImplementation(name => { if (name === "subagents:completed") resolve(); }));
   let release: (() => void) | undefined;
   const drain = new Promise<void>(resolve => { release = resolve; });
   vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "background continued" }; });
@@ -171,14 +174,15 @@ it("returns background resume immediately with the same ID and delivers once", a
     const early = await Promise.race([pending, new Promise<undefined>(resolve => setImmediate(() => resolve(undefined)))]);
     expect(early?.details).toMatchObject({ agentId: id, status: "background" });
   } finally { release?.(); await pending; }
-  await new Promise(resolve => setTimeout(resolve, 250));
+  await completed;
+  await vi.runOnlyPendingTimersAsync();
   expect(pi.sendMessage).toHaveBeenCalledTimes(1);
   expect(vi.mocked(pi.sendMessage).mock.calls[0]?.[0].content).toContain("background continued");
   const retrieved = await execute("get_agent_result", { run_id: id, wait: true });
   expect(retrieved.details?.result).toBe("background continued");
   const foreground = await execute("agent", { ...params, resume: id });
   expect(foreground.details?.result).toBe("continued");
-  await new Promise(resolve => setTimeout(resolve, 250));
+  await vi.runOnlyPendingTimersAsync();
   expect(pi.sendMessage).toHaveBeenCalledTimes(1);
 });
 

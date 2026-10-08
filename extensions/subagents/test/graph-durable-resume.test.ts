@@ -192,17 +192,19 @@ it("declines a resume the peek loses but the lease refuses (TOCTOU race)", async
   // Force the peek to LOSE the race, then the lease to refuse the live owner.
   vi.spyOn(persistence, "graphRunHasLiveWriter").mockReturnValue(false);
   vi.spyOn(persistence, "ownGraphRun").mockImplementation(() => { throw new LiveWriterError(); });
+  vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
   try {
     await next.lifecycle("session_start");
     // resume() must create the task (the peek reported no live writer) ...
     await vi.waitFor(() => expect(create).toHaveBeenCalledOnce());
-    // ... then the refused lease must settle silently: allow the background run and
-    // the 200ms completion-nudge window to elapse, so any fabricated failure would fire.
-    await new Promise(resolve => setTimeout(resolve, 400));
+    // ... then the refused lease must settle silently: run out the completion-nudge
+    // window, so any fabricated failure would fire.
+    await vi.runOnlyPendingTimersAsync();
     expect(next.api.sendMessage).not.toHaveBeenCalled();
     expect(remove).not.toHaveBeenCalled();
     expect(readFileSync(path, "utf8")).toBe(original);
   } finally {
+    vi.useRealTimers();
     await next.lifecycle("session_shutdown");
     release();
   }

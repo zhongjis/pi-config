@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import initExtension from "../src/index.js";
 
 // Drive the production entry without installing the real file sink so [panda-warn]
@@ -8,7 +8,8 @@ vi.mock("../../lib/warn.js", async (importOriginal) => ({
   installPandaWarnFileSink: vi.fn(),
 }));
 
-beforeEach(() => { process.env.PI_TASKS = "off"; });
+beforeEach(() => { vi.stubEnv("PI_TASKS", "off"); });
+afterEach(() => { vi.unstubAllEnvs(); });
 
 type MockEventBus = {
   on: (channel: string, handler: (data: unknown) => void) => () => void;

@@ -1,8 +1,9 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ILLEGAL_TRANSITION_CODE } from "../src/fsm.js";
 import initExtension from "../src/index.js";
 
-beforeEach(() => { process.env.PI_TASKS = "off"; });
+beforeEach(() => { vi.stubEnv("PI_TASKS", "off"); });
+afterEach(() => { vi.unstubAllEnvs(); });
 
 function mockCtx() {
   return {

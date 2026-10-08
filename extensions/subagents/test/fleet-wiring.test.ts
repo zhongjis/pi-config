@@ -105,6 +105,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     if (priorManager === undefined) Reflect.deleteProperty(globalThis, MANAGER_KEY);
     else Reflect.set(globalThis, MANAGER_KEY, priorManager);
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("captures terminal input on tool_execution_start (fleet hooked into the UI)", async () => {
@@ -116,6 +117,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
   });
 
   it("registers the AgentWidget and FleetView together, then clears both on shutdown", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     vi.mocked(runAgent).mockResolvedValue({
       responseText: "done",
       session: { dispose: vi.fn() } as any,
@@ -146,7 +148,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     expect(factoryRegistrations).toContainEqual({ key: "fleet", placement: "belowEditor" });
 
     await lifecycle.get("session_shutdown")?.({}, ctxWith(ui));
-    await new Promise((resolve) => setTimeout(resolve, 100)); // AgentWidget timer observes the emptied manager.
+    await vi.runOnlyPendingTimersAsync(); // AgentWidget timer observes the emptied manager.
     expect(ui.setWidget).toHaveBeenCalledWith("agents", undefined);
     expect(ui.setWidget).toHaveBeenCalledWith("fleet", undefined);
   });
