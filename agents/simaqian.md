@@ -4,7 +4,6 @@ description: Tool-free report writer that turns supplied, already-verified resea
 model: github-copilot/claude-opus-5.5:medium,cliproxyapi/gpt-6.1-sol:medium,opencode-go/glm-5.2,llama-swap/qwen2.5-coder:14b:medium
 prompt_mode: system_instructions
 discover_skills: false
-persist_session: true
 max_turns: 6
 ---
 

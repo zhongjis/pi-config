@@ -19,7 +19,6 @@ tools: |
   +mcp__shadcn__get_item_examples_from_registries,
   +mcp__shadcn__get_add_command_for_items, +mcp__shadcn__get_audit_checklist,
   +mcp__flux__search_flux_docs, +mcp__next_devtools__nextjs_docs
-persist_session: true
 ---
 
 <role>

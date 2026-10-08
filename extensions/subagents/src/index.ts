@@ -294,6 +294,8 @@ export default function (pi: ExtensionAPI) {
   const ownsManagerRegistry = (globalThis as any)[MANAGER_KEY] === undefined;
   if (ownsManagerRegistry) {
     (globalThis as any)[MANAGER_KEY] = registryEntry;
+    // Only the owning activation loads agent history, so only it can resume evicted runs.
+    manager.setEvictedIndex(id => agentHistory?.runs.find(run => run.id === id));
   }
 
   // --- Cross-extension RPC via pi.events ---

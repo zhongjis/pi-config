@@ -1,14 +1,16 @@
-import { defineTool, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { mergeAgentHistory, readHistoryConversation } from "./agent-history.js";
 import type { AgentManager } from "./agent-manager.js";
 import { formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
-import { getAgentConversation, SUBAGENT_TOOL_NAMES, steerAgent } from "./agent-runner.js";
+import { formatAgentConversation, getAgentConversation, resolveOwnedSessionFile, SUBAGENT_TOOL_NAMES, steerAgent } from "./agent-runner.js";
+import { extractText } from "./context.js";
 import { isGraphRunId } from "./graph/graph-snapshot-path.js";
 import type { createGraphResultObserver } from "./graph/result-observer.js";
 import { QUEUE_WAIT_POLL_MS } from "./notification-coordinator.js";
 import { getStatusNote } from "./status-note.js";
 import { renderGetAgentResult, renderGetAgentResultCall, renderSteerSubagentCall, renderSteerSubagentResult } from "./tool-rendering.js";
-import type { AgentRecord } from "./types.js";
+import type { AgentRecord, EvictedAgent } from "./types.js";
 import { type AgentDetails, formatDuration, getDisplayName } from "./ui/agent-widget.js";
 import { getSessionContextPercent } from "./usage.js";
 
@@ -50,9 +52,45 @@ function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
 }
 
 export function createResultTools(pi: ExtensionAPI, manager: AgentManager, delivery: ResultDelivery, graphs: Pick<ReturnType<typeof createGraphResultObserver>, "retrieve">) {
-  async function retrieveAgent(params: { agent_id: string; wait?: boolean; verbose?: boolean }, signal?: AbortSignal) {
+  /** Read-only report of an evicted run from its history entry and transcript; never inserts a record. */
+  async function retrieveEvicted(evicted: EvictedAgent, ctx: ExtensionContext, verbose?: boolean) {
+    const [record] = mergeAgentHistory([], [evicted]);
+    const owned = resolveOwnedSessionFile(ctx, evicted.type, evicted.sessionFile);
+    const transcript = owned.ok ? await readHistoryConversation(owned.file) : owned;
+    const statsParts = [`Tool uses: ${record.toolUses}`];
+    const tokens = formatLifetimeTokens(record);
+    if (tokens) statsParts.push(tokens);
+    statsParts.push(`Duration: ${formatDuration(record.startedAt, record.completedAt)}`);
+    let output =
+      `Agent: ${record.id}\n` +
+      `Type: ${getDisplayName(record.type)} | Status: ${record.status}${getStatusNote(record.status)} | ${statsParts.join(" | ")}\n` +
+      `Description: ${record.description}\n\n`;
+    if (!transcript.ok) {
+      output += `Transcript unavailable (${transcript.reason}).`;
+      return textResult(output, delivery.details(record));
+    }
+    const assistants = transcript.messages.filter((message): message is Extract<typeof message, { role: "assistant" }> => message.role === "assistant");
+    const lastText = assistants.map((message) => extractText(message.content).trim()).filter(Boolean).at(-1);
+    const errorMessage = record.status === "error" ? assistants.at(-1)?.errorMessage?.trim() : undefined;
+    // The tool row renders from details, so the detached record carries the transcript outcome.
+    record.result = lastText;
+    record.error = errorMessage;
+    if (errorMessage) output += `Error: ${errorMessage}\n\n`;
+    output += lastText || "No output.";
+    const details = delivery.details(record);
+    if (verbose) {
+      const conversation = formatAgentConversation(transcript.messages);
+      details.conversation = conversation;
+      if (conversation) output += `\n\n--- Agent Conversation ---\n${conversation}`;
+    }
+    return textResult(output, details);
+  }
+
+  async function retrieveAgent(params: { agent_id: string; wait?: boolean; verbose?: boolean }, ctx: ExtensionContext, signal?: AbortSignal) {
     const record = manager.getRecord(params.agent_id);
     if (!record) {
+      const evicted = manager.getEvicted(params.agent_id);
+      if (evicted) return retrieveEvicted(evicted, ctx, params.verbose);
       return textResult(`Agent not found: "${params.agent_id}". It may have been cleaned up.`);
     }
 
@@ -136,6 +174,8 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
       const record = manager.getRecord(params.agent_id);
       if (!record) {
+        const evicted = manager.getEvicted(params.agent_id);
+        if (evicted) return textResult(`Agent "${params.agent_id}" is not running (status: ${evicted.status}). Cannot steer a non-running agent.`);
         return textResult(`Agent not found: "${params.agent_id}". It may have been cleaned up.`);
       }
       if (record.status !== "running") {
@@ -178,9 +218,9 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
       wait: Type.Optional(Type.Boolean({ description: "Wait for completion or actionable human input. Cancellation stops only this wait." })),
       verbose: Type.Optional(Type.Boolean({ description: "Include an independent agent's conversation." })),
     }),
-    execute: async (_id, params, signal) => {
+    execute: async (_id, params, signal, _onUpdate, ctx) => {
       if (isGraphRunId(params.run_id)) return graphs.retrieve(params.run_id, params.wait === true, signal);
-      const result = await retrieveAgent({ agent_id: params.run_id, wait: params.wait, verbose: params.verbose }, signal);
+      const result = await retrieveAgent({ agent_id: params.run_id, wait: params.wait, verbose: params.verbose }, ctx, signal);
       const details = result.details;
       return { ...result, details: { ...(details && typeof details === "object" ? details : {}), kind: "agent" as const, run_id: params.run_id } };
     },

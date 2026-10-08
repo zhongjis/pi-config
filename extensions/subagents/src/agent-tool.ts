@@ -248,43 +248,67 @@ Terse command-style prompts produce shallow, generic work.
       }
       const displayName = getDisplayName(subagentType);
       if (params.resume) {
-        const existing = manager.getRecord(params.resume);
-        if (!existing) return textResult(`Agent not found: "${params.resume}". It may have been cleaned up.`);
-        if (!existing.session) return textResult(`Agent "${params.resume}" has no active session to resume.`);
+        const resumeId = params.resume;
         const background = params.run_in_background === true;
-        const executionId = existing.executionId;
-        const pending = manager.resume(params.resume, params.prompt, signal, ctx, {
-          isBackground: background,
-          onSessionCreated: session => {
-            if (existing.outputFile) existing.outputCleanup = streamToOutputFile(session, existing.outputFile, existing.id, existing.cwd ?? ctx.cwd, session.messages.length);
-          },
-          onTextDelta: (_delta, text) => {
-            if (!background) onUpdate?.(textResult(text, buildDetails({ displayName: getDisplayName(existing.type), description: existing.description, subagentType: existing.type }, existing, { activity: existing.activity })));
-          },
-        });
-        if (background && existing.executionId !== executionId) {
-          existing.joinMode = resolveJoinMode(settings.defaultJoinMode, true);
-          existing.toolCallId = toolCallId;
-          notifications.track(existing.id, existing.joinMode);
+        const streamForeground = (record: AgentRecord, text: string) => {
+          if (!background) onUpdate?.(textResult(text, buildDetails({ displayName: getDisplayName(record.type), description: record.description, subagentType: record.type }, record, { activity: record.activity })));
+        };
+        const trackBackground = (record: AgentRecord) => {
+          record.joinMode = resolveJoinMode(settings.defaultJoinMode, true);
+          record.toolCallId = toolCallId;
+          notifications.track(record.id, record.joinMode);
           widget.ensureTimer();
           widget.update();
           fleet.ensureTimer();
           fleet.update();
+        };
+        const resumedResult = (record: AgentRecord) => {
+          const details = buildDetails({
+            displayName: getDisplayName(record.type),
+            description: record.description,
+            subagentType: record.type,
+          }, record, background ? { overrides: { status: record.status === "queued" ? "queued" : record.status === "running" ? "background" : record.status } } : undefined);
+          if (background) return textResult(
+            `Agent ${record.status === "queued" ? "queued" : "resumed"} in background.\nAgent ID: ${record.id}\n` +
+            (record.outputFile ? `Output file: ${record.outputFile}\n` : "") +
+            "Continue non-overlapping work, then call get_agent_result with run_id and wait: true. Do not end your turn while this agent runs.", details,
+          );
+          if (record.status === "error") return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}`, details);
+          return textResult((record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause), details);
+        };
+        const existing = manager.getRecord(resumeId);
+        if (!existing) {
+          if (!manager.getEvicted(resumeId)) return textResult(`Agent not found: "${resumeId}". It may have been cleaned up.`);
+          // Evicted from the live map: reopen its persisted session under the same id.
+          const pending = manager.restoreEvicted(pi, ctx, resumeId, params.prompt, {
+            isBackground: background,
+            signal,
+            onTextDelta: (_delta, text) => {
+              const restored = manager.getRecord(resumeId);
+              if (restored) streamForeground(restored, text);
+            },
+          });
+          const restored = manager.getRecord(resumeId);
+          if (background && restored) trackBackground(restored);
+          try {
+            return resumedResult(await pending);
+          } catch (err) {
+            return textResult(err instanceof Error ? err.message : String(err));
+          }
         }
+        if (!existing.session) return textResult(`Agent "${resumeId}" has no active session to resume.`);
+        const executionId = existing.executionId;
+        const pending = manager.resume(resumeId, params.prompt, signal, ctx, {
+          isBackground: background,
+          onSessionCreated: session => {
+            if (existing.outputFile) existing.outputCleanup = streamToOutputFile(session, existing.outputFile, existing.id, existing.cwd ?? ctx.cwd, session.messages.length);
+          },
+          onTextDelta: (_delta, text) => streamForeground(existing, text),
+        });
+        if (background && existing.executionId !== executionId) trackBackground(existing);
         const record = await pending;
-        if (!record) return textResult(`Failed to resume agent "${params.resume}".`);
-        const details = buildDetails({
-          displayName: getDisplayName(record.type),
-          description: record.description,
-          subagentType: record.type,
-        }, record, background ? { overrides: { status: record.status === "queued" ? "queued" : record.status === "running" ? "background" : record.status } } : undefined);
-        if (background) return textResult(
-          `Agent ${record.status === "queued" ? "queued" : "resumed"} in background.\nAgent ID: ${record.id}\n` +
-          (record.outputFile ? `Output file: ${record.outputFile}\n` : "") +
-          "Continue non-overlapping work, then call get_agent_result with run_id and wait: true. Do not end your turn while this agent runs.", details,
-        );
-        if (record.status === "error") return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}`, details);
-        return textResult((record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause), details);
+        if (!record) return textResult(`Failed to resume agent "${resumeId}".`);
+        return resumedResult(record);
       }
       const prepared = prepareAgentInvocation({
         agentType: subagentType,

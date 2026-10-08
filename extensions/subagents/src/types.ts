@@ -52,11 +52,9 @@ export interface AgentConfig {
   model?: string;
   thinking?: ThinkingLevel;
   maxTurns?: number;
-  /** Persist this subagent as a normal pi session instead of keeping it in memory only. */
-  persistSession?: boolean;
   /** Write the subagent's .output transcript. Defaults to true; false suppresses only that transcript. */
   outputTranscript?: boolean;
-  /** Optional session directory used when persistSession is true. Omitted = pi's normal session location. */
+  /** Session file directory override; when set it always wins over the default subagent session location. */
   sessionDir?: string;
   systemPrompt: string;
   promptMode: "replace" | "append" | "system_instructions";
@@ -171,6 +169,23 @@ export interface AgentRecord {
   lastSupervisionSteerAt?: number;
   /** Wall-clock ms of the last auto-abort emitted by background supervision (one-shot gate). */
   lastSupervisionAbortAt?: number;
+}
+
+/**
+ * Agent-history index entry for a run no longer in the live map. Structurally
+ * the persisted history run, so the manager never imports agent-history.
+ * The session file pointer is untrusted until containment is checked.
+ */
+export interface EvictedAgent {
+  id: string;
+  type: string;
+  description: string;
+  status: "running" | "completed" | "steered" | "aborted" | "stopped" | "error";
+  startedAt: number;
+  completedAt?: number;
+  toolUses: number;
+  lifetimeUsage: { input: number; output: number; cacheWrite: number };
+  sessionFile: string;
 }
 
 export function agentExecutionKey(record: Pick<AgentRecord, "id" | "executionId">): string {

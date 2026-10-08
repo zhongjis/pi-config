@@ -3,8 +3,9 @@ import { registerRuntimeModelFallback } from "../../lib/runtime-model-fallback.j
  * agent-runner.ts — Core execution engine: creates sessions, runs agents, collects results.
  */
 
+import { existsSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
 import {
@@ -112,6 +113,18 @@ const EXCLUDED_TOOL_NAMES: string[] = Object.values(SUBAGENT_TOOL_NAMES);
 /** Directory name under getAgentDir() used to store child session files. */
 export const SUBAGENT_SESSION_DIR_NAME = "subagent-sessions";
 
+/** Custom entry recording a fresh spawn's identity and per-call options; resume requires it. */
+export const SUBAGENT_LAUNCH_ENTRY = "subagent-launch";
+
+interface SubagentLaunch {
+  version: 1;
+  agentId?: string;
+  type: string;
+  isolated?: boolean;
+  skills?: string[];
+  maxTurns?: number;
+}
+
 /** Default max turns. undefined = unlimited (no turn limit). */
 let defaultMaxTurns: number | undefined;
 
@@ -189,12 +202,17 @@ export interface RunOptions {
   /** Skill names to inject (preload) for this call only. Union with frontmatter preload_skills (deduped). Ignored when isolated: true. */
   skills?: string[];
   /**
-   * Session ID of the parent session. When set and `persistSession` is true,
-   * child sessions are stored under
-   * `<agentDir>/subagent-sessions/<parentSessionId>/` unless frontmatter
-   * `session_dir` provides an explicit override.
+   * Session ID of the parent session. When set, child session files are
+   * stored under `<agentDir>/subagent-sessions/<parentSessionId>/` unless
+   * frontmatter `session_dir` provides an explicit override.
    */
   parentSessionId?: string;
+  /**
+   * Existing child session file to reopen instead of creating a new session.
+   * It must carry this agent's launch entry and the current parent lineage;
+   * its launch-time isolated/skills/maxTurns replace the per-call options.
+   */
+  resumeSessionFile?: string;
 }
 
 export interface RunResult {
@@ -306,11 +324,77 @@ function forwardAbortSignal(session: AgentSession, signal?: AbortSignal): () => 
   return () => signal.removeEventListener("abort", onAbort);
 }
 
-function resolveConfiguredSessionDir(sessionDir: string | undefined, cwd: string): string | undefined {
+export function resolveConfiguredSessionDir(sessionDir: string | undefined, cwd: string): string | undefined {
   if (!sessionDir) return undefined;
   if (sessionDir === "~" || sessionDir.startsWith("~/")) return resolve(homedir(), sessionDir.slice(2));
   if (isAbsolute(sessionDir)) return sessionDir;
   return resolve(cwd, sessionDir);
+}
+
+export type OwnedSessionFile = { ok: true; file: string } | { ok: false; reason: string };
+
+/**
+ * Resolve an untrusted child session pointer to its real path only when it sits
+ * inside a directory this parent owns: `<agentDir>/subagent-sessions/<parent
+ * session id>` or the type's current `session_dir` (resolved against ctx.cwd).
+ */
+export function resolveOwnedSessionFile(ctx: ExtensionContext, type: string, sessionFile: string): OwnedSessionFile {
+  let file: string;
+  try {
+    file = realpathSync(sessionFile);
+  } catch {
+    return { ok: false, reason: "session file is missing" };
+  }
+  const parentSessionId = ctx.sessionManager?.getSessionId?.();
+  const roots = [
+    parentSessionId ? join(getAgentDir(), SUBAGENT_SESSION_DIR_NAME, parentSessionId) : undefined,
+    resolveConfiguredSessionDir(getAgentConfig(type)?.sessionDir, ctx.cwd),
+  ];
+  for (const root of roots) {
+    if (!root) continue;
+    let realRoot: string;
+    try {
+      realRoot = realpathSync(root);
+    } catch {
+      continue;
+    }
+    const rel = relative(realRoot, file);
+    if (rel && !isAbsolute(rel) && rel !== ".." && !rel.startsWith(`..${sep}`)) return { ok: true, file };
+  }
+  return { ok: false, reason: "session file is outside this session's subagent session directories" };
+}
+
+/**
+ * Reopen a persisted child session after proving it belongs to this agent and
+ * parent. Every refusal throws before anything is created or modified.
+ */
+function reopenSubagentSession(
+  file: string,
+  agentId: string | undefined,
+  type: string,
+  parentFile: string | undefined,
+): { sessionManager: SessionManager; launch: SubagentLaunch } {
+  // SessionManager.open starts a new session at a missing path and rewrites an empty file.
+  if (!existsSync(file) || statSync(file).size === 0) {
+    throw new Error(`Cannot resume subagent session: ${file} is missing or empty.`);
+  }
+  const sessionManager = SessionManager.open(file);
+  if (sessionManager.buildSessionContext().messages.length === 0) {
+    throw new Error(`Cannot resume subagent session: ${file} has no conversation.`);
+  }
+  const launch = sessionManager.getEntries()
+    .filter((entry) => entry.type === "custom" && entry.customType === SUBAGENT_LAUNCH_ENTRY)
+    .at(-1) as { data?: Partial<SubagentLaunch> } | undefined;
+  if (launch?.data?.version !== 1) {
+    throw new Error(`Cannot resume subagent session: ${file} has no ${SUBAGENT_LAUNCH_ENTRY} entry.`);
+  }
+  if (launch.data.agentId !== agentId || launch.data.type !== type) {
+    throw new Error(`Cannot resume subagent session: ${file} belongs to a different agent.`);
+  }
+  if (parentFile && sessionManager.getHeader()?.parentSession !== parentFile) {
+    throw new Error(`Cannot resume subagent session: ${file} belongs to a different parent session.`);
+  }
+  return { sessionManager, launch: launch.data as SubagentLaunch };
 }
 
 export async function runAgent(
@@ -335,11 +419,22 @@ export async function runAgent(
   const fastPolicy = { enabled: selected.fast === true, usingOAuth, strict: true };
   const thinkingLevel = options.thinkingLevel ?? agentConfig?.thinking ?? selected.thinkingLevel;
 
-  // Resolve working directory: caller-supplied cwd override > parent cwd
-  const effectiveCwd = options.cwd ?? ctx.cwd;
+  const parentSessionFile = ctx.sessionManager?.getSessionFile?.();
+  const parentFile = typeof parentSessionFile === "string" && parentSessionFile.length > 0 ? parentSessionFile : undefined;
+  const reopened = options.resumeSessionFile
+    ? reopenSubagentSession(options.resumeSessionFile, options.agentId, canonicalType, parentFile)
+    : undefined;
+  // A reopened session keeps its launch-time per-call options.
+  const { isolated, skills, maxTurns: maxTurnsOption } = reopened?.launch ?? options;
+
+  // Resolve working directory: caller-supplied cwd override > reopened session cwd > parent cwd
+  const effectiveCwd = options.cwd ?? reopened?.sessionManager.getCwd() ?? ctx.cwd;
+  if (reopened && !statSync(effectiveCwd, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new Error(`Cannot resume subagent session: working directory ${effectiveCwd} does not exist.`);
+  }
   // Filesystem work happens in effectiveCwd; config discovery in configCwd.
-  // They differ only for SpawnOptions.cwd spawns (config stays with the parent).
-  const configCwd = options.configCwd ?? effectiveCwd;
+  // They differ for SpawnOptions.cwd spawns and reopened sessions (config stays with the parent).
+  const configCwd = options.configCwd ?? (reopened ? ctx.cwd : effectiveCwd);
 
   const env = await detectEnv(options.pi, effectiveCwd);
 
@@ -350,14 +445,14 @@ export async function runAgent(
   const extras: PromptExtras = {};
 
   // Resolve access rules: isolated loads no extensions (built-in tools only).
-  const extensionRules: readonly AccessRule[] = options.isolated ? [] : config.extensionRules;
+  const extensionRules: readonly AccessRule[] = isolated ? [] : config.extensionRules;
   const toolRules: readonly AccessRule[] = agentConfig?.toolRules ?? config.toolRules;
   const gates: ToolAccessGates = { allowNesting: agentConfig?.allowNesting };
   // discover_skills gates the on-demand skill catalog; preload_skills are eagerly
   // injected into the prompt. They are independent — the catalog can be on while
   // some skills are preloaded. isolated overrides both to off.
-  const discoverSkills = options.isolated ? false : config.discoverSkills;
-  const preloadList = options.isolated ? [] : [...new Set([...config.preloadSkills, ...(options.skills ?? [])])];
+  const discoverSkills = isolated ? false : config.discoverSkills;
+  const preloadList = isolated ? [] : [...new Set([...config.preloadSkills, ...(skills ?? [])])];
 
   // Skill preloading: eagerly inject the listed skills' content into the prompt.
   if (preloadList.length > 0) {
@@ -396,7 +491,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   // (global agentDir + cwd→root ancestors) as `# Project Context` AFTER the
   // systemPromptOverride — subagents get project guardrails as a single source of
   // truth. isolated overrides to false (true isolation means no project context).
-  const inheritContextFiles = !options.isolated && agentConfig?.promptMode === "system_instructions";
+  const inheritContextFiles = !isolated && agentConfig?.promptMode === "system_instructions";
 
   const agentDir = getAgentDir();
   // One settings manager for the loader and the session, created with the
@@ -581,26 +676,37 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     sessionExcludeTools = [...EXCLUDED_TOOL_NAMES, ...BUILTIN_TOOL_NAMES.filter((name) => !grantedBuiltinSet.has(name))];
   }
 
-  const configuredSessionDir = resolveConfiguredSessionDir(agentConfig?.sessionDir, effectiveCwd);
-  const defaultSessionDir = process.env.PI_CODING_AGENT_SESSION_DIR ?? settingsManager.getSessionDir?.();
-  const subagentSessionsDir = options.parentSessionId
-    ? join(getAgentDir(), SUBAGENT_SESSION_DIR_NAME, options.parentSessionId)
-    : undefined;
-  const sessionDir = configuredSessionDir ?? subagentSessionsDir ?? defaultSessionDir;
-  const parentSessionFile = ctx.sessionManager?.getSessionFile?.();
-  const parentFile = typeof parentSessionFile === "string" && parentSessionFile.length > 0 ? parentSessionFile : undefined;
-  const sessionManager = agentConfig?.persistSession
-    ? parentFile
-      ? SessionManager.create(effectiveCwd, sessionDir, { parentSession: parentFile })
-      : SessionManager.create(effectiveCwd, sessionDir)
-    : SessionManager.inMemory(effectiveCwd);
+  let sessionManager: SessionManager;
+  if (reopened) {
+    sessionManager = reopened.sessionManager;
+  } else {
+    const configuredSessionDir = resolveConfiguredSessionDir(agentConfig?.sessionDir, effectiveCwd);
+    const defaultSessionDir = process.env.PI_CODING_AGENT_SESSION_DIR ?? settingsManager.getSessionDir?.();
+    const subagentSessionsDir = options.parentSessionId
+      ? join(getAgentDir(), SUBAGENT_SESSION_DIR_NAME, options.parentSessionId)
+      : undefined;
+    const sessionDir = configuredSessionDir ?? subagentSessionsDir ?? defaultSessionDir;
+    sessionManager = SessionManager.create(effectiveCwd, sessionDir, parentFile ? { parentSession: parentFile } : undefined);
+  }
 
   // Persist the parent branch's effective Agent-tree scope before the session
   // runtime exists, so session-local hooks observe it from their first bind.
+  // Reopened sessions are re-seeded so the file cannot choose the root.
   // Direct SDK/test callers may provide a partial context; they retain the
   // historical child-local fallback instead of failing before session creation.
   if (ctx.sessionManager) {
     seedSessionLocalScope(ctx, sessionManager);
+  }
+  if (!reopened) {
+    const launch: SubagentLaunch = {
+      version: 1,
+      agentId: options.agentId,
+      type: canonicalType,
+      isolated: options.isolated,
+      skills: options.skills,
+      maxTurns: options.maxTurns,
+    };
+    sessionManager.appendCustomEntry(SUBAGENT_LAUNCH_ENTRY, launch);
   }
 
   // Pi 0.80.8 replaced createAgentSession's modelRegistry option with
@@ -680,7 +786,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
 
   // Track turns for graceful max_turns enforcement
   let turnCount = 0;
-  const maxTurns = normalizeMaxTurns(options.maxTurns ?? agentConfig?.maxTurns ?? defaultMaxTurns);
+  const maxTurns = normalizeMaxTurns(maxTurnsOption ?? agentConfig?.maxTurns ?? defaultMaxTurns);
   let softLimitReached = false;
   let aborted = false;
   let interruptionCause: InterruptionCause | undefined;
@@ -742,9 +848,9 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   const collector = collectResponseText(session);
   const cleanupAbort = forwardAbortSignal(session, options.signal);
 
-  // Build the effective prompt: optionally prepend parent context
+  // Build the effective prompt: optionally prepend parent context (fresh spawns only)
   let effectivePrompt = prompt;
-  if (options.inheritContext) {
+  if (options.inheritContext && !reopened) {
     const parentContext = buildParentContext(ctx);
     if (parentContext) {
       effectivePrompt = parentContext + prompt;
@@ -752,7 +858,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   }
 
   // Boundary for the history fallback: only assistant text produced from here
-  // on counts as this run's output (a fresh session, so usually 0).
+  // on counts as this run's output (0 for a fresh session).
   const startLen = session.messages.length;
   let structuredRetried = false;
   let failure: string | undefined;
@@ -877,9 +983,14 @@ export async function steerAgent(
  * Get the subagent's conversation messages as formatted text.
  */
 export function getAgentConversation(session: AgentSession): string {
+  return formatAgentConversation(session.messages);
+}
+
+/** Format conversation messages (live session or read-only transcript) as text. */
+export function formatAgentConversation(messages: readonly AgentSession["messages"][number][]): string {
   const parts: string[] = [];
 
-  for (const msg of session.messages) {
+  for (const msg of messages) {
     if (msg.role === "user") {
       const text = typeof msg.content === "string"
         ? msg.content

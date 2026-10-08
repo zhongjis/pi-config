@@ -73,6 +73,7 @@ Fields whose purpose the code does not make obvious:
 - `discover_skills` — whether pi's skill **catalog** is discoverable on demand.
 - `preload_skills` — skill names whose full body is injected into the system prompt. Independent of `discover_skills`.
 - `isolated` — no extensions load, so only granted built-in tools remain.
+- `session_dir` — overrides where the agent's persisted session files are written (Subagents only). Every subagent session is persisted; this only relocates it.
 
 > **Not a frontmatter field:** `thinking`. Per-call `thinking`, `model`, and
 > `max_turns` are also **`agent` tool invocation parameters**; frontmatter sets

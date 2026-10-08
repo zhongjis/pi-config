@@ -55,6 +55,7 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
 
   beforeEach(async () => {
     cwd = mkdtempSync(join(tmpdir(), "subagents-e2e-"));
+    vi.stubEnv("PI_CODING_AGENT_DIR", join(cwd, "agent-dir"));
     // Discovered project extension `e2e-probe`, re-exporting the fixture.
     mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
     writeFileSync(join(cwd, ".pi", "extensions", "e2e-probe.ts"), `export { default } from ${JSON.stringify(FIXTURE)};\n`);
@@ -65,6 +66,7 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
   });
   afterEach(() => {
     fauxRuntime.dispose();
+    vi.unstubAllEnvs();
     rmSync(cwd, { recursive: true, force: true });
   });
 

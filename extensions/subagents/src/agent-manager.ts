@@ -11,11 +11,12 @@ import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
+import { resolveOwnedSessionFile, resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
+import { isValidType } from "./agent-types.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import type { SelectedAgentModel } from "./model-resolution.js";
 import { getSessionFast } from "./session-fast.js";
-import type { AgentActivity, AgentInvocation, AgentRecord, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
+import type { AgentActivity, AgentInvocation, AgentRecord, EvictedAgent, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage, type LifetimeUsage } from "./usage.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
@@ -32,6 +33,9 @@ export type SpawnPolicyChecker = (
   ctx: ExtensionContext,
   type: SubagentType,
 ) => string | undefined;
+
+/** Injected agent-history lookup for runs no longer in the live map. */
+export type EvictedAgentResolver = (id: string) => EvictedAgent | undefined;
 
 /** Default max concurrent background agents. */
 const DEFAULT_MAX_CONCURRENT = 4;
@@ -67,6 +71,8 @@ interface SpawnArgs {
   type: SubagentType;
   prompt: string;
   options: SpawnOptions;
+  /** Internal only (never RPC-reachable): reopen an evicted run under its public id. */
+  restore?: { id: string; sessionFile: string; toolUses: number; lifetimeUsage: LifetimeUsage };
 }
 
 export interface SpawnOptions {
@@ -171,6 +177,10 @@ export class AgentManager {
   private runningBackground = 0;
   /** Injected delegation-policy gate consulted on every spawn (fail-closed). */
   private policyCheck?: SpawnPolicyChecker;
+  /** Injected agent-history lookup; wired only by the owning activation. */
+  private evictedIndex?: EvictedAgentResolver;
+  /** Pending child-session disposals of removed records, keyed by public id. */
+  private disposals = new Map<string, Promise<void>>();
 
   constructor(
     onComplete?: OnAgentComplete,
@@ -223,6 +233,52 @@ export class AgentManager {
     this.policyCheck = checker;
   }
 
+  /** Inject the agent-history lookup used to resume runs evicted from the live map. */
+  setEvictedIndex(resolver: EvictedAgentResolver | undefined): void {
+    this.evictedIndex = resolver;
+  }
+
+  /** The history entry for an id with no live record. */
+  getEvicted(id: string): EvictedAgent | undefined {
+    return this.agents.has(id) ? undefined : this.evictedIndex?.(id);
+  }
+
+  /**
+   * Resume an evicted run from its persisted session file, with live-resume
+   * semantics: same public id, a new execution, background joins the
+   * background pool and returns at once, foreground waits outside the
+   * foreground pool. Refusals throw before any record exists.
+   */
+  async restoreEvicted(
+    pi: ExtensionAPI,
+    ctx: ExtensionContext,
+    id: string,
+    prompt: string,
+    options: Pick<SpawnOptions, "isBackground" | "signal" | "onSessionCreated" | "onTextDelta" | "onToolActivity" | "onTurnEnd" | "onAssistantUsage"> = {},
+  ): Promise<AgentRecord> {
+    if (this.agents.has(id)) throw new Error(`Agent "${id}" is still live; resume its live session instead.`);
+    const evicted = this.evictedIndex?.(id);
+    if (!evicted) throw new Error(`Agent not found: "${id}". It may have been cleaned up.`);
+    if (!isValidType(evicted.type)) {
+      throw new Error(`Agent "${id}" cannot be resumed: type "${evicted.type}" is unavailable in the current configuration.`);
+    }
+    const owned = resolveOwnedSessionFile(ctx, evicted.type, evicted.sessionFile);
+    if (owned.ok === false) throw new Error(`Agent "${id}" cannot be resumed: ${owned.reason}.`);
+    const isBackground = options.isBackground === true;
+    this.spawnRecord({
+      pi,
+      ctx,
+      type: evicted.type,
+      prompt,
+      options: { ...options, description: evicted.description, isBackground, invocation: { runInBackground: isBackground } },
+      restore: { id, sessionFile: owned.file, toolUses: evicted.toolUses, lifetimeUsage: { ...evicted.lifetimeUsage } },
+    });
+    const record = this.agents.get(id);
+    if (!record) throw new Error(`Agent record disappeared: ${id}`);
+    if (!isBackground) await record.promise;
+    return record;
+  }
+
   /**
    * Spawn an agent and return its ID immediately (for background use).
    * If the concurrency limit is reached, the agent is queued.
@@ -238,7 +294,7 @@ export class AgentManager {
   }
 
   private spawnRecord(args: SpawnArgs, foreground = false, onSpawned?: (id: string) => void): string {
-    const { ctx, type, options } = args;
+    const { ctx, type, options, restore } = args;
     if (this.disposed) throw new Error("Agent manager is disposed");
     // Validate before the queue branch — a queued spawn should fail at the
     // call, not minutes later at drain. Throw (not warn): programmatic callers
@@ -251,7 +307,8 @@ export class AgentManager {
     const policyDenial = this.policyCheck?.(ctx, type);
     if (policyDenial) throw new Error(policyDenial);
 
-    const id = randomUUID().slice(0, 17);
+    const id = restore?.id ?? randomUUID().slice(0, 17);
+    if (this.agents.has(id)) throw new Error(`Agent "${id}" is already live.`);
     const abortController = new AbortController();
     const record: AgentRecord = {
       id,
@@ -262,10 +319,10 @@ export class AgentManager {
       type,
       description: options.description,
       status: "queued",
-      toolUses: 0,
+      toolUses: restore?.toolUses ?? 0,
       startedAt: Date.now(),
       abortController,
-      lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 },
+      lifetimeUsage: restore?.lifetimeUsage ?? { input: 0, output: 0, cacheWrite: 0 },
       compactionCount: 0,
       // Raw tri-state (not coerced to a boolean): true = background, false =
       // foreground (has an inline tool-result surface), undefined = caller never
@@ -369,7 +426,7 @@ export class AgentManager {
   }
 
   /** Actually start an agent (called immediately or from queue drain). */
-  private startAgent(id: string, record: AgentRecord, { pi, ctx, type, prompt, options }: SpawnArgs) {
+  private startAgent(id: string, record: AgentRecord, { pi, ctx, type, prompt, options, restore }: SpawnArgs) {
     // Re-validate a caller-supplied cwd: queued spawns can start minutes after
     // spawn()'s check, and the directory may be gone by then (TOCTOU). Same
     // curated errors; drainQueue parks a throw on the record as an error.
@@ -389,7 +446,9 @@ export class AgentManager {
     const activityCallbacks = this.trackExecution(record, options);
     if (record.graphRunId === undefined) this.onStart?.(record);
 
-    void runAgent(ctx, type, prompt, {
+    // A reopened file must not race the evicted session's session_shutdown writes.
+    const disposal = restore ? this.disposals.get(id) : undefined;
+    const execute = () => runAgent(ctx, type, prompt, {
       pi,
       agentId: id,
       graphRun: options.graphRunId !== undefined,
@@ -400,12 +459,13 @@ export class AgentManager {
       isolated: options.isolated,
       inheritContext: options.inheritContext,
       thinkingLevel: options.thinkingLevel,
-      // The agent runs at the caller-supplied cwd (undefined → parent cwd). When
-      // a caller-supplied cwd is in play, config stays with the parent project
-      // (configCwd = ctx.cwd); otherwise configCwd stays undefined so config
-      // resolves from the working dir.
+      // The agent runs at the caller-supplied cwd (undefined → parent cwd, or the
+      // reopened session's cwd). When a caller-supplied cwd or a reopened file is
+      // in play, config stays with the parent project (configCwd = ctx.cwd);
+      // otherwise configCwd stays undefined so config resolves from the working dir.
       cwd: customCwd,
-      configCwd: customCwd !== undefined ? ctx.cwd : undefined,
+      configCwd: customCwd !== undefined || restore ? ctx.cwd : undefined,
+      resumeSessionFile: restore?.sessionFile,
       signal: record.abortController!.signal,
       skills: options.skills,
       parentSessionId: getParentSessionId(ctx),
@@ -436,7 +496,8 @@ export class AgentManager {
         if (record.graphRunId === undefined) this.sessionListener?.(record);
         options.onSessionCreated?.(session);
       },
-    })
+    });
+    void (disposal ? disposal.then(execute) : execute())
       .then(({ responseText, session, aborted, steered, failure, interruptionCause, structuredJson, structuredRetried }) => {
         record.interruptionCause ??= interruptionCause ?? (aborted ? "unknown" : undefined);
         record.structuredJson = structuredJson;
@@ -734,7 +795,11 @@ export class AgentManager {
   private removeRecord(id: string, record: AgentRecord): void {
     record.outputCleanup?.();
     record.outputCleanup = undefined;
-    if (record.session) void disposeChildSession(record.session);
+    if (record.session) {
+      const disposal = disposeChildSession(record.session).then(() => undefined, () => undefined);
+      this.disposals.set(id, disposal);
+      void disposal.then(() => { if (this.disposals.get(id) === disposal) this.disposals.delete(id); });
+    }
     record.session = undefined;
     this.agents.delete(id);
   }

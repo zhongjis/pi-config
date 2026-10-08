@@ -64,6 +64,7 @@ describe("tool veto reachability against real pi-mono", () => {
 
   beforeEach(async () => {
     cwd = mkdtempSync(join(tmpdir(), "subagents-veto-"));
+    vi.stubEnv("PI_CODING_AGENT_DIR", join(cwd, "agent-dir"));
     // Discovered project extensions (`ext-alpha`, `ext-beta`) re-exporting the fixtures.
     mkdirSync(join(cwd, ".pi", "extensions"), { recursive: true });
     writeFileSync(join(cwd, ".pi", "extensions", "ext-alpha.ts"), `export { default } from ${JSON.stringify(ALPHA)};\n`);
@@ -75,6 +76,7 @@ describe("tool veto reachability against real pi-mono", () => {
   });
   afterEach(() => {
     fauxRuntime.dispose();
+    vi.unstubAllEnvs();
     rmSync(cwd, { recursive: true, force: true });
   });
 

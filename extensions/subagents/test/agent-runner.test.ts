@@ -11,6 +11,7 @@ const {
   sessionManagerAppendCustomEntry,
   sessionManagerInMemory,
   sessionManagerCreate,
+  sessionManagerOpen,
   settingsManagerCreate,
   settingsManagerGetSessionDir,
 } = vi.hoisted(() => {
@@ -35,9 +36,12 @@ const {
     getAgentDir: vi.fn(() => "/mock/agent-dir"),
     sessionManagerAppendCustomEntry,
     sessionManagerInMemory: vi.fn((_cwd?: string) => createSessionManager("memory-session-manager")),
-    sessionManagerCreate: vi.fn((_cwd?: string, _sessionDir?: string) =>
+    sessionManagerCreate: vi.fn((_cwd?: string, _sessionDir?: string, _options?: unknown) =>
       createSessionManager("persistent-session-manager"),
     ),
+    sessionManagerOpen: vi.fn((_path: string): unknown => {
+      throw new Error("SessionManager.open not configured");
+    }),
     settingsManagerGetSessionDir: vi.fn(() => undefined as string | undefined),
     settingsManagerCreate: vi.fn(() => ({ kind: "settings-manager", getSessionDir: settingsManagerGetSessionDir })),
   };
@@ -100,7 +104,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
     }
   },
   getAgentDir,
-  SessionManager: { inMemory: sessionManagerInMemory, create: sessionManagerCreate },
+  SessionManager: { inMemory: sessionManagerInMemory, create: sessionManagerCreate, open: sessionManagerOpen },
   SettingsManager: { create: settingsManagerCreate },
 }));
 
@@ -156,6 +160,7 @@ import {
   getAgentConversation,
   resumeAgent,
   runAgent,
+  SUBAGENT_LAUNCH_ENTRY,
   SUBAGENT_TOOL_NAMES,
 } from "../src/agent-runner.js";
 import { preloadSkills as _preloadSkills } from "../src/skill-loader.js";
@@ -245,6 +250,7 @@ beforeEach(() => {
   getAgentDir.mockClear();
   sessionManagerInMemory.mockClear();
   sessionManagerCreate.mockClear();
+  sessionManagerOpen.mockClear();
   sessionManagerAppendCustomEntry.mockClear();
   settingsManagerGetSessionDir.mockReset();
   settingsManagerGetSessionDir.mockReturnValue(undefined);
@@ -394,7 +400,7 @@ describe("agent-runner final output capture", () => {
       agentDir: "/mock/agent-dir",
     }));
     expect(settingsManagerCreate).toHaveBeenCalledWith("/tmp/worktree", "/mock/agent-dir");
-    expect(sessionManagerInMemory).toHaveBeenCalledWith("/tmp/worktree");
+    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp/worktree", undefined, undefined);
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
       cwd: "/tmp/worktree",
       agentDir: "/mock/agent-dir",
@@ -1075,92 +1081,64 @@ function diagnosticsOf(onToolActivity: ReturnType<typeof vi.fn>, prefix: string)
 }
 
 describe("agent-runner session persistence", () => {
-  it("uses an in-memory session by default", async () => {
+  it("S1 persists an agent without any persistence field through SessionManager.create", async () => {
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig());
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
     await runAgent(ctx, "Explore", "go", { pi });
 
-    expect(sessionManagerInMemory).toHaveBeenCalledWith("/tmp");
-    expect(sessionManagerCreate).not.toHaveBeenCalled();
+    expect(sessionManagerInMemory).not.toHaveBeenCalled();
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionManager: expect.objectContaining({ kind: "memory-session-manager" }),
+      sessionManager: expect.objectContaining({ kind: "persistent-session-manager" }),
     }));
   });
 
-  it("uses pi's normal persistent session location when persistSession is true", async () => {
-    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ persistSession: true }));
+  it("S1 uses pi's normal session location without session_dir or a parent session id", async () => {
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig());
     settingsManagerGetSessionDir.mockReturnValue("/normal/pi/sessions");
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
     await runAgent(ctx, "Explore", "go", { pi });
 
-    expect(sessionManagerInMemory).not.toHaveBeenCalled();
-    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/normal/pi/sessions");
-    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
-      sessionManager: expect.objectContaining({ kind: "persistent-session-manager" }),
-    }));
+    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/normal/pi/sessions", undefined);
   });
 
-  it("uses a frontmatter sessionDir when persistSession is true and sessionDir is configured", async () => {
-    vi.mocked(getAgentConfig).mockReturnValueOnce(
-      makeAgentConfig({ persistSession: true, sessionDir: ".seams/pi-sessions/seam-plan-reviewer" }),
-    );
+  it("S1 resolves a relative session_dir against the working directory", async () => {
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ sessionDir: ".seams/pi-sessions/seam-plan-reviewer" }));
     settingsManagerGetSessionDir.mockReturnValue("/normal/pi/sessions");
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
     await runAgent(ctx, "Explore", "go", { pi, cwd: "/repo" });
 
-    expect(sessionManagerCreate).toHaveBeenCalledWith(
-      "/repo",
-      "/repo/.seams/pi-sessions/seam-plan-reviewer",
-    );
+    expect(sessionManagerCreate).toHaveBeenCalledWith("/repo", "/repo/.seams/pi-sessions/seam-plan-reviewer", undefined);
   });
 
-  it("persisted child with parentSessionId uses subagent-sessions/<parentId> dir", async () => {
-    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ persistSession: true }));
+  it("S1 stores children of a known parent under subagent-sessions/<parentSessionId>", async () => {
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig());
     settingsManagerGetSessionDir.mockReturnValue("/normal/pi/sessions");
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
     await runAgent(ctx, "Explore", "go", { pi, parentSessionId: "P" });
 
-    expect(sessionManagerCreate).toHaveBeenCalledWith(
-      "/tmp",
-      expect.stringContaining("subagent-sessions/P"),
-    );
-    const [, dir] = sessionManagerCreate.mock.calls[0]!;
-    expect(dir).toMatch(/subagent-sessions[\\/]P$/);
+    expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", join("/mock/agent-dir", "subagent-sessions", "P"), undefined);
   });
 
-  it("frontmatter session_dir wins over subagent-sessions dir", async () => {
-    vi.mocked(getAgentConfig).mockReturnValueOnce(
-      makeAgentConfig({ persistSession: true, sessionDir: "/explicit/session/path" }),
-    );
+  it("S1 session_dir wins over the subagent-sessions directory", async () => {
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ sessionDir: "/explicit/session/path" }));
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
     await runAgent(ctx, "Explore", "go", { pi, parentSessionId: "P", cwd: "/repo" });
 
-    expect(sessionManagerCreate).toHaveBeenCalledWith("/repo", "/explicit/session/path");
-  });
-
-  it("non-persisted session stays inMemory regardless of parentSessionId", async () => {
-    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ persistSession: false }));
-    const { session } = createSession("OK");
-    createAgentSession.mockResolvedValue({ session });
-
-    await runAgent(ctx, "Explore", "go", { pi, parentSessionId: "P" });
-
-    expect(sessionManagerInMemory).toHaveBeenCalledWith("/tmp");
-    expect(sessionManagerCreate).not.toHaveBeenCalled();
+    expect(sessionManagerCreate).toHaveBeenCalledWith("/repo", "/explicit/session/path", undefined);
   });
 
   it("passes the parent session file as native parentSession lineage", async () => {
-    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ persistSession: true }));
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig());
     settingsManagerGetSessionDir.mockReturnValue("/normal/pi/sessions");
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
@@ -1169,6 +1147,141 @@ describe("agent-runner session persistence", () => {
       sessionManager: { ...ctx.sessionManager, getSessionFile: () => "/tmp/parent.jsonl" },
     }, "Explore", "go", { pi });
     expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/normal/pi/sessions", { parentSession: "/tmp/parent.jsonl" });
+  });
+
+  it("S10 a fresh spawn appends a launch entry with its per-call values", async () => {
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", isolated: true, skills: ["call-skill"], maxTurns: 7 });
+
+    expect(sessionManagerAppendCustomEntry).toHaveBeenCalledWith(SUBAGENT_LAUNCH_ENTRY, {
+      version: 1, agentId: "agent-1", type: "explore", isolated: true, skills: ["call-skill"], maxTurns: 7,
+    });
+  });
+});
+
+describe("agent-runner session reopen", () => {
+  let dir: string;
+  let file: string;
+  let childCwd: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "agent-runner-reopen-"));
+    file = join(dir, "child.jsonl");
+    writeFileSync(file, "synthetic\n");
+    childCwd = join(dir, "child-cwd");
+    mkdirSync(childCwd);
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  /** Configure SessionManager.open to return a validated child session with this launch entry. */
+  function reopenWith(launch: Record<string, unknown> = {}) {
+    const reopened = {
+      kind: "reopened-session-manager",
+      getCwd: () => childCwd,
+      getHeader: () => ({ type: "session", id: "child-session", cwd: childCwd }),
+      buildSessionContext: () => ({ messages: [{ role: "user", content: "earlier" }] }),
+      getEntries: () => [{
+        type: "custom",
+        customType: SUBAGENT_LAUNCH_ENTRY,
+        data: { version: 1, agentId: "agent-1", type: "explore", ...launch },
+      }],
+      getSessionId: () => "child-session",
+      getBranch: () => [],
+      appendCustomEntry: vi.fn(() => "entry"),
+    };
+    sessionManagerOpen.mockReturnValueOnce(reopened);
+    return reopened;
+  }
+
+  it("S10 reopens the given file instead of creating a session", async () => {
+    const reopened = reopenWith();
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
+
+    expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ sessionManager: reopened }));
+    expect(sessionManagerCreate).not.toHaveBeenCalled();
+  });
+
+  it("S10 reopen works in the session cwd with config from the parent cwd", async () => {
+    reopenWith();
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
+
+    expect([createAgentSession.mock.calls[0][0].cwd, lastLoaderOpts().cwd]).toEqual([childCwd, "/tmp"]);
+  });
+
+  it("S10 reopen applies the launch isolated value over the per-call option", async () => {
+    setupRules("+@all", "+read");
+    reopenWith({ isolated: true });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file, isolated: false });
+
+    expect(lastLoaderOpts().noExtensions).toBe(true);
+  });
+
+  it("S10 reopen applies the launch skills over the per-call skills", async () => {
+    reopenWith({ skills: ["launch-skill"] });
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file, skills: ["call-skill"] });
+
+    expect(_preloadSkills).toHaveBeenLastCalledWith(["launch-skill"], "/tmp");
+  });
+
+  it("S10 reopen applies the launch maxTurns over the per-call maxTurns", async () => {
+    reopenWith({ maxTurns: 1 });
+    const { session, listeners } = createSession("DONE");
+    session.prompt.mockImplementation(async () => {
+      for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
+      for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
+    });
+    createAgentSession.mockResolvedValue({ session });
+
+    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file, maxTurns: 50 });
+
+    expect(session.steer).toHaveBeenCalledTimes(1);
+  });
+
+  it("S10 reopen re-seeds the parent's Agent-tree scope", async () => {
+    const reopened = reopenWith();
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+    const context = {
+      ...ctx,
+      sessionManager: {
+        getSessionId: () => "parent-session",
+        getBranch: () => [{ type: "custom", customType: "session-local:scope", data: { version: 1, rootScopeId: "root-session" } }],
+      },
+    };
+
+    await runAgent(context, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
+
+    expect(reopened.appendCustomEntry).toHaveBeenCalledWith("session-local:scope", { version: 1, rootScopeId: "root-session" });
+  });
+
+  it("S10 reopen does not prepend the parent conversation", async () => {
+    reopenWith();
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+    const context = {
+      ...ctx,
+      sessionManager: {
+        getSessionId: () => "parent-session",
+        getBranch: () => [{ type: "message", message: { role: "user", content: "parent conversation" } }],
+      },
+    };
+
+    await runAgent(context, "Explore", "continue", { pi, agentId: "agent-1", resumeSessionFile: file, inheritContext: true });
+
+    expect(session.prompt).toHaveBeenCalledWith("continue");
   });
 });
 
@@ -1190,8 +1303,8 @@ describe("agent-runner session-local Agent-tree scope", () => {
 
     await runAgent(context, "Explore", "go", { pi });
 
-    expect(sessionManagerAppendCustomEntry).toHaveBeenCalledTimes(1);
-    expect(sessionManagerAppendCustomEntry).toHaveBeenCalledWith(
+    expect(sessionManagerAppendCustomEntry).toHaveBeenNthCalledWith(
+      1,
       "session-local:scope",
       { version: 1, rootScopeId: "root-session" },
     );

@@ -11,7 +11,6 @@ extensions: |
 tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write
-persist_session: true
 ---
 
 <role>

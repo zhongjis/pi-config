@@ -369,7 +369,7 @@ discover_skills: <false to disable the on-demand skill catalog. Default: true>
 preload_skills: <comma-separated skill names to eagerly inject into the prompt. Omit for none>
 inherit_context: <true to fork parent conversation into agent so it sees chat history. Default: false>
 run_in_background: <true to run in background by default. Default: false>
-output_transcript: <false to write no transcript file or path for this agent. Independent of persist_session. Default: true>
+output_transcript: <false to write no transcript file or path for this agent. Independent of session persistence, which is always on. Default: true>
 isolated: <true for no extensions; built-in tools only. Default: false>
 ---
 
@@ -392,7 +392,7 @@ Guidelines for choosing settings:
 - Use prompt_mode: replace for fully custom agents with their own personality/instructions
 - Set inherit_context: true if the agent needs to know what was discussed in the parent conversation
 - Set isolated: true if the agent should load no extensions and use built-in tools only
-- Set output_transcript: false to skip writing this agent's transcript; this alone doesn't keep the run off disk (persist_session still writes) — set it too if that's the goal
+- Set output_transcript: false to skip writing this agent's transcript; the persisted session is always written regardless
 - Only include frontmatter fields that differ from defaults — omit fields where the default is fine
 
 Write the file using the write tool. Only write the file, nothing else.`;

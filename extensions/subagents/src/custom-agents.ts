@@ -97,7 +97,6 @@ function loadFromDir(
       model: parsed.model,
       thinking: normalizeThinkingLevel(str(fm.thinking)),
       maxTurns: parsed.maxTurns,
-      persistSession: fm.persist_session != null ? fm.persist_session === true : undefined,
       outputTranscript: fm.output_transcript != null ? fm.output_transcript !== false : undefined,
       sessionDir: str(fm.session_dir),
       systemPrompt: parsed.body.trim(),

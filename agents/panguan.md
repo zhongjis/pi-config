@@ -4,7 +4,6 @@ description: Tool-free judge that classifies supplied evidence into caller-defin
 model: github-copilot/gpt-6-luna:medium,cliproxyapi/gpt-6-luna:medium:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b
 prompt_mode: system_instructions
 discover_skills: false
-persist_session: true
 max_turns: 6
 ---
 
