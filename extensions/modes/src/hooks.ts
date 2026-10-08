@@ -106,39 +106,6 @@ function injectOverlays(body: string, overlays: string): string {
 	return `${body}\n\n${overlays}`;
 }
 
-/**
- * Remove the rendered rule lines of registered tools the mode does not allow.
- * Pi hides ungranted declarations and their snippets, but still renders every
- * active tool's `promptGuidelines` as `- <rule>` lines, and earlier extensions
- * may already have forced that rendering into the prompt. Guideline text that
- * also belongs to an allowed tool or to the prompt's own guidelines stays.
- *
- * ponytail: ceiling = exact text match on Pi's `- rule` rendering (a reworded or
- * multi-line rendering slips through); upgrade path = Pi filtering toolGuidelines
- * by hidden declarations upstream, then delete this.
- */
-export function stripUngrantedToolGuidelines(
-	systemPrompt: string,
-	tools: readonly { name: string; promptGuidelines?: readonly string[] }[],
-	allowed: ReadonlySet<string>,
-	keepGuidelines: readonly string[] = [],
-): string {
-	const keep = new Set(keepGuidelines.map((guideline) => guideline.trim()));
-	for (const tool of tools) {
-		if (allowed.has(tool.name)) for (const guideline of tool.promptGuidelines ?? []) keep.add(guideline.trim());
-	}
-	const strip = new Set<string>();
-	for (const tool of tools) {
-		if (allowed.has(tool.name)) continue;
-		for (const guideline of tool.promptGuidelines ?? []) {
-			const text = guideline.trim();
-			if (text && !keep.has(text)) strip.add(`- ${text}`);
-		}
-	}
-	if (strip.size === 0) return systemPrompt;
-	return systemPrompt.split("\n").filter((line) => !strip.has(line)).join("\n");
-}
-
 function buildModeSystemPrompt(
 	systemPrompt: string,
 	state: ModeStateManager,
@@ -316,15 +283,8 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		// Second pass: reload with resolved family (picks up gpt.md body or gemini.md overlays)
 		const config = state.loadConfig(state.currentMode, state.resolvedFamily);
 
-		const basePrompt = event.systemPrompt;
-		const filteredPrompt = stripUngrantedToolGuidelines(
-			basePrompt,
-			pi.getAllTools(),
-			state.allowedToolNames(),
-			event.systemPromptOptions?.promptGuidelines,
-		);
-		const systemPrompt = buildModeSystemPrompt(filteredPrompt, state, config);
-		if (systemPrompt === basePrompt) return;
+		const systemPrompt = buildModeSystemPrompt(event.systemPrompt, state, config);
+		if (systemPrompt === event.systemPrompt) return;
 		return { systemPrompt };
 	});
 
