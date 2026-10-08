@@ -84,13 +84,14 @@ const validPayloadOptions = {
 };
 
 describe("PAYLOAD_VERSION and isBtwPayload", () => {
-	it("PAYLOAD_VERSION === 5", () => {
-		expect(PAYLOAD_VERSION).toBe(5);
-	});
-
 	it("isBtwPayload returns true for valid payload with closeOnExit", () => {
 		const payload = createPayload(validPayloadOptions);
 		expect(isBtwPayload(payload)).toBe(true);
+	});
+
+	it("isBtwPayload returns false for a mismatched payload version", () => {
+		const payload = createPayload(validPayloadOptions);
+		expect(isBtwPayload({ ...payload, version: PAYLOAD_VERSION + 1 })).toBe(false);
 	});
 
 	it("isBtwPayload returns false when closeOnExit is missing", () => {

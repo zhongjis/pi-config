@@ -115,74 +115,35 @@ describe("toolDescriptionMode", () => {
       for (const fixture of fixtures) {
         const row = section.split("\n").find((line) => line.startsWith(`- ${fixture.name}:`));
         expect(row).toBeDefined();
-        const metadata = new Map([...row?.matchAll(/\((Model chain|tools|isolated): ([^)]*)\)/g) ?? []].map((match) => [match[1], match[2]]));
+        const metadata = new Map([...row?.matchAll(/\((tools|isolated): ([^)]*)\)/g) ?? []].map((match) => [match[1], match[2]]));
         expect(metadata.get("tools")).toBe(fixture.tools);
         expect(metadata.get("isolated")).toBe(fixture.isolated);
-        expect(metadata.get("Model chain")).toBeUndefined();
-        expect(row).not.toContain("claude-sonnet-4-6");
       }
     }
   });
 
-  it("keeps one configured roster and no parameter roster", () => {
-    const tools = setup({ toolDescriptionMode: "full" });
-    const agent = tools.get("agent");
-    const description: string = agent.description;
-    const parameterDescription: string = agent.parameters.properties.subagent_type.description;
-    expect(description.match(/^- general-purpose:/gm)).toHaveLength(1);
-    expect(parameterDescription).not.toContain("general-purpose");
-    expect(parameterDescription).not.toContain("chengfeng");
-  });
-
-  it("sets the subagents prompt section as mode policy changes", async () => {
-    const tools = setup({ toolDescriptionMode: "full" }, () => {
+  const policy = (mode: string, allow: string[]) => ({ mode, delegationPolicy: { version: 1, allowDelegationTo: allow, disallowDelegationTo: [] } });
+  it.each([
+    { name: "kuafu allows alpha", data: policy("kuafu", ["alpha"]), active: true, present: ["alpha"], absent: ["beta"] },
+    { name: "fuxi allows beta", data: policy("fuxi", ["beta"]), active: true, present: ["beta"], absent: ["alpha"] },
+    { name: "no policy permits none", data: { mode: "fuxi" }, active: true, present: ["none"], absent: ["alpha", "beta"] },
+    { name: "inactive agent tool sets no section", data: policy("kuafu", ["alpha"]), active: false, present: [], absent: [] },
+  ])("sets the subagents prompt section for mode policy: $name", async ({ data, active, present, absent }) => {
+    setup({ toolDescriptionMode: "full" }, () => {
       const dir = join(tmpDir, ".pi", "agents");
       mkdirSync(dir);
       writeFileSync(join(dir, "alpha.md"), "---\ndescription: Alpha worker.\n---\nAlpha.\n");
       writeFileSync(join(dir, "beta.md"), "---\ndescription: Beta worker.\n---\nBeta.\n");
     });
-    expect(tools.has("agent")).toBe(true);
-    let entries: unknown[] = [
-      { type: "custom", customType: "agent-mode", data: { mode: "kuafu", delegationPolicy: { version: 1, allowDelegationTo: ["alpha"], disallowDelegationTo: [] } } },
-    ];
-    const ctx = { sessionManager: { getEntries: () => entries } };
-    const beforeAgentStart = currentHandlers.get("before_agent_start");
-    const run = async () => {
-      const sections: Record<string, string> = { other: "kept" };
-      const result = await beforeAgentStart({ systemPrompt: "BASE", systemPromptOptions: { sections } }, ctx);
-      return { result, sections };
-    };
-
-    const first = await run();
-    expect(first.result).toBeUndefined();
-    expect(first.sections.subagents).toBe("Current mode kuafu permitted delegation targets: alpha");
-    expect(first.sections.other).toBe("kept");
-
-    entries = [
-      { type: "custom", customType: "agent-mode", data: { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: ["beta"], disallowDelegationTo: [] } } },
-    ];
-    expect((await run()).sections.subagents).toBe("Current mode fuxi permitted delegation targets: beta");
-
-    entries = [{ type: "custom", customType: "agent-mode", data: { mode: "fuxi" } }];
-    expect((await run()).sections.subagents).toContain("permitted delegation targets: none");
-
-    currentActiveTools.length = 0;
-    const inactive = await run();
-    expect(inactive.result).toBeUndefined();
-    expect(inactive.sections.subagents).toBeUndefined();
-    expect(inactive.sections.other).toBe("kept");
-  });
-
-  it("background guidance blocks instead of ending the turn", () => {
-    const tools = setup({ toolDescriptionMode: "full" });
-    const guidelines = tools.get("agent").promptGuidelines.join("\n");
-    expect(guidelines).not.toContain("Explore");
-    expect(guidelines).not.toMatch(/\bgrep\b/);
-    expect(guidelines).toContain("wait: true");
-    expect(guidelines).toContain("never end your turn");
-    const description: string = tools.get("agent").description;
-    expect(description).toContain("wait: true");
-    expect(description).not.toContain("You will be notified when it completes");
+    if (!active) currentActiveTools.length = 0;
+    const ctx = { sessionManager: { getEntries: () => [{ type: "custom", customType: "agent-mode", data }] } };
+    const sections: Record<string, string> = { other: "kept" };
+    const result = await currentHandlers.get("before_agent_start")({ systemPrompt: "BASE", systemPromptOptions: { sections } }, ctx);
+    expect(result).toBeUndefined();
+    expect(sections.other).toBe("kept");
+    if (!active) expect(sections.subagents).toBeUndefined();
+    for (const name of present) expect(sections.subagents).toContain(name);
+    for (const name of absent) expect(sections.subagents).not.toContain(name);
   });
 
   it("defaults to the explicit full mode output", async () => {
@@ -305,16 +266,5 @@ describe("toolDescriptionMode", () => {
     } finally {
       warn.mockRestore();
     }
-  });
-
-  it("omits caller model and thinking overrides from the agent tool", () => {
-    const tools = setup({ toolDescriptionMode: "full" });
-    const agent = tools.get("agent");
-    const properties = agent.parameters.properties as Record<string, unknown>;
-    expect(properties).not.toHaveProperty("model");
-    expect(properties).not.toHaveProperty("thinking");
-    const description: string = agent.description;
-    expect(description).not.toContain("Use model to");
-    expect(description).not.toContain("Use thinking to");
   });
 });

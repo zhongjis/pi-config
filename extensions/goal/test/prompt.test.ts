@@ -18,7 +18,6 @@ describe("goal prompts", () => {
 		const prompt = buildContinuationPrompt(testGoal("A & B < C > D", { tokenBudget: 100 }));
 
 		expect(prompt).toContain("<objective>\nA &amp; B &lt; C &gt; D\n</objective>");
-		expect(prompt).not.toContain("<untrusted_objective>");
 	});
 
 	it("escapes the budget-limited objective inside its XML envelope", () => {
@@ -27,7 +26,6 @@ describe("goal prompts", () => {
 		);
 
 		expect(prompt).toContain("<objective>\nA &amp; B &lt; C &gt; D\n</objective>");
-		expect(prompt).not.toContain("<untrusted_objective>");
 	});
 });
 

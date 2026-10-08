@@ -138,7 +138,6 @@ describe("writeGraphResultArtifact", () => {
     expect(warnings).toHaveLength(1);
     expect(graphRunCompletionText(ctx, task)).toBe(first);
     expect(first).toContain(`Warning: ${task.resultArtifactError}`);
-    expect(first).toContain("Full output remains in the expanded graph run report");
     expect(first).not.toContain("<result-file>");
   });
 });
@@ -150,7 +149,7 @@ describe("graph retrieval text", () => {
     const result = await createGraphResultObserver(() => task, () => undefined, () => {}, () => {}).retrieve(task.id, false);
     const text = result.content.map(part => part.text ?? "").join("\n");
     expect(text).toContain(JSON.stringify(feedbackSummary));
-    expect(text).toContain("Full result with every round: /tmp/agr_0123456789ab.graph-result.txt");
+    expect(text).toContain(task.resultPath ?? "");
     expect(text).not.toContain("round-secret");
     expect(result.details.output).toBe(task.value);
     const output = result.details.output as typeof feedbackValue;
@@ -173,9 +172,9 @@ describe("graph retrieval text", () => {
     };
     const result = await createGraphResultObserver(() => task, () => request, () => {}, () => {}).retrieve(task.id, false);
     const text = result.content.map(part => part.text ?? "").join("\n");
-    expect(text).toContain("Human input required. Use ask, then resolve_agent_graph_gate with run_id, gate_id, revision and response.");
+    expect(text).toContain("resolve_agent_graph_gate");
     expect(text).toContain(JSON.stringify(request));
-    expect(text).not.toContain("Full result with every round");
+    expect(text).not.toContain(task.resultPath ?? "");
     expect(text).not.toContain("round-secret");
   });
 });

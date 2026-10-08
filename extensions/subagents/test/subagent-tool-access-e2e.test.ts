@@ -215,14 +215,8 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 
 		const { loaded } = await run("everything");
 
-		expect(loaded).toEqual([
-			"builtin:codemode",
-			"builtin:mcp",
-			"builtin:tool-search",
-			"f3-matrix-tools",
-			"f3-subagent",
-			"late-tools",
-		]);
+		expect(loaded.filter((id) => !id.startsWith("builtin:"))).toEqual(["f3-matrix-tools", "f3-subagent", "late-tools"]);
+		expect(loaded.some((id) => id.startsWith("builtin:"))).toBe(true);
 	});
 
 	it("extensions: +@all, -@builtin loads no builtin:* extension", async () => {

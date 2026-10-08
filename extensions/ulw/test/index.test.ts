@@ -1,6 +1,10 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect, beforeEach } from "vitest";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
+
+const promptSource = (variant: "default" | "gpt") =>
+	readFileSync(new URL(`../prompts/${variant}.md`, import.meta.url), "utf8").trim();
 
 type InputResult =
 	| { action: "continue" }
@@ -340,27 +344,24 @@ describe("ulw extension — model-adapted prompt selection", () => {
 	it("injects the OpenAI (GPT) variant for a GPT-family model", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "openai", id: "gpt-5.5" }));
-		expect(result?.message?.content).toContain("<output_verbosity_spec>");
-		expect(result?.message?.content).not.toContain("ZERO TOLERANCE FAILURES");
+		expect(result?.message?.content).toBe(promptSource("gpt"));
 	});
 
 	it("injects the GPT variant across proxy providers (litellm/openai-codex)", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "openai-codex", id: "gpt-5.5" }));
-		expect(result?.message?.content).toContain("<output_verbosity_spec>");
+		expect(result?.message?.content).toBe(promptSource("gpt"));
 	});
 
 	it("injects the Claude (default) variant for an Anthropic model", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "anthropic", id: "claude-opus-4-8" }));
-		expect(result?.message?.content).toContain("ZERO TOLERANCE FAILURES");
-		expect(result?.message?.content).not.toContain("<output_verbosity_spec>");
+		expect(result?.message?.content).toBe(promptSource("default"));
 	});
 
 	it("defaults to the Claude variant when no model is set", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel());
-		expect(result?.message?.content).toContain("<ultrawork-mode>");
-		expect(result?.message?.content).not.toContain("<output_verbosity_spec>");
+		expect(result?.message?.content).toBe(promptSource("default"));
 	});
 });

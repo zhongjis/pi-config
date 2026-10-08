@@ -330,7 +330,7 @@ describe("subagent tool rendering migration", () => {
     expect(full).toContain(decisive);
   });
 
-  it.each(["agent", "get_agent_result"])("B03 %s shows exact denial and preserves legacy/malformed raw fallback", (name) => {
+  it.each(["agent", "get_agent_result"])("B03 %s shows exact denial", (name) => {
     const tool = requireTool(name);
     const reason = "Delegation denied: only Explore is permitted.";
     const denied = Object.freeze({ content: [{ type: "text" as const, text: reason }], isError: true, details: {
@@ -339,12 +339,18 @@ describe("subagent tool rendering migration", () => {
     for (const expanded of [false, true]) {
       expect(renderText(tool.renderResult(denied, { expanded }, theme))).toContain(reason);
     }
+    expect(denied.content[0]?.text).toBe(reason);
+    expect(denied.isError).toBe(true);
+  });
+
+  it.each(["agent", "get_agent_result"])("B03 %s preserves raw fallback for malformed details", (name) => {
+    const tool = requireTool(name);
     for (const details of [undefined, "broken", { ...base, result: undefined }, { ...base, tags: 42 }, { ...base, error: {} }]) {
-      const raw = "Agent: legacy\n\n**Entire original body**\n" + "retained\n".repeat(60);
+      const raw = "Agent: raw\n\n**Entire original body**\n" + "retained\n".repeat(60);
       const result = { content: [{ type: "text" as const, text: raw }], details };
       expect(rawText(tool.renderResult(result, { expanded: true }, theme))).toBe(raw);
       const collapsed = tool.renderResult(result, { expanded: false }, theme);
-      expect(renderText(collapsed)).toContain("Agent: legacy");
+      expect(renderText(collapsed)).toContain("Agent: raw");
       expect(renderText(collapsed)).toContain("to expand full result");
       for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
         const lines = collapsed.render(width);
@@ -352,8 +358,6 @@ describe("subagent tool rendering migration", () => {
         for (const line of lines) expect(visibleWidth(line)).toBeLessThanOrEqual(width);
       }
     }
-    expect(denied.content[0]?.text).toBe(reason);
-    expect(denied.isError).toBe(true);
   });
 
   it("renders steer_subagent call preview and delivered expansion without mutating frozen input", () => {

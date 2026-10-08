@@ -16,14 +16,6 @@ vi.mock("../src/plan-storage.js", () => ({
 	writeLocalPlanFile: vi.fn(async () => {}),
 }));
 
-vi.mock("../src/constants.js", async (importOriginal: any) => {
-	const original = await importOriginal() as Record<string, unknown>;
-	return {
-		...original,
-		LOCAL_PLAN_URI: "local://PLAN.md",
-	};
-});
-
 vi.mock("../src/config-loader.js", () => ({
 	loadAgentConfig: () => ({ body: "" }),
 }));

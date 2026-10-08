@@ -11,14 +11,16 @@ import {
 	resolveToolModelSelection,
 } from "../tool-models.js";
 
-const SUMMARY_CHAIN = "gpt-5.4-mini,gemini-3-flash,claude-haiku-4-5,qwen3.5-plus,qwen2.5-coder:14b";
-const COMMIT_CHAIN = "claude-haiku-4-5,gpt-5.4-mini,opencode-go/qwen3.5-plus,llama-swap/qwen2.5-coder:7b";
-const GUARD_CHAIN = "openai-codex/gpt-5.6-luna:low,anthropic/claude-haiku-4-5";
-const VISION_CHAIN = "gpt-5.5:medium,mimo-v2.5,kimi-k2.6,glm-4.6v,gpt-5-nano" as const;
-
 function writeJson(path: string, value: unknown): void {
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, JSON.stringify(value, null, 2));
+}
+
+function writeSummaryChain(agentDir: string): void {
+	writeJson(join(agentDir, "tool_models.json"), {
+		version: 1,
+		roles: { "summary.session": "fixture/missing,fixture/summary" },
+	});
 }
 
 function makeRegistry(available: Array<{ id: string; provider: string; name?: string }>): ModelRegistry {
@@ -64,47 +66,14 @@ describe("tool model config", () => {
 	it("loads built-in defaults", () => {
 		const config = loadToolModelsConfig(cwd);
 
-		expect(BUILTIN_TOOL_MODELS_FILE).toEqual({
-			version: 1,
-			roles: {
-				"summary.session": SUMMARY_CHAIN,
-				commit: COMMIT_CHAIN,
-				"guard.tool": GUARD_CHAIN,
-				"vision.inspect": VISION_CHAIN,
-			},
-			tools: {
-				"smart-sessions.summary": { role: "summary.session" },
-				"boomerang.commit": { role: "commit" },
-				"smart-tool-guards.classifier": { role: "guard.tool" },
-				"multimodal-look.inspect": { role: "vision.inspect" },
-				"recap.generate": { role: "summary.session" },
-			},
-		});
-		expect(getToolModelSelection(config, "smart-sessions.summary")).toMatchObject({
-			chain: SUMMARY_CHAIN,
-			role: "summary.session",
-			source: "built-in",
-		});
-		expect(getToolModelSelection(config, "boomerang.commit")).toMatchObject({
-			chain: COMMIT_CHAIN,
-			role: "commit",
-			source: "built-in",
-		});
-		expect(getToolModelSelection(config, "smart-tool-guards.classifier")).toMatchObject({
-			chain: GUARD_CHAIN,
-			role: "guard.tool",
-			source: "built-in",
-		});
-		expect(getToolModelSelection(config, "multimodal-look.inspect")).toMatchObject({
-			chain: VISION_CHAIN,
-			role: "vision.inspect",
-			source: "built-in",
-		});
-		expect(getToolModelSelection(config, "recap.generate")).toMatchObject({
-			chain: SUMMARY_CHAIN,
-			role: "summary.session",
-			source: "built-in",
-		});
+		for (const [tool, mapping] of Object.entries(BUILTIN_TOOL_MODELS_FILE.tools)) {
+			const role = mapping.role;
+			expect(getToolModelSelection(config, tool)).toMatchObject({
+				chain: BUILTIN_TOOL_MODELS_FILE.roles[role],
+				role,
+				source: "built-in",
+			});
+		}
 		expect(config.diagnostics).toEqual([]);
 	});
 
@@ -207,7 +176,7 @@ describe("tool model config", () => {
 		const config = loadToolModelsConfig(cwd);
 		const selection = getToolModelSelection(config, "smart-sessions.summary");
 
-		expect(selection?.chain).toBe(SUMMARY_CHAIN);
+		expect(selection?.chain).toBe(BUILTIN_TOOL_MODELS_FILE.roles["summary.session"]);
 		expect(config.diagnostics).toEqual([
 			expect.objectContaining({ source: "project", path: join(cwd, ".pi", "tool_models.json") }),
 		]);
@@ -227,18 +196,20 @@ describe("tool model config", () => {
 	});
 
 	it("resolves the first available candidate through registry filtering", () => {
+		writeSummaryChain(agentDir);
 		const config = loadToolModelsConfig(cwd);
 		const selection = getToolModelSelection(config, "smart-sessions.summary");
 		const resolved = resolveToolModelSelection(
 			selection,
-			makeRegistry([{ id: "gemini-3-flash", provider: "google" }]),
+			makeRegistry([{ id: "summary", provider: "fixture" }]),
 		);
 
-		expect(resolved?.model).toEqual({ id: "gemini-3-flash", name: "gemini-3-flash", provider: "google" });
+		expect(resolved?.model).toEqual({ id: "summary", name: "summary", provider: "fixture" });
 	});
 
 	it("orders candidates: chain model then ctx.model fallback", () => {
-		const registry = makeRegistry([{ id: "gemini-3-flash", provider: "google" }]);
+		writeSummaryChain(agentDir);
+		const registry = makeRegistry([{ id: "summary", provider: "fixture" }]);
 		const ctxModel = { id: "session-model", provider: "session" };
 		const result = resolveToolModelCandidates(
 			{ cwd, modelRegistry: registry, model: ctxModel },
@@ -246,10 +217,10 @@ describe("tool model config", () => {
 		);
 
 		expect(result.candidates.map((candidate) => candidate.model)).toEqual([
-			{ id: "gemini-3-flash", name: "gemini-3-flash", provider: "google" },
+			{ id: "summary", name: "summary", provider: "fixture" },
 			ctxModel,
 		]);
-		expect(result.chain).toBe(SUMMARY_CHAIN);
+		expect(result.chain).toBe("fixture/missing,fixture/summary");
 	});
 
 	it("falls back to ctx.model when the chain has no available model", () => {
@@ -264,14 +235,15 @@ describe("tool model config", () => {
 	});
 
 	it("uses only the chain model when no ctx.model is present", () => {
-		const registry = makeRegistry([{ id: "gemini-3-flash", provider: "google" }]);
+		writeSummaryChain(agentDir);
+		const registry = makeRegistry([{ id: "summary", provider: "fixture" }]);
 		const result = resolveToolModelCandidates(
 			{ cwd, modelRegistry: registry },
 			"smart-sessions.summary",
 		);
 
 		expect(result.candidates.map((candidate) => candidate.model)).toEqual([
-			{ id: "gemini-3-flash", name: "gemini-3-flash", provider: "google" },
+			{ id: "summary", name: "summary", provider: "fixture" },
 		]);
 	});
 

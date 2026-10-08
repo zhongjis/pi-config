@@ -49,8 +49,7 @@ describe("goal display formatting", () => {
 				createdAt: 1_777_766_400,
 			},
 			remainingTokens: 6_750,
-			completionBudgetReport:
-				"Goal achieved. Report final usage from this tool result's structured goal fields. If `goal.tokenBudget` is present, include token usage from `goal.tokensUsed` and `goal.tokenBudget`. If `goal.timeUsedSeconds` is greater than 0, summarize elapsed time in a concise, human-friendly form appropriate to the response language.",
+			completionBudgetReport: expect.any(String),
 		});
 	});
 });

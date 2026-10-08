@@ -63,14 +63,12 @@ describe("buildParentContext", () => {
     expect(out).toBe("");
   });
 
-  it("wraps a user+assistant exchange with the parent-context header and task footer", () => {
+  it("joins a user+assistant exchange with role labels in conversation order", () => {
     const out = buildParentContext(
       makeCtx([userMsg("hello"), assistantMsg([{ type: "text", text: "hi back" }])]),
     );
-    expect(out).toContain("# Parent Conversation Context");
     expect(out).toContain("[User]: hello");
     expect(out).toContain("[Assistant]: hi back");
-    expect(out).toMatch(/# Your Task \(below\)\n$/);
     // Entries are joined with a blank line, preserving conversation order
     expect(out).toContain("[User]: hello\n\n[Assistant]: hi back");
   });

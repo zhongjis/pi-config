@@ -198,8 +198,8 @@ describe("deep-research-v1 graph", () => {
     expect(prompts.judge[0]).not.toContain("\"iterations\"");
     expect(prompts.writer[0]).toContain("\"id\":\"r2-1-1\"");
     expect(prompts.writer[0]).toContain("\"terminal\":{\"reason\":\"sufficient\"");
-    expect(prompts.worker[0]).not.toContain("Already opened references");
-    expect(prompts.worker[1]).toContain("Already opened references (do not reopen unless verifying a specific claim): [\"https://seed.example/a\",\"https://a.example/x\"]");
+    expect(prompts.worker[0]).not.toContain("a.example/x");
+    expect(prompts.worker[1]).toContain(JSON.stringify(["https://seed.example/a", "https://a.example/x"]));
 
     const last = structuredClone(checkpoints.at(-1));
     if (!last) throw new Error("Missing checkpoint");

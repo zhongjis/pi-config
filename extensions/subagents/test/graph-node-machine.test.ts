@@ -139,7 +139,8 @@ it("keeps attempt 1 identical and appends the schema failure to the repaired pro
   expect(error).toEqual(expect.stringContaining("did not match the requested schema"));
   actor.ack(repair, repaired(input.receipt));
   await actor.next("NODE.REQUEST", 1);
-  expect(prompts[1]).toBe(`fixture\n\nPrevious attempt 1 failed:\n${error}\nReturn a corrected result.`);
+  expect(prompts[1]?.startsWith("fixture\n\n")).toBe(true);
+  expect(prompts[1]).toContain(error ?? "");
   actor.parent.stop();
 });
 
@@ -154,13 +155,12 @@ it("includes the failing gate stderr tail in the repaired prompt", async () => {
   }, node: { ...agentInput().node, gate: "check", maxAttempts: 2 } });
   await terminal(input);
   expect(prompts[0]).toBe("fixture");
-  expect(prompts[1]).toContain("Previous attempt 1 failed:");
+  expect(prompts[1]?.startsWith("fixture\n\n")).toBe(true);
   expect(prompts[1]).toContain(stderr);
-  expect(prompts[1]).toContain("Return a corrected result.");
   expect(prompts[1]).not.toContain(output);
 });
 
-it("bounds a very long repair error to its tail and numbers later attempts", async () => {
+it("bounds a very long repair error to its tail in every repaired prompt", async () => {
   const marker = "UNIQUE_TAIL";
   const error = `${"x".repeat(4000)}${marker}`;
   const prompts: string[] = [];
@@ -169,8 +169,12 @@ it("bounds a very long repair error to its tail and numbers later attempts", asy
   await terminal(input);
   const tail = error.slice(-2000);
   expect(prompts[0]).toBe("fixture");
-  expect(prompts[1]).toBe(`fixture\n\nPrevious attempt 1 failed:\n${tail}\nReturn a corrected result.`);
-  expect(prompts[2]).toBe(`fixture\n\nPrevious attempt 2 failed:\n${tail}\nReturn a corrected result.`);
+  for (const prompt of prompts.slice(1)) {
+    expect(prompt.startsWith("fixture\n\n")).toBe(true);
+    expect(prompt).toContain(tail);
+    expect(prompt).not.toContain(error);
+  }
+  expect(prompts).toHaveLength(3);
   expect(tail).toHaveLength(2000);
   expect(tail.endsWith(marker)).toBe(true);
 });

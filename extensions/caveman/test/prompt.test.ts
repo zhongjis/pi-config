@@ -88,33 +88,29 @@ describe("caveman prompt", () => {
 		expect(() => prompt.loadRuntimePrompt()).toThrow(`Caveman prompt source not found: ${expectedPath}`);
 	});
 
-	it("injects only the active level row and examples", async () => {
+	it.each([
+		{
+			level: "lite",
+			present: ["Active level: lite. LITE_ROW_ALPHA", "Examples (lite): LITE_EX_DELTA LITE_EX_CASE LITE_EX_HOTEL"],
+			absent: [
+				"FULL_ROW_BRAVO", "ULTRA_ROW_CHARLIE", "FULL_EX_ECHO", "ULTRA_EX_FOXTROT",
+				"FULL_EX_INDIA", "ULTRA_EX_JULIET", "WENYAN_EX_GOLF", "WENYAN_EX_KILO", "wenyan",
+			],
+		},
+		{
+			level: "full",
+			present: ["FULL_ROW_BRAVO", "Examples (full): FULL_EX_ECHO FULL_EX_INDIA"],
+			absent: ["LITE_EX_DELTA", "WENYAN_EX_GOLF"],
+		},
+	] as const)("injects only the $level level row and examples", async ({ level, present, absent }) => {
 		await writeSkill(TEST_SKILL_BODY);
 		const prompt = await importFreshPrompt();
-		const injected = prompt.buildInjectedPrompt("lite");
 
-		expect(injected).toContain("Active level: lite. LITE_ROW_ALPHA");
-		expect(injected).toContain("Active level overrides Rules where they conflict.");
-		expect(injected).toContain("Examples (lite): LITE_EX_DELTA LITE_EX_CASE LITE_EX_HOTEL");
-		expect(injected.indexOf("Active level: lite.")).toBeLessThan(
-			injected.indexOf("Active level overrides Rules where they conflict."),
-		);
-		expect(injected.indexOf("Rules:")).toBeLessThan(injected.indexOf("Examples (lite):"));
-		expect(injected).not.toContain("FULL_ROW_BRAVO");
-		expect(injected).not.toContain("ULTRA_ROW_CHARLIE");
-		expect(injected).not.toContain("FULL_EX_ECHO");
-		expect(injected).not.toContain("ULTRA_EX_FOXTROT");
-		expect(injected).not.toContain("FULL_EX_INDIA");
-		expect(injected).not.toContain("ULTRA_EX_JULIET");
-		expect(injected).not.toContain("WENYAN_EX_GOLF");
-		expect(injected).not.toContain("WENYAN_EX_KILO");
-		expect(injected).not.toContain("wenyan");
+		const injected = prompt.buildInjectedPrompt(level);
 
-		const full = prompt.buildInjectedPrompt("full");
-		expect(full).toContain("FULL_ROW_BRAVO");
-		expect(full).toContain("Examples (full): FULL_EX_ECHO FULL_EX_INDIA");
-		expect(full).not.toContain("LITE_EX_DELTA");
-		expect(full).not.toContain("WENYAN_EX_GOLF");
+		for (const token of present) expect(injected).toContain(token);
+		for (const token of absent) expect(injected).not.toContain(token);
+		expect(injected.indexOf("Rules:")).toBeLessThan(injected.indexOf(`Examples (${level}):`));
 	});
 
 	it("omits the examples line when the active level has none", async () => {
