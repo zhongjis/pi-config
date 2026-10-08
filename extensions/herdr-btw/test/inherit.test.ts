@@ -89,6 +89,29 @@ describe("inherit availability", () => {
 		expect(buildAgentStartArgs({ ...launch, activeTools: [] }, "child")).toContain("--no-tools");
 	});
 
+	it("omits mcp__ names from the inherit CLI allowlist", () => {
+		const args = buildAgentStartArgs({ ...launch, availableTools: ["read", "mcp__srv__a", "web_search", "mcp__srv__b"] }, "child");
+		expect(args[args.indexOf("--tools") + 1]).toBe("read,web_search");
+	});
+
+	it("passes MCP-only availability unchanged", () => {
+		const names = ["mcp__srv__a", "mcp__srv__b"];
+		const args = buildAgentStartArgs({ ...launch, availableTools: names }, "child");
+		expect(args[args.indexOf("--tools") + 1]).toBe(names.join(","));
+		expect(args).not.toContain("--no-tools");
+	});
+
+	it("keeps the typed command under the terminal line limit with a large MCP registry", () => {
+		const MAX_CANON = 1024; // macOS terminal line limit for typed input
+		const names = [
+			...Array.from({ length: 40 }, (_, i) => `tool_${i}`),
+			...Array.from({ length: 100 }, (_, i) => `mcp__server__tool_${String(i).padStart(3, "0")}`),
+		];
+		const args = buildAgentStartArgs({ ...launch, availableTools: names }, "child");
+		const typed = "pi " + args.slice(args.indexOf("--") + 1).join(" ");
+		expect(Buffer.byteLength(typed)).toBeLessThan(MAX_CANON);
+	});
+
 	it.each(["all", "read-only", "none"] as const)("leaves %s CLI behavior unchanged", toolMode => {
 		const args = buildAgentStartArgs({ ...launch, toolMode, availableTools: available }, "child");
 		if (toolMode === "all") {

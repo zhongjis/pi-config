@@ -257,6 +257,11 @@ export function parsePaneSplitPaneId(stdout: string): string | null {
  */
 export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string): string[] {
 	const inheritTools = options.availableTools ?? options.activeTools;
+	// ponytail: mcp__* names are omitted to keep the typed command under macOS's 1024-byte terminal line limit.
+	// MCP availability falls back to pi's default of all connected servers, so a parent that restricted MCP via
+	// `--tools` is not mirrored. If non-MCP names alone approach 1 KB, move the allowlist off argv (or add globs).
+	const nonMcpTools = inheritTools.filter((name) => !name.startsWith("mcp__"));
+	const cliTools = nonMcpTools.length > 0 ? nonMcpTools : inheritTools;
 	return [
 		"agent",
 		"start",
@@ -273,7 +278,7 @@ export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string)
 		options.thinkingLevel,
 		...(options.toolMode === "inherit"
 			? inheritTools.length > 0
-				? ["--tools", inheritTools.join(",")]
+				? ["--tools", cliTools.join(",")]
 				: ["--no-tools"]
 			: options.toolMode === "read-only"
 				? ["--tools", "read,grep,find,ls"]
