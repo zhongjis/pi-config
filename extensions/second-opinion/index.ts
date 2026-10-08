@@ -292,6 +292,8 @@ export default function secondOpinion(pi: ExtensionAPI) {
   pi.registerTool({
     name: SESSION_SCOPE_TOOL,
     label: "Codex session review scope",
+    // Command-gated: /codex:review session activates it; registration does not.
+    defaultActive: false,
     description: [
       "Run Codex review for a confirmed session scope.",
       "Use only after /codex:review session asks you to choose scope.",

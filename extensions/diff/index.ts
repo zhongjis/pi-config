@@ -434,10 +434,9 @@ export default function (pi: ExtensionAPI) {
         if (sub === "pr-walkthrough") {
           // Phase A: hand off to the agent to analyze the diff and write the
           // agent-context sidecar; it opens the review via open_pr_walkthrough.
-          // Activate the agent-only tool for this session. It is reachable only
-          // when the active mode's `tools:` rules grant it: the mode ceiling
-          // hides and vetoes ungranted tools, and modes re-apply their rules on
-          // every prompt.
+          // Activate the agent-only tool (registered inactive) for this session.
+          // `tools:` rules only permit: in a mode or subagent that does not
+          // grant it, the ceiling hides it and the tool_call guard vetoes it.
           const active = pi.getActiveTools();
           if (!active.includes("open_pr_walkthrough")) {
             pi.setActiveTools([...active, "open_pr_walkthrough"]);
@@ -504,6 +503,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "open_pr_walkthrough",
     label: "Open PR walkthrough",
+    // Command-gated: /diff pr-walkthrough activates it; registration does not.
+    defaultActive: false,
     description: [
       "Open hunk showing the PR diff with your pre-written review annotations inline.",
       "Call this only after writing the agent-context sidecar that /diff pr-walkthrough asked for.",
