@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
-import { GOAL_ACCESS_ENTRY, GOAL_TOOL_NAMES, GOAL_TOOL_OWNER_CHANNEL, goalToolAccess, modesOwnGoalTools } from "../src/goal/access.js";
+import { GOAL_ACCESS_ENTRY, GOAL_TOOL_NAMES, goalToolAccess } from "../src/goal/access.js";
 import { goalStoreRef } from "../src/goal/context.js";
 import { createGoal, goalFilePath, updateGoal } from "../src/goal/store.js";
 import { GOAL_STATUS_VALUES } from "../src/goal/types.js";
@@ -44,15 +44,6 @@ describe("Goal-owned tool access", () => {
 		await createGoal(ref, "Fixture");
 		await writeFile(goalFilePath(ref), "invalid");
 		await expect(goalToolAccess(ctx as never)).rejects.toThrow();
-	});
-	it("discovers the live tool owner without retaining reply listeners", () => {
-		const mock = createMockPi();
-		expect(modesOwnGoalTools(mock.pi as never)).toBe(false);
-		mock.pi.events.on(GOAL_TOOL_OWNER_CHANNEL, (request) => {
-			if (typeof request !== "object" || request === null || !("requestId" in request)) throw new Error("Invalid request");
-			mock.pi.events.emit(`${GOAL_TOOL_OWNER_CHANNEL}:reply:${request.requestId}`, { success: true, data: true });
-		});
-		expect(modesOwnGoalTools(mock.pi as never)).toBe(true);
 	});
 	it("consumes repeated activation once and clears pending on session switching", async () => {
 		const ctx = await context();

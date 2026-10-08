@@ -48,7 +48,7 @@ import { parseAccessRules } from "../../lib/active-tools.js";
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import { MODE_TOOL_CEILING_NAME } from "../src/constants.js";
 import modesExtension from "../src/index.js";
-import { registerModeGuardScope, registerModeHooks } from "../src/hooks.js";
+import { registerModeGuardScope, registerModeHooks, stripUngrantedToolGuidelines } from "../src/hooks.js";
 import { ModeStateManager } from "../src/mode-state.js";
 
 type MockTool = { name: string; exposure?: string; sourceInfo?: { path: string } };
@@ -847,6 +847,39 @@ describe("mode tool ceiling", () => {
 		await mock.fire("turn_end", {}, createSessionCtx());
 
 		expect(mock.pi.setActiveTools).not.toHaveBeenCalled();
+	});
+});
+
+describe("stripUngrantedToolGuidelines", () => {
+	const tools = [
+		{ name: "read", promptGuidelines: ["Read before editing.", "Shared rule."] },
+		{ name: "web_enable", promptGuidelines: ["  Call web_enable first.  ", "Shared rule.", "Prompt rule."] },
+		{ name: "bash" },
+	];
+	const prompt = ["Intro", "- Read before editing.", "- Shared rule.", "- Call web_enable first.", "- Prompt rule.", "Call web_enable first."].join("\n");
+
+	it("removes only rule lines unique to ungranted tools", () => {
+		expect(stripUngrantedToolGuidelines(prompt, tools, new Set(["read"]), ["Prompt rule."])).toBe(
+			["Intro", "- Read before editing.", "- Shared rule.", "- Prompt rule.", "Call web_enable first."].join("\n"),
+		);
+	});
+
+	it("returns the prompt unchanged when every tool with guidelines is allowed", () => {
+		expect(stripUngrantedToolGuidelines(prompt, tools, new Set(["read", "web_enable"]))).toBe(prompt);
+	});
+
+	it("strips ungranted guidelines from the before_agent_start prompt", async () => {
+		const mock = createMockPi([{ name: "read" }]);
+		mock.addTool({ name: "web_enable", sourceInfo: { path: "/fixture/pi-web-access/index.ts" } });
+		const registry = mock.pi.getAllTools;
+		mock.pi.getAllTools = () => registry().map((tool) => tool.name === "web_enable" ? { ...tool, promptGuidelines: ["Call web_enable first."] } : tool);
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs["kuafu:default"] = { body: "", toolRules: toolRules("+read") };
+		registerModeHooks(mock.pi as never, state);
+
+		const [result] = await mock.fire("before_agent_start", { systemPrompt: "Base\n- Call web_enable first.", systemPromptOptions: { promptGuidelines: [] } }, createSessionCtx());
+
+		expect(result).toEqual({ systemPrompt: "Base" });
 	});
 });
 

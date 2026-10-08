@@ -142,7 +142,15 @@ vi.mock("../src/skill-loader.js", () => ({
   preloadSkills: vi.fn(() => []),
 }));
 
-import { type AccessRuleField, parseAccessRules } from "../../lib/active-tools.js";
+import {
+  type AccessRule,
+  type AccessRuleField,
+  createToolCeilingTool,
+  parseAccessRules,
+  resolveToolAccess,
+  toolCandidates,
+  type ToolAccessGates,
+} from "../../lib/active-tools.js";
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import {
   getAgentConversation,
@@ -157,9 +165,23 @@ let lastSession: ReturnType<typeof createSession>["session"] | undefined;
 
 function createSession(finalText: string) {
   const listeners: Array<(event: any) => void> = [];
-  // pi activates only these four by default when no allowlist is given
-  // (agent-session.js `defaultActiveToolNames`).
-  let activeToolNames: string[] = ["read", "bash", "edit", "write"];
+  // Pi — not `tools:` — owns activation: it auto-activates its default
+  // built-ins (agent-session.js's `defaultActiveToolNames`: read/bash/edit/write)
+  // plus every direct/model-only extension or SDK tool (including the runner's
+  // ceiling tool) as soon as it observes the tool in the live registry. Default-off
+  // built-ins (grep/find/ls) never auto-activate — no `tools:` rule can turn them
+  // on. Activation is sticky: once seen, a tool stays active.
+  const DEFAULT_ACTIVE_BUILTINS = new Set(["read", "bash", "edit", "write"]);
+  const activated = new Set<string>();
+  let activeToolNames: string[] = [];
+  const refreshActivation = () => {
+    for (const { name } of session.getAllTools()) {
+      if (activated.has(name)) continue;
+      activated.add(name);
+      if (BUILTINS_7.includes(name) && !DEFAULT_ACTIVE_BUILTINS.has(name)) continue;
+      activeToolNames.push(name);
+    }
+  };
   const session = {
     messages: [] as any[],
     waitForIdle: vi.fn(async () => {}),
@@ -175,11 +197,16 @@ function createSession(finalText: string) {
     }),
     abort: vi.fn(),
     steer: vi.fn(),
-    // Stateful, so the active set reflects what the scope installer actually did
-    // and `renarrow`'s no-op guard behaves as it does against real pi.
-    getActiveToolNames: vi.fn(() => activeToolNames),
+    // Live-refreshed on every read, so newly-registered tools (late MCP/context-mode
+    // tools, the ceiling) are picked up the moment anything queries the registry —
+    // matching Pi activating a tool the instant it registers.
+    getActiveToolNames: vi.fn(() => {
+      refreshActivation();
+      return [...activeToolNames];
+    }),
     setActiveToolsByName: vi.fn((names: string[]) => {
       activeToolNames = [...names];
+      for (const name of names) activated.add(name);
     }),
     // pi's tool REGISTRY (`_toolDefinitions`), read live so tests can simulate an
     // extension registering after bind by mutating `loaderExtensionsRef`.
@@ -973,13 +1000,17 @@ function withExtensions(spec: Record<string, string[]>) {
   };
 }
 
+/** Name of the runner's trusted ceiling tool (`TOOL_CEILING_TOOL_NAME` in agent-runner.ts). */
+const TOOL_CEILING_TOOL_NAME = "subagent_tool_ceiling";
+
 /**
  * The tool REGISTRY pi would build for a given `createAgentSession` call —
  * mirroring `_refreshToolRegistry`'s `isAllowedTool` — as tool names with
  * their `sourceInfo.path`:
  *   - `tools:` set   → the allowlist gates the registry (nothing else registers).
  *   - `tools:` unset → every built-in plus every loaded extension tool, minus
- *     `excludeTools`, and it keeps growing as extensions register later.
+ *     `excludeTools`, plus the runner's ceiling tool; it keeps growing as
+ *     extensions register later.
  * SDK `customTools` (StructuredOutput) carry a trusted `<sdk:name>` source.
  * Read live from `loaderExtensionsRef`, so a test can simulate late registration.
  */
@@ -993,6 +1024,7 @@ function mockRegistry(opts: Record<string, any>): Array<{ name: string; path: st
         ...BUILTINS_7.map((name) => ({ name, path: `builtin:${name}` })),
         ...loaderExtensionsRef.current.extensions.flatMap((e) => [...e.tools.keys()].map((name) => ({ name, path: e.path }))),
         ...[...sdk].map((name) => ({ name, path: `<sdk:${name}>` })),
+        { name: TOOL_CEILING_TOOL_NAME, path: "<inline:subagent-nested-tool-scope>" },
       ];
   const seen = new Set<string>();
   return all.filter(({ name }) => {
@@ -1005,16 +1037,30 @@ function mockRegistry(opts: Record<string, any>): Array<{ name: string; path: st
 /**
  * What the LLM can actually call.
  *
- * Under the static allowlist (no extensions) that is `tools:` verbatim.
- * Otherwise the registry is scoped by `excludeTools` and then narrowed to the ACTIVE
- * set by `installExtensionToolScope` — so the active set is the real answer, and
- * asserting on it means these tests exercise the narrowing rather than a
- * reimplementation of pi's gate.
+ * Under the static allowlist (no extensions) that is `tools:` verbatim. Otherwise
+ * it is the live ACTIVE set (what Pi itself activates — `tools:` never adds or
+ * removes from it) minus whatever the REAL ceiling tool's `prepareLoadout` hides,
+ * applied only while the ceiling is itself active — mirroring `installExtensionToolScope`
+ * and the runner's ceiling tool (see agent-tool-scope.ts, agent-runner.ts).
  */
 function lastToolsPassed(): string[] {
   const opts = createAgentSession.mock.calls[0][0];
   if (opts.tools) return opts.tools;
-  return lastSession?.getActiveToolNames() ?? [];
+  const active = lastSession?.getActiveToolNames() ?? [];
+  if (!active.includes(TOOL_CEILING_TOOL_NAME)) return active;
+
+  const agentConfigResult = vi.mocked(getAgentConfig).mock.results.at(-1)?.value as
+    | { toolRules?: readonly AccessRule[]; allowNesting?: boolean }
+    | undefined;
+  const configResult = vi.mocked(getConfig).mock.results.at(-1)?.value as
+    | { toolRules?: readonly AccessRule[] }
+    | undefined;
+  const toolRules = agentConfigResult?.toolRules ?? configResult?.toolRules ?? [];
+  const gates: ToolAccessGates = { allowNesting: agentConfigResult?.allowNesting };
+  const allowed = resolveToolAccess(toolRules, toolCandidates(lastSession!.getAllTools()), gates).allowed;
+  const ceiling = createToolCeilingTool(TOOL_CEILING_TOOL_NAME, () => allowed);
+  const hidden = new Set(ceiling.prepareLoadout?.({ declared: active.map((name) => ({ name })) })?.hiddenDeclarations ?? []);
+  return active.filter((name) => !hidden.has(name));
 }
 
 function lastLoaderOpts(): Record<string, unknown> {
@@ -1393,7 +1439,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
 });
 
 describe("agent-runner master tool allowlist", () => {
-  it("tools: +@all with loaded extensions — all 7 built-ins plus extension tools land in the active set", async () => {
+  it("tools: +@all with loaded extensions — the four default built-ins plus extension tools land in the active set", async () => {
     setupRules("+@all, -@builtin", "+@all");
     withExtensions({ "/ext/mcp.ts": ["mcp", "mcp_call"] });
     const { session } = createSession("OK");
@@ -1401,11 +1447,13 @@ describe("agent-runner master tool allowlist", () => {
 
     await runAgent(ctx, "Explore", "go", { pi });
 
-    // Order is not semantically meaningful (pi-mono dedupes via Set);
-    // assert membership and exact size instead.
+    // `tools: +@all` grants grep/find/ls too, but Pi only auto-activates its
+    // four default built-ins — no `tools:` rule can turn on a default-off tool.
     const tools = lastToolsPassed();
-    expect(tools).toHaveLength(BUILTINS_7.length + 2);
-    expect(new Set(tools)).toEqual(new Set([...BUILTINS_7, "mcp", "mcp_call"]));
+    expect(new Set(tools)).toEqual(new Set(["read", "bash", "edit", "write", "mcp", "mcp_call"]));
+    expect(tools).not.toContain("grep");
+    expect(tools).not.toContain("find");
+    expect(tools).not.toContain("ls");
   });
 
   it("enumerates tools across multiple loaded extensions", async () => {
@@ -1479,15 +1527,13 @@ describe("agent-runner master tool allowlist", () => {
       new Set(Object.values(SUBAGENT_TOOL_NAMES)),
     );
 
-    // The active set is repaired AFTER bindExtensions (tools may register during
-    // session_start), activating the extension tool plus the granted built-ins.
-    expect(session.setActiveToolsByName).toHaveBeenCalledTimes(1);
-    const setOrder = session.setActiveToolsByName.mock.invocationCallOrder[0];
-    const bindOrder = session.bindExtensions.mock.invocationCallOrder[0];
-    expect(setOrder).toBeGreaterThan(bindOrder);
-    const activated = new Set(session.setActiveToolsByName.mock.calls[0][0]);
-    expect(activated.has("mcp")).toBe(true);
-    expect(activated.has("read")).toBe(true);
+    // `tools:` only permits now — activation is Pi's job (and the extension's,
+    // for the mcp tool), so the scope installer does not call setActiveToolsByName
+    // for policy. It only re-adds the ceiling if something else dropped it, which
+    // nothing does here (Pi activates the ceiling on registration), so no call at all.
+    expect(session.setActiveToolsByName).not.toHaveBeenCalled();
+    expect(lastToolsPassed()).toContain("mcp");
+    expect(lastToolsPassed()).toContain("read");
   });
 
   it("dynamic mode: ungranted built-ins join excludeTools by name", async () => {
@@ -1566,10 +1612,17 @@ describe("agent-runner async extension tool registration", () => {
     registerLate("/ext/bar.ts", "bar_late");
     for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
+    // Pi activates every extension tool it observes, regardless of `tools:`.
     const active = session.getActiveToolNames();
     expect(active).toContain("foo_late");
-    // bar_late did not exist at construction and is not granted.
-    expect(active).not.toContain("bar_late");
+    expect(active).toContain("bar_late");
+    // The model only sees what the rules grant; the ceiling hides the rest.
+    const declared = lastToolsPassed();
+    expect(declared).toContain("foo_late");
+    expect(declared).not.toContain("bar_late");
+    await expect(
+      session.agent.beforeToolCall?.({ toolCall: { name: "bar_late" } }),
+    ).resolves.toMatchObject({ block: true });
   });
 
   it("an @<extension> group admits late tools from that extension only", async () => {
@@ -1584,7 +1637,10 @@ describe("agent-runner async extension tool registration", () => {
     registerLate("/ext/bar.ts", "bar_late");
     for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
-    expect([...session.getActiveToolNames()].sort()).toEqual(["foo_early", "foo_late", "read"]);
+    // Pi activates every extension tool it observes, regardless of `tools:`.
+    expect(session.getActiveToolNames()).toContain("bar_late");
+    // The model only sees what the `@foo` rule grants.
+    expect([...lastToolsPassed()].sort()).toEqual(["foo_early", "foo_late", "read"]);
   });
 
   it("beforeToolCall blocks an out-of-scope tool and delegates otherwise", async () => {
@@ -1634,8 +1690,10 @@ describe("agent-runner async extension tool registration", () => {
     registerLate("/ext/bar.ts", "bar_late");
     for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
+    // Pi activated both; the ceiling + veto hold bar_late back.
     expect(session.getActiveToolNames()).toContain("foo_late");
-    expect(session.getActiveToolNames()).not.toContain("bar_late");
+    expect(session.getActiveToolNames()).toContain("bar_late");
+    expect(lastToolsPassed()).not.toContain("bar_late");
     await expect(
       session.agent.beforeToolCall?.({ toolCall: { name: "bar_late" } }),
     ).resolves.toMatchObject({ block: true });

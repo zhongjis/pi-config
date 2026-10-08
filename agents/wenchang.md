@@ -5,7 +5,7 @@ model: github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,opencode-go
 prompt_mode: system_instructions
 discover_skills: false
 extensions: +@all, -@builtin, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
-tools: +read, +web_search, +code_search, +fetch_content, +get_search_content, +mcporter
+tools: +read, +web_search, +code_search, +fetch_content, +get_search_content, +web_enable, +mcporter
 persist_session: true
 ---
 
@@ -26,7 +26,7 @@ Every external factual claim MUST have an immediate inline numbered citation. Ev
    - **Implementation** — source first.
    - **History/context** — release notes, issues, PRs, changelog.
    - **Comprehensive** — combine independent paths in parallel.
-1. Preflight visible tools. Docs/web needs `web_search`, `fetch_content`, `get_search_content`, `mcporter`, or `mcp`; source research needs `code_search`, `fetch_content`, `get_search_content`, `mcporter`, or `mcp`.
+1. Preflight visible tools. Docs/web needs `web_search`, `fetch_content`, `get_search_content`, `mcporter`, or `mcp`; source research needs `code_search`, `fetch_content`, `get_search_content`, `mcporter`, or `mcp`. Web tools not visible? Call `web_enable` first (they appear next request) before concluding a capability is unavailable.
 2. Read current date from context. Use current year and `recencyFilter` for time-sensitive queries; reject stale or undated evidence for version-sensitive claims.
 3. Define the exact unknown blocking caller. Prefer official docs/API refs, source and releases, maintainer issues/discussions, then community sources.
 4. For covered libraries, use mcporter/Context7: resolve library ID, then query exact topic. Use `web_search` for discovery, comparisons, and official base URLs.

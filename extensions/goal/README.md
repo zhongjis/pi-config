@@ -15,7 +15,7 @@ Independently maintained in Panda Harness. Origin: [code-yeongyu/pi-goal](https:
 
 Tool schemas, the command, and lifecycle hooks are registered in [`src/index.ts`](src/index.ts).
 
-Goal tools use native deferred exposure: fresh sessions do not declare them until accepted ULW or explicit `/goal` activation. Restored unfinished Goals retain policy-permitted management tools. [Access](src/goal/access.ts) remains session-scoped; modes owns the final allowlist when loaded. ULW supplies only an activation signal; Goal injects a separate hidden [bootstrap](src/goal/bootstrap.ts) asking the model to inspect the Goal and create one only for the agreed task. It never deterministically creates or resumes a Goal.
+Goal tools use native deferred exposure: fresh sessions do not declare them until accepted ULW or explicit `/goal` activation. Restored unfinished Goals retain policy-permitted management tools. [Access](src/goal/access.ts) remains session-scoped; Goal owns activation of its own tools, and modes (when loaded) only gate permission over that set. ULW supplies only an activation signal; Goal injects a separate hidden [bootstrap](src/goal/bootstrap.ts) asking the model to inspect the Goal and create one only for the agreed task. It never deterministically creates or resumes a Goal.
 
 ## Settings / Configuration
 

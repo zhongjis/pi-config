@@ -14,7 +14,7 @@ import { goalStoreRef } from "./goal/context.js";
 import { COMPLETABLE_GOAL_STATUS_VALUES, isRecord } from "./goal/types.js";
 import { updateGoalUi } from "./goal/ui.js";
 
-import { GOAL_ACCESS_ENTRY, GOAL_TOOL_NAMES, goalToolAccess, modesOwnGoalTools } from "./goal/access.js";
+import { GOAL_ACCESS_ENTRY, GOAL_TOOL_NAMES, goalToolAccess } from "./goal/access.js";
 import { GOAL_BOOTSTRAP_MESSAGE_TYPE, GOAL_BOOTSTRAP_PROMPT } from "./goal/bootstrap.js";
 
 const GOAL_USAGE = "Usage: /goal <objective>";
@@ -47,7 +47,6 @@ export default function (pi: ExtensionAPI): void {
 	});
 
 	async function refreshToolAccess(ctx: ExtensionContext): Promise<void> {
-		if (modesOwnGoalTools(pi)) return;
 		const allowed = await goalToolAccess(ctx);
 		const registered = new Set(pi.getAllTools().map((tool) => tool.name));
 		pi.setActiveTools([

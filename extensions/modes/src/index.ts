@@ -15,7 +15,6 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { GOAL_TOOL_OWNER_CHANNEL } from "../../goal/src/goal/access.js";
 import { buildPlanExecutionGoal, setPreparedHandoffArgsResolver } from "../../handoff/runtime.js";
 import { registerModeCommands } from "./commands.js";
 import { registerModeGuardScope, registerModeHooks } from "./hooks.js";
@@ -25,11 +24,6 @@ import { getLocalPlanPath } from "./plan-storage.js";
 import { registerPlanScaffoldTool } from "./plan-scaffold.js";
 export default function modesExtension(pi: ExtensionAPI): void {
 	const state = new ModeStateManager(pi);
-	const unsubscribeGoalOwner = pi.events.on(GOAL_TOOL_OWNER_CHANNEL, (request: unknown) => {
-		if (typeof request !== "object" || request === null || !("requestId" in request) || typeof request.requestId !== "string") return;
-		pi.events.emit(`${GOAL_TOOL_OWNER_CHANNEL}:reply:${request.requestId}`, { success: true, data: true });
-	});
-	pi.on("session_shutdown", () => { unsubscribeGoalOwner(); });
 	registerModeGuardScope(pi, state);
 
 	// Fallback args resolver so /handoff:start-work can derive

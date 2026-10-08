@@ -185,10 +185,21 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 
 	it("applies custom-agent tool rules after extension binding", async () => {
 		writeAgent("matrix", "extensions: +@all, -@builtin\ntools: +read, +matrix.allowed, +agent, +get_agent_result, +steer_subagent");
+		const requests: string[][] = [];
+		fauxRuntime.faux.setResponses([
+			(context) => {
+				requests.push(getCurrentTools(context.messages).map((tool) => tool.name));
+				return fauxAssistantMessage([fauxText("done")]);
+			},
+		]);
 
 		const { active } = await run("matrix");
 
-		expect(active.filter((name) => name !== CEILING).sort()).toEqual(["matrix.allowed", "read"]);
+		// Pi activates every tool its loaded extensions register, including
+		// matrix.denied, which the agent's `tools:` rules do not grant.
+		expect(active).toContain("matrix.denied");
+		// The model only ever sees what the rules grant — the ceiling hides the rest.
+		expect(requests[0].filter((name) => name !== CEILING).sort()).toEqual(["matrix.allowed", "read"]);
 	});
 
 	it("omitted extensions: loads no discovered or built-in extension while tools: +read still activates read", async () => {
@@ -224,12 +235,22 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 
 	it("tools: +@<extension>, -<tool> activates exactly the granted tools", async () => {
 		writeAgent("group", "extensions: +f3-matrix-tools\ntools: +@f3-matrix-tools, -matrix.denied");
+		const requests: string[][] = [];
+		fauxRuntime.faux.setResponses([
+			(context) => {
+				requests.push(getCurrentTools(context.messages).map((tool) => tool.name));
+				return fauxAssistantMessage([fauxText("done")]);
+			},
+		]);
 
 		const { active } = await run("group");
 
+		// matrix.denied stays active (Pi activated it on registration); `-matrix.denied`
+		// only permits, it does not deactivate.
+		expect(active).toContain("matrix.denied");
 		// The trusted ceiling tool is always granted and stays active; its own
-		// declaration is hidden from the model.
-		expect([...active].sort()).toEqual(["matrix.allowed", CEILING]);
+		// declaration is hidden from the model, along with matrix.denied.
+		expect(requests[0].sort()).toEqual(["matrix.allowed"]);
 	});
 
 	it("hides an ungranted tool registered during before_agent_start from the first provider request", async () => {

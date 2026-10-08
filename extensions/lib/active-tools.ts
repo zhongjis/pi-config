@@ -318,35 +318,6 @@ export function resolveToolAccess(
 }
 
 /**
- * Final active tool names for a policy-ceiling runtime. Keeps registry order
- * and dedupes; allowed `direct`/`model-only`/unknown-exposure tools are
- * included, allowed `codemode`/`deferred` tools only when already active,
- * and `hidden` tools are never included.
- */
-export function selectActiveToolNames(
-  tools: readonly { name: string; exposure?: string }[],
-  allowed: ReadonlySet<string>,
-  currentActive: readonly string[],
-): string[] {
-  const current = new Set(currentActive);
-  const seen = new Set<string>();
-  const result: string[] = [];
-
-  for (const t of tools) {
-    if (seen.has(t.name)) continue;
-    seen.add(t.name);
-    if (!allowed.has(t.name)) continue;
-
-    if (t.exposure === "hidden") continue;
-    if ((t.exposure === "codemode" || t.exposure === "deferred") && !current.has(t.name)) continue;
-
-    result.push(t.name);
-  }
-
-  return result;
-}
-
-/**
  * Always-active, model-only policy tool that hides its own declaration plus
  * every declared tool the allowlist does not grant. `allowedToolNames` is
  * called once per `prepareLoadout` invocation.

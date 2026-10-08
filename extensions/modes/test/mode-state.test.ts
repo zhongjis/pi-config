@@ -425,7 +425,11 @@ describe("ModeStateManager tool access", () => {
 		return state;
 	}
 
-	it("leaves only the ceiling active for empty tools rules", async () => {
+	function allowed(state: ModeStateManager): string[] {
+		return [...state.allowedToolNames()].sort();
+	}
+
+	it("allows nothing for empty tools rules and leaves the active set to Pi", async () => {
 		const pi = createToolPi(
 			[builtin("read"), builtin("bash"), tool("web_search", WEB_ACCESS), tool(MODE_TOOL_CEILING_NAME, MODES, "model-only")],
 			["read", "bash", "web_search", MODE_TOOL_CEILING_NAME],
@@ -434,10 +438,13 @@ describe("ModeStateManager tool access", () => {
 
 		await state.applyToolAccess(createCtx() as never);
 
-		expect(pi.getActiveTools()).toEqual([MODE_TOOL_CEILING_NAME]);
+		expect({ allowed: allowed(state), active: pi.getActiveTools() }).toEqual({
+			allowed: [],
+			active: ["read", "bash", "web_search", MODE_TOOL_CEILING_NAME],
+		});
 	});
 
-	it("activates every direct tool but a subtracted one and no inactive codemode or deferred tool under +@all, -edit", async () => {
+	it("allows every tool but a subtracted one under +@all, -edit without activating any", async () => {
 		const pi = createToolPi([
 			builtin("read"),
 			builtin("edit"),
@@ -451,10 +458,13 @@ describe("ModeStateManager tool access", () => {
 
 		await state.applyToolAccess(createCtx() as never);
 
-		expect(pi.getActiveTools()).toEqual(["read", "bash", "web_search", "codemode"]);
+		expect({ allowed: allowed(state), active: pi.getActiveTools() }).toEqual({
+			allowed: ["bash", "codemode", "lookup_symbols", "read", "web_fetch", "web_search"],
+			active: ["read"],
+		});
 	});
 
-	it("activates a tool an @<extension> rule grants once that extension registers it late", async () => {
+	it("allows a tool an @<extension> rule grants once that extension registers it late", async () => {
 		const pi = createToolPi([builtin("read"), tool("web_search", WEB_ACCESS)], ["read"]);
 		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+read, +@web-access") } });
 		const ctx = createCtx();
@@ -463,10 +473,10 @@ describe("ModeStateManager tool access", () => {
 
 		await state.applyToolAccess(ctx as never);
 
-		expect(pi.getActiveTools()).toEqual(["read", "web_search", "web_fetch"]);
+		expect(allowed(state)).toEqual(["read", "web_fetch", "web_search"]);
 	});
 
-	it("activates the deferred Goal tools that both the rules and Goal access allow", async () => {
+	it("allows the Goal tools that both the rules and Goal access allow, without activating them", async () => {
 		const goals = ["create_goal", "get_goal", "update_goal"].map((name) => tool(name, GOAL, "deferred"));
 		const pi = createToolPi([builtin("read"), ...goals], ["read"]);
 		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+read, +get_goal, +update_goal") } });
@@ -474,10 +484,13 @@ describe("ModeStateManager tool access", () => {
 
 		await state.applyToolAccess(ctx as never);
 
-		expect(pi.getActiveTools()).toEqual(["read", "get_goal", "update_goal"]);
+		expect({ allowed: allowed(state), active: pi.getActiveTools() }).toEqual({
+			allowed: ["get_goal", "read", "update_goal"],
+			active: ["read"],
+		});
 	});
 
-	it("keeps Goal tools inactive without Goal access even under +@all", async () => {
+	it("denies Goal tools without Goal access even under +@all", async () => {
 		const goals = ["create_goal", "get_goal", "update_goal"].map((name) => tool(name, GOAL, "deferred"));
 		const pi = createToolPi([builtin("read"), ...goals], ["read"]);
 		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+@all") } });
@@ -488,19 +501,19 @@ describe("ModeStateManager tool access", () => {
 
 		await state.applyToolAccess(ctx as never);
 
-		expect(pi.getActiveTools()).toEqual(["read"]);
+		expect(allowed(state)).toEqual(["read"]);
 	});
 
 	it.each([
 		["kuafu", ["read"]],
-		["fuxi", ["read", "plan_approve", "plan_scaffold"]],
+		["fuxi", ["plan_approve", "plan_scaffold", "read"]],
 	] as const)("grants Fu Xi plan tools under +@all only in fuxi (%s)", async (mode: Mode, expected: readonly string[]) => {
 		const pi = createToolPi([builtin("read"), tool("plan_approve", MODES), tool("plan_scaffold", MODES)], ["read"]);
 		const state = createState(pi, { [mode]: { body: "", toolRules: rules("+@all") } }, mode);
 
 		await state.applyToolAccess(createCtx() as never);
 
-		expect(pi.getActiveTools()).toEqual(expected);
+		expect(allowed(state)).toEqual(expected);
 	});
 
 	it("grants no tools when the mode file is missing", async () => {
@@ -514,7 +527,10 @@ describe("ModeStateManager tool access", () => {
 
 		await state.applyToolAccess(createCtx() as never);
 
-		expect(pi.getActiveTools()).toEqual([MODE_TOOL_CEILING_NAME]);
+		expect({ allowed: allowed(state), ceilingActive: pi.getActiveTools().includes(MODE_TOOL_CEILING_NAME) }).toEqual({
+			allowed: [],
+			ceilingActive: true,
+		});
 	});
 
 	it("an invalid mode file notifies its errors and grants no tools", async () => {
@@ -529,31 +545,38 @@ describe("ModeStateManager tool access", () => {
 		await state.applyToolAccess(ctx as never);
 		await state.applyToolAccess(ctx as never);
 
-		expect({ active: pi.getActiveTools(), notified: ctx.ui.notify.mock.calls }).toEqual({
-			active: [MODE_TOOL_CEILING_NAME],
+		expect({ allowed: allowed(state), notified: ctx.ui.notify.mock.calls }).toEqual({
+			allowed: [],
 			notified: errors.map((message) => [`Mode kuafu tools: ${message}`, "error"]),
 		});
 	});
 
-	it("removes nested agent tools under +@all unless allow_nesting is true", async () => {
+	it("denies nested agent tools under +@all unless allow_nesting is true", async () => {
 		const agentTools = ["agent", "get_agent_result", "steer_subagent"];
 		const pi = createToolPi([builtin("read"), ...agentTools.map((name) => tool(name, SUBAGENTS))], ["read", ...agentTools]);
 		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+@all") } });
 
 		await state.applyToolAccess(createCtx() as never);
 
-		expect(pi.getActiveTools()).toEqual(["read"]);
+		expect(allowed(state)).toEqual(["read"]);
 	});
 
-	it("sets active tools once when the same mode applies twice", async () => {
-		const pi = createToolPi([builtin("read"), builtin("bash"), builtin("edit")], ["read", "edit"]);
-		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+read, +bash") } });
+	it("refreshes the active set with the ceiling on every apply without activating or stripping tools", async () => {
+		const pi = createToolPi(
+			[builtin("read"), builtin("bash"), tool("web_search", WEB_ACCESS), tool(MODE_TOOL_CEILING_NAME, MODES, "model-only")],
+			["read", "bash"],
+		);
+		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+read, +web_search") } });
 		const ctx = createCtx();
 
 		await state.applyToolAccess(ctx as never);
 		await state.applyToolAccess(ctx as never);
 
-		expect(pi.setActiveTools).toHaveBeenCalledTimes(1);
+		// web_search is allowed but inactive; bash is active but ungranted (the ceiling hides it).
+		expect(pi.setActiveTools.mock.calls).toEqual([
+			[["read", "bash", MODE_TOOL_CEILING_NAME]],
+			[["read", "bash", MODE_TOOL_CEILING_NAME]],
+		]);
 	});
 
 	it("restores Kua Fu's active tools after a round trip through Fu Xi", async () => {

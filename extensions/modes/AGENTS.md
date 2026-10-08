@@ -14,7 +14,7 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 - Mode colors (`MODE_COLORS` in [constants](src/constants.ts)) are intentionally hardcoded 24-bit SGR; MUST NOT migrate them to theme tokens or theme APIs.
 
 - Mode prompts MUST retain global AGENTS rules and shared frontmatter semantics.
-- Mode tool access MUST resolve `tools:` rules through shared `resolveToolAccess`. Apply MUST activate granted `direct`/`model-only` tools; `mode_tool_ceiling` MUST stay active (re-added on `turn_end` when replaced) to hide ungranted declarations; the `tool_call` guard MUST veto every ungranted call, top-level and nested. NEVER prune tools per turn. A missing or invalid mode file MUST fail closed (no tools; invalid-file errors notified). Fu Xi plan tools are granted only in `fuxi`; subagent sessions are left to their own frontmatter scope.
+- Mode tool access MUST resolve `tools:` rules through shared `resolveToolAccess`; this decides permission only, never activation — Pi and owning extensions activate tools (see [`active-tools.ts`](../lib/active-tools.ts)). `mode_tool_ceiling` MUST stay active (re-added on `turn_end` when replaced) to hide declared-but-unpermitted tools; the `tool_call` guard MUST veto every unpermitted call, top-level and nested; `before_agent_start` MUST strip rendered guideline lines of unpermitted tools. NEVER prune the active set per turn. A missing or invalid mode file MUST fail closed (no tools permitted; invalid-file errors notified). Fu Xi plan tools are permitted only in `fuxi`; subagent sessions are left to their own frontmatter scope.
 - Replacement MUST strip prior mode bodies; append mode stacks them.
 - `system_instructions` prompt mode is coerced to replacement here.
 - Session model and effort (thinking-level) overrides MUST NOT rewrite mode frontmatter; they are captured from `/mode-model` and manual mid-session model/effort picks, persist with mode state, and clear via `/mode-model --reset`.
@@ -27,7 +27,7 @@ Construct mode-specific runtime behavior and manage planning approval/handoff.
 - Approval/review flow MUST precede approved-plan handoff to execution.
 - Skill-resource transitions reload the terminal; prompt arguments do not auto-run afterward.
 
-- Modes MUST consume [Goal-owned access](../goal/src/goal/access.ts) before each first model request and intersect it with mode policy. ULW/manual activation NEVER widens allowlists; restored unfinished Goal management does not require ULW. Modes answers synchronous `modes:rpc:goal-tool-owner` discovery and remains the active-tool owner.
+- Modes MUST consume [Goal-owned access](../goal/src/goal/access.ts) before each first model request and intersect it with mode policy for permission only. ULW/manual activation NEVER widens allowlists; restored unfinished Goal management does not require ULW. Goal owns activation of its own tools per Goal access; modes only gate permission.
 
 ## Work Guidance
 

@@ -148,6 +148,7 @@ Guidance for subagents:
 - Every entry is `+selector` or `-selector`. The sign is required; it also keeps `@` and `*` entries valid YAML.
 - Lists start empty. Rules apply left to right, and the last matching rule wins; a candidate no rule matches is excluded.
 - An omitted or empty field means nothing: no extensions load, no tools are granted.
+- `tools` grants permission, not activation. Pi turns tools on (on registration unless the tool sets `defaultActive: false`, plus the `defaultTools` setting), and the owning extension turns its own tools on and off through commands or loaders such as `web_enable`. A rule cannot turn on a default-off tool; add it to `defaultTools`.
 - Values may be a comma-separated string or a YAML list:
 
 ```yaml
@@ -158,7 +159,7 @@ tools: +read, +bash, +@codegraph, +lsp
 tools:
   - +read
   - +@pi-web-access
-  - -web_enable
+  - -source_check
 ```
 
 ### `extensions` selectors (Subagents only)
@@ -222,7 +223,7 @@ Errors make the definition invalid; warnings do not.
 The granted set is a ceiling: ungranted tools are hidden from the model and
 every call to them is blocked, top-level and nested inside codemode.
 
-- **Modes** activate granted `direct`/`model-only` tools on apply. The always-active, model-only `mode_tool_ceiling` tool hides declared-but-ungranted tools after all `before_agent_start` handlers, and a `tool_call` guard vetoes every ungranted call. There is no per-turn pruning.
+- **Modes** gate permission only; `tools:` never activates a tool. Pi and owning extensions decide what's active (registration, `defaultTools`, extension loaders). The always-active, model-only `mode_tool_ceiling` tool hides declared-but-unpermitted tools after all `before_agent_start` handlers, and a `tool_call` guard vetoes every unpermitted call, top-level and nested. There is no per-turn pruning of the active set.
 - **Subagents** see only granted tools from the first turn. See the [subagents README](../../extensions/subagents/README.md#tool--extension-scoping).
 - The codemode and `tool_search` catalogs may still list ungranted codemode or deferred tools; only the call veto stops them.
 

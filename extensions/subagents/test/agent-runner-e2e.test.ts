@@ -24,6 +24,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAccessRules } from "../../lib/active-tools.js";
 import { runAgent } from "../src/agent-runner.js";
@@ -40,7 +41,8 @@ vi.setConfig({ testTimeout: 30_000 });
 const FIXTURE = resolve(fileURLToPath(new URL("./fixtures/e2e-probe-ext.mjs", import.meta.url)));
 /** The fixture registers exactly this tool. */
 const EXT_TOOL = "e2e_probe";
-const BUILTINS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+/** Pi's four default-active built-ins — the ones it auto-activates with no `tools:` option set. */
+const DEFAULT_ACTIVE_BUILTINS = ["read", "bash", "edit", "write"];
 
 /** Minimal `pi` stub — `detectEnv` only needs `exec` (returns non-git). */
 function makePi() {
@@ -68,10 +70,10 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
 
   /**
    * Register an agent type "e2e" with the given `extensions:` / `tools:` rules,
-   * run it through the REAL runAgent, and return the real session's active tool
-   * names captured at construction time.
+   * run it through the REAL runAgent, and return the real session plus its
+   * active tool names captured at construction time.
    */
-  async function activeToolsFor(extensions: string, tools: string): Promise<string[]> {
+  async function runFor(extensions: string, tools: string): Promise<{ session: AgentSession | undefined; active: string[] }> {
     registerAgents(
       new Map([
         [
@@ -95,12 +97,14 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
     const { model, modelRegistry } = fauxRuntime;
     const ctx: any = { cwd, getSystemPrompt: () => "PARENT", model, modelRegistry };
 
+    let session: AgentSession | undefined;
     let active: string[] = [];
     try {
       await runAgent(ctx, "e2e", "go", {
         pi: makePi(),
         model,
         onSessionCreated: (s) => {
+          session = s;
           active = s.getActiveToolNames();
         },
       });
@@ -108,34 +112,50 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
       // A no-op/erroring prompt turn is fine — the gated tool set is fixed at
       // construction, which `onSessionCreated` already captured.
     }
-    return active;
+    return { session, active };
+  }
+
+  async function activeToolsFor(extensions: string, tools: string): Promise<string[]> {
+    return (await runFor(extensions, tools)).active;
   }
 
   it("real pi-mono admits an extension-registered tool when it's granted (#47)", async () => {
     const active = await activeToolsFor("+e2e-probe", "+@all");
     // The extension actually loaded and its tool reached the live session.
     expect(active).toContain(EXT_TOOL);
-    for (const b of BUILTINS) expect(active).toContain(b);
+    // `tools: +@all` grants grep/find/ls too, but Pi only auto-activates its
+    // four default built-ins — no `tools:` rule can turn on a default-off tool.
+    for (const b of DEFAULT_ACTIVE_BUILTINS) expect(active).toContain(b);
   });
 
   it("an extension tool is absent when its extension does not load", async () => {
     const active = await activeToolsFor("", "+@all");
     expect(active).not.toContain(EXT_TOOL);
-    for (const b of BUILTINS) expect(active).toContain(b);
+    // No `extensions:` grant → the static allowlist path: `tools:` becomes the
+    // session's explicit `tools` option, so Pi activates exactly what it grants.
+    for (const b of ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"]) expect(active).toContain(b);
   });
 
-  it("a loaded extension's tool stays inactive when tools: grants only built-ins", async () => {
-    const active = await activeToolsFor("+e2e-probe", "+@builtin");
-    expect(active).not.toContain(EXT_TOOL); // loaded, then denied at construction
+  it("a loaded extension's tool stays active but is hidden and vetoed when tools: grants only built-ins", async () => {
+    const { session, active } = await runFor("+e2e-probe", "+@builtin");
+    // Pi activates the registered tool regardless of `tools:` — permission only.
+    expect(active).toContain(EXT_TOOL);
     expect(active).toContain("read");
+    // The veto still blocks a call to it.
+    await expect(
+      session?.agent.beforeToolCall?.({ toolCall: { name: EXT_TOOL } } as any),
+    ).resolves.toMatchObject({ block: true });
   });
 
-  it("tool rules mute a loaded-but-ungranted tool in real pi-mono", async () => {
-    // Extension loads, but granting a different tool keeps this one inactive
+  it("tool rules veto a loaded-but-ungranted tool in real pi-mono", async () => {
+    // Extension loads, but granting a different tool keeps this one ungranted
     // even though its extension loaded and ran its handlers.
-    const active = await activeToolsFor("+e2e-probe", "+@builtin, +not_the_fixture");
-    expect(active).not.toContain(EXT_TOOL);
-    for (const b of BUILTINS) expect(active).toContain(b);
+    const { session, active } = await runFor("+e2e-probe", "+@builtin, +not_the_fixture");
+    expect(active).toContain(EXT_TOOL);
+    for (const b of DEFAULT_ACTIVE_BUILTINS) expect(active).toContain(b);
+    await expect(
+      session?.agent.beforeToolCall?.({ toolCall: { name: EXT_TOOL } } as any),
+    ).resolves.toMatchObject({ block: true });
   });
 
   it("a tool grant surfaces the selected loaded tool", async () => {

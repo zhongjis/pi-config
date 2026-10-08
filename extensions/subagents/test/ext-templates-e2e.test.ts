@@ -28,6 +28,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { fauxAssistantMessage, fauxText, getCurrentTools } from "@earendil-works/pi-ai";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { runAgent } from "../src/agent-runner.js";
 import { getAgentConfig, registerAgents } from "../src/agent-types.js";
@@ -92,11 +93,18 @@ describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, he
     rmSync(hermeticDir, { recursive: true, force: true });
   });
 
-  async function runScenario(agentName: string): Promise<{ active: string[]; prompt: string }> {
+  async function runScenario(agentName: string): Promise<{ active: string[]; declared: string[]; prompt: string }> {
     const fauxRuntime = await createFauxModelRuntime({
       provider: "faux",
       models: [{ id: "faux-1", contextWindow: 200_000 }],
     });
+    const requests: string[][] = [];
+    fauxRuntime.faux.setResponses([
+      (context) => {
+        requests.push(getCurrentTools(context.messages).map((tool) => tool.name));
+        return fauxAssistantMessage([fauxText("done")]);
+      },
+    ]);
     const { model, modelRegistry } = fauxRuntime;
     // cwd = fixtures dir so the templates' extension ids name its discovered extensions.
     // getSystemPrompt returns a distinctive marker so prompt_mode: append can be
@@ -131,7 +139,10 @@ describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, he
     } finally {
       fauxRuntime.dispose();
     }
-    return { active, prompt };
+    // `active` is what Pi activated (permission-independent); `declared` is what
+    // the first provider request actually showed the model, i.e. `active` minus
+    // whatever the ceiling hid. `tools:` only governs `declared`.
+    return { active, declared: requests[0] ?? [], prompt };
   }
 
   it("every template on disk is discovered, registered, and self-describing", () => {
@@ -152,11 +163,11 @@ describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, he
   });
 
   it.each(SCENARIOS)(
-    "$name → active tools match the template",
+    "$name → declared tools match the template",
     async ({ name, present, absent }) => {
-      const { active } = await runScenario(name);
-      for (const tool of present) expect(active, `${name}: expected "${tool}" active`).toContain(tool);
-      for (const tool of absent) expect(active, `${name}: expected "${tool}" NOT active`).not.toContain(tool);
+      const { declared } = await runScenario(name);
+      for (const tool of present) expect(declared, `${name}: expected "${tool}" declared`).toContain(tool);
+      for (const tool of absent) expect(declared, `${name}: expected "${tool}" NOT declared`).not.toContain(tool);
     },
   );
 

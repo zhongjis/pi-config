@@ -15,7 +15,6 @@ import {
   PLAN_TOOL_NAMES,
   resolveExtensionAccess,
   resolveToolAccess,
-  selectActiveToolNames,
   toolCandidates,
   type ExtensionCandidate,
   type ToolCandidate,
@@ -315,32 +314,6 @@ describe("isTrustedToolSource", () => {
     expect(isTrustedToolSource("<sdk:foo>")).toBe(true);
     expect(isTrustedToolSource("/x/foo/index.ts")).toBe(false);
     expect(isTrustedToolSource(undefined)).toBe(false);
-  });
-});
-
-// ─── selectActiveToolNames ────────────────────────────────────────────────
-
-describe("selectActiveToolNames", () => {
-  const tools = [
-    { name: "read", exposure: "direct" },
-    { name: "model_tool", exposure: "model-only" },
-    { name: "unknown_exposure" },
-    { name: "code_tool", exposure: "codemode" },
-    { name: "deferred_tool", exposure: "deferred" },
-    { name: "hidden_tool", exposure: "hidden" },
-    { name: "not_allowed", exposure: "direct" },
-  ];
-  const allowed = new Set(["read", "model_tool", "unknown_exposure", "code_tool", "deferred_tool", "hidden_tool"]);
-
-  it("includes direct/model-only/unknown-exposure allowed tools, keeps codemode/deferred only when already active, and never includes hidden", () => {
-    expect(selectActiveToolNames(tools, allowed, ["code_tool"])).toEqual([
-      "read", "model_tool", "unknown_exposure", "code_tool",
-    ]);
-  });
-
-  it("dedupes by name and preserves registry order", () => {
-    const dup = [{ name: "read", exposure: "direct" }, { name: "read", exposure: "direct" }];
-    expect(selectActiveToolNames(dup, new Set(["read"]), [])).toEqual(["read"]);
   });
 });
 

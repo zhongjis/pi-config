@@ -1,22 +1,26 @@
 /**
  * Characterization tests for extension-tool-scoping in agent-tool-scope.ts.
  *
- * installExtensionToolScope resolves the SHARED signed-rule policy
- * (`resolveToolAccess` + `selectActiveToolNames` in extensions/lib/active-tools.ts)
- * against the session's LIVE tool registry. The critical invariant it owns is
- * the live re-read: it re-queries the session's tool list on every turn_end and
- * every call check, so a tool that registers AFTER the first narrow still enters
- * the active set when the rules grant it.
+ * `tools:` is PERMISSION ONLY: installExtensionToolScope never adds or removes
+ * from the session's active tool set. It resolves the SHARED signed-rule policy
+ * (`resolveToolAccess` in extensions/lib/active-tools.ts) against the session's
+ * LIVE tool registry at two enforcement points, both live re-reads so a tool
+ * that registers later is judged too:
+ *   - the ceiling tool is re-ensured active (not reset, if already active) at
+ *     install and on every turn_end, in case something else dropped it;
+ *   - `beforeToolCall` vetoes top-level calls the rules do not grant.
  *
  * Scenarios locked:
- *  1. Hard gates: nested subagent controls need allowNesting.
- *  2. A `*` glob keeps only matching tools in the active set.
- *  3. An exact name narrows to a single tool.
- *  4. An `@<extension>` group follows each tool's recorded source.
- *  5. Trusted `<sdk:` tools are always allowed.
- *  6. REGRESSION: a tool registered AFTER the first narrow re-enters the active
- *     set when turn_end fires (live re-read), and a non-matching sibling does not.
- *  7. Resolution diagnostics are reported once.
+ *  1. Hard gates: nested subagent controls need allowNesting (veto, no narrowing).
+ *  2. A `*` glob permits only matching tools, via the veto.
+ *  3. An exact name permits a single tool, via the veto.
+ *  4. An `@<extension>` group follows each tool's recorded source, via the veto.
+ *  5. Trusted `<sdk:` tools are always allowed and never touched.
+ *  6. REGRESSION: a tool registered AFTER install becomes allowed once it
+ *     registers (live re-read), and a non-matching sibling does not.
+ *  7. The ceiling is re-ensured (added if missing) at install and on turn_end,
+ *     and left alone (no-op) when already active or absent from the registry.
+ *  8. Resolution diagnostics are reported once.
  */
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -103,7 +107,7 @@ function makeFakeSession(initialRegistry: RegistryEntry[] = []) {
     _addToRegistry: (e: RegistryEntry) => {
       registry.push(entry(e));
     },
-    /** Simulate pi emitting turn_end (triggers renarrow). */
+    /** Simulate pi emitting turn_end (re-ensures the ceiling). */
     _fireTurnEnd: () => {
       for (const l of listeners) l({ type: "turn_end" });
     },
@@ -113,6 +117,7 @@ function makeFakeSession(initialRegistry: RegistryEntry[] = []) {
 function install(session: ReturnType<typeof makeFakeSession>, tools: string, ctx: Partial<InstallCtx> = {}): void {
   installExtensionToolScope(session as unknown as Parameters<typeof installExtensionToolScope>[0], {
     toolRules: parseAccessRules("tools", tools).rules,
+    ceilingToolName: "test_tool_ceiling",
     ...ctx,
   });
 }
@@ -126,11 +131,13 @@ beforeEach(() => {
 // ===========================================================================
 
 describe("installExtensionToolScope — characterization", () => {
-  it("excludes canonical retrieval and gate resolution from non-nesting children", async () => {
+  it("excludes canonical retrieval and gate resolution from non-nesting children via the veto, without narrowing the active set", async () => {
     const session = makeFakeSession(["read", "get_agent_result", "resolve_agent_graph_gate"]);
     install(session, "+@all", { gates: { allowNesting: false } });
-    expect(session.getActiveToolNames()).toEqual(["read"]);
+    expect(session.getActiveToolNames()).toEqual(["read", "get_agent_result", "resolve_agent_graph_gate"]);
     await expect(session.agent.beforeToolCall?.({ toolCall: { name: "resolve_agent_graph_gate" } })).resolves.toMatchObject({ block: true });
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "get_agent_result" } })).resolves.toMatchObject({ block: true });
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "read" } })).resolves.toBeUndefined();
   });
 
   it("allowNesting admits nested subagent tools", () => {
@@ -140,27 +147,31 @@ describe("installExtensionToolScope — characterization", () => {
     expect(session.getActiveToolNames()).toEqual(nested);
   });
 
-  /** HAPPY PATH: a `*` glob keeps foo's tools and mutes everything else, plus the granted built-in. */
-  it("a glob keeps only matching tools, mutes others", () => {
+  /** HAPPY PATH: installing the scope never narrows or grows the active set — only the veto enforces `tools:`. */
+  it("a glob permits only matching tools via the veto, without narrowing the active set", () => {
     const session = makeFakeSession(["read", "foo_alpha", "foo_beta", "bar_tool"]);
     install(session, "+read, +foo_*");
 
-    expect(session.getActiveToolNames()).toEqual(["read", "foo_alpha", "foo_beta"]);
+    expect(session.getActiveToolNames()).toEqual(["read", "foo_alpha", "foo_beta", "bar_tool"]);
   });
 
-  /** EDGE CASE: an exact name narrows to exactly one tool; its siblings are absent. */
-  it("an exact name narrows to exactly the named tool", () => {
+  /** EDGE CASE: an exact name permits exactly one tool; its siblings are vetoed, not deactivated. */
+  it("an exact name permits exactly the named tool via the veto, without narrowing the active set", async () => {
     const session = makeFakeSession(["read", "foo_alpha", "foo_bar", "foo_gamma"]);
     install(session, "+read, +foo_bar");
 
-    expect(session.getActiveToolNames()).toEqual(["read", "foo_bar"]);
+    expect(session.getActiveToolNames()).toEqual(["read", "foo_alpha", "foo_bar", "foo_gamma"]);
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "foo_alpha" } })).resolves.toMatchObject({ block: true });
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "foo_bar" } })).resolves.toBeUndefined();
   });
 
-  it("an @<extension> group grants the tools whose source is that extension", () => {
+  it("an @<extension> group permits the tools whose source is that extension via the veto, without narrowing the active set", async () => {
     const session = makeFakeSession(["read", ["a_one", "/ext/alpha.ts"], ["a_two", "/ext/alpha.ts"], ["b_one", "/ext/beta.ts"]]);
     install(session, "+read, +@alpha");
 
-    expect(session.getActiveToolNames()).toEqual(["read", "a_one", "a_two"]);
+    expect(session.getActiveToolNames()).toEqual(["read", "a_one", "a_two", "b_one"]);
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "b_one" } })).resolves.toMatchObject({ block: true });
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "a_one" } })).resolves.toBeUndefined();
   });
 
   it("a trusted <sdk:> tool stays active without any rule", () => {
@@ -171,34 +182,38 @@ describe("installExtensionToolScope — characterization", () => {
   });
 
   /**
-   * REGRESSION — late-registration re-narrow (the LIVE-read invariant).
+   * REGRESSION — late-registration (the LIVE-read invariant).
    *
    * A static snapshot cannot admit tools that register later (MCP on
-   * session_start, context-mode on before_agent_start). The turn_end re-narrow
-   * re-reads the live registry.
+   * session_start, context-mode on before_agent_start). The veto re-reads the
+   * live registry on every call, so a late-registered matching tool is admitted
+   * without waiting for any explicit re-narrow — there is none to wait for.
    *
    * Flow:
    *   1. installExtensionToolScope is called; no extension tools yet.
-   *   2. After install, foo_late and bar_late register (late).
-   *   3. turn_end fires → renarrow re-reads the LIVE registry → foo_late enters.
-   *   4. bar_late does NOT enter (+foo_* doesn't match it).
+   *   2. foo_late and bar_late register (late) — Pi activates both; this scope
+   *      never touches the active set either way.
+   *   3. beforeToolCall re-resolves the rules against the live registry on each
+   *      call: foo_late is allowed, bar_late stays blocked.
    */
-  it("REGRESSION: late-registered matching tool enters active set after turn_end re-narrow", () => {
+  it("REGRESSION: a late-registered matching tool becomes allowed once it registers, without entering the active set via this scope", async () => {
     // Registry starts with just the builtin — extension tools haven't registered yet.
     const session = makeFakeSession(["read"]);
     install(session, "+read, +foo_*");
-
-    // After install, no extension tools in active set yet.
-    expect(session.getActiveToolNames()).toEqual(["read"]);
 
     // Simulate late registration (e.g. MCP server connects, context-mode initializes).
     session._addToRegistry("foo_late");
     session._addToRegistry("bar_late");
 
-    // Fire turn_end → renarrow re-reads the live registry.
+    // This scope never adds late-registered tools to the active set — that is
+    // Pi's job. turn_end only re-ensures the ceiling.
     session._fireTurnEnd();
+    expect(session.getActiveToolNames()).toEqual(["read"]);
 
-    expect(session.getActiveToolNames()).toEqual(["read", "foo_late"]);
+    // But the veto re-reads the live registry, so foo_late is admitted and
+    // bar_late (not matching +foo_*) stays blocked.
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "foo_late" } })).resolves.toBeUndefined();
+    await expect(session.agent.beforeToolCall?.({ toolCall: { name: "bar_late" } })).resolves.toMatchObject({ block: true });
   });
 
   it("beforeToolCall blocks a tool the rules do not grant", async () => {
@@ -211,6 +226,39 @@ describe("installExtensionToolScope — characterization", () => {
     await expect(
       session.agent.beforeToolCall?.({ toolCall: { name: "foo_tool" } }),
     ).resolves.toBeUndefined();
+  });
+
+  it("re-ensures the ceiling at install when it is registered but not active", () => {
+    const session = makeFakeSession(["read", "test_tool_ceiling"]);
+    session.setActiveToolsByName(["read"]); // simulates another extension having dropped it
+    install(session, "+read");
+
+    expect(session.getActiveToolNames()).toEqual(["read", "test_tool_ceiling"]);
+  });
+
+  it("does not call setActiveToolsByName when the ceiling is already active (no-op)", () => {
+    const session = makeFakeSession(["read", "test_tool_ceiling"]);
+    const setActiveToolsByName = vi.spyOn(session, "setActiveToolsByName");
+    install(session, "+read");
+
+    expect(setActiveToolsByName).not.toHaveBeenCalled();
+  });
+
+  it("re-ensures the ceiling on turn_end if something else dropped it", () => {
+    const session = makeFakeSession(["read", "test_tool_ceiling"]);
+    install(session, "+read");
+    session.setActiveToolsByName(["read"]); // another extension's setActiveTools dropped the ceiling
+
+    session._fireTurnEnd();
+
+    expect(session.getActiveToolNames()).toEqual(["read", "test_tool_ceiling"]);
+  });
+
+  it("does not add a ceiling tool that is absent from the registry", () => {
+    const session = makeFakeSession(["read"]);
+    install(session, "+read");
+
+    expect(session.getActiveToolNames()).toEqual(["read"]);
   });
 
   it("reports resolution diagnostics once across re-narrows and call checks", async () => {

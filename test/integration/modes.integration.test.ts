@@ -77,15 +77,18 @@ describe("modes extension — integration", () => {
 		const runner = (t.session as any).extensionRunner;
 		expect(runner.getToolDefinition("plan_approve")).toBeDefined();
 
-		let tools = (t.session.agent as any).state.tools as Array<{ name: string }>;
-		let toolNames = tools.map((tool) => tool.name);
-		expect(toolNames).not.toContain("plan_approve");
+		// Pi activates plan_approve on registration; outside fuxi the mode ceiling
+		// hides its declaration from the model.
+		const declaredToolNames = () => {
+			const hidden = (t.session as any)._hiddenDeclarations as Set<string>;
+			const tools = (t.session.agent as any).state.tools as Array<{ name: string }>;
+			return tools.map((tool) => tool.name).filter((name) => !hidden.has(name));
+		};
+		expect(declaredToolNames()).not.toContain("plan_approve");
 
 		await switchMode(t, "fuxi");
 
-		tools = (t.session.agent as any).state.tools as Array<{ name: string }>;
-		toolNames = tools.map((tool) => tool.name);
-		expect(toolNames).toContain("plan_approve");
+		expect(declaredToolNames()).toContain("plan_approve");
 	});
 
 	it("scaffolds canonical session-local artifacts and feeds plan approval", async () => {

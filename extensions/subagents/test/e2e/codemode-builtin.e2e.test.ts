@@ -2,9 +2,11 @@
  * codemode-builtin.e2e.test.ts — Pi's built-in codemode in subagents.
  *
  * `builtin:codemode` loads only through `extensions:` rules, like every other
- * extension; loading grants nothing, so `codemode` is active only when `tools:`
- * grants it. Nested tool calls (how codemode scripts reach tools) can only call
- * tools the agent's `tools:` rules grant, even inactive `codemode`-exposure tools.
+ * extension; loading grants nothing. `tools:` only permits: Pi activates
+ * `codemode` (registered `defaultActive: false`) only when the `defaultTools`
+ * setting names it. Nested tool calls (how codemode scripts reach tools) can
+ * only call tools the agent's `tools:` rules grant, even inactive
+ * `codemode`-exposure tools.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -117,10 +119,17 @@ export default function(pi: ExtensionAPI) {
     return { active, loaded: paths.includes("builtin:codemode"), veto };
   }
 
-  it("+builtin:codemode with tools: +codemode loads codemode and activates only its tool", async () => {
+  it("tools: +codemode permits codemode but does not activate it", async () => {
     const { loaded, active } = await run("+builtin:codemode", "+read, +codemode");
-    expect({ loaded, codemode: active.includes("codemode"), codeAllowed: active.includes("code_allowed") })
-      .toEqual({ loaded: true, codemode: true, codeAllowed: false });
+    expect({ loaded, codemode: active.includes("codemode") }).toEqual({ loaded: true, codemode: false });
+  });
+
+  it("defaultTools +codemode activates codemode and tools: +codemode permits it", async () => {
+    mkdirSync(join(cwd, "agent-dir"), { recursive: true });
+    writeFileSync(join(cwd, "agent-dir", "settings.json"), JSON.stringify({ defaultTools: ["+codemode"] }));
+    const { loaded, active, veto } = await run("+builtin:codemode", "+read, +codemode", { probeVeto: true });
+    expect({ loaded, codemode: active.includes("codemode"), codeAllowed: active.includes("code_allowed"), veto })
+      .toEqual({ loaded: true, codemode: true, codeAllowed: false, veto: undefined });
   });
 
   it("+builtin:codemode without a codemode grant loads it but leaves codemode inactive", async () => {

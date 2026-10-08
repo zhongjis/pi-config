@@ -30,7 +30,7 @@ Maintain thread-scoped goals, autonomous continuation, and usage accounting.
 
 - Goal tools MUST remain undeclared in fresh sessions until accepted ULW or explicit `/goal` activation. Restored unfinished Goals retain policy-permitted `get_goal`/`update_goal`; activation entries MUST match the current session identity.
 - Goal owns the one-shot hidden ULW bootstrap: inspect first, use only the agreed task, preserve research/proposal scope, NEVER replace/resume unfinished Goals or infer budgets. Completed work requires a new task or explicit redo. Bootstrap context MUST expire after its run and NEVER replay from restored history.
-- Modes owns active tools when loaded; Goal MUST use live synchronous owner discovery, NEVER compete with mode allowlists. Standalone Goal owns its own declarations.
+- Goal always owns activation of its own tools per [Goal access](src/goal/access.ts), loaded under modes or standalone. Modes only gate permission over the activated set; they NEVER activate or deactivate Goal tools.
 
 ## Work Guidance
 

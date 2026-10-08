@@ -219,7 +219,7 @@ isolated: true                    # no extensions load; only granted built-in to
 A few rules the examples don't make obvious:
 
 - Loading grants nothing; built-in tools are grantable with no extensions loaded. `@all` and `@builtin` in `extensions:` include Pi's built-in extension factories for codemode, tool-search, and mcp, which the runner supplies because SDK sessions do not load them automatically. `builtin:llama.cpp` cannot load in subagents.
-- With no `+` extension rule, or under `isolated`, the granted set is a static allowlist. Otherwise scoping is re-derived on every `turn_end`, so lazily registered tools (for example MCP-backed ones) surface when granted.
+- With no `+` extension rule, or under `isolated`, the granted set is a static allowlist. Otherwise every check re-resolves the rules against the live registry, so lazily registered tools (for example MCP-backed ones) are judged when they register. `tools:` only permits: Pi and the owning extension decide which tools are active.
 - `subagent_tool_ceiling` hides ungranted declarations from the first turn; the `beforeToolCall` veto and the hidden nested-call guard block ungranted calls, top-level and nested inside codemode.
 - The codemode and `tool_search` catalogs may still list ungranted tools; only the veto stops those calls.
 - `extensions:` errors fail the spawn. Extension warnings surface as `extension-warning:…` and tool-rule diagnostics as `tools-error:…`/`tools-warning:…` run diagnostics.

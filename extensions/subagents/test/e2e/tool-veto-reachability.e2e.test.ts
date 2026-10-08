@@ -2,12 +2,13 @@
  * tool-veto-reachability.e2e.test.ts — reachability guard for the top-level
  * `tools:` veto (issue #125).
  *
- * `installExtensionToolScope` enforces `tools:` rules two ways. Re-narrowing the
- * ACTIVE set on `turn_end` is built entirely on public API (`getAllTools`,
- * `getActiveToolNames`, `setActiveToolsByName`) and is covered by the unit tests.
- * The second half is not: `before_agent_start` fires INSIDE `prompt()` and may
- * activate tools after the scope was installed, so out-of-scope calls are vetoed
- * at call time by wrapping `session.agent.beforeToolCall`.
+ * `installExtensionToolScope` enforces `tools:` rules two ways: a ceiling tool
+ * that hides ungranted declarations (re-ensured active on `turn_end`, built
+ * entirely on public API — `getAllTools`, `getActiveToolNames`,
+ * `setActiveToolsByName` — and covered by the unit tests) and a top-level veto.
+ * The veto half is not covered there: `before_agent_start` fires INSIDE `prompt()`
+ * and may activate tools after the scope was installed, so out-of-scope calls are
+ * vetoed at call time by wrapping `session.agent.beforeToolCall`.
  *
  * That wrap is the one place this extension reaches past the documented surface:
  *   - `ExtensionBindings` has no tool_call hook, so there is no SDK-level way to

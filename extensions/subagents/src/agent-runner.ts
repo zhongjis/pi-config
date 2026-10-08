@@ -501,9 +501,10 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
       // Enforces `tools:` rules where the session veto cannot reach, against the
       // live registry. Codemode scripts call tools through ctx.executeTool();
       // those nested calls bypass the session.agent.beforeToolCall veto and reach
-      // only `tool_call`. The trusted ceiling tool stays active and hides every
-      // ungranted declaration from turn 1 on, including tools activated during
-      // `before_agent_start`.
+      // only `tool_call`. The trusted ceiling tool (activated by Pi on
+      // registration, re-ensured by the session scope) hides every ungranted
+      // declaration from turn 1 on, including tools Pi or an extension
+      // activates later.
       ...(noExtensions ? [] : [{
         name: TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_NAME,
         factory: (extensionPi: ExtensionAPI) => {
@@ -559,10 +560,12 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   //   - express the name-stable, permanent part of the scope (our own
   //     orchestration tools and ungranted built-ins) as `excludeTools`, which
   //     pi re-applies on every registry refresh;
-  //   - re-resolve the rules against the live registry: the active set is
-  //     re-narrowed after bind and on every turn_end, top-level calls are
-  //     vetoed, and the hidden nested-tool-scope hook blocks nested calls and
-  //     hides ungranted declarations through its ceiling tool.
+  //   - leave activation to Pi (defaults/`defaultTools`, extension tools on
+  //     registration) and the owning extensions; `tools:` only permits;
+  //   - re-resolve the rules against the live registry: top-level calls are
+  //     vetoed, the hidden nested-tool-scope hook blocks nested calls, and its
+  //     ceiling tool hides ungranted declarations (kept active after bind and
+  //     on every turn_end).
   //
   // Without extensions (including `isolated`), the granted built-ins are a
   // static allowlist: nothing async can appear, and a hard registry gate is the
@@ -651,16 +654,17 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     },
   });
 
-  // With `allowedToolNames` unset, the registry is scoped by `excludeTools` but
-  // the ACTIVE set still needs managing: pi activates only its default built-ins
-  // at turn 1, and rules over extension tools have no registry-level expression
-  // (we can't deny the name of a tool that hasn't registered yet). Both are
-  // handled by re-deriving scope from the session's live tool list —
-  // `registerTool` grows that list, so late arrivals are judged too.
+  // With `allowedToolNames` unset, the registry is scoped by `excludeTools` and
+  // Pi activates its default built-ins plus every direct/model-only extension
+  // tool on registration. Rules over extension tools have no registry-level
+  // expression (we can't deny the name of a tool that hasn't registered yet), so
+  // scope is re-derived from the session's live tool list — `registerTool` grows
+  // that list, so late arrivals are judged too.
   if (!noExtensions) {
     installExtensionToolScope(session, {
       toolRules,
       gates,
+      ceilingToolName: TOOL_CEILING_TOOL_NAME,
       onDiagnostics: (diagnostics) => {
         for (const diagnostic of diagnostics) {
           options.onToolActivity?.({

@@ -27,12 +27,12 @@ Each mode reads its prompt from `modes/<mode>/mode.md`. Global AGENTS.md rules s
 
 Mode prompts live in `modes/<mode>/mode.md` and use the shared agent frontmatter schema:
 
-- `tools` — signed rule list deciding which tools the mode may see and call ([access rules](../../docs/guides/agent-frontmatter.md#access-rules)); omitted or empty grants none. On apply, granted `direct`/`model-only` tools activate. The always-active, model-only `mode_tool_ceiling` hides ungranted declarations, and the `tool_call` guard blocks every ungranted call, top-level and nested. The codemode and `tool_search` catalogs may still list ungranted tools; only the guard stops those calls.
+- `tools` — signed rule list deciding which tools the model may see and call in this mode ([access rules](../../docs/guides/agent-frontmatter.md#access-rules)); omitted or empty permits none. This is permission only, never activation: Pi and owning extensions decide what's active. The always-active, model-only `mode_tool_ceiling` hides declared-but-unpermitted tools, and the `tool_call` guard blocks every unpermitted call, top-level and nested. The codemode and `tool_search` catalogs may still list unpermitted tools; only the guard stops those calls.
 - `extensions` — rejected; the main session cannot unload extensions
 - `allow_nesting` — permits nested subagent tools only when `tools` also grants them
 - `prompt_mode`, `model`, `allow_delegation_to`, `disallow_delegation_to` — same schema as custom subagents. Modes only honor `replace` (default; strips prior mode bodies before appending) and `append` (stacks); `system_instructions` is parsed but coerced to `replace` for modes.
 
-[Goal access](../goal/src/goal/access.ts) is applied before model requests, inside the mode allowlist. Fresh Goal declarations require ULW or explicit `/goal`; restored unfinished Goals keep permitted management tools. Modes remains the active-tool owner.
+[Goal access](../goal/src/goal/access.ts) decides which Goal tools Goal itself activates; modes only gate permission over that set, never activation. Fresh Goal declarations require ULW or explicit `/goal`; restored unfinished Goals keep permitted management tools.
 
 Obsolete tool fields are rejected with rewrite hints; see the [frontmatter guide](../../docs/guides/agent-frontmatter.md#invalid--obsolete-fields).
 

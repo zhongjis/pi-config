@@ -56,7 +56,7 @@ Each mode reads its prompt and settings from `~/.pi/agent/modes/<mode>/mode.md` 
 [`agent-frontmatter.ts`](../../extensions/lib/agent-frontmatter.ts) defines the frontmatter fields and how they are parsed. The [agent frontmatter guide](../guides/agent-frontmatter.md) explains how to author them. Mode-specific rules:
 
 - `prompt_mode` defaults to `replace`, which strips earlier mode bodies and then appends the wrapped current body. `append` adds the wrapped body without stripping, and `system_instructions` is treated as `replace`. Modes always run with project AGENTS.md present; `prompt_mode` does not control AGENTS.md injection.
-- `tools` is the mode's tool ceiling: granted `direct`/`model-only` tools activate on apply, ungranted tools are hidden from the model by `mode_tool_ceiling`, and every ungranted call is blocked, top-level and nested. A mode file without `tools` grants no tools, and so does a missing or invalid mode file (whose errors are notified). `extensions` is an error in a mode file.
+- `tools` is the mode's permission ceiling, not activation: Pi and owning extensions decide what's active; unpermitted tools are hidden from the model by `mode_tool_ceiling`, and every unpermitted call is blocked, top-level and nested. A mode file without `tools` permits no tools, and so does a missing or invalid mode file (whose errors are notified). `extensions` is an error in a mode file.
 - `allow_nesting` permits nested subagent controls only when `tools` also grants them.
 - `disallow_delegation_to` is applied as exclusions from `allow_delegation_to` when both are set.
 - `model` is a model chain; the first available match wins ([model selection](model-selection-and-fallback.md)).

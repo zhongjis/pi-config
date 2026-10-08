@@ -53,11 +53,12 @@ it("unsupported selected fast fails without fallback or corrupting current mode/
 	const unsupported = { ...ctx.model, id: "claude-sonnet-4-6" };
 	vi.spyOn(ctx.modelRegistry, "find").mockReturnValue(unsupported as NonNullable<ExtensionContext["model"]>);
 	const before = entries.length;
+	const toolRefreshes = vi.mocked(pi.setActiveTools).mock.calls.length;
 	await expect(state.switchMode("houtu", ctx)).rejects.toThrow("Explicit :fast is unsupported");
 	expect(state.currentMode).toBe("kuafu");
 	expect(entries).toHaveLength(before);
 	expect(pi.setModel).not.toHaveBeenCalled();
-	expect(pi.setActiveTools).not.toHaveBeenCalled();
+	expect(pi.setActiveTools).toHaveBeenCalledTimes(toolRefreshes);
 });
 
 it("without a user preference same-model transitions reset to each mode default", async () => {

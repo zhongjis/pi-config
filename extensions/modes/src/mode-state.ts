@@ -2,7 +2,7 @@ import { GOAL_TOOL_NAMES, goalToolAccess } from "../../goal/src/goal/access.js";
 import type { RuntimeModelCandidate } from "../../lib/runtime-model-fallback.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
-import { type AccessDiagnostic, resolveToolAccess, selectActiveToolNames, toolCandidates } from "../../lib/active-tools.js";
+import { type AccessDiagnostic, resolveToolAccess, toolCandidates } from "../../lib/active-tools.js";
 import { MODES, MODE_COLORS, MODE_META, MODE_TOOL_CEILING_NAME, RESET } from "./constants.js";
 import { getModeSkillPaths } from "./mode-skills.js";
 import { loadAgentConfig } from "./config-loader.js";
@@ -137,27 +137,23 @@ export class ModeStateManager {
 	}
 
 	async applyToolAccess(ctx: ExtensionContext): Promise<void> {
-		const allTools = this.pi.getAllTools();
-		const registered = new Set(allTools.map((t) => t.name));
+		const registered = new Set(this.pi.getAllTools().map((t) => t.name));
 		const goalNames = GOAL_TOOL_NAMES.filter((name) => registered.has(name));
 		this.allowedGoalTools = goalNames.length ? await goalToolAccess(ctx) : [];
 
-		const { allowed, diagnostics } = this.toolAccess();
+		const { diagnostics } = this.toolAccess();
 		const configErrors = this.loadConfig(this.currentMode).errors ?? [];
 		this.notifyToolDiagnostics(ctx, [...configErrors.map((message) => ({ severity: "error" as const, message })), ...diagnostics]);
 
 		const activeToolNames = this.pi.getActiveTools().filter((name) => registered.has(name));
-		// Allowed Goal tools are deferred; listing them as current activates them.
-		const nextActiveToolNames = selectActiveToolNames(allTools, allowed, [
-			...activeToolNames,
-			...goalNames.filter((name) => allowed.has(name)),
-		]);
-		if (registered.has(MODE_TOOL_CEILING_NAME) && !nextActiveToolNames.includes(MODE_TOOL_CEILING_NAME)) {
-			nextActiveToolNames.push(MODE_TOOL_CEILING_NAME);
+		if (registered.has(MODE_TOOL_CEILING_NAME) && !activeToolNames.includes(MODE_TOOL_CEILING_NAME)) {
+			activeToolNames.push(MODE_TOOL_CEILING_NAME);
 		}
-		if (!sameToolSet(nextActiveToolNames, activeToolNames)) {
-			this.pi.setActiveTools(nextActiveToolNames);
-		}
+		// A refresh, not policy: Pi and owning extensions activate tools; the ceiling
+		// hides and the tool_call guard vetoes ungranted ones. setActiveTools re-runs
+		// prepareLoadout and rebuilds Pi's base system prompt, so after a mode switch
+		// the prompt's tool list reflects this mode's ceiling, not the previous one.
+		this.pi.setActiveTools(activeToolNames);
 	}
 
 	private notifyToolDiagnostics(ctx: ExtensionContext, diagnostics: readonly AccessDiagnostic[]): void {

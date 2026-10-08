@@ -1,18 +1,20 @@
-/** agent-tool-scope.ts — narrows the live tool set a subagent may call. */
+/** agent-tool-scope.ts — enforces the tools a subagent may call. */
 
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import {
   type AccessDiagnostic,
   type AccessRule,
   resolveToolAccess,
-  selectActiveToolNames,
   type ToolAccessGates,
   toolCandidates,
 } from "../../lib/active-tools.js";
 
 /**
- * Keep a subagent's tool scope equal to its `tools:` rules as extensions
- * register tools over time.
+ * Hold a subagent's tool calls to its `tools:` rules as extensions register tools
+ * over time. `tools:` is permission only: Pi activates tools (its defaults or the
+ * `defaultTools` setting, plus `direct`/`model-only` extension tools on
+ * registration unless `defaultActive: false`) and owning extensions manage their
+ * own activation. This scope never adds or removes active tools for policy.
  *
  * Extensions may call `registerTool` long after load — pi-mcp from `session_start`,
  * context-mode from `before_agent_start` — so scope has to be re-derived rather than
@@ -20,16 +22,14 @@ import {
  * shared signed-rule policy (`resolveToolAccess`), so late arrivals are judged too and
  * `@<extension>` groups pick up tools their extension registers later.
  *
- * Two enforcement points here, plus the runner's ceiling tool:
+ * Enforcement here, plus the runner's ceiling tool and nested `tool_call` hook:
  *
- *   - `turn_end` re-narrows the ACTIVE set to the allowed tools (exposure-aware via
- *     `selectActiveToolNames`). pi emits `turn_end` immediately before
+ *   - The ceiling tool hides every ungranted declaration while it is active. After
+ *     bind and on every `turn_end` it is re-activated if another extension's
+ *     `setActiveTools` dropped it. pi emits `turn_end` immediately before
  *     `prepareNextTurn` re-snapshots `agent.state.tools`, and session listeners run
- *     synchronously, so the narrow lands in time for turns 2..N.
- *   - `beforeToolCall` blocks top-level calls outside the allowed set. Pi activates
- *     tools registered inside `prompt()` (e.g. during `before_agent_start`), after the
- *     install-time narrow; the runner's ceiling tool hides their declarations and this
- *     veto blocks the call.
+ *     synchronously, so the fix lands in time for the next turn.
+ *   - `beforeToolCall` blocks top-level calls outside the allowed set.
  *
  * Both are installed on the session and deliberately NOT unsubscribed: they must
  * outlive the `runAgent` call so resumed/steered turns stay scoped. pi's `dispose()`
@@ -46,6 +46,8 @@ export function installExtensionToolScope(
   ctx: {
     toolRules: readonly AccessRule[];
     gates?: ToolAccessGates;
+    /** The trusted ceiling tool that hides ungranted declarations. */
+    ceilingToolName: string;
     onDiagnostics?: (diagnostics: AccessDiagnostic[]) => void;
   },
 ): void {
@@ -59,22 +61,21 @@ export function installExtensionToolScope(
     return allowed;
   };
 
-  const renarrow = () => {
-    const next = selectActiveToolNames(session.getAllTools(), allowedToolNames(), session.getActiveToolNames());
-    const current = session.getActiveToolNames();
+  const ensureCeiling = () => {
+    if (!session.getAllTools().some((tool) => tool.name === ctx.ceilingToolName)) return;
+    const active = session.getActiveToolNames();
     // setActiveToolsByName unconditionally rebuilds the system prompt, so skip
     // the no-op that steady-state turns would otherwise pay for every turn.
-    if (next.length !== current.length || next.some((n, i) => n !== current[i])) {
-      session.setActiveToolsByName(next);
-    }
+    if (!active.includes(ctx.ceilingToolName)) session.setActiveToolsByName([...active, ctx.ceilingToolName]);
   };
 
-  // Activate what registered during session_start (eager MCP servers); pi would
-  // otherwise leave only its default built-ins active at turn 1.
-  renarrow();
+  // Pi activates the ceiling on registration; a session_start handler may have
+  // replaced the active set since.
+  ensureCeiling();
+  allowedToolNames(); // report resolution diagnostics at spawn, not at the first call
 
   session.subscribe((event: AgentSessionEvent) => {
-    if (event.type === "turn_end") renarrow();
+    if (event.type === "turn_end") ensureCeiling();
   });
 
   const priorBeforeToolCall = session.agent.beforeToolCall;
