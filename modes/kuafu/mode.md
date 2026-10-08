@@ -6,7 +6,7 @@ tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write, -tool_search,
   -mcp__linear_readonly__*
-allow_delegation_to: chengfeng,wenchang,cangjie,xuannv,jintong,juling,yunu,huayan,guangguang,taishang,direnjie,panguan,simaqian
+allow_delegation_to: chengfeng,wenchang,cangjie,xuannv,jintong,juling,yunu,huayan,guangguang,taishang,direnjie,simaqian
 allow_nesting: true
 ---
 

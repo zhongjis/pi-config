@@ -17,7 +17,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 - Kua Fu/Hou Tu `tools:` MUST grant `imagegen`; Fu Xi MUST NOT: generation writes files and spends subscription quota.
 - Mode `tools:` MUST start from `+@all` and subtract only tools the model can reach on its own. MUST NOT subtract command-gated tools, which an extension activates only from a user command.
 - Kua Fu/Hou Tu `tools:` MUST grant `agent_graph`, `get_agent_result`, and `resolve_agent_graph_gate`; Fu Xi MUST NOT grant `agent_graph` or `resolve_agent_graph_gate`. Existing delegation and role restrictions still apply.
-- Kua Fu/Hou Tu MUST allow `panguan` and `simaqian` delegation so saved agent graphs that use them pass graph delegation preflight.
+- Kua Fu/Hou Tu MUST allow `wenchang`, `chengfeng` and `simaqian` delegation so saved agent graphs that use them pass graph delegation preflight.
 - Mode model fallback chains MUST use `cliproxyapi` instead of `openai-codex` for Codex models.
 - `gpt.md` replaces only the body; it MUST be self-contained.
 - Absent GPT variants inherit the default body.

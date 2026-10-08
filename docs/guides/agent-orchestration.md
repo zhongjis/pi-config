@@ -43,7 +43,6 @@ Orchestrators route to these leaf specialists. No subagent delegates further.
 | `direnjie` | Gap analysis (assumptions, guardrails, scope) | no | no |
 | `yanluo` | High-accuracy finalized-plan review | no | no |
 | `xuannv` | Tactical planning advisor (returns plan text) | no | no |
-| `panguan` | Tool-free judge: typed labels over supplied evidence (graph evaluators, agent gates) | no | no |
 | `simaqian` | Tool-free report writer: one cited report from supplied research evidence (graph writers) | no | no |
 | `guangguang` | Quick, deterministic, naturally single-file implementation | yes | no |
 | `jintong` | Clear, standard-risk, low-to-moderate non-UI implementation | yes | no |
@@ -63,7 +62,7 @@ which subagents it may delegate to: [`kuafu`](../../modes/kuafu/mode.md),
 [`fuxi`](../../modes/fuxi/mode.md), [`houtu`](../../modes/houtu/mode.md).
 
 Routing intent: `fuxi` excludes `cangjie`; Fu Xi owns plan prose and allows `huayan` only for visual-review input, never implementation. `yanluo` is fuxi-only
-and `xuannv` is kuafu-only. Kua Fu and Hou Tu allow `panguan` and `simaqian` so saved agent graphs
+and `xuannv` is kuafu-only. Kua Fu and Hou Tu allow `wenchang`, `chengfeng` and `simaqian` so saved agent graphs
 that use them pass graph delegation preflight. **Hou Tu is never a delegation target** — it is reached
 through the approval → `/handoff:start-work` bridge, not by delegation.
 

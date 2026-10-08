@@ -14,7 +14,7 @@ The repo-committed reusable agent-graph portfolio: saved `AgentGraph`s the `agen
 - Nodes select work by `agent`; model and thinking come only from that agent's frontmatter chain. Saved graphs MUST NOT set node model, effort, or thinking.
 - `install.sh` symlinks this directory to `~/.pi/agent/agent-graphs` for global resolution. Resolution roots, highest priority first: `<cwd>/.pi/agent-graphs`, `<cwd>/agent-graphs`, `<cwd>/.agents/agent-graphs`, then `~/.pi/agent/agent-graphs`.
 - Saved-graph outcome schemas MUST match the runtime envelope exactly: `succeeded` omits `reason`; `partial`/`failed` require a nonblank `reason`. Any other envelope is silently ignored and the run shows `Completed`.
-- Every mode that runs `deep-research` MUST allow `panguan` and `simaqian` delegation.
+- Every mode that runs `deep-research` MUST allow `wenchang`, `chengfeng` and `simaqian` delegation.
 - Before changing, running or integrating `context-gather`, you MUST read its [graph-specific contracts](README.md#context-gather).
 - Before changing, running or integrating `deep-research` or `deep-research/plan`, you MUST read its [graph-specific contracts](README.md#deep-research).
 
