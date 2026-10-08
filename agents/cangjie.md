@@ -5,8 +5,12 @@ model: github-copilot/claude-opus-5.5:low,cliproxyapi/gpt-6.1-sol:high
 prompt_mode: system_instructions
 discover_skills: false
 preload_skills: writing-clearly-and-concisely
-extensions: +@all, -@builtin, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
-tools: +read, +bash, +edit, +write, +codegraph_*, +lsp
+extensions: |
+  +better-bash-tool, +rtk, +direnv, +filter-outputs,
+  +codegraph
+tools: |
+  +@all,
+  -@builtin, +read, +bash, +edit, +write
 persist_session: true
 ---
 

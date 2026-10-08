@@ -4,8 +4,12 @@ description: "Read-only screenshot-grounded visual design reviewer for reference
 prompt_mode: system_instructions
 discover_skills: false
 preload_skills: impeccable
-extensions: +@all, -@builtin
-tools: +read, +bash, +look_at, +codegraph_*, +lsp
+extensions: |
+  +better-bash-tool, +rtk, +direnv, +filter-outputs,
+  +codegraph, +multimodal-look
+tools: |
+  +@all,
+  -@builtin, +read, +bash
 persist_session: true
 ---
 

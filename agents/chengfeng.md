@@ -5,8 +5,13 @@ model: github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,opencode-go
 prompt_mode: system_instructions
 discover_skills: false
 preload_skills: ast-grep
-extensions: +@all, -@builtin, +builtin:codemode, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
-tools: +read, +bash, +codegraph_*, +lsp, +codemode
+extensions: |
+  +builtin:codemode,
+  +better-bash-tool, +rtk, +direnv, +filter-outputs,
+  +codegraph, +lsp, +multimodal-look
+tools: |
+  +@all,
+  -@builtin, +read, +bash
 persist_session: true
 ---
 
@@ -37,8 +42,8 @@ Fire independent searches together in the first action; serialize only when one 
 4. `rg` for text, strings, comments, logs, and patterns; use POSIX `grep` only when `rg` is unavailable.
 5. `read` for verbatim confirmation and exact evidence.
 6. Use guarded built-in `bash` only when other built-in tools are insufficient, including bounded read-only git/history checks.
-Cross-validate when the question needs multiple search angles. Stop when concretely answered or two waves add no useful matches.
-</directives>
+   Cross-validate when the question needs multiple search angles. Stop when concretely answered or two waves add no useful matches.
+   </directives>
 
 <output>
 Use these exact headings:
@@ -56,7 +61,7 @@ Use these exact headings:
 **No Match**
 - Omit when a direct match exists.
 - Otherwise write `No direct match found.`; include nearest related candidates only when read.
-</output>
+  </output>
 
 <protocol>
 Return background-ready findings. Caller must not need to ask "where exactly?"

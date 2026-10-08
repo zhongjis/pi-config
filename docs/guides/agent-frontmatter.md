@@ -28,8 +28,12 @@ markdown prompt body:
 display_name: Example 示例
 description: One-line description shown in the Agent picker.
 model: anthropic/claude-sonnet-4-6:medium
-extensions: +@all, -@builtin
-tools: +read, +bash, +edit, +write, +codegraph_*, +lsp
+extensions: |
+  +better-bash-tool, +rtk, +direnv, +filter-outputs,
+  +codegraph, +lsp
+tools: |
+  +@all,
+  -@builtin, +read, +bash, +edit, +write
 prompt_mode: system_instructions
 ---
 
@@ -162,6 +166,24 @@ tools:
   - -source_check
 ```
 
+### Layout
+
+Write a `tools:` value that does not fit one line as a `|` block with one group per line:
+
+```yaml
+tools: |
+  +@all,
+  -@builtin, +read, +bash, +edit, +write, -tool_search,
+  -@pi-intercom, -@pi-web-access, +web_enable, -@imagegen
+```
+
+- Line 1: `+@all` alone, when the list starts from every tool.
+- Line 2: built-in rules: `@builtin` with its exceptions, plus Pi built-in extension tools such as `codemode` and `tool_search`.
+- Remaining lines: extension rules, wrapped at about 80 columns.
+- Subagent `extensions:` follow the same order: Pi built-in extensions such as `+builtin:codemode`, then the bash stack and `filter-outputs`, then tool providers.
+- Keep a group rule next to its exceptions, e.g. `-@pi-web-access, +web_enable`.
+- Separate rules with commas, including at line ends; whitespace alone is not a separator.
+
 ### `extensions` selectors (Subagents only)
 
 | Selector | Matches |
@@ -172,7 +194,7 @@ tools:
 | glob | `*` matches any characters, e.g. `builtin:*` |
 
 ```yaml
-extensions: +@all, -@builtin, +builtin:codemode, -ulw
+extensions: +builtin:codemode, +better-bash-tool, +codegraph, +lsp
 ```
 
 ### `tools` selectors
@@ -305,12 +327,16 @@ display_name: Taishang 太上老君
 description: Architecture decisions and debugging. Read-only consultation with deep analysis.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:high
 discover_skills: false
-extensions: +@all, -@builtin
-tools: +read, +bash, +look_at, +codegraph_*, +lsp
+extensions: |
+  +better-bash-tool, +rtk, +direnv, +filter-outputs,
+  +codegraph, +lsp, +multimodal-look
+tools: |
+  +@all,
+  -@builtin, +read, +bash
 ---
 ```
 
-No `edit`/`write`; built-in `bash` is guarded by the trusted hidden `smart-tool-guards` subagent factory.
+The loaded extensions decide the extension tools; the built-in line keeps `edit`/`write` out. Built-in `bash` is guarded by the trusted hidden `smart-tool-guards` subagent factory.
 
 ### Implementation worker (subagent)
 
@@ -320,8 +346,13 @@ display_name: Jintong 金童
 description: A focused build worker for isolated implementation, debugging, and verification tasks.
 model: claude-sonnet-4-6,openai-codex/gpt-5.5:medium
 prompt_mode: system_instructions
-extensions: +@all, -@builtin, +builtin:codemode
-tools: +read, +bash, +edit, +write, +codegraph_*, +lsp, +codemode
+extensions: |
+  +builtin:codemode,
+  +better-bash-tool, +rtk, +direnv, +filter-outputs,
+  +codegraph, +lsp
+tools: |
+  +@all,
+  -@builtin, +read, +bash, +edit, +write
 ---
 ```
 
@@ -337,7 +368,9 @@ display_name: Kua Fu 夸父
 description: Default build mode. A senior engineer who ships by orchestrating specialists.
 model: anthropic/claude-opus-4-8:xhigh,openai-codex/gpt-5.6-sol:medium
 inherit_context: false
-tools: +@all, -@builtin, +read, +bash, +edit, +write, -web_enable
+tools: |
+  +@all,
+  -@builtin, +read, +bash, +edit, +write, -tool_search
 allow_delegation_to: chengfeng,wenchang,xuannv,jintong,juling,yunu,guangguang,taishang,direnjie
 disallow_delegation_to: houtu
 allow_nesting: true

@@ -2,7 +2,9 @@
 display_name: Kua Fu 夸父
 description: Default build mode. A senior engineer who ships by orchestrating specialists, executing only the trivial local work that is cheaper to do directly.
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6.1-sol:medium:fast,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:high
-tools: +@all, -@builtin, +read, +bash, +edit, +write, -source_check, -tool_search
+tools: |
+  +@all,
+  -@builtin, +read, +bash, +edit, +write, -tool_search
 allow_delegation_to: chengfeng,wenchang,cangjie,xuannv,jintong,juling,yunu,huayan,guangguang,taishang,direnjie,panguan,simaqian
 disallow_delegation_to: houtu
 allow_nesting: true

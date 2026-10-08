@@ -4,8 +4,12 @@ description: A plan gap analyzer — catches hidden assumptions, guardrail gaps,
 model: github-copilot/claude-opus-5.5:max,cliproxyapi/gpt-6.1-sol:high,opencode-go/glm-5.2:high,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
-extensions: +@all, -@builtin, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
-tools: +read, +bash, +codegraph_*, +lsp
+extensions: |
+  +better-bash-tool, +rtk, +direnv, +filter-outputs,
+  +codegraph, +lsp
+tools: |
+  +@all,
+  -@builtin, +read, +bash
 persist_session: true
 ---
 

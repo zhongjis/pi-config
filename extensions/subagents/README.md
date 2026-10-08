@@ -210,8 +210,13 @@ Thinking precedence: agent frontmatter → selected model-chain suffix → SDK s
 `extensions:` decides **which extensions load**; `tools:` decides **which tools the agent may see and call**. Both are signed rule lists, omitted or empty means nothing, and the last matching rule wins. The [frontmatter guide](../../docs/guides/agent-frontmatter.md#access-rules) owns the selector grammar and diagnostics.
 
 ```yaml
-extensions: +@all, -@builtin, +builtin:codemode, -ulw
-tools: +read, +bash, +@codegraph, +lsp, +codemode
+extensions: |
+  +builtin:codemode,
+  +better-bash-tool, +rtk, +direnv, +filter-outputs,
+  +codegraph, +lsp
+tools: |
+  +@all,
+  -@builtin, +read, +bash
 
 isolated: true                    # no extensions load; only granted built-in tools remain
 ```

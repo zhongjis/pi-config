@@ -4,8 +4,13 @@ description: High-capability non-UI implementation worker for substantial cross-
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:medium,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
-extensions: +@all, -@builtin, +builtin:codemode, -ulw, -caveman, -smart-sessions, -boomerang, -inline-skills, -goal
-tools: +read, +bash, +edit, +write, +codegraph_*, +lsp, +codemode
+extensions: |
+  +builtin:codemode,
+  +better-bash-tool, +rtk, +direnv, +filter-outputs,
+  +codegraph, +lsp
+tools: |
+  +@all,
+  -@builtin, +read, +bash, +edit, +write
 persist_session: true
 ---
 

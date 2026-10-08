@@ -2,7 +2,9 @@
 display_name: Hou Tu 后土
 description: Plan execution mode. Master conductor that executes plans step by step — coordinates, delegates, verifies. Does not write code directly; delegates all implementation work to subagents.
 model: github-copilot/claude-sonnet-5.5,cliproxyapi/gpt-6.1-sol:medium,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:medium
-tools: +@all, -@builtin, +read, +bash, +edit, +write, -source_check, -tool_search, -@goal, -intercom
+tools: |
+  +@all,
+  -@builtin, +read, +bash, +edit, +write, -tool_search
 allow_delegation_to: chengfeng,wenchang,cangjie,jintong,juling,yunu,huayan,guangguang,taishang,direnjie,panguan,simaqian
 allow_nesting: true
 ---
