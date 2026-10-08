@@ -172,14 +172,19 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
       return renderSteerSubagentResult(result, options, theme, context);
     },
     execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
+      const notRunning = (status: string, resumable: boolean) => {
+        const text = `Agent "${params.agent_id}" is not running (status: ${status}). Cannot steer a non-running agent.`;
+        return textResult(resumable ? `${text}\nTo continue it, call agent with resume: "${params.agent_id}" and a new prompt.` : text);
+      };
       const record = manager.getRecord(params.agent_id);
       if (!record) {
         const evicted = manager.getEvicted(params.agent_id);
-        if (evicted) return textResult(`Agent "${params.agent_id}" is not running (status: ${evicted.status}). Cannot steer a non-running agent.`);
+        if (evicted) return notRunning(evicted.status, true);
         return textResult(`Agent not found: "${params.agent_id}". It may have been cleaned up.`);
       }
       if (record.status !== "running") {
-        return textResult(`Agent "${params.agent_id}" is not running (status: ${record.status}). Cannot steer a non-running agent.`);
+        // Queued or still-draining executions cannot be resumed yet.
+        return notRunning(record.status, !manager.hasPendingExecution(record.id));
       }
       if (!record.session) {
         if (!record.pendingSteers) record.pendingSteers = [];

@@ -142,11 +142,11 @@ describe("tools on an evicted, indexed agent", () => {
     expect(manager.listAgents()).toEqual([]);
   });
 
-  it("S12 steering an indexed run reports that it is not running", async () => {
+  it("S12 steering an indexed run reports that it is not running and how to continue it", async () => {
     const { steer } = tools(entry(join(sessionsDir, "child.jsonl")));
 
     const result = await steer.execute("steer", { agent_id: "evicted-1", message: "change course" }, undefined, undefined, ctx);
 
-    expect(textOf(result)).toBe('Agent "evicted-1" is not running (status: completed). Cannot steer a non-running agent.');
+    expect(textOf(result)).toBe('Agent "evicted-1" is not running (status: completed). Cannot steer a non-running agent.\nTo continue it, call agent with resume: "evicted-1" and a new prompt.');
   });
 });
