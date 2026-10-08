@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
@@ -57,7 +57,7 @@ describe("smart-tool-guards native bash — integration", () => {
 	const roots: string[] = [];
 
 	function tempRoot(): string {
-		const root = mkdtempSync(join(tmpdir(), "smart-tool-guards-native-"));
+		const root = realpathSync(mkdtempSync(join(tmpdir(), "smart-tool-guards-native-")));
 		roots.push(root);
 		return root;
 	}

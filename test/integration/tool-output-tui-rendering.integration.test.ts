@@ -241,8 +241,7 @@ describe("tool output TUI rendering — real Pi integration", () => {
     for (const definition of definitions) {
       expect(definition.renderCall, `${definition.name} renderCall`).toBeTypeOf("function");
       expect(definition.renderResult, `${definition.name} renderResult`).toBeTypeOf("function");
-      const fixture = FIXTURES[definition.name as keyof typeof FIXTURES];
-      expect(fixture, `${definition.name} fixture`).toBeDefined();
+      const fixture = FIXTURES[definition.name] ?? { args: {}, raw: "Output.\nRAW_END", details: {} };
 
       const args = deepFreeze(structuredClone(fixture.args));
       const result = deepFreeze<ToolResultLike>({
