@@ -283,12 +283,20 @@ Terse command-style prompts produce shallow, generic work.
           const pending = manager.restoreEvicted(pi, ctx, resumeId, params.prompt, {
             isBackground: background,
             signal,
+            onSessionCreated: session => {
+              const rec = manager.getRecord(resumeId);
+              // Append only the new messages to the existing transcript.
+              if (rec?.outputFile) rec.outputCleanup = streamToOutputFile(session, rec.outputFile, resumeId, ctx.cwd, session.messages.length);
+            },
             onTextDelta: (_delta, text) => {
               const restored = manager.getRecord(resumeId);
               if (restored) streamForeground(restored, text);
             },
           });
           const restored = manager.getRecord(resumeId);
+          if (restored && (getAgentConfig(restored.type)?.outputTranscript ?? settings.outputTranscript)) {
+            restored.outputFile = createOutputFilePath(ctx.cwd, resumeId, ctx.sessionManager.getSessionId());
+          }
           if (background && restored) trackBackground(restored);
           try {
             return resumedResult(await pending);

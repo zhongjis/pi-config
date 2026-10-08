@@ -18,7 +18,7 @@ Derived from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)
 - **Conversation viewer** — select any agent in `/agents` to open a live-scrolling overlay of its full conversation (auto-follows new content, scroll up to pause). Steer a running agent inline by pressing `Enter` to open a composer, typing, then `Enter` to send (`Esc` or an empty submit returns) — the message appears as a user message and redirects the agent after its current tool. Stop a still-running agent by pressing `x` (then `x` again to confirm) — both work for background agents too. Press `/` to search the transcript (`n`/`N` for next/previous match, `Esc` clears), or `[`/`]` to jump between messages. Tool calls show their main argument, long results show their first and last lines with an omitted-line count, and assistant errors appear inline. Reload-surviving history rows in `/agent-monitor` open the same viewer read-only
 - **Custom agent types** — define agents in `.pi/agents/<name>.md` or `.agents/agents/<name>.md` (project) or globally, with YAML frontmatter: custom system prompts, model selection, thinking levels, tool restrictions
 - **Mid-run steering** — inject messages into running agents to redirect their work without restarting
-- **Session resume** — pick up where an agent left off, preserving full conversation context. Every independent agent session is persisted. A terminal Agent record stays in memory for 15 minutes within the current parent session; after it is evicted (retention, session switch, reload, or a Pi restart followed by `/resume` of the same parent session), `agent({resume: id})` reopens the persisted session file and continues the conversation under the current agent config and delegation policy. `get_agent_result` on an evicted id reads the result from the file without reviving the agent.
+- **Session resume** — pick up where an agent left off, preserving full conversation context. Every independent agent session is persisted. A terminal Agent record stays in memory for 15 minutes within the current parent session; after it is evicted (retention, session switch, reload, or a Pi restart followed by `/resume` of the same parent session), `agent({resume: id})` reopens the persisted session file and continues the conversation under the current agent config and delegation policy. The resumed run appends to the agent's existing `.output` transcript when transcripts are enabled. `get_agent_result` on an evicted id reads the result from the file without reviving the agent.
 - **Graceful turn limits** — agents get a "wrap up" warning before hard abort, producing clean partial results instead of cut-off output
 - **Case-insensitive agent types** — `"explore"`, `"Explore"`, `"EXPLORE"` all work. Unknown types fall back to general-purpose with a note
 - **Fuzzy model selection** — specify models by name (`"haiku"`, `"sonnet"`) instead of full IDs, with automatic filtering to only available/configured models
@@ -295,7 +295,7 @@ The agent-graph skill (`skills/agent-graphs/SKILL.md`) is discovered via `resour
 
 ## Graceful Max Turns
 
-Instead of hard-aborting at the turn limit, agents get a graceful shutdown:
+Instead of hard-aborting at the turn limit, agents get a graceful shutdown. `max_turns` limits only the original spawn; resumed agents, live or reopened from file, run without a turn limit:
 
 1. At the `max_turns` soft limit, a final answer completes normally. Only an unfinished tool-use turn receives the wrap-up steering message.
 2. Up to 5 grace turns to finish cleanly

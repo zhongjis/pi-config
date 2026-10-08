@@ -1156,7 +1156,7 @@ describe("agent-runner session persistence", () => {
     await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", isolated: true, skills: ["call-skill"], maxTurns: 7 });
 
     expect(sessionManagerAppendCustomEntry).toHaveBeenCalledWith(SUBAGENT_LAUNCH_ENTRY, {
-      version: 1, agentId: "agent-1", type: "explore", isolated: true, skills: ["call-skill"], maxTurns: 7,
+      version: 1, agentId: "agent-1", type: "explore", isolated: true, skills: ["call-skill"],
     });
   });
 });
@@ -1236,8 +1236,9 @@ describe("agent-runner session reopen", () => {
     expect(_preloadSkills).toHaveBeenLastCalledWith(["launch-skill"], "/tmp");
   });
 
-  it("S10 reopen applies the launch maxTurns over the per-call maxTurns", async () => {
-    reopenWith({ maxTurns: 1 });
+  it("reopen enforces no turn limit even when frontmatter max_turns is set", async () => {
+    reopenWith();
+    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ maxTurns: 1 }));
     const { session, listeners } = createSession("DONE");
     session.prompt.mockImplementation(async () => {
       for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
@@ -1245,9 +1246,9 @@ describe("agent-runner session reopen", () => {
     });
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file, maxTurns: 50 });
+    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
 
-    expect(session.steer).toHaveBeenCalledTimes(1);
+    expect(session.steer).not.toHaveBeenCalled();
   });
 
   it("S10 reopen re-seeds the parent's Agent-tree scope", async () => {

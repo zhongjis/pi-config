@@ -7,7 +7,8 @@ import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import { boot, dir, mockRunAgent, session } from "./graph-run-registration.fixture.js";
+import { outputFilePath } from "../src/output-file.js";
+import { artifactDirs, boot, dir, mockRunAgent, session } from "./graph-run-registration.fixture.js";
 
 const textOf = (result: { content: Array<{ type: string; text?: string }> }) => result.content[0]?.text ?? "";
 const historyPath = () => join(dir, "global", "local", "parent", "agent-history.json");
@@ -129,6 +130,49 @@ describe("agent resume of an evicted, indexed run", () => {
     await vi.waitFor(() => {
       const saved = JSON.parse(readFileSync(historyPath(), "utf8")) as { runs: unknown[] };
       expect(saved.runs[0]).toMatchObject({ id: "evicted-1", status: "completed", toolUses: 3, lifetimeUsage: { input: 110, output: 22, cacheWrite: 33 } });
+    });
+  });
+
+  describe("transcript", () => {
+    /** Restore with a session holding one prior message, then add one new message. */
+    async function resumeWithTranscript(settings: Record<string, unknown>) {
+      const host = boot(settings);
+      await host.lifecycle("session_start");
+      mkdirSync(dirname(historyPath()), { recursive: true });
+      writeFileSync(historyPath(), JSON.stringify({ version: 1, runs: [{
+        id: "evicted-1", type: "fixture", description: "evicted review", status: "completed",
+        startedAt: 1, completedAt: 2, toolUses: 3, lifetimeUsage: { input: 1, output: 1, cacheWrite: 1 }, sessionFile: childFile(),
+      }] }));
+      await host.lifecycle("session_start");
+      const path = outputFilePath(dir, "evicted-1", "parent");
+      artifactDirs.add(dirname(dirname(dirname(path))));
+      mkdirSync(dirname(path), { recursive: true });
+      writeFileSync(path, "ORIGINAL\n");
+      const listeners: Array<(event: { type: string }) => void> = [];
+      const messages: unknown[] = [{ role: "user", content: "earlier" }];
+      const live = { ...session, messages, subscribe: (fn: (event: { type: string }) => void) => { listeners.push(fn); return () => {}; } } as unknown as AgentSession;
+      mockRunAgent(async (_ctx, _type, prompt, options) => {
+        await Promise.resolve(); // the real runner awaits before creating its session
+        options.onSessionCreated?.(live);
+        messages.push({ role: "user", content: prompt }, { role: "assistant", content: [{ type: "text", text: "NEW" }] });
+        for (const fn of listeners) fn({ type: "turn_end" });
+        return { responseText: "NEW", session: live, aborted: false, steered: false };
+      });
+      const result = await resume(host);
+      return { path, result };
+    }
+
+    it("a restored resume appends only its new messages after the existing transcript bytes", async () => {
+      const { path } = await resumeWithTranscript({ outputTranscript: true });
+
+      const text = readFileSync(path, "utf8");
+      expect({ kept: text.startsWith("ORIGINAL\n"), earlier: text.includes("earlier"), appended: text.includes("NEW") }).toEqual({ kept: true, earlier: false, appended: true });
+    });
+
+    it("no transcript is written when the type's output_transcript is false", async () => {
+      const { path } = await resumeWithTranscript({ outputTranscript: false });
+
+      expect(readFileSync(path, "utf8")).toBe("ORIGINAL\n");
     });
   });
 });

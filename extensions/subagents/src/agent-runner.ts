@@ -122,7 +122,6 @@ interface SubagentLaunch {
   type: string;
   isolated?: boolean;
   skills?: string[];
-  maxTurns?: number;
 }
 
 /** Default max turns. undefined = unlimited (no turn limit). */
@@ -210,7 +209,7 @@ export interface RunOptions {
   /**
    * Existing child session file to reopen instead of creating a new session.
    * It must carry this agent's launch entry and the current parent lineage;
-   * its launch-time isolated/skills/maxTurns replace the per-call options.
+   * its launch-time isolated/skills replace the per-call options. A reopened run has no turn limit.
    */
   resumeSessionFile?: string;
 }
@@ -425,7 +424,7 @@ export async function runAgent(
     ? reopenSubagentSession(options.resumeSessionFile, options.agentId, canonicalType, parentFile)
     : undefined;
   // A reopened session keeps its launch-time per-call options.
-  const { isolated, skills, maxTurns: maxTurnsOption } = reopened?.launch ?? options;
+  const { isolated, skills } = reopened?.launch ?? options;
 
   // Resolve working directory: caller-supplied cwd override > reopened session cwd > parent cwd
   const effectiveCwd = options.cwd ?? reopened?.sessionManager.getCwd() ?? ctx.cwd;
@@ -704,7 +703,6 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
       type: canonicalType,
       isolated: options.isolated,
       skills: options.skills,
-      maxTurns: options.maxTurns,
     };
     sessionManager.appendCustomEntry(SUBAGENT_LAUNCH_ENTRY, launch);
   }
@@ -786,7 +784,8 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
 
   // Track turns for graceful max_turns enforcement
   let turnCount = 0;
-  const maxTurns = normalizeMaxTurns(maxTurnsOption ?? agentConfig?.maxTurns ?? defaultMaxTurns);
+  // A reopened run enforces no turn limit, like a live in-memory resume.
+  const maxTurns = reopened ? undefined : normalizeMaxTurns(options.maxTurns ?? agentConfig?.maxTurns ?? defaultMaxTurns);
   let softLimitReached = false;
   let aborted = false;
   let interruptionCause: InterruptionCause | undefined;
