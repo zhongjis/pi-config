@@ -106,7 +106,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - [.agents/AGENTS.md](.agents/AGENTS.md) — repository-owned maintenance skills and references.
 - [agents/AGENTS.md](agents/AGENTS.md) — Subagent definitions and delegation contracts.
 - [agent-graphs/AGENTS.md](agent-graphs/AGENTS.md) — the repo-committed reusable agent-graph portfolio, installed globally via `install.sh`.
-- [docs/AGENTS.md](docs/AGENTS.md) — human-facing specifications, decisions, guides, and reference material.
+- [docs/AGENTS.md](docs/AGENTS.md) — human-facing specifications, decisions, guides, diagrams, and reference material.
 - [extensions/AGENTS.md](extensions/AGENTS.md) — extension implementation, shared integration contracts, and local extension indexes.
 - [modes/AGENTS.md](modes/AGENTS.md) — Mode Agent prompts, model-family variants, and mode-owned skills.
 - [scripts/AGENTS.md](scripts/AGENTS.md) — repository maintenance and validation helpers.

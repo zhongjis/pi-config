@@ -1,0 +1,166 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "deep-research Agent Graph",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/deep-research/deep-research.html",
+    "repository": {
+      "url": "git@github.com:zhongjis/pi-config.git",
+      "link_mode": "local-only",
+      "revision": "8b994677de30d7516df50967970dd4d4fc92ed36"
+    }
+  },
+  "lanes": [
+    { "id": "caller", "label": "Caller · agent_graph" },
+    { "id": "planning", "label": "planning · deep-research/plan subgraph" },
+    { "id": "research", "label": "research · bounded_feedback ≤3 rounds" },
+    { "id": "gaps", "label": "research · gap-task evaluator" },
+    { "id": "writer", "label": "synthesize · tool-free writer" }
+  ],
+  "mainPath": ["question", "seed_queries", "seed_search", "plan", "scope", "work", "ledger", "judge", "report"],
+  "semanticChecks": {
+    "allowedRoots": ["question"],
+    "allowedTerminals": ["report"]
+  },
+  "nodes": [
+    {
+      "id": "question", "lane": "caller", "col": 0, "type": "external",
+      "label": "Question", "sublabel": "question + context?", "width": 116,
+      "sources": [{ "path": "agent-graphs/deep-research.graph.json", "line": 5, "end_line": 13, "label": "inputSchema" }]
+    },
+    {
+      "id": "seed_queries", "lane": "planning", "col": 0, "type": "backend",
+      "label": "Seed queries", "sublabel": "wenchang · 1–4 broad", "tag": "origin: dated query", "width": 116,
+      "sources": [{ "path": "agent-graphs/deep-research/plan.graph.json", "line": 14, "end_line": 30, "label": "seedQueries" }]
+    },
+    {
+      "id": "seed_search", "lane": "planning", "col": 1, "type": "messagebus",
+      "label": "Seed search", "sublabel": "fanout by source", "tag": "chengfeng | wenchang", "width": 116,
+      "sources": [{ "path": "agent-graphs/deep-research/plan.graph.json", "line": 31, "end_line": 50, "label": "seedSearch" }]
+    },
+    {
+      "id": "plan", "lane": "planning", "col": 2, "type": "backend",
+      "label": "Plan research", "sublabel": "wenchang · p1–p6", "tag": "1–6 tasks → partIds", "width": 116,
+      "sources": [{ "path": "agent-graphs/deep-research/plan.graph.json", "line": 51, "end_line": 75, "label": "plan" }]
+    },
+    {
+      "id": "scope", "lane": "planning", "col": 3, "type": "security",
+      "label": "Scope gate", "sublabel": "bool gate: inScope", "tag": "re-plan ≤1, then go", "width": 116,
+      "sources": [
+        { "path": "agent-graphs/deep-research/plan.graph.json", "line": 76, "end_line": 90, "label": "scope gate" },
+        { "path": "agent-graphs/deep-research/plan.graph.json", "line": 96, "label": "re-plan loop" },
+        { "path": "agent-graphs/README.md", "line": 17, "label": "scope contract" }
+      ]
+    },
+    {
+      "id": "work", "lane": "research", "col": 3, "type": "messagebus",
+      "label": "Read sources", "sublabel": "fanout by source", "tag": "chengfeng | wenchang", "width": 116,
+      "sources": [
+        { "path": "agent-graphs/deep-research.graph.json", "line": 19, "end_line": 44, "label": "research.work" },
+        { "path": "extensions/subagents/src/graph/deep-research-policy.ts", "line": 128, "end_line": 132, "label": "opened refs, rounds ≥2" }
+      ]
+    },
+    {
+      "id": "ledger", "lane": "research", "col": 4, "type": "database",
+      "label": "Evidence ledger", "sublabel": "deep-research-v1", "tag": "round 0 = seed", "width": 116,
+      "sources": [
+        { "path": "extensions/subagents/src/graph/deep-research-policy.ts", "line": 57, "end_line": 98, "label": "researchLedger" },
+        { "path": "extensions/subagents/src/graph/deep-research-policy.ts", "line": 106, "end_line": 112, "label": "skipsJudge" },
+        { "path": "extensions/subagents/src/graph/graph-domain.ts", "line": 474, "end_line": 479, "label": "judge pre-check" }
+      ]
+    },
+    {
+      "id": "judge", "lane": "research", "col": 5, "type": "security",
+      "label": "Coverage judge", "sublabel": "bool gate: covered", "tag": "primary claims only", "width": 116,
+      "sources": [
+        { "path": "agent-graphs/deep-research.graph.json", "line": 45, "end_line": 58, "label": "research.judge" },
+        { "path": "extensions/subagents/src/graph/graph-domain.ts", "line": 480, "end_line": 488, "label": "verdict routing" }
+      ]
+    },
+    {
+      "id": "evaluator", "lane": "gaps", "col": 4, "type": "backend",
+      "label": "Gap-task writer", "sublabel": "wenchang · no search", "tag": "≤2 tasks per gap", "width": 116,
+      "sources": [
+        { "path": "agent-graphs/deep-research.graph.json", "line": 59, "end_line": 65, "label": "research.evaluator" },
+        { "path": "extensions/subagents/src/graph/deep-research-policy.ts", "line": 114, "end_line": 119, "label": "exhaustedGaps" },
+        { "path": "extensions/subagents/src/graph/bounded-feedback.ts", "line": 108, "end_line": 120, "label": "continue or stop" }
+      ]
+    },
+    {
+      "id": "report", "lane": "writer", "col": 5, "type": "backend",
+      "label": "Cited report", "sublabel": "simaqian · no tools", "tag": "ids + URLs checked", "width": 116,
+      "sources": [
+        { "path": "agent-graphs/deep-research.graph.json", "line": 66, "end_line": 131, "label": "synthesize" },
+        { "path": "extensions/subagents/src/graph/deep-research-policy.ts", "line": 153, "end_line": 193, "label": "writer checks" },
+        { "path": "agent-graphs/deep-research.graph.json", "line": 134, "end_line": 143, "label": "graph outputs" }
+      ]
+    }
+  ],
+  "edges": [
+    { "id": "ask", "from": "question", "to": "seed_queries" },
+    { "id": "queries", "from": "seed_queries", "to": "seed_search", "label": "1–4 queries" },
+    { "id": "seed", "from": "seed_search", "to": "plan", "label": "seed claims" },
+    { "id": "draft", "from": "plan", "to": "scope", "label": "parts + tasks" },
+    { "id": "replan", "from": "scope", "to": "plan", "label": "inScope=false", "variant": "dashed", "role": "return", "fromSide": "top", "toSide": "top" },
+    { "id": "dispatch", "from": "scope", "to": "work", "label": "plan tasks", "variant": "emphasis", "fromSide": "bottom", "toSide": "top" },
+    { "id": "collect", "from": "work", "to": "ledger", "label": "claims + gaps" },
+    { "id": "precheck_pass", "from": "ledger", "to": "judge", "label": "all parts primary" },
+    { "id": "precheck_skip", "from": "ledger", "to": "evaluator", "label": "part lacks primary", "variant": "dashed", "role": "branch" },
+    { "id": "not_covered", "from": "judge", "to": "evaluator", "label": "covered=false", "variant": "security", "role": "branch", "fromSide": "bottom", "toSide": "right" },
+    { "id": "next_round", "from": "evaluator", "to": "work", "label": "gap tasks · next round", "variant": "dashed", "role": "return" },
+    { "id": "covered", "from": "judge", "to": "report", "label": "covered=true", "variant": "emphasis", "fromSide": "right", "toSide": "right" },
+    { "id": "stop", "from": "evaluator", "to": "report", "label": "tasks [] or limit", "variant": "default", "role": "branch", "fromSide": "bottom", "toSide": "left" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Graph outputs",
+      "items": [
+        "parts, cited markdown, acceptedFindings, verifiedCoverage",
+        "rejectedClaims, gaps and failures stay in the result",
+        "Outcome follows coverage: succeeded, partial or failed"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Agent routing",
+      "items": [
+        "Seed search and Read sources fan out one worker per task",
+        "source local → chengfeng; github or web → wenchang",
+        "Seed queries, Plan research, Gap-task writer: wenchang",
+        "Cited report: simaqian, tool-free, ledger evidence only"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Decision gates",
+      "items": [
+        "scope and judge are one-bool decision_gate nodes",
+        "Low-confidence answers escalate to the orchestrator",
+        "scope=false re-plans once; a second false still proceeds and the report says so"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Research stop reasons",
+      "items": [
+        "sufficient: judge answers covered=true",
+        "no accessible route: gap-task writer returns tasks []",
+        "limits: 3 rounds, 30 tasks, USD 2 child cost, 15 min deadline",
+        "no progress: no new worker output or a repeated task set"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Ledger and writer checks",
+      "items": [
+        "Claim ids r<round>-<item>-<claim>; round 0 = seed; duplicates merged",
+        "Rounds ≥2 receive references already opened",
+        "Writer output rejects unknown ids, unledgered URLs and secondary-only supported parts",
+        "Checks prove traceability, not source truth"
+      ]
+    }
+  ]
+}

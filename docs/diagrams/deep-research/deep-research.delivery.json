@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "3dddde81-9fad-4f0c-ad85-1af84d98ff9b",
+  "status": "current",
+  "command": "deliver",
+  "type": "workflow",
+  "input": "/Users/zshen/personal/pi-config/docs/diagrams/deep-research/deep-research.workflow.json",
+  "output": "/Users/zshen/personal/pi-config/docs/diagrams/deep-research/deep-research.html",
+  "specification": {
+    "sha256": "6cbe610a9d3c94dd4432073f630b8f4ca8195f17b5985ce217a04e9542cf6997",
+    "bytes": 8823
+  },
+  "artifact": {
+    "sha256": "26887ea82d1e1e9f07eafa06b23a9a34d6fe97b87939b37e842e27327472e2f7",
+    "bytes": 769892
+  }
+}

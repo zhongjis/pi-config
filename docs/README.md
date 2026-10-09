@@ -9,6 +9,7 @@ Design contracts, guides, and reference material for this Pi harness.
 - `adr/` — append-only ADRs: one decision per `NNNN-short-title.md`, including why X was chosen over Y.
 - `guides/` — task-oriented instructions for current behavior.
 - `references/` — stable, citable external material.
+- `diagrams/` — Archify diagrams of current behavior, one folder per diagram: source `<name>.<type>.json`, rendered `<name>.html`, and its `<name>.delivery.json` receipt.
 - `rules/` — locked execution policy imported by root `AGENTS.md`; created when the first rule is adopted.
 
 ## Writing Rules
@@ -21,7 +22,7 @@ Domain language lives in [`GLOSSARY.md`](../GLOSSARY.md) — authoritative for t
 
 ## Authority Order
 
-Behavioral conflicts resolve: code → `rules/` → `adr/` → shipped `specs/` → `guides/` → `ideas/`. `references/` is evidence, never policy.
+Behavioral conflicts resolve: code → `rules/` → `adr/` → shipped `specs/` → `guides/` → `ideas/`. `references/` is evidence and `diagrams/` illustrate pinned source; neither is policy.
 
 ## Lifecycle Statuses
 
@@ -71,3 +72,7 @@ Vendored packages record upstream `repository` metadata in their `package.json`;
 - [agent-frontmatter.md](guides/agent-frontmatter.md) — authoring agent and mode frontmatter
 - [tool-output-tui-rendering.md](guides/tool-output-tui-rendering.md) — Panda Harness standard for Pi tool and notification presentation
 - [testing/README.md](guides/testing/README.md) — testing overview, with [unit](guides/testing/unit-test.md) and [integration](guides/testing/integration-test.md) conventions
+
+## Diagrams
+
+- [deep-research](diagrams/deep-research/deep-research.html) — the `deep-research` saved agent graph, including its `deep-research/plan` subgraph
