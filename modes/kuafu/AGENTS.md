@@ -11,6 +11,7 @@ Kua Fu's build-orchestrator prompt family.
 - Variants MUST share one implementation authorization gate: active unfinished agreed work stays authorized across turns; explicit human Stop/pause/cancel suspends it, and a `STOPPED BY THE USER` worker is NEVER auto-resumed.
 - Prompts MUST NOT restate harness mechanics owned by extensions.
 - Kua Fu variants MUST pass checks by fixing code, never by loosening assertions, and MUST defer test keep/move/delete decisions to the `programming` skill's present-contract rule rather than restating it.
+- `mode.md` and `gpt.md` routing ladders MUST list the same agents; the default body runs most sessions, so routing fixes land in both.
 
 ## Work Guidance
 
@@ -25,6 +26,7 @@ Kua Fu's build-orchestrator prompt family.
 ## Verification
 
 - Use the [shared mode checks](../AGENTS.md#verification) for family and runtime-sensitive changes.
+- Routing ladder parity: `pnpm exec vitest run --project unit extensions/modes/test/kuafu-routing-parity.test.ts`.
 
 ## Child DOX Index
 
