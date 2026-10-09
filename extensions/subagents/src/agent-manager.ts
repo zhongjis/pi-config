@@ -392,6 +392,7 @@ export class AgentManager {
     if (record.graphRunId === undefined) this.activityListener?.(record);
     let toolSequence = 0;
     return {
+      onProgress: () => { state.lastProgressAt = Date.now(); },
       onToolActivity: (activity: ToolActivity) => {
         if (activity.type === "start") state.activeTools.set(String(++toolSequence), activity.toolName);
         if (activity.type === "end") {

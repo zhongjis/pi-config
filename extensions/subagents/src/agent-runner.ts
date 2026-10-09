@@ -245,6 +245,8 @@ export interface RunOptions {
   onToolActivity?: (activity: ToolActivity) => void;
   /** Called on streaming text deltas from the assistant response. */
   onTextDelta?: (delta: string, fullText: string) => void;
+  /** Internal idle heartbeat for non-empty thinking/tool-call argument deltas; carries no payload. */
+  onProgress?: () => void;
   onSessionCreated?: (session: AgentSession) => void;
   /** Called at the end of each agentic turn with the cumulative count. */
   onTurnEnd?: (turnCount: number) => void;
@@ -293,7 +295,7 @@ export interface RunResult {
  * Subscribe to a session and collect the last assistant message text.
  * Returns an object with a `getText()` getter and an `unsubscribe` function.
  */
-function collectResponseText(session: AgentSession, onTextDelta?: RunOptions["onTextDelta"]) {
+function collectResponseText(session: AgentSession, onTextDelta?: RunOptions["onTextDelta"], onProgress?: RunOptions["onProgress"]) {
   let text = "";
   let lastText = "";
   const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
@@ -303,6 +305,12 @@ function collectResponseText(session: AgentSession, onTextDelta?: RunOptions["on
     if (event.type === "message_start" && event.message.role === "assistant") {
       if (text.trim()) lastText = text;
       text = "";
+    }
+    if (event.type === "message_update") {
+      const update = event.assistantMessageEvent;
+      if ((update.type === "thinking_delta" || update.type === "toolcall_delta") && update.delta.length > 0) {
+        onProgress?.();
+      }
     }
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       text += event.assistantMessageEvent.delta;
@@ -937,7 +945,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     }
   });
 
-  const collector = collectResponseText(session);
+  const collector = collectResponseText(session, undefined, options.onProgress);
   const cleanupAbort = forwardAbortSignal(session, options.signal);
 
   // Build the effective prompt: optionally prepend parent context (fresh spawns only)
@@ -993,6 +1001,7 @@ export async function resumeAgent(
   options: {
     onToolActivity?: (activity: ToolActivity) => void;
     onTextDelta?: RunOptions["onTextDelta"];
+    onProgress?: RunOptions["onProgress"];
     onTurnEnd?: (turnCount: number) => void;
     onAssistantUsage?: (usage: LifetimeUsage) => void;
     onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
@@ -1003,7 +1012,7 @@ export async function resumeAgent(
   // so only assistant text produced by THIS resume prompt counts as its output
   // — a failed resume must not surface the previous turn's answer (#144).
   const startLen = session.messages.length;
-  const collector = collectResponseText(session, options.onTextDelta);
+  const collector = collectResponseText(session, options.onTextDelta, options.onProgress);
   const cleanupAbort = forwardAbortSignal(session, options.signal);
 
   let turnCount = 0;

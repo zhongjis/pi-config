@@ -118,9 +118,13 @@ describe("AgentManager — execution activity", () => {
     const session = { ...mockSession(), steer: vi.fn().mockResolvedValue(undefined) };
     const observed = vi.fn();
     const onTextDelta = vi.fn();
+    let freshProgressAt: number | undefined;
     manager.setActivityListener(observed);
     vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
       options.onSessionCreated?.(session);
+      vi.advanceTimersByTime(1);
+      options.onProgress?.();
+      freshProgressAt = manager.getRecord(options.agentId ?? "")?.activity?.lastProgressAt;
       options.onTextDelta?.("old", "old");
       options.onToolActivity?.({ type: "end", toolName: "read" });
       options.onTurnEnd?.(2);
@@ -143,6 +147,7 @@ describe("AgentManager — execution activity", () => {
     const activity = record.activity;
     if (!callbacks || !activity || !release) throw new Error("Resume did not start");
     try {
+      expect(freshProgressAt).toBe(Date.now());
       expect(activity).not.toBe(oldActivity);
       expect(record.executionId).not.toBe(oldExecutionId);
       expect(record.resultConsumed).toBe(false);
@@ -156,7 +161,12 @@ describe("AgentManager — execution activity", () => {
       expect(activity.turnCount).toBe(2);
       expect(onTextDelta).toHaveBeenCalledExactlyOnceWith("old", "old");
       expect(observed).toHaveBeenCalledTimes(2);
+      const freshCallbacks = vi.mocked(runAgent).mock.lastCall?.[3];
+      vi.advanceTimersByTime(1);
+      freshCallbacks?.onProgress?.();
+      expect(activity.lastProgressAt).toBe(record.startedAt);
       for (const event of [
+        () => callbacks.onProgress?.(),
         () => callbacks.onTextDelta?.("new", "new"),
         () => callbacks.onToolActivity?.({ type: "start", toolName: "bash" }),
         () => callbacks.onToolActivity?.({ type: "start", toolName: "bash" }),
@@ -191,7 +201,7 @@ describe("AgentManager — execution activity", () => {
     }
   });
 
-  it("does not treat a progressing resume as idle after five minutes", async () => {
+  it.each(["usage", "stream"] as const)("does not treat a %s-progressing resume as idle after five minutes", async (progress) => {
     vi.useFakeTimers();
     const manager = new AgentManager();
     const session = { ...mockSession(), steer: vi.fn().mockResolvedValue(undefined) };
@@ -209,7 +219,8 @@ describe("AgentManager — execution activity", () => {
     const stop = startBackgroundSupervision(mockPi, manager, new Map());
     try {
       for (let minute = 0; minute < 7; minute++) {
-        callbacks.onAssistantUsage?.({ input: 1, output: 1, cacheWrite: 0, cacheRead: 0, cost: 0 });
+        if (progress === "stream") callbacks.onProgress?.();
+        else callbacks.onAssistantUsage?.({ input: 1, output: 1, cacheWrite: 0, cacheRead: 0, cost: 0 });
         await vi.advanceTimersByTimeAsync(60_000);
       }
       expect(record.status).toBe("running");

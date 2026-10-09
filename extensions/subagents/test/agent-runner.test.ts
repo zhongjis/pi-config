@@ -261,6 +261,41 @@ beforeEach(() => {
 });
 
 describe("agent-runner final output capture", () => {
+  it.each(["spawn", "resume"] as const)("%s heartbeats only non-empty thinking/toolcall deltas without exposing their payloads", async (kind) => {
+    const { session, listeners } = createSession("unused");
+    session.subscribe.mockImplementation(listener => {
+      listeners.push(listener);
+      return () => { listeners.splice(listeners.indexOf(listener), 1); };
+    });
+    createAgentSession.mockResolvedValue({ session });
+    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
+    const onProgress = vi.fn();
+    const onTextDelta = vi.fn();
+    const emit = (type: "thinking_delta" | "toolcall_delta" | "text_delta" | "thinking_start" | "toolcall_start", delta: string) => {
+      for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type, delta } });
+    };
+    session.prompt.mockImplementation(async () => {
+      emit("thinking_start", "");
+      emit("toolcall_start", "");
+      emit("thinking_delta", "");
+      emit("toolcall_delta", "");
+      expect(onProgress).not.toHaveBeenCalled();
+      emit("thinking_delta", "private reasoning");
+      emit("toolcall_delta", " ");
+      emit("text_delta", "answer");
+    });
+    const options = { pi, onProgress, onTextDelta };
+    const text = kind === "spawn"
+      ? (await runAgent(ctx, "Explore", "go", options)).responseText
+      : (await resumeAgent(sdkSession, "go", options)).text;
+    expect(onProgress.mock.calls).toEqual([[], []]);
+    expect(onTextDelta.mock.calls).toEqual([["answer", "answer"]]);
+    expect(text).toBe("answer");
+    emit("thinking_delta", "settled");
+    emit("toolcall_delta", "settled");
+    expect(onProgress).toHaveBeenCalledTimes(2);
+  });
+
   it.each([
     ["spawn", false], ["spawn", true], ["resume", false], ["resume", true],
   ] as const)("%s drains rejected prompts and retains only execution-local partial text (abort=%s)", async (kind, abort) => {
@@ -1197,11 +1232,19 @@ describe("agent-runner session reopen", () => {
 
   it("S10 reopens the given file instead of creating a session", async () => {
     const reopened = reopenWith();
-    const { session } = createSession("OK");
+    const { session, listeners } = createSession("OK");
+    const onProgress = vi.fn();
+    session.prompt.mockImplementation(async () => {
+      for (const type of ["thinking_delta", "toolcall_delta"]) {
+        for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type, delta: "progress" } });
+      }
+    });
     createAgentSession.mockResolvedValue({ session });
+    const options = { pi, agentId: "agent-1", resumeSessionFile: file, onProgress };
 
-    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
+    await runAgent(ctx, "Explore", "go", options);
 
+    expect(onProgress.mock.calls).toEqual([[], []]);
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ sessionManager: reopened }));
     expect(sessionManagerCreate).not.toHaveBeenCalled();
   });
