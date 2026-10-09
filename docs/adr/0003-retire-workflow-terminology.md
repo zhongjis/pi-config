@@ -2,13 +2,13 @@
 
 Status: shipped
 Date: 2026
-Related: [../specs/agent-graph-terminology-migration.md](https://github.com/zhongjis/pi-config/blob/6f5563a8f975323e7326472fea9c0e32e332157d/docs/specs/agent-graph-terminology-migration.md) · [../../extensions/subagents/CONTEXT.md](../../extensions/subagents/CONTEXT.md) · [0002-remove-subagentworkflow-script-runtime.md](0002-remove-subagentworkflow-script-runtime.md)
+Related: [../specs/agent-graph-terminology-migration.md](https://github.com/zhongjis/pi-config/blob/6f5563a8f975323e7326472fea9c0e32e332157d/docs/specs/agent-graph-terminology-migration.md) · [../../extensions/subagents/CONTEXT.md](https://github.com/zhongjis/pi-config/blob/ddd54d98305d2e712b1b6deeff9dfb08fa43ec16/extensions/subagents/CONTEXT.md) · [0002-remove-subagentworkflow-script-runtime.md](0002-remove-subagentworkflow-script-runtime.md)
 
 ## Context
 
 [ADR 0002](0002-remove-subagentworkflow-script-runtime.md) removed the `SubagentWorkflow` script runtime and made the typed `agent_graph` tool the single execution path. The old "workflow" vocabulary was left behind as residue: it survived in ~1,261 places across the extension — file names, ~60 exported identifiers, user-facing strings, and a set of persisted/contract identifiers — while the load-bearing contracts (`agent_graph`, the `graph` parameter, the `agent-graphs` skill, `.graph.json`, the `graph-*` engine) were named "graph". The same run roster was labelled "Graph runs" in one menu and "Workflows" two lines away; the README documented a nonexistent `name` parameter; the settings still called the feature "scripted".
 
-The committed glossary ([`extensions/subagents/CONTEXT.md`](../../extensions/subagents/CONTEXT.md)) makes the canonical terms **agent graph** (the data structure), **agent graph run** (one execution, short form "graph run" in code), and retires **workflow**. Only `agent_graph` (the tool name) is permanently frozen.
+The committed glossary ([`extensions/subagents/CONTEXT.md`](https://github.com/zhongjis/pi-config/blob/ddd54d98305d2e712b1b6deeff9dfb08fa43ec16/extensions/subagents/CONTEXT.md)) makes the canonical terms **agent graph** (the data structure), **agent graph run** (one execution, short form "graph run" in code), and retires **workflow**. Only `agent_graph` (the tool name) is permanently frozen.
 
 ## Decision
 
