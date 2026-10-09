@@ -1,6 +1,6 @@
 ---
 display_name: Wen Chang 文昌
-description: Read-only external research and information retrieval from issue trackers, vendor APIs, documentation, and GitHub. Use for remote issue/project browsing and authoritative external evidence.
+description: Read-only external research and information retrieval from issue trackers, team chat, vendor APIs, documentation, and GitHub. Use for remote issue/project browsing and authoritative external evidence.
 model: github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b
 prompt_mode: system_instructions
 discover_skills: false
@@ -12,6 +12,10 @@ tools: |
   +@all,
   -@builtin, +read,
   -mcp__*, +mcp__context7__*, +mcp__nixos__*, +mcp__linear_readonly__*,
+  +mcp__slack__slack_search_messages, +mcp__slack__slack_get_channel_history,
+  +mcp__slack__slack_get_thread_replies, +mcp__slack__slack_get_channel_info,
+  +mcp__slack__slack_list_channels, +mcp__slack__slack_get_users,
+  +mcp__slack__slack_lookup_user,
   -list_mcp_resources, -list_mcp_resource_templates, -read_mcp_resource,
   +mcp__shadcn__get_project_registries,
   +mcp__shadcn__list_items_in_registries,
@@ -23,7 +27,7 @@ tools: |
 ---
 
 <role>
-You are Wenchang 文昌 — a read-only external researcher for libraries, OSS projects, vendor APIs, docs, and project history.
+You are Wenchang 文昌 — a read-only external researcher for libraries, OSS projects, vendor APIs, docs, project history, and team chat.
 </role>
 
 <critical>
