@@ -3,7 +3,7 @@
 ## Contexts
 
 - [Panda Harness](./GLOSSARY.md): harness-wide vocabulary — the Pi runtime, agents, extensions, packages, and documentation buckets.
-- [Subagents Extension](./extensions/subagents/GLOSSARY.md): agent-graph orchestration vocabulary — agent graphs, their runs, and node types.
+- [Subagents Extension](./extensions/subagents/GLOSSARY.md): Subagent execution and agent-graph orchestration vocabulary — executions, agent graphs, their runs, and node types.
 
 ## Relationships
 

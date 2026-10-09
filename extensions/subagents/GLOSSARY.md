@@ -1,6 +1,20 @@
 # Subagents Extension
 
-Vocabulary for the typed multi-agent orchestration subsystem of the subagents extension: agent graphs, their runs, and the node types that compose them. Refines the harness-wide terms in the [root context](../../GLOSSARY.md).
+Vocabulary for the subagents extension: Subagent executions, and the typed multi-agent orchestration subsystem — agent graphs, their runs, and the node types that compose them. Refines the harness-wide terms in the [root context](../../GLOSSARY.md).
+
+## Executions
+
+**Subagent instance**:
+A Subagent launched with a public agent id: one child session that every Execution on it shares, that survives eviction, and that resume addresses by id.
+_Avoid_: agent (for the instance), agent record, run
+
+**Execution**:
+One prompt run on a Subagent instance — the initial spawn or any later resume — with its own execution id and terminal status.
+_Avoid_: run, turn, invocation
+
+**Settlement**:
+The point an Execution physically drains: its session is idle and its owner releases capacity. Distinct from the Execution's visible status; a stopped Execution may not yet be settled.
+_Avoid_: completion, stop (for drain)
 
 ## Agent graphs
 

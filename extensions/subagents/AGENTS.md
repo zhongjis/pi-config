@@ -1,6 +1,6 @@
 ## Purpose
 
-Run isolated Agent sessions with foreground results and background supervision. See [GLOSSARY.md](GLOSSARY.md) for agent-graph terminology.
+Run isolated Agent sessions with foreground results and background supervision. See [GLOSSARY.md](GLOSSARY.md) for execution and agent-graph terminology.
 
 ## Ownership
 
