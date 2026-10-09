@@ -1,6 +1,6 @@
 # Subagents Extension
 
-Vocabulary for the typed multi-agent orchestration subsystem of the subagents extension: agent graphs, their runs, and the node types that compose them. Refines the harness-wide terms in the [root context](../../CONTEXT.md).
+Vocabulary for the typed multi-agent orchestration subsystem of the subagents extension: agent graphs, their runs, and the node types that compose them. Refines the harness-wide terms in the [root context](../../GLOSSARY.md).
 
 ## Agent graphs
 

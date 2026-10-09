@@ -86,7 +86,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - Keep the `pnpm-workspace.yaml` catalog's `@earendil-works/*` packages at the Nix runtime pi version (`pi --version`, sourced from `~/personal/nix-config`) and `typebox` at the version `@earendil-works/pi-coding-agent` pins; bump them together when Nix updates pi. [pi-runtime-version.integration.test.ts](test/integration/pi-runtime-version.integration.test.ts) enforces this.
 - Keep global subagent defaults in root `subagents.json`: `maxConcurrentForeground: 4`, `reportUsage: true`, `showCost: true`, `graphRuntimeTrace: true`, `disableDefaultAgents: true`; `install.sh` symlinks it to `~/.pi/agent/subagents.json`. Agent graphs stay available in all modes while preserving their delegation restrictions.
 - Install repository-owned `agent-graphs/` (the reusable agent-graph portfolio) through `install.sh`; correct global symlinks are idempotent, wrong or dangling symlinks may be replaced, and non-symlink conflicts must remain untouched.
-- Use [CONTEXT-MAP.md](CONTEXT-MAP.md) for terminology — the root [CONTEXT.md](CONTEXT.md) plus the [subagents context](extensions/subagents/CONTEXT.md) — and [README.md](README.md) for repository entrypoints.
+- Use [GLOSSARY-MAP.md](GLOSSARY-MAP.md) for terminology — the root [GLOSSARY.md](GLOSSARY.md) plus the [subagents context](extensions/subagents/GLOSSARY.md) — and [README.md](README.md) for repository entrypoints.
 
 ## Documentation Rules
 

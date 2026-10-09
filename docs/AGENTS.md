@@ -7,7 +7,7 @@ Human-facing contracts, decisions, guides, ideas, and supporting evidence.
 - [README.md](README.md) defines documentation buckets, lifecycle statuses, and authority.
 - This document owns `adr/`, `agents/`, `guides/`, `ideas/`, `specs/`, and loose files.
 - The references child owns archived evidence and external snapshots.
-- [../CONTEXT.md](../CONTEXT.md) owns terminology, not system behavior.
+- [../GLOSSARY.md](../GLOSSARY.md) owns terminology, not system behavior.
 
 ## Local Contracts
 

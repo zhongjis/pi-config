@@ -17,7 +17,7 @@ When authoring docs, you MUST follow [root documentation rules](../AGENTS.md#doc
 
 ## Canonical Vocabulary
 
-Domain language lives in [`CONTEXT.md`](../CONTEXT.md) — authoritative for terminology, not system behavior.
+Domain language lives in [`GLOSSARY.md`](../GLOSSARY.md) — authoritative for terminology, not system behavior.
 
 ## Authority Order
 
