@@ -1,23 +1,11 @@
 {
   "version": 1,
   "skills": {
-    "agents-best-practices": {
-      "source": "DenisSergeevitch/agents-best-practices",
-      "sourceType": "github",
-      "skillPath": "SKILL.md",
-      "computedHash": "d4cb0475e522d3532cd3bac656734b9de70abeafe34596b5919949d506f2a5a2"
-    },
     "pi-extensions": {
       "source": "Dwsy/pi-extensions-skill",
       "sourceType": "github",
       "skillPath": "SKILL.md",
       "computedHash": "1d8e58d521052cbd5872d9ad412c0356631a79935d6239225fc940a9bfdd43a5"
-    },
-    "system-prompts": {
-      "source": "can1357/oh-my-pi",
-      "sourceType": "github",
-      "skillPath": ".omp/skills/system-prompts/SKILL.md",
-      "computedHash": "9684c674ac50e03c0e4c2bfa86b5ce7503594713eeb39f2c2fa0446834bbcf34"
     }
   }
 }
