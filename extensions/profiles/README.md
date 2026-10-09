@@ -13,7 +13,7 @@ Provider-scope profiles for pi. Switches the active set of model providers betwe
 
 ## Profiles
 
-`default` keeps the paid frontier providers, `opencode` keeps OpenCode Go, and `local` keeps llama-swap and blocks external research and MCP tools (`blockedTools` entries are names or `*` globs) and wenchang. `DEFAULT_PROFILES_CONFIG` in [index.ts](index.ts) defines each profile's providers, default model, status text, blocked agents and tools, and system prompt.
+`default` keeps the paid frontier providers, `opencode` keeps OpenCode Go, and `local` keeps llama-swap and blocks external research and MCP tools (`blockedTools` entries are names or `*` globs) and wenchang. Blocking vetoes calls only: the codemode and `tool_search` catalogs and Pi's `mcp_servers` prompt section still list blocked MCP tools and servers. `DEFAULT_PROFILES_CONFIG` in [index.ts](index.ts) defines each profile's providers, default model, status text, blocked agents and tools, and system prompt.
 
 Profiles are hardcoded. No config files.
 
