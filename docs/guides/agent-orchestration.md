@@ -45,8 +45,8 @@ Orchestrators route to these leaf specialists. No subagent delegates further.
 | `xuannv` | Tactical planning advisor (returns plan text) | no | no |
 | `simaqian` | Tool-free report writer: one cited report from supplied research evidence (graph writers) | no | no |
 | `guangguang` | Quick, deterministic, naturally single-file implementation | yes | no |
-| `jintong` | Clear, standard-risk, low-to-moderate non-UI implementation | yes | no |
-| `juling` | Substantial cross-module or elevated-reasoning non-UI implementation | yes | no |
+| [`jintong`](../../agents/jintong.md) | Default general non-UI worker: investigates, implements, and verifies scoped work | yes | no |
+| [`juling`](../../agents/juling.md) | Complex non-UI worker: implements and verifies coupled changes and difficult correctness/debugging problems | yes | no |
 | `yunu` | Frontend/web visual-engineering implementation; orchestrator owns visual/browser QA | yes | no |
 | `huayan` | Screenshot-grounded visual review and optional UI-source critique; Yunu fixes, orchestrator owns browser QA and code quality | no | no |
 

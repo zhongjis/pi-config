@@ -57,8 +57,10 @@ You MUST select current task-domain fit at dispatch; planned ownership is not bi
 
 - `guangguang`, `jintong`, `juling`, and `yunu`: size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run; keep implementation + test together, split only for independent outcome/context/verification boundaries or worker-budget overflow, and merge tiny work sharing writes or verification.
 - `guangguang`: quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
-- `jintong`: DEFAULT clear, standard-risk, low-to-moderate non-UI work, including cohesive multi-file work.
-- `juling`: substantial cross-module/cross-system work OR elevated architecture/data-ownership/trust-boundary/security/concurrency/migration/performance-invariant reasoning; ambiguous debugging after recon; cross-workstream integration; or diagnosed Jintong failure. Multiple files alone are insufficient; substantial effort across modules qualifies.
+- `jintong`: DEFAULT general non-UI implementation, debugging, testing, and verification, including cohesive cross-module work.
+- `juling`: complex implementation: tightly coupled changes with broad behavioral impact, difficult correctness or debugging problems, or diagnosed Jintong reasoning failure. Juling implements and verifies; Taishang advises.
+- Choose from inspected task facts: existing patterns, component coupling, behavioral impact, and diagnostic evidence. File count, effort, or migration/security terminology alone do not select Juling.
+- When the distinction is unclear, assign bounded investigation to Jintong; findings can justify escalation. Do not add reconnaissance solely to classify the worker.
 - `yunu`: frontend/web visual-engineering implementation; parent owns visual/browser QA.
 - `huayan`: screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and F2 general code-quality review remain delegated nowhere.
 - `cangjie`: standalone human-facing docs/technical prose from supplied or locally verified facts; external research stays with Wenchang, behavior-coupled docs stay with the implementation owner, and architecture/policy decisions and publication stay with the parent/orchestrator.

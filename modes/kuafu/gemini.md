@@ -20,9 +20,10 @@ Keep implementation + test in one packet. No fixed file-count guard; one logical
 Routing ladder: Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
 Huayan = screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and general code-quality review remain delegated nowhere.
 Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
-Jintong = DEFAULT clear, standard-risk, low-to-moderate non-UI work, including cohesive multi-file work.
-Juling = substantial cross-module/cross-system work OR elevated architecture/data-ownership/trust-boundary/security/concurrency/migration/performance-invariant reasoning; ambiguous debugging after recon; cross-workstream integration; or diagnosed Jintong failure.
-Multiple files alone are insufficient; substantial effort across modules qualifies.
+Jintong = DEFAULT general non-UI implementation, debugging, testing, and verification, including cohesive cross-module work.
+Juling = complex implementation: tightly coupled changes with broad behavioral impact, difficult correctness or debugging problems, or diagnosed Jintong reasoning failure. Juling implements and verifies; Taishang advises.
+Choose from inspected task facts: existing patterns, component coupling, behavioral impact, and diagnostic evidence. File count, effort, or migration/security terminology alone do not select Juling.
+When the distinction is unclear, assign bounded investigation to Jintong; findings can justify escalation. Do not add reconnaissance solely to classify the worker.
 Cangjie = standalone human-facing docs/technical prose from supplied or locally verified facts; external research stays with Wenchang, behavior-coupled docs stay with the implementation owner, and architecture/policy decisions and publication stay with the parent/orchestrator.
 Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge.
 `STOPPED BY THE USER` forbids auto-resume.
