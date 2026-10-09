@@ -12,6 +12,7 @@ tools: |
   +@all,
   -@builtin, +read,
   -mcp__*, +mcp__context7__*, +mcp__nixos__*, +mcp__linear_readonly__*,
+  -list_mcp_resources, -list_mcp_resource_templates, -read_mcp_resource,
   +mcp__shadcn__get_project_registries,
   +mcp__shadcn__list_items_in_registries,
   +mcp__shadcn__search_items_in_registries,

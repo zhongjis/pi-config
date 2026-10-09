@@ -209,6 +209,7 @@ extensions: +builtin:codemode, +better-bash-tool, +codegraph, +lsp
 | glob | `*` matches any characters, e.g. `codegraph_*`, `mcp__ctx__*` |
 
 MCP tools are named `mcp__<server>__<tool>`, with every character outside `[A-Za-z0-9_]` mapped to `_` (server `open-design` → `mcp__open_design__*`).
+Pi's MCP resource tools (`list_mcp_resources`, `list_mcp_resource_templates`, `read_mcp_resource`) are not `mcp__*` names, so `-mcp__*` does not deny them; deny them by name.
 
 ```yaml
 tools: +@all, -@builtin, +read, +bash, +edit, +write, -web_enable
