@@ -3,7 +3,7 @@ import { registerRuntimeModelFallback } from "../../lib/runtime-model-fallback.j
  * agent-runner.ts — Core execution engine: creates sessions, runs agents, collects results.
  */
 
-import { existsSync, realpathSync, statSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
@@ -11,6 +11,7 @@ import type { ExtensionContext, LoadExtensionsResult } from "@earendil-works/pi-
 import {
   type AgentSession,
   type AgentSessionEvent,
+  CONFIG_DIR_NAME,
   createAgentSession,
   createCodemodeExtension,
   createMcpExtension,
@@ -84,6 +85,64 @@ const PI_BUILTIN_EXTENSIONS: ReadonlyArray<{ name: string; create: () => Extensi
   { name: "tool-search", create: () => createToolSearchExtension() },
   { name: "mcp", create: () => createMcpExtension() },
 ];
+/** Pi's MCP resource tools; not `mcp__*` names, and not exported from Pi's package entry. */
+const MCP_RESOURCE_TOOL_NAMES = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"];
+/** Pi's `MCP_SERVERS_SECTION` prompt section key, not exported from Pi's package entry. */
+const MCP_SERVERS_SECTION = "mcp_servers";
+
+/** Pi's `mcpNamespace` (core/mcp-servers.js), not exported from Pi's package entry. */
+function mcpNamespace(server: string): string {
+  return `mcp__${server.replace(/-/g, "_")}`;
+}
+
+/** Server names in an `mcp.json`'s `mcpServers`; none when the file is missing or invalid. */
+function mcpConfigServerNames(path: string): string[] {
+  try {
+    const servers: unknown = JSON.parse(readFileSync(path, "utf-8"))?.mcpServers;
+    return typeof servers === "object" && servers !== null && !Array.isArray(servers) ? Object.keys(servers) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * `excludeTools` entries for the MCP tools that `tools:` rules deny a child
+ * loading `builtin:mcp`: `<namespace>__*` for every fully denied configured
+ * server, plus every denied MCP tool in the parent's catalog by name (resource
+ * tools count even when the parent lacks them). A server is fully denied when
+ * its tools are denied and no `+` name/glob rule could grant one of them, so an
+ * exact grant survives even before the server's tools are known.
+ */
+function mcpToolExcludes(
+  toolRules: readonly AccessRule[],
+  gates: ToolAccessGates,
+  parentTools: readonly { name: string; sourceInfo?: { path?: string } }[],
+  configPaths: readonly string[],
+): { excludeTools: string[]; deniedNamespaces: string[] } {
+  const builtinMcpTool = (name: string) => toolCandidates([{ name, sourceInfo: { path: "builtin:mcp" } }]);
+  const candidates = toolCandidates(parentTools.filter(({ name }) => name.startsWith("mcp__") || MCP_RESOURCE_TOOL_NAMES.includes(name)));
+  for (const name of MCP_RESOURCE_TOOL_NAMES) {
+    if (!candidates.some((candidate) => candidate.name === name)) candidates.push(...builtinMcpTool(name));
+  }
+  const allowed = resolveToolAccess(toolRules, candidates, gates).allowed;
+  const deniedNames = candidates.filter(({ name }) => !allowed.has(name)).map(({ name }) => name);
+
+  const namespaces = new Set(configPaths.flatMap((path) => mcpConfigServerNames(path).map(mcpNamespace)));
+  const deniedNamespaces = [...namespaces].filter((namespace) => {
+    const prefix = `${namespace}__`;
+    const probe = `${prefix}<probe>`;
+    if (resolveToolAccess(toolRules, builtinMcpTool(probe), gates).allowed.has(probe)) return false;
+    return !toolRules.some(({ sign, selector }) => {
+      if (sign !== "+" || selector.startsWith("@")) return false;
+      const star = selector.indexOf("*");
+      if (star < 0) return selector.startsWith(prefix);
+      const literal = selector.slice(0, star);
+      return literal.startsWith(prefix) || prefix.startsWith(literal);
+    });
+  });
+  return { excludeTools: [...deniedNamespaces.map((namespace) => `${namespace}__*`), ...deniedNames], deniedNamespaces };
+}
+
 const GUARDED_CANONICAL_AGENT_TYPES = new Set([
   "chengfeng",
   "direnjie",
@@ -523,6 +582,15 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   const selectedBuiltins = noExtensions
     ? new Set<string>()
     : resolveExtensionAccess(extensionRules, PI_BUILTIN_EXTENSIONS.map(({ name }) => ({ key: `builtin:${name}`, ids: [`builtin:${name}`] }))).selected;
+  // A child loading Pi's MCP extension excludes the MCP tools its rules deny,
+  // so codemode and tool_search never list them. Server names come from the
+  // same mcp.json files Pi's MCP extension reads (agent dir, child cwd).
+  const mcpExcludes = selectedBuiltins.has("builtin:mcp")
+    ? mcpToolExcludes(toolRules, gates, options.pi.getAllTools(), [
+      join(agentDir, "mcp.json"),
+      join(effectiveCwd, CONFIG_DIR_NAME, "mcp.json"),
+    ])
+    : { excludeTools: [], deniedNamespaces: [] };
   let extensionDiagnostics: AccessDiagnostic[] = [];
   const extensionsOverride = (base: LoadExtensionsResult): LoadExtensionsResult => {
     const candidates: ExtensionCandidate[] = [];
@@ -612,6 +680,21 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
             return { block: true, reason: `Tool "${event.toolName}" is not available to this subagent.` };
           });
           extensionPi.registerTool(createToolCeilingTool(TOOL_CEILING_TOOL_NAME, allowedToolNames));
+          // ponytail: Pi's MCP extension lists every enabled configured server in
+          // `mcp_servers`, so drop the fully denied ones (inline factories load
+          // after `builtin:mcp`). Removable once Pi lists the section from the
+          // allowed tools at startup (earendil-works/pi#10635).
+          if (mcpExcludes.deniedNamespaces.length > 0) {
+            const deniedLines = mcpExcludes.deniedNamespaces.map((namespace) => `- ${namespace} (`);
+            extensionPi.on("before_agent_start", (event) => {
+              const { sections } = event.systemPromptOptions;
+              const section = sections[MCP_SERVERS_SECTION];
+              if (section === undefined) return;
+              const lines = section.split("\n").filter((line) => !deniedLines.some((prefix) => line.startsWith(prefix)));
+              if (lines.some((line) => line.startsWith("- mcp__"))) sections[MCP_SERVERS_SECTION] = lines.join("\n");
+              else delete sections[MCP_SERVERS_SECTION];
+            });
+          }
         },
         hidden: true,
       }]),
@@ -656,8 +739,10 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   //   - leave `allowedToolNames` unset, so pi's live gate admits tools whenever
   //     they register;
   //   - express the name-stable, permanent part of the scope (our own
-  //     orchestration tools and ungranted built-ins) as `excludeTools`, which
-  //     pi re-applies on every registry refresh;
+  //     orchestration tools, ungranted built-ins, and the MCP tools the rules
+  //     deny: whole servers by `mcp__<server>__*`, others by name) as
+  //     `excludeTools`, which pi re-applies on every registry refresh, so
+  //     those tools never reach the codemode or tool_search catalogs;
   //   - leave activation to Pi (defaults/`defaultTools`, extension tools on
   //     registration) and the owning extensions; `tools:` only permits;
   //   - re-resolve the rules against the live registry: top-level calls are
@@ -676,7 +761,11 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   if (noExtensions) {
     sessionTools = grantedBuiltins;
   } else {
-    sessionExcludeTools = [...EXCLUDED_TOOL_NAMES, ...BUILTIN_TOOL_NAMES.filter((name) => !grantedBuiltinSet.has(name))];
+    sessionExcludeTools = [
+      ...EXCLUDED_TOOL_NAMES,
+      ...BUILTIN_TOOL_NAMES.filter((name) => !grantedBuiltinSet.has(name)),
+      ...mcpExcludes.excludeTools,
+    ];
   }
 
   let sessionManager: SessionManager;

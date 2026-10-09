@@ -1,6 +1,6 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
@@ -54,6 +54,7 @@ const { createCodemodeExtension, createMcpExtension, createToolSearchExtension }
 }));
 
 vi.mock("@earendil-works/pi-coding-agent", () => ({
+  CONFIG_DIR_NAME: ".pi",
   createAgentSession,
   createCodemodeExtension,
   createMcpExtension,
@@ -152,8 +153,8 @@ import {
   createToolCeilingTool,
   parseAccessRules,
   resolveToolAccess,
-  toolCandidates,
   type ToolAccessGates,
+  toolCandidates,
 } from "../../lib/active-tools.js";
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import {
@@ -242,7 +243,7 @@ const ctx = {
   },
 } as any;
 
-const pi = {} as any;
+const pi = { getAllTools: () => [] } as any;
 
 beforeEach(() => {
   createAgentSession.mockReset();
@@ -2157,6 +2158,117 @@ describe("agent-runner tool rules", () => {
     for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
     expect(diagnosticsOf(onToolActivity, "tools-")).toEqual(['tools-warning:"@nope" matches no tool (agent "Explore")']);
+  });
+});
+
+// ─── MCP tools a child's rules deny (builtin:mcp) ────────────────────────
+// They join excludeTools so codemode and tool_search never list them, and the
+// nested-tool-scope hook drops fully denied servers from `mcp_servers`.
+describe("agent-runner MCP excludes", () => {
+  const RESOURCE_TOOLS = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"];
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "agent-runner-mcp-"));
+  });
+  afterEach(() => {
+    getAgentDir.mockReturnValue("/mock/agent-dir");
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function writeMcpConfig(path: string, servers: string[]) {
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify({ mcpServers: Object.fromEntries(servers.map((name) => [name, { command: "unused" }])) }));
+  }
+
+  /** Run a child in `dir` whose parent catalog holds `parentTools` (from builtin:mcp); returns its excludeTools. */
+  async function excludesFor(extensions: string, tools: string, parentTools: string[] = []): Promise<string[]> {
+    setupRules(extensions, tools);
+    const { session } = createSession("OK");
+    createAgentSession.mockResolvedValue({ session });
+    const getAllTools = () => parentTools.map((name) => ({ name, sourceInfo: { path: "builtin:mcp" } }));
+
+    await runAgent(ctx, "Explore", "go", { pi: { ...pi, getAllTools }, cwd: dir });
+
+    return createAgentSession.mock.calls[0][0].excludeTools;
+  }
+
+  /** The nested-tool-scope hook's `before_agent_start` handler, applied to `sections`. */
+  async function filterMcpSection(servers: string[], tools: string, sections: Record<string, string>) {
+    writeMcpConfig(join(dir, ".pi", "mcp.json"), servers);
+    await excludesFor("+builtin:mcp", tools);
+    const factory = (lastLoaderOpts().extensionFactories as Array<{ name: string; factory(pi: unknown): void }>)
+      .find(({ name }) => name === "subagent-nested-tool-scope");
+    const handlers = new Map<string, (event: unknown) => unknown>();
+    factory?.factory({
+      on: (event: string, handler: (event: unknown) => unknown) => handlers.set(event, handler),
+      registerTool: vi.fn(),
+      getAllTools: () => [],
+    });
+    handlers.get("before_agent_start")?.({ type: "before_agent_start", systemPromptOptions: { sections } });
+    return sections;
+  }
+
+  it("a fully denied server excludes its whole namespace", async () => {
+    getAgentDir.mockReturnValue(dir);
+    writeMcpConfig(join(dir, "mcp.json"), ["web-search"]);
+
+    expect(await excludesFor("+builtin:mcp", "+read, -mcp__*")).toContain("mcp__web_search__*");
+  });
+
+  it("a partly granted server excludes its denied catalog tools by name only", async () => {
+    writeMcpConfig(join(dir, ".pi", "mcp.json"), ["docs"]);
+
+    const excludes = await excludesFor("+builtin:mcp", "+read, +mcp__docs__search", ["mcp__docs__search", "mcp__docs__delete"]);
+
+    expect(excludes.filter((name) => name.startsWith("mcp__docs__"))).toEqual(["mcp__docs__delete"]);
+  });
+
+  it("a server granted by a glob gets no excludes", async () => {
+    writeMcpConfig(join(dir, ".pi", "mcp.json"), ["docs"]);
+
+    const excludes = await excludesFor("+builtin:mcp", "+read, +mcp__docs__*", ["mcp__docs__search"]);
+
+    expect(excludes.filter((name) => name.startsWith("mcp__docs__"))).toEqual([]);
+  });
+
+  it("denied resource tools are excluded by name, even when the parent lacks them", async () => {
+    expect(await excludesFor("+builtin:mcp", "+read")).toEqual(expect.arrayContaining(RESOURCE_TOOLS));
+  });
+
+  it("resource tools the rules grant are not excluded", async () => {
+    const excludes = await excludesFor("+builtin:mcp", "+read, +@builtin:mcp");
+
+    expect(excludes.filter((name) => RESOURCE_TOOLS.includes(name))).toEqual([]);
+  });
+
+  it("a child that does not load builtin:mcp gets no MCP excludes", async () => {
+    writeMcpConfig(join(dir, ".pi", "mcp.json"), ["docs"]);
+
+    const excludes = await excludesFor("+builtin:codemode", "+read", ["mcp__docs__search", ...RESOURCE_TOOLS]);
+
+    expect(excludes.filter((name) => name.startsWith("mcp__") || RESOURCE_TOOLS.includes(name))).toEqual([]);
+  });
+
+  it("the mcp_servers section drops only fully denied servers", async () => {
+    const sections = await filterMcpSection(["blocked-one", "allowed"], "+read, +mcp__allowed__*", {
+      mcp_servers: "Servers:\n- mcp__allowed (codemode): Docs\n- mcp__blocked_one (tool_search): Blocked",
+    });
+
+    expect(sections).toEqual({ mcp_servers: "Servers:\n- mcp__allowed (codemode): Docs" });
+  });
+
+  it("the mcp_servers section is deleted when no server line remains", async () => {
+    const sections = await filterMcpSection(["blocked-one"], "+read", {
+      mcp_servers: "Servers:\n- mcp__blocked_one (codemode)\n- … 2 more servers; find their tools with searchTools()",
+      other: "kept",
+    });
+
+    expect(sections).toEqual({ other: "kept" });
+  });
+
+  it("an absent mcp_servers section stays absent", async () => {
+    expect(await filterMcpSection(["blocked-one"], "+read", { other: "kept" })).toEqual({ other: "kept" });
   });
 });
 

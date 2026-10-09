@@ -39,9 +39,9 @@ let previousAgentDir: string | undefined;
 let agentsDir = "";
 let extensionsDir = "";
 
-/** Minimal `pi` stub — `detectEnv` only needs `exec` (returns non-git). */
+/** Minimal `pi` stub — `detectEnv` needs `exec` (returns non-git); MCP excludes read the parent catalog. */
 function makePi() {
-	return { exec: async () => ({ code: 1, stdout: "", stderr: "" }) } as any;
+	return { exec: async () => ({ code: 1, stdout: "", stderr: "" }), getAllTools: () => [] } as any;
 }
 
 function installRuntimeFixtures(): void {

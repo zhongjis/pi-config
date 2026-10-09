@@ -250,7 +250,7 @@ every call to them is blocked, top-level and nested inside codemode.
 
 - **Modes** gate permission only; `tools:` never activates a tool. Pi and owning extensions decide what's active (registration, `defaultTools`, extension loaders). The always-active, model-only `mode_tool_ceiling` tool hides declared-but-unpermitted tools after all `before_agent_start` handlers, and a `tool_call` guard vetoes every unpermitted call, top-level and nested. There is no per-turn pruning of the active set.
 - **Subagents** see only granted tools from the first turn. See the [subagents README](../../extensions/subagents/README.md#tool--extension-scoping).
-- The codemode and `tool_search` catalogs may still list ungranted codemode or deferred tools; only the call veto stops them.
+- The codemode and `tool_search` catalogs may still list ungranted codemode or deferred tools; only the call veto stops them. Subagents exclude denied MCP tools from both catalogs.
 
 ### Role guidance
 

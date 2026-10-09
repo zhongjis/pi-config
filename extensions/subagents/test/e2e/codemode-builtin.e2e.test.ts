@@ -27,7 +27,7 @@ const OUTCOMES = Symbol.for("subagents-e2e:codemode-outcomes");
 type ProbeGlobal = Record<symbol, string[]>;
 
 function makePi() {
-  return { exec: async () => ({ code: 1, stdout: "", stderr: "" }) } as any;
+  return { exec: async () => ({ code: 1, stdout: "", stderr: "" }), getAllTools: () => [] } as any;
 }
 
 describe("built-in codemode in subagents against real pi-mono", () => {
