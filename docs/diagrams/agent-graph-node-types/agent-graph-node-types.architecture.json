@@ -1,0 +1,470 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "agent_graph Node Types",
+    "locale": "en",
+    "output": "docs/diagrams/agent-graph-node-types/agent-graph-node-types.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:zhongjis/pi-config.git",
+      "link_mode": "local-only",
+      "revision": "8b994677de30d7516df50967970dd4d4fc92ed36"
+    }
+  },
+  "components": [
+    {
+      "id": "bounded_feedback",
+      "type": "backend",
+      "label": "bounded_feedback",
+      "sublabel": "work + evaluator loop",
+      "pos": [
+        577,
+        70
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/ir.ts",
+          "line": 164,
+          "end_line": 178
+        },
+        {
+          "path": "extensions/subagents/src/graph/bounded-feedback.ts",
+          "line": 108,
+          "end_line": 120
+        },
+        {
+          "path": "extensions/subagents/src/graph/feedback-actor.ts",
+          "line": 21,
+          "end_line": 21
+        }
+      ]
+    },
+    {
+      "id": "decision_gate",
+      "type": "security",
+      "label": "decision_gate",
+      "sublabel": "bool | choice | score",
+      "pos": [
+        300,
+        230
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/ir.ts",
+          "line": 99,
+          "end_line": 113
+        },
+        {
+          "path": "extensions/subagents/src/graph/decision-gate.ts",
+          "line": 4,
+          "end_line": 16
+        }
+      ]
+    },
+    {
+      "id": "agent",
+      "type": "backend",
+      "label": "agent",
+      "sublabel": "one Pi subagent run",
+      "pos": [
+        485,
+        230
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/ir.ts",
+          "line": 86,
+          "end_line": 97
+        }
+      ]
+    },
+    {
+      "id": "fanout",
+      "type": "backend",
+      "label": "fanout",
+      "sublabel": "all-settled item array",
+      "pos": [
+        670,
+        230
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/ir.ts",
+          "line": 128,
+          "end_line": 162
+        },
+        {
+          "path": "extensions/subagents/src/graph/fanout.ts",
+          "line": 28,
+          "end_line": 32
+        },
+        {
+          "path": "extensions/subagents/src/graph/fanout-actor.ts",
+          "line": 20,
+          "end_line": 20
+        }
+      ]
+    },
+    {
+      "id": "graph",
+      "type": "backend",
+      "label": "graph",
+      "sublabel": "nested saved graph",
+      "pos": [
+        855,
+        230
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/ir.ts",
+          "line": 114,
+          "end_line": 119
+        },
+        {
+          "path": "extensions/subagents/src/graph/subgraph-actor.ts",
+          "line": 34,
+          "end_line": 34
+        }
+      ]
+    },
+    {
+      "id": "expand",
+      "type": "backend",
+      "label": "expand",
+      "sublabel": "runtime GraphFragment",
+      "pos": [
+        1040,
+        230
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/ir.ts",
+          "line": 121,
+          "end_line": 127
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-fragment.ts",
+          "line": 42,
+          "end_line": 64
+        },
+        {
+          "path": "extensions/subagents/src/graph/expand-actor.ts",
+          "line": 28,
+          "end_line": 28
+        }
+      ]
+    },
+    {
+      "id": "session",
+      "type": "cloud",
+      "label": "Pi subagent session",
+      "sublabel": "child session",
+      "pos": [
+        577,
+        400
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/node-host-adapter.ts",
+          "line": 96,
+          "end_line": 98
+        },
+        {
+          "path": "extensions/subagents/src/graph/node-host-adapter.ts",
+          "line": 132,
+          "end_line": 132
+        }
+      ]
+    },
+    {
+      "id": "chain",
+      "type": "cloud",
+      "label": "Decider chain",
+      "sublabel": "classifier, then agent",
+      "pos": [
+        300,
+        400
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/node-host-adapter.ts",
+          "line": 210,
+          "end_line": 218
+        },
+        {
+          "path": "extensions/subagents/src/graph/node-host-adapter.ts",
+          "line": 266,
+          "end_line": 266
+        }
+      ]
+    },
+    {
+      "id": "orchestrator",
+      "type": "external",
+      "label": "Invoking orchestrator",
+      "sublabel": "resolves the gate",
+      "pos": [
+        10,
+        230
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/gate-handoff.ts",
+          "line": 8,
+          "end_line": 16
+        },
+        {
+          "path": "extensions/subagents/src/graph/gate-tool.ts",
+          "line": 7,
+          "end_line": 12
+        }
+      ]
+    },
+    {
+      "id": "saved",
+      "type": "database",
+      "label": "Saved graph roots",
+      "sublabel": "*.graph.json | .yaml",
+      "pos": [
+        855,
+        400
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/saved-graph.ts",
+          "line": 36,
+          "end_line": 36
+        },
+        {
+          "path": "extensions/subagents/src/graph/saved-graph.ts",
+          "line": 37,
+          "end_line": 45
+        }
+      ]
+    },
+    {
+      "id": "live",
+      "type": "database",
+      "label": "Live run graph",
+      "sublabel": "nodes + edges",
+      "pos": [
+        1040,
+        400
+      ],
+      "size": [
+        150,
+        64
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/validate.ts",
+          "line": 467,
+          "end_line": 481
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "AgentGraph node types (ir.ts NODE_TYPES)",
+      "wraps": [
+        "bounded_feedback",
+        "decision_gate",
+        "agent",
+        "fanout",
+        "graph",
+        "expand"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "bf-work",
+      "from": "bounded_feedback",
+      "to": "fanout",
+      "label": "work round",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "bf-eval",
+      "from": "bounded_feedback",
+      "to": "agent",
+      "label": "evaluator",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "bf-judge",
+      "from": "bounded_feedback",
+      "to": "decision_gate",
+      "label": "optional judge",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "top"
+    },
+    {
+      "id": "agent-session",
+      "from": "agent",
+      "to": "session",
+      "label": "spawns one",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "fanout-session",
+      "from": "fanout",
+      "to": "session",
+      "label": "one per item",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "dg-chain",
+      "from": "decision_gate",
+      "to": "chain",
+      "label": "classify",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "dg-orch",
+      "from": "decision_gate",
+      "to": "orchestrator",
+      "label": "low confidence",
+      "variant": "security",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "graph-saved",
+      "from": "graph",
+      "to": "saved",
+      "label": "load by name",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "expand-live",
+      "from": "expand",
+      "to": "live",
+      "label": "splice fragment",
+      "fromSide": "bottom",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "agent",
+      "items": [
+        "prompt + input ValueRefs run one subagent",
+        "outputSchema: typed JSON with in-session StructuredOutput repair; without it, raw text",
+        "validation.gate: shell command in the child's cwd; non-zero exit fails the node",
+        "retry.maxAttempts counts total runs",
+        "Model and thinking come only from the agent's frontmatter"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "decision_gate",
+      "items": [
+        "state ValueRefs + bool, choice or score questions; no agent selector",
+        "Output: answers.<id>.{value, confidence} + decidedBy",
+        "minConfidence: node, else run setting, else 0.8",
+        "Any answer below it, or an exhausted chain, escalates"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "fanout",
+      "items": [
+        "items ValueRef; itemSchema checks each item",
+        "dispatch.path → cases picks each item's agent",
+        "Prompt receives ${item}; waits for every child",
+        "results[]: index, item, status, attempt, output or error"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "bounded_feedback",
+      "items": [
+        "Each round: work fanout, then evaluator agent with ${feedback}",
+        "Optional one-bool judge decision_gate",
+        "Bounds: maxIterations, maxItemsPerIteration, maxTotalItems; optional deadline, spendLimit",
+        "Stops: sufficient, no accessible route, bound reached, no progress"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "graph and expand",
+      "items": [
+        "graph: saved graph by name; output = its outputs; nesting depth 32",
+        "expand: splices {nodes, edges, outputs?} into the live run",
+        "namespace prefixes inserted ids as <namespace>:<id>",
+        "A fragment must not contain fanout or bounded_feedback"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Wiring and edges",
+      "items": [
+        "ValueRef {node?, path}; no node = graph input",
+        "${name} resolves only from the node's own input map; unmapped = validation error",
+        "when: eq/ne/gt/gte/lt/lte/exists/and/or/not; loop.maxIterations bounds a back edge",
+        "OR-join: runs when forward predecessors settle; a failed node skips its dependents"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Outcome and limits",
+      "items": [
+        "Reserved output $agentGraphOutcome: succeeded, partial or failed with reason",
+        "Default concurrency 8",
+        "500 nodes per graph or fragment; 1000 node runs"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,355 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "How XState Runs One agent_graph Node",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "output": "docs/diagrams/agent-graph-xstate-protocol/agent-graph-xstate-protocol.html",
+    "repository": {
+      "url": "git@github.com:zhongjis/pi-config.git",
+      "link_mode": "local-only",
+      "revision": "8b994677de30d7516df50967970dd4d4fc92ed36"
+    },
+    "column_fit": "spread",
+    "viewBox": [
+      1085,
+      699
+    ]
+  },
+  "participants": [
+    {
+      "id": "adapter",
+      "type": "frontend",
+      "label": "runGraph",
+      "sublabel": "starts + waits",
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/run-graph.ts",
+          "line": 90,
+          "end_line": 99,
+          "label": "createActor, CANCEL, toPromise"
+        }
+      ]
+    },
+    {
+      "id": "root",
+      "type": "backend",
+      "label": "Root graph actor",
+      "sublabel": "parent actor",
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/graph-actor.ts",
+          "line": 120,
+          "end_line": 124,
+          "label": "root authority"
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-actor.ts",
+          "line": 383,
+          "end_line": 498,
+          "label": "lifecycle states"
+        }
+      ]
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "Checkpoint file",
+      "sublabel": ".pi/graph-runs/",
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/graph-actor.ts",
+          "line": 71,
+          "end_line": 80,
+          "label": "persist actor"
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 157,
+          "end_line": 163,
+          "label": "onCheckpoint write"
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-persist.ts",
+          "line": 36,
+          "end_line": 39,
+          "label": "graph-runs dir"
+        }
+      ]
+    },
+    {
+      "id": "node",
+      "type": "backend",
+      "label": "Node actor",
+      "sublabel": "child actor",
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/node-lifecycle.ts",
+          "line": 8,
+          "end_line": 12,
+          "label": "lifecycle()"
+        },
+        {
+          "path": "extensions/subagents/src/graph/node-lifecycle.ts",
+          "line": 43,
+          "end_line": 46,
+          "label": "machine"
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-actor.ts",
+          "line": 284,
+          "end_line": 284,
+          "label": "spawnChild agent"
+        }
+      ]
+    },
+    {
+      "id": "effect",
+      "type": "cloud",
+      "label": "Async task",
+      "sublabel": "fromPromise actor",
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/node-effects.ts",
+          "line": 54,
+          "end_line": 78,
+          "label": "fromPromise"
+        },
+        {
+          "path": "extensions/subagents/src/graph/node-lifecycle.ts",
+          "line": 65,
+          "end_line": 71,
+          "label": "spawning invoke"
+        }
+      ]
+    },
+    {
+      "id": "host",
+      "type": "backend",
+      "label": "Host + manager",
+      "sublabel": "starts subagent",
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/node-host-adapter.ts",
+          "line": 95,
+          "end_line": 145,
+          "label": "spawnAgent"
+        },
+        {
+          "path": "extensions/subagents/src/agent-manager.ts",
+          "line": 616,
+          "end_line": 629,
+          "label": "spawnAndWait"
+        }
+      ]
+    },
+    {
+      "id": "child",
+      "type": "external",
+      "label": "Child Pi session",
+      "sublabel": "agent runs here",
+      "sources": [
+        {
+          "path": "extensions/subagents/src/agent-runner.ts",
+          "line": 481,
+          "end_line": 486,
+          "label": "frontmatter model"
+        },
+        {
+          "path": "extensions/subagents/src/agent-runner.ts",
+          "line": 839,
+          "end_line": 839,
+          "label": "createAgentSession"
+        }
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "from": "adapter",
+      "to": "root",
+      "y": 186,
+      "label": "1 start: createActor().start()",
+      "variant": "emphasis"
+    },
+    {
+      "from": "root",
+      "to": "store",
+      "y": 214,
+      "label": "2 save plan to disk",
+      "variant": "default",
+      "note": "after plan() picks ready nodes"
+    },
+    {
+      "from": "root",
+      "to": "node",
+      "y": 242,
+      "label": "3 spawnChild + NODE.ADMITTED",
+      "variant": "emphasis"
+    },
+    {
+      "from": "node",
+      "to": "effect",
+      "y": 288,
+      "label": "4 invoke async task",
+      "variant": "default"
+    },
+    {
+      "from": "effect",
+      "to": "host",
+      "y": 308,
+      "label": "5 host.spawnAgent",
+      "variant": "default"
+    },
+    {
+      "from": "host",
+      "to": "child",
+      "y": 328,
+      "label": "6 run the agent",
+      "variant": "default"
+    },
+    {
+      "from": "child",
+      "to": "node",
+      "y": 356,
+      "label": "7 result returns (onDone)",
+      "variant": "return"
+    },
+    {
+      "from": "node",
+      "to": "root",
+      "y": 402,
+      "label": "8 NODE.REQUEST: settle",
+      "variant": "emphasis",
+      "note": "after the outputSchema check"
+    },
+    {
+      "from": "root",
+      "to": "store",
+      "y": 430,
+      "label": "9 save result to disk",
+      "variant": "default",
+      "note": "settle requests batch on a FLUSH event"
+    },
+    {
+      "from": "root",
+      "to": "node",
+      "y": 458,
+      "label": "10 NODE.ACK: saved",
+      "variant": "emphasis"
+    },
+    {
+      "from": "node",
+      "to": "root",
+      "y": 504,
+      "label": "11 NODE.RELEASE_READY",
+      "variant": "default"
+    },
+    {
+      "from": "root",
+      "to": "node",
+      "y": 532,
+      "label": "12 NODE.RELEASE",
+      "variant": "default"
+    },
+    {
+      "from": "node",
+      "to": "root",
+      "y": 560,
+      "label": "13 NODE.RELEASED",
+      "variant": "default"
+    },
+    {
+      "from": "root",
+      "to": "adapter",
+      "y": 588,
+      "label": "14 output (toPromise)",
+      "variant": "return"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "XState in plain words",
+      "items": [
+        "Actor: a worker with its own state that talks only by sending messages, called events",
+        "State machine: an actor's named states and the moves allowed between them",
+        "spawnChild: a parent actor starts a child actor; here, one per graph node",
+        "sendParent / sendTo: send an event such as NODE.ACK to another actor",
+        "invoke + fromPromise: run an async function as a short-lived actor that reports done or error",
+        "Final state: the actor has finished, so its parent can stop it"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Start (1–3)",
+      "items": [
+        "1 runGraph creates the root actor from the graphLogic machine, starts it, and waits for its output",
+        "2 The root picks ready nodes with plan() and saves that plan to the checkpoint file first",
+        "3 It starts one child actor for the node and tells it NODE.ADMITTED"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Run the agent (4–7)",
+      "items": [
+        "4 The node actor enters its spawning state and invokes an async task",
+        "5–6 The task asks the host and manager to run the subagent in a child Pi session",
+        "7 The result returns through the host and the task; the task's done event (onDone) hands it to the node actor, which checks it against outputSchema"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Save and clean up (8–14)",
+      "items": [
+        "8 The node asks the root to record its result (NODE.REQUEST, operation settle)",
+        "9–10 The root saves the result, then confirms with NODE.ACK",
+        "11–13 Release handshake: ready to stop, you may stop, stopped (final state)",
+        "14 The root stops the child and plans the next node; when all nodes are done, its output resolves runGraph"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Why save before replying?",
+      "items": [
+        "The root writes a checkpoint before it admits a node (2) and before it confirms a result (10), so a restarted session resumes from the file",
+        "NODE.ACK repeats the whole request, so it cannot approve a different operation",
+        "A child counts against the run's parallel limit until the root stops it after NODE.RELEASED"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Beyond this example",
+      "items": [
+        "decision_gate nodes use the same node machine; their async task calls the decider chain instead of a subagent",
+        "expand, fanout, bounded_feedback and graph nodes run coordinator actors that use COORD.* events; a graph node runs a nested root machine",
+        "On cancel or failure the root sends CANCEL or FAIL; a failed child reports NODE.DRAINED",
+        "XState only runs the graph: the graph definition is plain data, and checkpoints, not XState snapshots, persist",
+        "An opt-in XState inspection log records actor ids, events and states"
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "from": 166,
+      "to": 246,
+      "label": "Start"
+    },
+    {
+      "from": 268,
+      "to": 360,
+      "label": "Run the agent"
+    },
+    {
+      "from": 382,
+      "to": 462,
+      "label": "Save the result"
+    },
+    {
+      "from": 484,
+      "to": 592,
+      "label": "Clean up"
+    }
+  ]
+}

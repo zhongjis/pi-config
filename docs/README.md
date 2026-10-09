@@ -76,3 +76,6 @@ Vendored packages record upstream `repository` metadata in their `package.json`;
 ## Diagrams
 
 - [deep-research](diagrams/deep-research/deep-research.html) — the `deep-research` saved agent graph, including its `deep-research/plan` subgraph
+- [agent-graph-node-types](diagrams/agent-graph-node-types/agent-graph-node-types.html) — every `agent_graph` node type and what it acts on
+- [agent-graph-architecture](diagrams/agent-graph-architecture/agent-graph-architecture.html) — `agent_graph` runtime components and the path of one run
+- [agent-graph-xstate-protocol](diagrams/agent-graph-xstate-protocol/agent-graph-xstate-protocol.html) — beginner walkthrough of how XState runs one agent node, with an XState glossary

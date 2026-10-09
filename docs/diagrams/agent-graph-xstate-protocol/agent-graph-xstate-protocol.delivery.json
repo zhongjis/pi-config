@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "5fdd5485-2de9-4816-9ab7-503c8308e1ee",
+  "status": "current",
+  "command": "deliver",
+  "type": "sequence",
+  "input": "/Users/zshen/personal/pi-config/docs/diagrams/agent-graph-xstate-protocol/agent-graph-xstate-protocol.sequence.json",
+  "output": "/Users/zshen/personal/pi-config/docs/diagrams/agent-graph-xstate-protocol/agent-graph-xstate-protocol.html",
+  "specification": {
+    "sha256": "bd3c7bc76202bb2f952428ebeb78b9e232bcace39e4c5c4c3eaad9be9b5d978e",
+    "bytes": 9711
+  },
+  "artifact": {
+    "sha256": "b39ca14f520795435dfc2892a68da7c613da0d98209b043ddfa28dadbc43a406",
+    "bytes": 764787
+  }
+}

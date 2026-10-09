@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "072d6252-163e-4a83-ba03-ca8c58d81cf6",
+  "status": "current",
+  "command": "deliver",
+  "type": "architecture",
+  "input": "/Users/zshen/personal/pi-config/docs/diagrams/agent-graph-architecture/agent-graph-architecture.architecture.json",
+  "output": "/Users/zshen/personal/pi-config/docs/diagrams/agent-graph-architecture/agent-graph-architecture.html",
+  "specification": {
+    "sha256": "22a9f6051149c89c52b965134952873f3791e580c865435451668c513c6baf6e",
+    "bytes": 16332
+  },
+  "artifact": {
+    "sha256": "a4c3c08f6ed6620d2fa99b700fb7d1a418259413fcaff6c8e9ce783c2eabcd1e",
+    "bytes": 791895
+  }
+}

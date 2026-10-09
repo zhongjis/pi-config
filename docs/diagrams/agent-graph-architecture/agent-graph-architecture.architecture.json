@@ -1,0 +1,728 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "agent_graph Runtime Architecture",
+    "locale": "en",
+    "output": "docs/diagrams/agent-graph-architecture/agent-graph-architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "git@github.com:zhongjis/pi-config.git",
+      "link_mode": "local-only",
+      "revision": "8b994677de30d7516df50967970dd4d4fc92ed36"
+    }
+  },
+  "components": [
+    {
+      "id": "orch",
+      "type": "external",
+      "label": "Orchestrator",
+      "sublabel": "parent mode agent",
+      "pos": [
+        30,
+        230
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 425,
+          "end_line": 430
+        },
+        {
+          "path": "extensions/subagents/src/graph/tool-description.ts",
+          "line": 5
+        }
+      ]
+    },
+    {
+      "id": "obs",
+      "type": "backend",
+      "label": "Result observer",
+      "sublabel": "get_agent_result",
+      "pos": [
+        420,
+        390
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/result-observer.ts",
+          "line": 18,
+          "end_line": 30
+        },
+        {
+          "path": "extensions/subagents/src/index.ts",
+          "line": 554,
+          "end_line": 562
+        }
+      ],
+      "tag": "graph outcome"
+    },
+    {
+      "id": "tool",
+      "type": "backend",
+      "label": "agent_graph tool",
+      "sublabel": "createGraphRuntime",
+      "pos": [
+        220,
+        230
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/index.ts",
+          "line": 532,
+          "end_line": 545
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 339,
+          "end_line": 353
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 377,
+          "end_line": 434
+        }
+      ]
+    },
+    {
+      "id": "roots",
+      "type": "database",
+      "label": "Saved graph roots",
+      "sublabel": "*.graph.json|yaml",
+      "pos": [
+        220,
+        50
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/saved-graph.ts",
+          "line": 37,
+          "end_line": 45
+        },
+        {
+          "path": "extensions/subagents/src/graph/saved-graph.ts",
+          "line": 98,
+          "end_line": 126
+        }
+      ],
+      "tag": "inline skips"
+    },
+    {
+      "id": "validate",
+      "type": "security",
+      "label": "Validate + preflight",
+      "sublabel": "validate \u00b7 preflight",
+      "pos": [
+        420,
+        230
+      ],
+      "size": [
+        140,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/validate.ts",
+          "line": 436,
+          "end_line": 451
+        },
+        {
+          "path": "extensions/subagents/src/graph/delegation-preflight.ts",
+          "line": 20,
+          "end_line": 52
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 392,
+          "end_line": 407
+        }
+      ],
+      "tag": "error pre-spawn"
+    },
+    {
+      "id": "runtask",
+      "type": "backend",
+      "label": "Graph run task",
+      "sublabel": "runTask/launchGraph",
+      "pos": [
+        625,
+        230
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 108,
+          "end_line": 118
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 140,
+          "end_line": 167
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 220,
+          "end_line": 233
+        }
+      ]
+    },
+    {
+      "id": "trace",
+      "type": "database",
+      "label": "Trace + history",
+      "sublabel": "trace.jsonl \u00b7 8 MiB",
+      "pos": [
+        625,
+        50
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/trace.ts",
+          "line": 18,
+          "end_line": 32
+        },
+        {
+          "path": "extensions/subagents/src/graph/history.ts",
+          "line": 10,
+          "end_line": 33
+        },
+        {
+          "path": "extensions/subagents/src/graph/history.ts",
+          "line": 210,
+          "end_line": 250
+        }
+      ]
+    },
+    {
+      "id": "card",
+      "type": "frontend",
+      "label": "Run card + pane",
+      "sublabel": "live progress",
+      "pos": [
+        625,
+        390
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 359,
+          "end_line": 375
+        },
+        {
+          "path": "extensions/subagents/src/graph/pane/manager.ts",
+          "line": 61,
+          "end_line": 66
+        },
+        {
+          "path": "extensions/subagents/src/graph/pane/manager.ts",
+          "line": 423,
+          "end_line": 425
+        }
+      ]
+    },
+    {
+      "id": "root",
+      "type": "backend",
+      "label": "Root graph actor",
+      "sublabel": "XState root machine",
+      "pos": [
+        820,
+        230
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/run-graph.ts",
+          "line": 90,
+          "end_line": 100
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-actor.ts",
+          "line": 122,
+          "end_line": 126
+        }
+      ],
+      "tag": "sole authority"
+    },
+    {
+      "id": "sched",
+      "type": "backend",
+      "label": "Scheduler/planner",
+      "sublabel": "state, readyNodes",
+      "pos": [
+        1015,
+        230
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/graph-domain.ts",
+          "line": 678,
+          "end_line": 702
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-planner.ts",
+          "line": 26,
+          "end_line": 33
+        }
+      ]
+    },
+    {
+      "id": "coord",
+      "type": "backend",
+      "label": "Coordinators",
+      "sublabel": "XState child actors",
+      "pos": [
+        1015,
+        390
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/subgraph-actor.ts",
+          "line": 34,
+          "end_line": 36
+        },
+        {
+          "path": "extensions/subagents/src/graph/fanout-actor.ts",
+          "line": 20,
+          "end_line": 23
+        },
+        {
+          "path": "extensions/subagents/src/graph/feedback-actor.ts",
+          "line": 21,
+          "end_line": 24
+        }
+      ]
+    },
+    {
+      "id": "ckpt",
+      "type": "database",
+      "label": "Run checkpoints",
+      "sublabel": ".pi/graph-runs/",
+      "pos": [
+        820,
+        50
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/graph-persist.ts",
+          "line": 36,
+          "end_line": 63
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-checkpoint.ts",
+          "line": 5,
+          "end_line": 21
+        },
+        {
+          "path": "extensions/subagents/src/graph/graph-runtime.ts",
+          "line": 235,
+          "end_line": 250
+        }
+      ],
+      "tag": "atomic write"
+    },
+    {
+      "id": "host",
+      "type": "backend",
+      "label": "Node host",
+      "sublabel": "spawn/decide/gate",
+      "pos": [
+        820,
+        390
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/node-effects.ts",
+          "line": 54,
+          "end_line": 79
+        },
+        {
+          "path": "extensions/subagents/src/graph/node-host-adapter.ts",
+          "line": 86,
+          "end_line": 145
+        }
+      ]
+    },
+    {
+      "id": "manager",
+      "type": "backend",
+      "label": "Manager + runner",
+      "sublabel": "spawn \u00b7 runAgent",
+      "pos": [
+        820,
+        550
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/agent-manager.ts",
+          "line": 616,
+          "end_line": 629
+        },
+        {
+          "path": "extensions/subagents/src/agent-runner.ts",
+          "line": 468,
+          "end_line": 473
+        }
+      ]
+    },
+    {
+      "id": "child",
+      "type": "cloud",
+      "label": "Child Pi sessions",
+      "sublabel": "model + thinking from frontmatter",
+      "pos": [
+        750,
+        730
+      ],
+      "size": [
+        260,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/agent-runner.ts",
+          "line": 811,
+          "end_line": 840
+        },
+        {
+          "path": "extensions/subagents/src/structured-output.ts",
+          "line": 60,
+          "end_line": 74
+        }
+      ],
+      "tag": "StructuredOutput"
+    },
+    {
+      "id": "decider",
+      "type": "security",
+      "label": "Decider chain",
+      "sublabel": "classifier / agent",
+      "pos": [
+        625,
+        550
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/node-host-adapter.ts",
+          "line": 210,
+          "end_line": 290
+        },
+        {
+          "path": "extensions/lib/tool-model-defaults.ts",
+          "line": 18
+        }
+      ],
+      "tag": "decision_gate"
+    },
+    {
+      "id": "gate",
+      "type": "security",
+      "label": "Gate escalation",
+      "sublabel": "resolve gate tool",
+      "pos": [
+        220,
+        550
+      ],
+      "size": [
+        120,
+        70
+      ],
+      "sources": [
+        {
+          "path": "extensions/subagents/src/graph/gate-handoff.ts",
+          "line": 28,
+          "end_line": 87
+        },
+        {
+          "path": "extensions/subagents/src/graph/gate-tool.ts",
+          "line": 7,
+          "end_line": 29
+        },
+        {
+          "path": "extensions/subagents/src/graph/gate-notifications.ts",
+          "line": 8,
+          "end_line": 25
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Parent Pi session",
+      "wraps": [
+        "orch"
+      ],
+      "pad": 10
+    },
+    {
+      "kind": "region",
+      "label": "subagents extension \u00b7 graph runtime",
+      "wraps": [
+        "tool",
+        "validate",
+        "runtask",
+        "root",
+        "sched",
+        "coord",
+        "host",
+        "manager",
+        "decider",
+        "gate",
+        "obs",
+        "card"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Child Pi sessions",
+      "wraps": [
+        "child"
+      ]
+    },
+    {
+      "kind": "region",
+      "label": "Filesystem",
+      "wraps": [
+        "roots",
+        "ckpt",
+        "trace"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "orch-to-tool",
+      "from": "orch",
+      "to": "tool",
+      "label": "invoke",
+      "variant": "emphasis"
+    },
+    {
+      "id": "tool-to-roots",
+      "from": "tool",
+      "to": "roots",
+      "label": "resolve name"
+    },
+    {
+      "id": "tool-to-validate",
+      "from": "tool",
+      "to": "validate",
+      "label": "pre-spawn"
+    },
+    {
+      "id": "validate-to-runtask",
+      "from": "validate",
+      "to": "runtask",
+      "label": "launch"
+    },
+    {
+      "id": "runtask-to-root",
+      "from": "runtask",
+      "to": "root",
+      "label": "runGraph"
+    },
+    {
+      "id": "root-to-sched",
+      "from": "root",
+      "to": "sched",
+      "label": "transact"
+    },
+    {
+      "id": "root-to-coord",
+      "from": "root",
+      "to": "coord",
+      "label": "spawn coordinator"
+    },
+    {
+      "id": "root-to-host",
+      "from": "root",
+      "to": "host",
+      "label": "node actors"
+    },
+    {
+      "id": "host-to-manager",
+      "from": "host",
+      "to": "manager",
+      "label": "spawnAndWait"
+    },
+    {
+      "id": "manager-to-child",
+      "from": "manager",
+      "to": "child",
+      "label": "runAgent"
+    },
+    {
+      "id": "host-to-decider",
+      "from": "host",
+      "to": "decider",
+      "label": "decide"
+    },
+    {
+      "id": "decider-to-gate",
+      "from": "decider",
+      "to": "gate",
+      "label": "low confidence",
+      "variant": "security"
+    },
+    {
+      "id": "gate-to-orch",
+      "from": "gate",
+      "to": "orch",
+      "label": "escalation",
+      "variant": "security"
+    },
+    {
+      "id": "root-to-ckpt",
+      "from": "root",
+      "to": "ckpt",
+      "label": "checkpoint",
+      "variant": "dashed"
+    },
+    {
+      "id": "ckpt-to-runtask",
+      "from": "ckpt",
+      "to": "runtask",
+      "label": "resume",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "runtask-to-trace",
+      "from": "runtask",
+      "to": "trace",
+      "label": "trace + history",
+      "variant": "dashed"
+    },
+    {
+      "id": "runtask-to-card",
+      "from": "runtask",
+      "to": "card",
+      "label": "progress",
+      "variant": "dashed"
+    },
+    {
+      "id": "runtask-to-obs",
+      "from": "runtask",
+      "to": "obs",
+      "label": "completion"
+    },
+    {
+      "id": "orch-to-obs",
+      "from": "orch",
+      "to": "obs",
+      "label": "get_agent_result",
+      "labelDx": 110,
+      "labelDy": 58
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Run lifecycle",
+      "items": [
+        "validateGraph, then delegation preflight (recurses subgraphs), then task creation",
+        "A disallowed graph is a tool error before any task or spawn",
+        "Root actor checkpoints before dispatching new admissions",
+        "First infrastructure error is latched and stops dispatch",
+        "Coordinators sequence subgraph, expand, fanout and feedback work; the root actor stays the sole planner and checkpoint authority"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Decision gates",
+      "items": [
+        "Chain subagents.decision_gate: classifier model classifies; other chat entries run the internal agent",
+        "Low confidence or exhausted chain escalates to the orchestrator",
+        "Orchestrator answers with resolve_agent_graph_gate, then collects again"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Persistence",
+      "items": [
+        "Snapshots in .pi/graph-runs/, written temp-file + fsync + rename",
+        "Deleted when a run settles, except reload/switch/shutdown aborts",
+        "Resume on session start: this session's snapshots are re-authorized before resume"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Observability",
+      "items": [
+        "Run card and Herdr pane show live progress",
+        "Trace is JSONL under the session task area, capped at 8 MiB",
+        "/agent-graph-replay replays a trace against a candidate graph",
+        "Session graph-history.json keeps per-node status, attempts and timing without outputs"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "XState role",
+      "items": [
+        "XState v5 runs the root graph actor and its child actors; the graph IR stays plain data",
+        "Root spawns one child per admitted node: agent or decision lifecycle, or an expand, fanout, feedback or subgraph coordinator",
+        "Node children invoke fromPromise effects (spawn, gate, escalate) that call the node host",
+        "Children exchange NODE.* / COORD.* request, ACK and release events with the root; ACK is sent after the root's checkpoint step",
+        "Panda checkpoints persist, not XState snapshots; an opt-in inspection log records actor events",
+        "Message order: agent-graph-xstate-protocol diagram"
+      ]
+    }
+  ]
+}
