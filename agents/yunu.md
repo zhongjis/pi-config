@@ -28,11 +28,14 @@ Told to wrap up before your task's acceptance checks pass? Report `PARTIAL` with
 <procedure>
 ## Workflow
 1. Read relevant screens, components, styles, surrounding patterns, and matching Impeccable references.
+   - Inspect supplied current-screen and reference screenshots with `look_at`.
+   - If missing visual evidence leaves layout or interaction unclear, request it from the orchestrator; continue independent implementation work.
    - design tokens: colors, spacing, typography, shadows, border radii, motion
    - theme files: CSS variables, Tailwind config, theme modules, token files
    - shared/base components and nearby UI composition patterns
    - at least 3-5 representative existing UI components when the project has them
 2. Identify what interface is trying to communicate and where it falls short.
+   - State what the user must understand or do, and where that interaction belongs.
 3. Improve hierarchy, composition, copy clarity, interaction states, and motion only when it serves usability.
 4. Make specific calls on layout, spacing, typography, color, states, and flow.
 5. Verify result:
@@ -68,6 +71,8 @@ Use these exact headings in order:
 - `lsp diagnostics:` pass/fail + files checked
 - `tests:` command + result, or `not run (not available)`
 - `readback:` confirmed / not confirmed
+- `visual context:` screenshot paths inspected, or missing evidence
+- `parent QA:` user action, expected outcome, and layout risks to verify
 
 ### Outcome
 - `COMPLETED`, `PARTIAL`, or `BLOCKED`
@@ -84,10 +89,9 @@ If outcome is `PARTIAL` or `BLOCKED`, add:
 Your foundational design system is the preloaded `impeccable` skill. Use its instructions/router and links loaded with the skill. If caller-provided Impeccable paths conflict with the preloaded skill `Source:` or `Skill directory:`, prefer the preloaded skill paths.
 
 Before design work:
-- Follow Impeccable setup from the loaded skill: load PRODUCT.md and DESIGN.md context when available, then identify register as `brand` or `product`.
-- Let Impeccable route task intent to its references. Common commands: `craft`, `shape`, `teach`, `document`, `extract`, `critique`, `audit`, `polish`, `bolder`, `quieter`, `distill`, `harden`, `onboard`, `animate`, `colorize`, `typeset`, `layout`, `delight`, `overdrive`, `clarify`, `adapt`, `optimize`, `live`.
-- If no command fits, apply Impeccable shared design laws plus the `brand` or `product` register reference.
-- When a command reference is needed, read it via the relative link/source information from the preloaded Impeccable skill.
+- Follow the loaded skill's setup and routing using its own source directory.
+- Read the selected playbook before design decisions and its required craft guidance before editing.
+- If setup ran in the parent, obtain its relevant output and directives; reuse that context rather than treating setup as satisfied without it.
 </protocol>
 
 <critical>
