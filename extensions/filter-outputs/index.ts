@@ -66,7 +66,7 @@ export default function (pi: ExtensionAPI) {
     /\.env\.(?!example$)[^/]+$/, // .env.local, .env.production (but not .env.example)
     /\.dev\.vars($|\.[^/]+$)/, // .dev.vars
     /secrets?\.(json|ya?ml|toml)$/i, // secrets.json, secret.yaml
-    /credentials/i, // credentials, CREDENTIALS
+    /(^|[/\\])credentials(\.(json|ya?ml|toml|ini))?$/i, // credential store basenames
   ];
 
   const redactText = (text: string): string => {

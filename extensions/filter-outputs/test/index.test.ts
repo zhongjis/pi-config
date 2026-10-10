@@ -210,6 +210,66 @@ describe("filter-outputs tool_result", () => {
   });
 
   describe("sensitive file reads", () => {
+    it.each([
+      "credentials.ts",
+      "/repo/credentials.test.ts",
+      "/repo/credentials.http.test.ts",
+      "/repo/credentials/index.ts",
+      "/repo/my-credentials.test.ts",
+      "C:\\repo\\credentials.ts",
+      "C:\\repo\\credentials\\index.ts",
+      "/repo/CREDENTIALS.test.ts",
+    ])("keeps source readable and masks secret values in %s", async (path) => {
+      const { run, notify } = setup();
+      const source = "export const credentialCount = 2;";
+
+      const clean = await run({
+        toolName: "read",
+        input: { path },
+        content: [text(source)],
+      });
+
+      expect(clean).toBeUndefined();
+      expect(notify).not.toHaveBeenCalled();
+
+      const secret = await run({
+        toolName: "read",
+        input: { path },
+        content: [text(`${source}\n// synthetic key: ${OPENAI_KEY}`)],
+      });
+
+      expect(secret).toStrictEqual({
+        content: [text(`${source}\n// synthetic key: [OPENAI_KEY_REDACTED]`)],
+      });
+      expect(notify).toHaveBeenCalledOnce();
+      expect(notify).toHaveBeenCalledWith(NOTICE, "info");
+    });
+
+    it.each([
+      "credentials",
+      "/home/synthetic/.aws/credentials",
+      "/repo/credentials.json",
+      "/repo/credentials.yaml",
+      "/repo/credentials.yml",
+      "/repo/credentials.toml",
+      "/repo/credentials.ini",
+      "C:\\synthetic\\.aws\\credentials",
+      "C:\\repo\\CREDENTIALS.JSON",
+      "/repo/CREDENTIALS.YAML",
+    ])("replaces the whole contents of credential store %s", async (path) => {
+      const { run } = setup();
+
+      const result = await run({
+        toolName: "read",
+        input: { path },
+        content: [text("synthetic store contents")],
+      });
+
+      expect(result).toStrictEqual({
+        content: [text(`[Contents of ${path} redacted for security]`)],
+      });
+    });
+
     it("replaces the whole contents of a .env read", async () => {
       const { run, notify } = setup();
 
