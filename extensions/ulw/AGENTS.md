@@ -23,6 +23,8 @@ Inject the opt-in ultrawork prompt in Kua Fu mode when a message contains a bare
 
 ## Work Guidance
 
+- For strict fidelity-review policy edits, read the owning manual-QA sections in [default](prompts/default.md#you-must-execute-manual-qa-yourself-for-runnable-changed-user-surfaces) and [GPT](prompts/gpt.md#manual-qa-mandatory); preserve their review/repair loop and parent-QA/acceptance boundaries.
+
 ## Verification
 
 - From repository root: `pnpm exec vitest run --project unit extensions/ulw`.

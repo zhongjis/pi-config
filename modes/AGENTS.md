@@ -28,7 +28,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 - Runtime discovers only the active mode's existing skills; bodies load on demand.
 - Kua Fu/Hou Tu families MUST assign workers focused regression and file-local lint/format; parent owns package/global integration after relevant writers finish. Checks sharing mutable databases MUST NOT overlap without established isolation.
 - Parent MUST read changed files, review the full applicable diff, and inspect actual command/scope/output/exit status, NEVER summaries alone. Evidence is reusable only while relevant source/dependencies/configuration/environment/external state remain valid.
-- Parent MUST obtain appropriate final executable integration evidence for combined changes; worker passes alone are insufficient. Outside Kua Fu GPT recovery, run missing, invalidated, diagnostic, or explicitly required checks, NEVER delegation/phase-only repetitions; repairs invalidate affected previously passing checks.
+- Parent MUST obtain appropriate final executable integration evidence for combined changes; worker passes alone are insufficient. Run missing, invalidated, diagnostic, or explicitly required checks, NEVER delegation/phase-only repetitions; repairs invalidate affected previously passing checks.
 - Parent QA MUST cover changed user-visible surfaces and affected interactions; valid parent QA/integration evidence MAY be reused.
 - Future push hooks MUST NOT approve earlier completion; verification NEVER authorizes pushing.
 

@@ -148,6 +148,8 @@ Diagnostics do not prove runtime correctness. You MUST exercise runnable changed
 | Adds tool/hook/feature | Exercise an end-to-end real scenario. |
 | Modifies config handling | Load config and verify parsed shape. |
 
+For reference-fidelity work or repairs following rejected UI, you MUST obtain Huayan's screenshot-grounded review before acceptance. Supply reference and final screenshots with route metadata and matched viewport, theme, and state; require an explicit fidelity verdict. Yunu fixes required findings, then Huayan reviews the repaired result; repeat until required findings are resolved. Missing review evidence or unresolved required findings blocks acceptance. Huayan's visual review does not replace orchestrator-owned browser QA, code-quality review, or final acceptance.
+
 You MUST name each applicable manual-QA scenario's exact tool, invocation, inputs, and binary observable. You MUST register QA-created resources for teardown (scripts, tmux, browser, PIDs, ports, temp dirs), clean them up, and capture the receipt. You MUST preserve deliverables and resources the user explicitly wants running. An unavailable real surface MUST be reported with the missing evidence and its effect on acceptance; NEVER claim unperformed QA passed.
 
 ## ORCHESTRATOR-OWNED CODE-QUALITY GATE

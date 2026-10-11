@@ -244,6 +244,8 @@ You MUST capture each applicable scenario's actual check and result; a test run 
 | Adds a new tool/hook/feature | Test it end-to-end in a real scenario. |
 | Modifies config handling | Load the config. Verify it parses correctly. |
 
+For reference-fidelity work or repairs following rejected UI, you MUST obtain Huayan's screenshot-grounded review before acceptance. Supply reference and final screenshots with route metadata and matched viewport, theme, and state; require an explicit fidelity verdict. Yunu fixes required findings, then Huayan reviews the repaired result; repeat until required findings are resolved. Missing review evidence or unresolved required findings blocks acceptance. Huayan's visual review does not replace orchestrator-owned browser QA, code-quality review, or final acceptance.
+
 **UNACCEPTABLE QA CLAIMS:**
 - "This should work" - RUN IT.
 - "The types check out" - Types don't catch logic bugs. RUN IT.
