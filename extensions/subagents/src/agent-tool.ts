@@ -11,6 +11,7 @@ import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ResolvedDe
 import { prepareAgentInvocation, resolveJoinMode } from "./invocation-config.js";
 import type { AgentPresentation, createNotificationCoordinator } from "./notification-coordinator.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
+import { SUBAGENT_COMMUNICATION_CONTRACT } from "./prompts.js";
 import type { SubagentsSettings } from "./settings.js";
 import { getForegroundOutcomeNote } from "./status-note.js";
 import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js";
@@ -177,7 +178,7 @@ Terse command-style prompts produce shallow, generic work.
   return defineTool({
     name: SUBAGENT_TOOL_NAMES.AGENT,
     label: "Agent",
-    description: agentToolDescription,
+    description: agentToolDescription + "\n\n" + SUBAGENT_COMMUNICATION_CONTRACT,
     promptSnippet: "Launch autonomous sub-agents for complex multi-step tasks",
     promptGuidelines: [
       "Use `agent` when the task matches a listed agent type — to parallelize independent work or keep bulky results out of your context. Don't redo work you delegated.",

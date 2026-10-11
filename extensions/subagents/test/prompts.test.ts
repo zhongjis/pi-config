@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { getAgentConfig, registerAgents } from "../src/agent-types.js";
-import { buildAgentPrompt } from "../src/prompts.js";
+import { buildAgentPrompt, SUBAGENT_COMMUNICATION_CONTRACT } from "../src/prompts.js";
 import type { AgentConfig, EnvInfo } from "../src/types.js";
 
 const env: EnvInfo = {
@@ -25,6 +25,31 @@ function getDefaultConfig(name: string): AgentConfig {
 }
 
 describe("buildAgentPrompt", () => {
+  it.each(["append", "replace", "system_instructions"] as const)("injects the shared communication contract in %s mode with and without skills", (promptMode) => {
+    const config: AgentConfig = {
+      name: "fixture",
+      description: "Fixture",
+      extensionRules: [],
+      toolRules: [],
+      discoverSkills: true,
+      preloadSkills: [],
+      systemPrompt: "fixture instructions",
+      promptMode,
+      inheritContext: false,
+      runInBackground: false,
+      isolated: false,
+    };
+    const parent = "fixture parent prefix";
+    for (const extras of [undefined, { skillBlocks: [{ name: "fixture-skill", content: "fixture skill content" }] }]) {
+      const prompt = buildAgentPrompt(config, "/workspace", env, parent, extras);
+      expect(prompt.split(SUBAGENT_COMMUNICATION_CONTRACT)).toHaveLength(2);
+      expect(prompt.indexOf(SUBAGENT_COMMUNICATION_CONTRACT)).toBeGreaterThan(prompt.indexOf(config.systemPrompt));
+      if (promptMode === "append") expect(prompt.startsWith(parent)).toBe(true);
+      else expect(prompt).not.toContain(parent);
+      if (extras) expect(prompt).toContain(extras.skillBlocks[0].content);
+    }
+  });
+
   it("includes cwd and git info", () => {
     const config = getDefaultConfig("general-purpose");
     const prompt = buildAgentPrompt(config, "/workspace", env);

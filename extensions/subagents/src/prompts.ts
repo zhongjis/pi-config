@@ -4,6 +4,14 @@
 
 import type { AgentConfig, EnvInfo } from "./types.js";
 
+export const SUBAGENT_COMMUNICATION_CONTRACT = `# Parent/subagent communication
+Parent: Use the subagents extension to delegate, steer, collect results,
+and resume. Handle coordination with other sessions yourself.
+
+Subagent: Return results, questions, and blockers to the parent.
+If a required capability is missing, report it rather than seeking
+another communication channel or alternate access.`;
+
 /** Extra sections to inject into the system prompt (skills, etc.). */
 export interface PromptExtras {
   /** Preloaded skill contents to inject. */
@@ -45,7 +53,7 @@ ${env.isGitRepo ? `Git repository: yes\nBranch: ${env.branch}` : "Not a git repo
 Platform: ${env.platform}`;
 
   // Build optional extras suffix
-  const extraSections: string[] = [];
+  const extraSections: string[] = [SUBAGENT_COMMUNICATION_CONTRACT];
   if (extras?.skillBlocks?.length) {
     for (const skill of extras.skillBlocks) {
       const sourceLine = skill.sourcePath ? `Source: ${skill.sourcePath}\n` : "";

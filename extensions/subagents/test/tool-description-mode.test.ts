@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import subagentsExtension from "../src/index.js";
+import { SUBAGENT_COMMUNICATION_CONTRACT } from "../src/prompts.js";
 
 const EXAMPLE_TEMPLATE = fileURLToPath(new URL("../examples/agent-tool-description.md", import.meta.url));
 
@@ -89,6 +90,17 @@ describe("toolDescriptionMode", () => {
     else process.env.HOME = prevHome;
     rmSync(tmpDir, { recursive: true, force: true });
     rmSync(hermeticAgentDir, { recursive: true, force: true });
+  });
+
+  it.each(["full", "compact", "custom"])("appends the shared communication contract in %s mode", (mode) => {
+    const template = "fixture custom description";
+    const tools = setup({ toolDescriptionMode: mode }, () => {
+      if (mode === "custom") writeFileSync(join(tmpDir, ".pi", "agent-tool-description.md"), template);
+    });
+    const description: string = tools.get("agent").description;
+    expect(description.endsWith("\n\n" + SUBAGENT_COMMUNICATION_CONTRACT)).toBe(true);
+    expect(description.split(SUBAGENT_COMMUNICATION_CONTRACT)).toHaveLength(2);
+    if (mode === "custom") expect(description.startsWith(template)).toBe(true);
   });
 
   it.each(["full", "compact", "custom"])("advertises configured metadata in %s mode", (mode) => {

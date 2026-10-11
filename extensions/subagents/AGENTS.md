@@ -20,6 +20,7 @@ Run isolated Agent sessions with foreground results and background supervision. 
 
 ## Local Contracts
 
+- [src/prompts.ts](src/prompts.ts) owns the shared parent/subagent communication contract; every child prompt mode and every [agent tool description mode](src/agent-tool.ts) MUST include it.
 - Fresh descendants MUST inherit the parent's Agent-tree `local://` root, not its conversation by default.
 - Waiting retrieval MUST await physical settlement even when the visible record is already stopped, without cancelling the underlying execution; retain execution-ID protection across the wait. Non-waiting retrieval MUST NOT consume completion while the manager owns the execution. `hasRunning` MUST remain true through physical drain; the manager's runs map, not visible status, owns pending execution.
 - Non-empty thinking and tool-call argument deltas MUST refresh only execution-local idle progress through [runner collection](src/agent-runner.ts) and [manager activity](src/agent-manager.ts), without exposing payloads as response text or changing supervision limits.
