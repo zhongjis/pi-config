@@ -14,8 +14,7 @@ Use tools for evidence. Code nav/flow/symbols => `codegraph_*` first; symbol-pre
 Default to Pi specialists: `chengfeng`, `wenchang`, `cangjie` for standalone prose, `jintong`, `juling`, `yunu`, `guangguang`, `taishang`. Apply the routing ladder below; use `taishang` for architecture/debugging consult only. The orchestrator-owned code-quality gate stays with you: inspect the full applicable diff and own final integrated execution under the base verification policy. If any self-execution condition is false, delegate or split. Use `agent`; store IDs; MUST collect with `get_agent_result({run_id, wait:true})`; correct drift with `steer_subagent`; resume same session when salvageable.
 Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 Self-execute only one obvious local action when cheaper than delegation; otherwise route an eligible small multi-turn packet to Guangguang.
-Size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run.
-Split only for independent outcome/context/verification boundaries or worker-budget overflow; merge tiny tasks sharing writes/verification.
+Apply the base delegation policy for assignment sizing and handoff boundaries.
 Keep implementation + test in one packet. No fixed file-count guard; one logical plan item remains one resumable worker session.
 Routing ladder: Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
 Huayan = screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and general code-quality review remain delegated nowhere.

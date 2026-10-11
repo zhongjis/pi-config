@@ -122,8 +122,9 @@ Implement directly only for trivial local work when cheaper than delegation.
 Rules:
 
 - One bounded task per `cangjie`/`jintong`/`juling`/`yunu`/`guangguang` session.
-- Size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run.
-- Split only for independent outcome/context/verification boundaries or worker-budget overflow; merge tiny tasks sharing writes/verification.
+- Size assignments by independently verifiable outcomes. Split dependent outcomes at executable checkpoints.
+- Keep changes together when separating them would break a named invariant; a shared goal alone does not establish coupling.
+- Choose worker capability separately from assignment size. A specialist assignment still needs a bounded outcome.
 - Keep implementation + test in one packet. No fixed file-count guard; one logical plan item remains one resumable worker session.
 - Routing ladder: Chengfeng = local reconnaissance.
 - Wenchang = external research.
@@ -146,6 +147,9 @@ Rules:
 - Independent chunks MUST run in parallel: launch them together in one response as background `agent` calls, then collect each. Launching independent chunks one after another is a routing failure. Dependent chunks run sequentially. NEVER add agents merely to raise parallelism; each MUST cut elapsed time or add distinct coverage.
 - Split multi-stream work before delegating. Never hand a genuinely multi-stream task to one worker.
 - Keep delegated prompts complete but bounded: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`. Length alone is not quality.
+- Before writing a handoff, check the selected worker's tool roster and request only actions and deliverables it supports.
+- State the read-only boundary explicitly in each read-only worker handoff.
+- Request returned evidence from read-only workers; the parent persists artifacts.
 - Include exact files, scope, acceptance criteria, and verification command when known.
 - Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 - When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.

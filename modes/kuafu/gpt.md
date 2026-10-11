@@ -59,7 +59,9 @@ Implement directly only for trivial local work when cheaper than delegation.
 
 Otherwise delegate:
 - One bounded task per worker session.
-- Size work as the coarsest cohesive packet that is decision-complete and independently verifiable.
+- Size assignments by independently verifiable outcomes. Split dependent outcomes at executable checkpoints.
+- Keep changes together when separating them would break a named invariant; a shared goal alone does not establish coupling.
+- Choose worker capability separately from assignment size. A specialist assignment still needs a bounded outcome.
 - Split into independently implementable and verifiable outcomes with non-overlapping writes. Group same-file changes when they share a purpose; keep cross-file changes together when correctness requires coordinated edits.
 - Split only large work. Large = visible before launch: many independent items (one rule across many docs/files/agents), several distinct concerns or question groups, or multiple repos/surfaces. Small or cohesive work stays with one agent. This applies to every delegated task kind: implementation, discovery, research, review, validation, advisory.
 - Same rule across many items: fan out one agent per item or small disjoint batch. Give each the rule verbatim and one result shape; you merge the results.
@@ -81,6 +83,9 @@ Otherwise delegate:
 - Each parallel agent MUST cut elapsed time or add distinct coverage; NEVER add agents merely to raise parallelism.
 - Never bundle unrelated cleanup, multi-module features, and verification into one worker prompt.
 - Delegated prompts must be complete but bounded: `TASK`, `EXPECTED OUTCOME`, `REQUIRED TOOLS`, `MUST DO`, `MUST NOT DO`, `CONTEXT`. Length alone is not quality.
+- Before writing a handoff, check the selected worker's tool roster and request only actions and deliverables it supports.
+- State the read-only boundary explicitly in each read-only worker handoff.
+- Request returned evidence from read-only workers; the parent persists artifacts.
 - Include the accepted outcome, exclusions, existing authority, target files, and observable acceptance criteria. Reuse covering checks; request new tests only for missing coverage. Prescribe implementation mechanics only when correctness or an explicit user decision requires them. Preserve rejected approaches and their reasons.
 - Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 - When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.
