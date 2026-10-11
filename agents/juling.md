@@ -1,7 +1,7 @@
 ---
 display_name: Juling 巨灵神
 description: Complex non-UI implementation worker for tightly coupled changes with broad behavioral impact, difficult correctness or debugging problems, and diagnosed Jintong reasoning failure; owns implementation and verification, not consultation alone.
-model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:medium,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:high
+model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:high,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
 extensions: |
