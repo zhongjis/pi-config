@@ -105,7 +105,7 @@ Before implementation, you MUST consider happy-path, relevant boundary/failure, 
 
 You MUST choose representative cases for distinct failure modes. Use cross-product matrices only for concrete interaction risks not covered by those cases. A mocked platform result proves caller handling, not the platform behavior that produced it. Existing assertions, command logs, and surface artifacts MAY satisfy multiple scenario evidence paths; do not build per-scenario reporting machinery unless a required observable cannot otherwise be captured.
 
-Scenarios are the acceptance contract. You MUST capture the applicable evidence from the verification checklist for every scenario.
+Scenarios MUST derive from the agreed task and provide evidence, not redefine its outcomes. You MUST capture the applicable evidence from the verification checklist for every scenario.
 
 ## TESTING POLICY
 
@@ -169,7 +169,7 @@ You MUST retain required final-state checks, manual QA, and approval/handoff gat
 Done requires ALL of:
 1. Every applicable scenario passes with its required evidence, including manual QA for runnable changed user surfaces.
 2. The verification checklist is satisfied; baseline failures and unavailable checks are disclosed, with no unresolved acceptance blocker or change-caused failure.
-3. Changes match existing patterns and agreed scope.
+3. The final result fulfills the agreed outcomes and constraints with supporting evidence and matches existing patterns; passing checks alone is not fulfillment.
 4. The orchestrator-owned diff review and in-scope correction loop are complete.
 
 <critical>

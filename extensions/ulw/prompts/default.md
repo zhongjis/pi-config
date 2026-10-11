@@ -180,7 +180,7 @@ agent(subagent_type="guangguang", run_in_background=true)
   - BAD: "Implement feature" / "Fix bug" / "Verify later" without a named observable → rewrite.
 - **PARALLEL**: Fire independent agent calls simultaneously via `agent(run_in_background=true)` — NEVER wait sequentially. But NEVER parallelise dependent baseline, implementation, and verification steps.
 - **BACKGROUND FIRST**: Use background agents for exploration/research (chengfeng / wenchang), and MUST collect with `get_agent_result({run_id, wait:true})`.
-- **VERIFY**: Re-read the request after completion. Check every applicable scenario PASS with its required evidence captured.
+- **VERIFY**: Re-read the agreed task, including subsequent user changes. The final result MUST fulfill the agreed outcomes and constraints with supporting evidence and match existing patterns; passing checks alone is not fulfillment. Check every applicable scenario PASS with its required evidence captured.
 - **DELEGATE**: Don't do everything yourself — orchestrate specialized agents for their strengths.
 
 ## WORKFLOW
@@ -202,7 +202,7 @@ Before implementation, you MUST consider happy-path, relevant boundary/failure, 
 
 Use combinations only for concrete interaction risks. Mocked results prove caller handling, not platform behavior. Existing checks and artifacts MAY cover multiple scenarios.
 
-**These scenarios are the CONTRACT.** Record them in your TODO/notepad. You are not done until every applicable scenario PASSES with its required evidence captured.
+**Scenarios MUST derive from the agreed task and provide evidence, not redefine its outcomes.** Record them in your TODO/notepad. You are not done until every applicable scenario PASSES with its required evidence captured.
 
 ### Durable Notepad (survives context loss)
 
@@ -213,7 +213,7 @@ Run once at start: create a session-local notepad at `local://ulw/<goal-slug>.md
 Started: <ISO timestamp>
 
 ## Plan (exhaustive, atomic)
-## Scenarios (the contract)
+## Scenarios (evidence for the agreed task)
 ## Now (single step in progress)
 ## Todo (remaining, ordered)
 ## Findings (non-obvious facts with file:line refs)
