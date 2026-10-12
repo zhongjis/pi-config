@@ -96,7 +96,7 @@ See [README boundaries](../README.md) and the [extensions contract](../extension
 - Cost stays visible: see `reportUsage` and `showCost` in [subagents.json](../subagents.json).
 - Every action buys evidence or progress.
 - Before escalating, retry with a materially different strategy.
-- Do trivial local work directly when that is cheaper than delegating.
+- Do small work directly when that is cheaper than delegating.
 - Add an agent only when it cuts elapsed time or adds distinct coverage.
 - Send quick, mechanical work to a fast worker.
 - Stop research once the evidence is enough to decide ([Kua Fu](../modes/kuafu/mode.md)).

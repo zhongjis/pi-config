@@ -15,6 +15,10 @@ Shared instructions can serve several families. Check that they do not overconst
 
 `mode.md` is canonical for behavior. A family file restates it and differs only in style for documented quirks.
 
+## Local Addition: GPT Overwork Habits
+
+Local observation from an A/B eval of real Kua Fu tasks on `gpt-6.1-sol`: under the old prompts, GPT delegated small work, added ceremony (notepads, task lists, extra subagents) to small tasks, re-ran passing checks, handed one worker a whole UI for 25+ minutes, wrote tests for prototypes, and gave long answers. [`modes/kuafu/gpt.md`](kuafu/gpt.md) names these habits so the model can catch them; the behavior it asks for is the same as `mode.md`.
+
 ## The Three Families
 
 | Family | Detection | Prompt Style | Why |
