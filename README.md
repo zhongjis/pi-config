@@ -46,7 +46,7 @@ pnpm lint:typecheck    # root and package-local lint/typecheck
 
 - [`AGENTS.md`](AGENTS.md) — AI-facing maintenance rules; its Child DOX Index maps every top-level directory to its owning doc.
 - [`docs/README.md`](docs/README.md) — human-facing specs, guides, ADRs, and ideas.
-- [`docs/manifesto.md`](docs/manifesto.md) — the principles behind the harness.
+- [`docs/manifesto.md`](docs/manifesto.md) — the core principles for developing the harness.
 - [`GLOSSARY-MAP.md`](GLOSSARY-MAP.md) — domain vocabulary.
 
 ## Boundaries
@@ -55,3 +55,7 @@ pnpm lint:typecheck    # root and package-local lint/typecheck
 - no broad AI doc coverage enforcement
 - prefer behavior-preserving extension changes
 - allow only small localized refactors when needed to fit the standard test flow
+
+## Special Thanks
+
+- [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) — its manifesto, orchestration prompts, and agent-model matching guide shaped this harness.

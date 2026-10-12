@@ -87,6 +87,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - Keep global subagent defaults in root `subagents.json`: `maxConcurrentForeground: 4`, `reportUsage: true`, `showCost: true`, `graphRuntimeTrace: true`, `disableDefaultAgents: true`; `install.sh` symlinks it to `~/.pi/agent/subagents.json`. Agent graphs stay available in all modes while preserving their delegation restrictions.
 - Install repository-owned `agent-graphs/` (the reusable agent-graph portfolio) through `install.sh`; correct global symlinks are idempotent, wrong or dangling symlinks may be replaced, and non-symlink conflicts must remain untouched.
 - Use [GLOSSARY-MAP.md](GLOSSARY-MAP.md) for terminology — the root [GLOSSARY.md](GLOSSARY.md) plus the [subagents context](extensions/subagents/GLOSSARY.md) — and [README.md](README.md) for repository entrypoints.
+- When changing `modes/`, `agents/`, `extensions/`, or `agent-graphs/`, apply [docs/manifesto.md](docs/manifesto.md), the core principles for developing this harness.
 
 ## Documentation Rules
 
