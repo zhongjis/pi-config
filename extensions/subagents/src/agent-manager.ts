@@ -15,6 +15,7 @@ import { resolveOwnedSessionFile, resumeAgent, runAgent, type ToolActivity } fro
 import { isValidType } from "./agent-types.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import type { SelectedAgentModel } from "./model-resolution.js";
+import type { NestedSpawn } from "./research-delegation.js";
 import { getSessionFast } from "./session-fast.js";
 import type { AgentActivity, AgentConfig, AgentInvocation, AgentRecord, EvictedAgent, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage, type LifetimeUsage } from "./usage.js";
@@ -42,6 +43,11 @@ const DEFAULT_MAX_CONCURRENT = 4;
 
 /** How long terminal agent sessions remain resumable before cleanup. */
 const COMPLETED_AGENT_RETENTION_MS = 15 * 60_000;
+
+// ponytail: fixed cap of 3 concurrent `delegate_research` runs per parent run,
+// whatever the target; calls over it fail instead of queuing. Upgrade to a
+// subagents setting if research fan-out needs more.
+const MAX_NESTED_RUNS_PER_PARENT = 3;
 
 /**
  * Validate a caller-supplied SpawnOptions.cwd. `undefined`/`null` mean "unset"
@@ -75,6 +81,8 @@ interface SpawnArgs {
   restore?: { id: string; sessionFile: string; toolUses: number; lifetimeUsage: LifetimeUsage };
   /** Internal only (never RPC-reachable): unregistered definition that replaces registry lookup and delegation policy. */
   agentConfig?: AgentConfig;
+  /** Internal only (never RPC-reachable): the root-level record whose `delegate_research` call owns this run. */
+  parentAgentId?: string;
 }
 
 export interface SpawnOptions {
@@ -318,6 +326,7 @@ export class AgentManager {
       executionId: randomUUID(),
       resultConsumed: false,
       graphRunId: options.graphRunId,
+      parentAgentId: args.parentAgentId,
       cwd: options.cwd ?? ctx.cwd,
       type,
       description: options.description,
@@ -474,6 +483,7 @@ export class AgentManager {
       signal: record.abortController!.signal,
       skills: options.skills,
       parentSessionId: getParentSessionId(ctx),
+      nestedSpawn: this.nestedSpawnFor(record, pi, ctx),
       ...activityCallbacks,
       onCompaction: (info) => {
         record.compactionCount++;
@@ -544,6 +554,33 @@ export class AgentManager {
         return "";
       })
       .finally(() => this.completeRun(record));
+  }
+
+  /**
+   * `delegate_research` bridge for a root-level, non-graph record (depth 1).
+   * Each call spawns on this manager with the root ctx, so the mode delegation
+   * policy applies; the detached run takes no pool slot and is consumed inline.
+   */
+  private nestedSpawnFor(record: AgentRecord, pi: ExtensionAPI, ctx: ExtensionContext): NestedSpawn | undefined {
+    if (record.graphRunId !== undefined || record.parentAgentId !== undefined) return undefined;
+    let active = 0;
+    return async ({ type, prompt, description, cwd, signal }) => {
+      if (active >= MAX_NESTED_RUNS_PER_PARENT) {
+        return { type, status: "denied", text: "", error: `At most ${MAX_NESTED_RUNS_PER_PARENT} delegate_research runs may run at once; wait for one to finish.` };
+      }
+      active++;
+      try {
+        const id = this.spawnRecord({ pi, ctx, type, prompt, parentAgentId: record.id, options: { description, cwd, signal, inheritContext: false } });
+        const child = this.agents.get(id);
+        if (!child) throw new Error(`Agent record disappeared: ${id}`);
+        await child.promise;
+        return { agentId: id, type, status: child.status, text: child.result ?? "", error: child.error };
+      } catch (error) {
+        return { type, status: "error", text: "", error: error instanceof Error ? error.message : String(error) };
+      } finally {
+        active--;
+      }
+    };
   }
 
   private poolHasRoom(foreground: boolean, background?: boolean): boolean {

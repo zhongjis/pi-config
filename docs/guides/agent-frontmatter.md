@@ -230,7 +230,7 @@ tool registered later by a granted extension is granted too.
 After the rules apply:
 
 - tools from trusted internal sources (`<inline:…>`, `<sdk:…>`) are always allowed;
-- nested subagent controls (`agent`, `get_agent_result`, `resolve_agent_graph_gate`, `steer_subagent`) require `allow_nesting: true`;
+- nested subagent controls (`agent`, `get_agent_result`, `resolve_agent_graph_gate`, `steer_subagent`) require `allow_nesting: true`; Subagent sessions never receive them (see [Delegation fields](#delegation-fields));
 - goal tools require Goal access;
 - plan tools are granted only in Fu Xi.
 
@@ -292,16 +292,24 @@ for chain resolution and fallback semantics.
 ## Delegation fields
 
 `allow_delegation_to` / `disallow_delegation_to` govern which agent types a
-mode or agent may spawn through the `agent` tool.
+mode may spawn through the `agent` tool, or a Subagent through `delegate_research`.
 
 - The **allowlist is applied first**, then `disallow_delegation_to` removes entries
   from that set.
 - Blocked delegations return a descriptive reason listing permitted targets.
-- Delegation also requires the nested subagent tools: granted in `tools` and
-  enabled by `allow_nesting: true`.
+- In modes, delegation also requires the nested subagent tools: granted in `tools`
+  and enabled by `allow_nesting: true`.
 - Subagent sessions never receive the nested subagent tools: the runner excludes
-  them ([`agent-runner.ts`](../../extensions/subagents/src/agent-runner.ts)), so
-  subagents cannot delegate and these fields take effect only in modes.
+  them ([`agent-runner.ts`](../../extensions/subagents/src/agent-runner.ts)).
+- In a Subagent, `allow_nesting: true` plus a non-empty `allow_delegation_to`
+  enable only `delegate_research` (never in an isolated run), which runs one read-only leaf target and
+  returns its result to the calling Subagent only. The main session's mode
+  delegation policy still applies. An empty allowlist permits nothing. A target must be enabled, must not have `allow_nesting`, must not be
+  the agent's own type, and must not use `prompt_mode: append`. Its `tools` must
+  grant no `edit`, `write`, or `powershell`, and `bash` only under the guarded
+  read-only Bash ([`resolveNestedTargets`](../../extensions/subagents/src/delegation-policy.ts)).
+  The tool is trusted, so `tools` rules cannot grant or remove it. See the
+  [subagents README](../../extensions/subagents/README.md#tools).
 
 For modes, delegation frontmatter is canonically parsed into a versioned policy
 snapshot persisted in `agent-mode` state, which the subagent extension consumes as

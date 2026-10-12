@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { parseAccessRules } from "../../lib/active-tools.js";
 import {
   buildDelegationBlockedMessage,
   getPermittedDelegationTypes,
   hasDelegationPolicy,
   resolveDelegationPolicy,
   resolveDelegationRequest,
+  resolveNestedTargets,
   resolvePersistedDelegationPolicy,
 } from "../src/delegation-policy.js";
+import type { AgentConfig } from "../src/types.js";
 
 describe("delegation-policy", () => {
 	const availableTypes = [
@@ -169,4 +172,61 @@ describe("delegation-policy", () => {
 			),
 		).toContain('"unknown-agent" (resolved to "general-purpose")');
 	});
+});
+
+describe("resolveNestedTargets", () => {
+  const agent = (name: string, overrides: Partial<AgentConfig> = {}): AgentConfig => ({
+    name,
+    description: name,
+    extensionRules: [],
+    toolRules: parseAccessRules("tools", "+read").rules,
+    discoverSkills: false,
+    preloadSkills: [],
+    systemPrompt: "",
+    promptMode: "replace",
+    ...overrides,
+  });
+  const parent = agent("parent", { allowNesting: true, allowDelegationTo: ["leaf"] });
+  const guarded = (type: string) => type === "leaf";
+  const targetsWith = (leaf: Partial<AgentConfig>, policy: Partial<AgentConfig> = {}) =>
+    resolveNestedTargets({ ...parent, ...policy }, [parent, agent("leaf", leaf), agent("other")], guarded);
+
+  it("permits an allowlisted read-only leaf", () => {
+    expect(targetsWith({})).toEqual(["leaf"]);
+  });
+
+  it("permits guarded read-only Bash", () => {
+    expect(targetsWith({ toolRules: parseAccessRules("tools", "+read, +bash").rules })).toEqual(["leaf"]);
+  });
+
+  it.each<[string, Partial<AgentConfig>, Partial<AgentConfig>]>([
+    ["parent without allow_nesting", {}, { allowNesting: false }],
+    ["missing allowlist", {}, { allowDelegationTo: undefined }],
+    ["empty allowlist", {}, { allowDelegationTo: [] }],
+    ["denylisted target", {}, { disallowDelegationTo: ["LEAF"] }],
+    ["disabled target", { enabled: false }, {}],
+    ["nesting target", { allowNesting: true }, {}],
+    ["append-mode target", { promptMode: "append" }, {}],
+    ["edit grant", { toolRules: parseAccessRules("tools", "+read, +edit").rules }, {}],
+    ["write grant", { toolRules: parseAccessRules("tools", "+@builtin, -edit").rules }, {}],
+  ])("denies a %s", (_label, leaf, policy) => {
+    expect(targetsWith(leaf, policy)).toEqual([]);
+  });
+
+  it("denies a target outside the allowlist", () => {
+    expect(targetsWith({}, { allowDelegationTo: ["other"] })).toEqual(["other"]);
+  });
+
+  it("denies unguarded Bash", () => {
+    const configs = [parent, agent("leaf"), agent("shell", { toolRules: parseAccessRules("tools", "+read, +bash").rules })];
+    expect(resolveNestedTargets({ ...parent, allowDelegationTo: ["leaf", "shell"] }, configs, guarded)).toEqual(["leaf"]);
+  });
+
+  it("denies the parent's own type", () => {
+    expect(resolveNestedTargets({ ...parent, allowDelegationTo: ["PARENT", "leaf"] }, [parent, agent("leaf")], guarded)).toEqual(["leaf"]);
+  });
+
+  it("denies an unknown target", () => {
+    expect(resolveNestedTargets({ ...parent, allowDelegationTo: ["missing"] }, [parent, agent("leaf")], guarded)).toEqual([]);
+  });
 });

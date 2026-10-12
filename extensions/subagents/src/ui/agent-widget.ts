@@ -348,6 +348,7 @@ export class AgentWidget {
       fast: getSessionFast(session),
     } : record.invocation;
     const { modelName, tags } = buildInvocationTags(effective);
+    if (record.parentAgentId) tags.push("nested");
     const hasThinking = !!modelName && effective?.thinking !== undefined;
     const activity = this.agentActivity.get(record.id);
     const hasTurnLimit = Number.isFinite(activity?.turnCount) && (activity?.turnCount ?? 0) > 0

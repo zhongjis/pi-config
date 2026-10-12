@@ -1,3 +1,6 @@
+import { BUILTIN_TOOL_NAMES, resolveToolAccess } from "../../lib/active-tools.js";
+import type { AgentConfig } from "./types.js";
+
 export interface DelegationPolicy {
 	allowDelegationTo?: string[];
 	disallowDelegationTo?: string[];
@@ -68,6 +71,34 @@ export function getPermittedDelegationTypes(
 	);
 
 	return allowlisted.filter((type) => !disallowed.has(type.toLowerCase()));
+}
+
+const MUTATING_BUILTIN_TOOLS = ["edit", "write", "powershell"];
+
+/**
+ * `delegate_research` targets for an `allow_nesting` Subagent: its
+ * `allow_delegation_to` minus `disallow_delegation_to`, where an empty or
+ * missing allowlist permits none.
+ * A target must be an enabled, read-only leaf: not the parent's own type, no
+ * `allow_nesting`, not append prompt mode, no mutating built-in, and `bash`
+ * only with the guarded read-only Bash (`isGuardedBash`).
+ */
+export function resolveNestedTargets(
+	parent: Pick<AgentConfig, "name" | "allowNesting" | "allowDelegationTo" | "disallowDelegationTo">,
+	configs: readonly AgentConfig[],
+	isGuardedBash: (type: string) => boolean,
+): string[] {
+	if (parent.allowNesting !== true || !parent.allowDelegationTo?.length) return [];
+	const byName = new Map(configs.map((config) => [config.name.toLowerCase(), config]));
+	const builtins = BUILTIN_TOOL_NAMES.map((name) => ({ name, extensionIds: [] }));
+	return getPermittedDelegationTypes(parent, configs.map((config) => config.name)).filter((type) => {
+		const target = byName.get(type.toLowerCase());
+		if (!target || target.enabled === false || target.allowNesting === true || target.promptMode === "append") return false;
+		if (type.toLowerCase() === parent.name.toLowerCase()) return false;
+		const granted = resolveToolAccess(target.toolRules, builtins).allowed;
+		if (MUTATING_BUILTIN_TOOLS.some((name) => granted.has(name))) return false;
+		return !granted.has("bash") || isGuardedBash(type);
+	});
 }
 
 export function resolveDelegationRequest(

@@ -59,6 +59,7 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
   createCodemodeExtension,
   createMcpExtension,
   createToolSearchExtension,
+  defineTool: (tool: unknown) => tool,
   isToolCallEventType: (toolName: string, event: { toolName?: string }) => event.toolName === toolName,
   // Mock loader simulates pi-mono: reload() loads discovered extensions, then
   // `builtin: true` factories as `builtin:<name>` paths, then named inline
@@ -133,6 +134,7 @@ vi.mock("../src/agent-types.js", () => ({
     isolated: false,
   })),
   resolveType: vi.fn((name: string) => name.toLowerCase()),
+  getAllTypes: vi.fn(() => []),
 }));
 
 vi.mock("../src/env.js", () => ({
@@ -2505,5 +2507,53 @@ describe("graph run structured output", () => {
     expect(session.prompt).not.toHaveBeenCalled();
     await resumeAgent(result.session, "again", { signal: AbortSignal.abort() });
     expect(session.prompt).not.toHaveBeenCalled();
+  });
+});
+
+describe("delegate_research bridge loading", () => {
+  const nestedSpawn = vi.fn();
+  const bridge = { allowNesting: true, allowDelegationTo: ["chengfeng"] };
+
+  /** Run the runner's research-delegation factory and return the tools it registers. */
+  function registeredResearchTools(): string[] {
+    const factories: Array<{ name: string; factory: (pi: unknown) => void }> = defaultResourceLoaderCtor.mock.calls[0][0].extensionFactories;
+    const registered: string[] = [];
+    for (const { name, factory } of factories) {
+      if (name === "subagent-research-delegation") factory({ registerTool: (tool: { name: string }) => registered.push(tool.name) });
+    }
+    return registered;
+  }
+
+  it("registers delegate_research for allow_nesting with a non-empty allowlist", async () => {
+    setupRules("+@all, -@builtin", "+read", bridge);
+    createAgentSession.mockResolvedValue(createSession("OK"));
+
+    await runAgent(ctx, "Explore", "go", { pi, nestedSpawn });
+
+    expect(registeredResearchTools()).toEqual(["delegate_research"]);
+  });
+
+  it.each([
+    ["without allow_nesting", { allowDelegationTo: ["chengfeng"] }, {}],
+    ["with an empty allowlist", { allowNesting: true, allowDelegationTo: [] }, {}],
+    ["without an allowlist", { allowNesting: true }, {}],
+    ["for an isolated run", bridge, { isolated: true }],
+  ])("registers no bridge %s", async (_label, overrides, callOptions) => {
+    setupRules("+@all, -@builtin", "+read", overrides);
+    createAgentSession.mockResolvedValue(createSession("OK"));
+
+    await runAgent(ctx, "Explore", "go", { pi, nestedSpawn, ...callOptions });
+
+    expect(registeredResearchTools()).toEqual([]);
+    expect(lastToolsPassed() ?? []).not.toContain("delegate_research");
+  });
+
+  it("admits delegate_research through the static built-in allowlist", async () => {
+    setupRules("", "+read", bridge);
+    createAgentSession.mockResolvedValue(createSession("OK"));
+
+    await runAgent(ctx, "Explore", "go", { pi, nestedSpawn });
+
+    expect(lastToolsPassed()).toEqual(["read", "delegate_research"]);
   });
 });

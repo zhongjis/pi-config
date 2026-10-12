@@ -49,6 +49,7 @@ import { detectEnv } from "./env.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import { resolveAgentModel, type SelectedAgentModel } from "./model-resolution.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
+import { createDelegateResearchTool, DELEGATE_RESEARCH_TOOL_NAME, type NestedSpawn } from "./research-delegation.js";
 import { sessionFastPolicies } from "./session-fast.js";
 import { preloadSkills } from "./skill-loader.js";
 import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, repairStructuredOutput, STRUCTURED_OUTPUT_TOOL_NAME, structuredFailure, takeStructuredCapture } from "./structured-output.js";
@@ -63,10 +64,13 @@ const TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME = "smart-tool-guards";
 const TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH = `<inline:${TRUSTED_SMART_TOOL_GUARDS_EXTENSION_NAME}>`;
 const TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_NAME = "subagent-nested-tool-scope";
 const TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_PATH = `<inline:${TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_NAME}>`;
+const TRUSTED_RESEARCH_DELEGATION_EXTENSION_NAME = "subagent-research-delegation";
+const TRUSTED_RESEARCH_DELEGATION_EXTENSION_PATH = `<inline:${TRUSTED_RESEARCH_DELEGATION_EXTENSION_NAME}>`;
 const TRUSTED_EXTENSION_PATHS = new Set([
   TRUSTED_SESSION_LOCAL_EXTENSION_PATH,
   TRUSTED_SMART_TOOL_GUARDS_EXTENSION_PATH,
   TRUSTED_NESTED_TOOL_SCOPE_EXTENSION_PATH,
+  TRUSTED_RESEARCH_DELEGATION_EXTENSION_PATH,
   TRUSTED_FAST_EXTENSION_PATH,
   TRUSTED_FALLBACK_EXTENSION_PATH,
 ]);
@@ -151,6 +155,7 @@ const GUARDED_CANONICAL_AGENT_TYPES = new Set([
   "yanluo",
   "huayan",
 ]);
+const isGuardedBashType = (type: string) => GUARDED_CANONICAL_AGENT_TYPES.has(type.toLowerCase());
 
 /**
  * Tool names registered by THIS extension. Single source of truth so the
@@ -275,6 +280,8 @@ export interface RunOptions {
    * its launch-time isolated/skills replace the per-call options. A reopened run has no turn limit.
    */
   resumeSessionFile?: string;
+  /** Root-manager `delegate_research` bridge; the manager supplies it only for root-level, non-graph runs. */
+  nestedSpawn?: NestedSpawn;
 }
 
 export interface RunResult {
@@ -474,7 +481,7 @@ export async function runAgent(
   // An internal definition replaces registry lookup, including the general-purpose fallback.
   const override = options.agentConfig;
   const canonicalType = override?.name ?? resolveType(type) ?? type;
-  const guardBash = GUARDED_CANONICAL_AGENT_TYPES.has(canonicalType.toLowerCase());
+  const guardBash = isGuardedBashType(canonicalType);
   const config = override ?? getConfig(type);
   const agentConfig = override ?? getAgentConfig(type);
   // Preserve an already selected candidate, but never let direct options bypass frontmatter.
@@ -496,6 +503,8 @@ export async function runAgent(
     : undefined;
   // A reopened session keeps its launch-time per-call options.
   const { isolated, skills } = reopened?.launch ?? options;
+  // `delegate_research` loads only for `allow_nesting` with a non-empty allowlist; isolated runs keep built-ins only.
+  const nestedSpawn = !isolated && agentConfig?.allowNesting === true && agentConfig.allowDelegationTo?.length ? options.nestedSpawn : undefined;
 
   // Resolve working directory: caller-supplied cwd override > reopened session cwd > parent cwd
   const effectiveCwd = options.cwd ?? reopened?.sessionManager.getCwd() ?? ctx.cwd;
@@ -672,6 +681,13 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
         },
         hidden: true,
       }] : []),
+      ...(nestedSpawn ? [{
+        name: TRUSTED_RESEARCH_DELEGATION_EXTENSION_NAME,
+        factory: (extensionPi: ExtensionAPI) => {
+          extensionPi.registerTool(createDelegateResearchTool(canonicalType, effectiveCwd, nestedSpawn, isGuardedBashType));
+        },
+        hidden: true,
+      }] : []),
       // Enforces `tools:` rules where the session veto cannot reach, against the
       // live registry. Codemode scripts call tools through ctx.executeTool();
       // those nested calls bypass the session.agent.beforeToolCall veto and reach
@@ -775,6 +791,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
       ...mcpExcludes.excludeTools,
     ];
   }
+  if (nestedSpawn) sessionTools?.push(DELEGATE_RESEARCH_TOOL_NAME);
 
   let sessionManager: SessionManager;
   if (reopened) {

@@ -110,6 +110,8 @@ export interface AgentRecord {
   activity?: AgentActivity;
   /** Graph-run-owned children retain accounting but report through their graph run. */
   graphRunId?: string;
+  /** Root-level record whose `delegate_research` call owns this run; nested runs get no bridge. */
+  parentAgentId?: string;
   cwd?: string;
   structuredJson?: string;
   structuredRetried?: boolean;
