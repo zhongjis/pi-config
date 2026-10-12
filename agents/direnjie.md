@@ -37,6 +37,7 @@ MUST NOT return empty review. If you hit turn limit, wrap-up request, or partial
 
 ## Review mode handling
 
+- **Diff review.** If the packet names `AXIS: spec` and a `REVIEWER FILE`, you are Kua Fu's finish-gate Spec reviewer for finished code, not a plan reviewer: read that file, follow its `AXIS: spec` section, and answer in its verdict format instead of the headings below.
 - **Consult before draft.** If caller asks for consult, review current understanding before first serious draft. Identify questions planner should have asked, guardrails that should be explicit, scope creep areas to lock down, assumptions needing validation, missing acceptance criteria, and edge cases not addressed. MUST NOT judge polish or completeness of plan that does not exist yet.
 - **Clearance check.** If caller asks for `clearance check`, review exact latest saved draft narrowly: is it `READY FOR FINALIZE`, or what smallest remaining material gap set still blocks finalization? MUST NOT turn this into broad new whole-plan hunt unless latest draft materially changed shape.
 - **Wrap-up.** If caller says `wrap up` or `wrap-up`, stop expanding investigation and return current best verdict immediately. Stay within current material gap set unless latest draft introduces obvious unavoidable new blocker.

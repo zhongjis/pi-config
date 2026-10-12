@@ -39,8 +39,8 @@ Orchestrators route to these leaf specialists. No subagent delegates further.
 | `chengfeng` | Codebase recon / tracing | no | no |
 | `wenchang` | External docs / web research | no | no |
 | `cangjie` | Standalone human-facing documentation / technical prose | no | no |
-| `taishang` | Architecture + debugging consult, plan-compliance | no | no |
-| `direnjie` | Gap analysis (assumptions, guardrails, scope) | no | no |
+| `taishang` | Architecture + debugging consult, plan-compliance; Kua Fu finish-gate Standards reviewer | no | no |
+| `direnjie` | Gap analysis (assumptions, guardrails, scope); Kua Fu finish-gate Spec reviewer | no | no |
 | `yanluo` | High-accuracy finalized-plan review | no | no |
 | `xuannv` | Tactical planning advisor (returns plan text) | no | no |
 | `simaqian` | Tool-free report writer: one cited report from supplied research evidence (graph writers) | no | no |
@@ -48,7 +48,7 @@ Orchestrators route to these leaf specialists. No subagent delegates further.
 | [`jintong`](../../agents/jintong.md) | Default general non-UI worker: investigates, implements, and verifies scoped work | yes | no |
 | [`juling`](../../agents/juling.md) | Complex non-UI worker: implements and verifies coupled changes and difficult correctness/debugging problems | yes | no |
 | `yunu` | Frontend/web visual-engineering implementation; orchestrator owns visual/browser QA | yes | no |
-| `huayan` | Screenshot-grounded visual review and optional UI-source critique; Yunu fixes, orchestrator owns browser QA and code quality | no | no |
+| `huayan` | Screenshot-grounded visual review and optional UI-source critique; Yunu fixes, orchestrator owns browser QA and acceptance | no | no |
 
 Roles and tool posture are defined in each `agents/<name>.md`; see
 [agent-frontmatter.md](agent-frontmatter.md).
@@ -91,7 +91,10 @@ mode switch (or the approval bridge), never an `agent` call. See
 
 Every mode owns verification: the delegating mode reads changed files and runs
 diagnostics/tests/build itself — a subagent's self-report is never sufficient.
-Code-quality review is **orchestrator-owned** in every mode; `taishang` is
-architecture/debugging/plan-compliance only, never a code-quality reviewer. Hou Tu's
+The orchestrator owns final acceptance in every mode. Kua Fu and ultrawork add a
+finish gate, the [gate-review](../../modes/kuafu/skills/gate-review/SKILL.md) skill
+([ADR 0006](../adr/0006-kuafu-finish-gate-uses-two-isolated-review-axes.md)):
+`direnjie` reviews the change against the agreed spec and `taishang` against
+documented standards, in parallel. Hou Tu's
 per-task and final-gate verification is detailed in
 [orchistration.md](orchistration.md).

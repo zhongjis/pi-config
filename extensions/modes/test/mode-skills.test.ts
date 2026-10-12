@@ -54,7 +54,7 @@ describe("mode skill discovery", () => {
 		const state = new ModeStateManager(mock.pi as never);
 		registerModeHooks(mock.pi as never, state);
 		const cases = [
-			{ mode: "kuafu", expected: [] },
+			{ mode: "kuafu", expected: ["modes/kuafu/skills"] },
 			{ mode: "houtu", expected: [] },
 			{ mode: "fuxi", expected: ["modes/fuxi/skills"] },
 		] as const;

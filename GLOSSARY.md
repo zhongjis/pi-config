@@ -84,7 +84,7 @@ Execute mode — plan execution after handoff.
 
 ## Subagents
 
-Code quality uses an **orchestrator-owned code-quality gate**: no dedicated code-quality persona exists; orchestrators run checks and review diffs against requirements.
+Code quality uses an **orchestrator-owned code-quality gate**: no dedicated code-quality persona exists; orchestrators run checks and review diffs against requirements. Kua Fu's **finish gate** ([gate-review](modes/kuafu/skills/gate-review/SKILL.md)) adds independent Spec review by Di Renjie and Standards review by Taishang; the orchestrator keeps acceptance.
 
 **Chengfeng 乘风**:
 Codebase discovery, tracing, and pattern finding.

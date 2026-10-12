@@ -173,7 +173,7 @@ describe("ModeStateManager", () => {
 		expect(reload).not.toHaveBeenCalled();
 	});
 
-	it("returns false between modes without scoped skills", async () => {
+	it("returns true when entering a mode with different scoped skills", async () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		const reload = vi.fn(async () => {});
@@ -184,8 +184,8 @@ describe("ModeStateManager", () => {
 			reload,
 		};
 
-		await expect(state.switchMode("houtu", ctx as never)).resolves.toBe(false);
-		await expect(state.switchMode("kuafu", ctx as never)).resolves.toBe(false);
+		await expect(state.switchMode("houtu", ctx as never)).resolves.toBe(true);
+		await expect(state.switchMode("kuafu", ctx as never)).resolves.toBe(true);
 
 		expect(reload).not.toHaveBeenCalled();
 	});

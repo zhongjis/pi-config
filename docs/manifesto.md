@@ -54,6 +54,7 @@ Panda Harness fits one person's work ([README](../README.md), [root AGENTS.md](.
 **Delegation does not replace verification.**
 
 - A worker's report is a claim. The parent reads the changed files, reviews the diff against the request, and runs integration checks and QA itself ([Kua Fu](../modes/kuafu/mode.md); Hou Tu in the [orchestration guide](guides/orchistration.md)).
+- Kua Fu's finish gate adds independent Spec and Standards review for refactors, migrations, security changes, and larger ultrawork changes; the parent keeps acceptance ([ADR 0006](adr/0006-kuafu-finish-gate-uses-two-isolated-review-axes.md)).
 - Research follows the same rule. Claims need opened, cited sources, and the parent checks every cited URL against the researcher's source trace ([Wenchang](../agents/wenchang.md), [Kua Fu](../modes/kuafu/mode.md)).
 
 **Apply it:** Before this agent reports done, what evidence has it opened or run itself?
