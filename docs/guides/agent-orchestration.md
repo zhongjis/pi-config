@@ -32,22 +32,22 @@ Details of each mode's lifecycle, restrictions, and gates are in
 
 ## Subagent roster (delegation targets)
 
-Orchestrators route to these leaf specialists. No subagent delegates further.
+Orchestrators route to these specialists. Subagents do not delegate further, except that agents marked "research only" may run the read-only research Subagents `chengfeng` and `wenchang` through `delegate_research` ([delegation fields](agent-frontmatter.md#delegation-fields)).
 
 | Agent | Role | Writes code? | Can delegate? |
 |-------|------|:---:|:---:|
 | `chengfeng` | Codebase recon / tracing | no | no |
 | `wenchang` | External docs / web research | no | no |
 | `cangjie` | Standalone human-facing documentation / technical prose | no | no |
-| `taishang` | Architecture + debugging consult, plan-compliance; Kua Fu finish-gate Standards reviewer | no | no |
-| `direnjie` | Gap analysis (assumptions, guardrails, scope); Kua Fu finish-gate Spec reviewer | no | no |
-| `yanluo` | High-accuracy finalized-plan review | no | no |
-| `xuannv` | Tactical planning advisor (returns plan text) | no | no |
+| `taishang` | Architecture + debugging consult, plan-compliance; Kua Fu finish-gate Standards reviewer | no | research only |
+| `direnjie` | Gap analysis (assumptions, guardrails, scope); Kua Fu finish-gate Spec reviewer | no | research only |
+| `yanluo` | High-accuracy finalized-plan review | no | research only |
+| `xuannv` | Tactical planning advisor (returns plan text) | no | research only |
 | `simaqian` | Tool-free report writer: one cited report from supplied research evidence (graph writers) | no | no |
 | `guangguang` | Quick, deterministic, naturally single-file implementation | yes | no |
-| [`jintong`](../../agents/jintong.md) | Default general non-UI worker: investigates, implements, and verifies scoped work | yes | no |
-| [`juling`](../../agents/juling.md) | Complex non-UI worker: implements and verifies coupled changes and difficult correctness/debugging problems | yes | no |
-| `yunu` | Frontend/web visual-engineering implementation; orchestrator owns visual/browser QA | yes | no |
+| [`jintong`](../../agents/jintong.md) | Default general non-UI worker: investigates, implements, and verifies scoped work | yes | research only |
+| [`juling`](../../agents/juling.md) | Complex non-UI worker: implements and verifies coupled changes and difficult correctness/debugging problems | yes | research only |
+| `yunu` | Frontend/web visual-engineering implementation; orchestrator owns visual/browser QA | yes | research only |
 | `huayan` | Screenshot-grounded visual review and optional UI-source critique; Yunu fixes, orchestrator owns browser QA and acceptance | no | no |
 
 Roles and tool posture are defined in each `agents/<name>.md`; see
