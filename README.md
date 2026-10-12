@@ -58,4 +58,5 @@ pnpm lint:typecheck    # root and package-local lint/typecheck
 
 ## Special Thanks
 
-- [oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) — its manifesto, orchestration prompts, and agent-model matching guide shaped this harness.
+- [code-yeongyu/oh-my-openagent](https://github.com/code-yeongyu/oh-my-openagent) — its manifesto, orchestration prompts, and agent-model matching guide shaped this harness.
+- [tintinweb](https://github.com/tintinweb) - extensions inspiration / upstream
