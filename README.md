@@ -46,6 +46,7 @@ pnpm lint:typecheck    # root and package-local lint/typecheck
 
 - [`AGENTS.md`](AGENTS.md) — AI-facing maintenance rules; its Child DOX Index maps every top-level directory to its owning doc.
 - [`docs/README.md`](docs/README.md) — human-facing specs, guides, ADRs, and ideas.
+- [`docs/manifesto.md`](docs/manifesto.md) — the principles behind the harness.
 - [`GLOSSARY-MAP.md`](GLOSSARY-MAP.md) — domain vocabulary.
 
 ## Boundaries

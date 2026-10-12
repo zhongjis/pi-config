@@ -1,6 +1,6 @@
 # Panda Harness — Documentation
 
-Design contracts, guides, and reference material for this Pi harness.
+Design contracts, guides, and reference material for this Pi harness. [manifesto.md](manifesto.md) states the principles behind them.
 
 ## Documentation Buckets
 
@@ -22,7 +22,7 @@ Domain language lives in [`GLOSSARY.md`](../GLOSSARY.md) — authoritative for t
 
 ## Authority Order
 
-Behavioral conflicts resolve: code → `rules/` → `adr/` → shipped `specs/` → `guides/` → `ideas/`. `references/` is evidence and `diagrams/` illustrate pinned source; neither is policy.
+Behavioral conflicts resolve: code → `rules/` → `adr/` → shipped `specs/` → `guides/` → `ideas/`. `references/` is evidence and `diagrams/` illustrate pinned source; neither is policy. [manifesto.md](manifesto.md) explains intent and is not policy.
 
 ## Lifecycle Statuses
 

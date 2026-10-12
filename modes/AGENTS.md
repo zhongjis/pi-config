@@ -6,6 +6,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 
 - [README.md](README.md) owns prompt construction.
 - This document owns shared mode docs and runtime links.
+- [MODEL-FAMILIES.md](MODEL-FAMILIES.md) owns the rationale for matching prompt style to model family.
 - Children own their family prompts, variants, skills, and supporting assets.
 - The active mode set is `kuafu`, `fuxi`, and `houtu`.
 - Runtime discovery and switching belong to [../extensions/modes/](../extensions/modes/).
