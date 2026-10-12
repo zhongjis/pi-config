@@ -5,13 +5,12 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 ## Upstream
 
 - **Source:** https://github.com/code-yeongyu/oh-my-openagent
-- **Adapted:** Pi-native adaptation of upstream `ultrawork/default.md` (Claude) and `ultrawork/gpt.md` (OpenAI), using Pi agents and tools. Pi handles continuation, so there is no loop. Durable notepads use `local://ulw/<goal-slug>.md` (requires `session-local`).
+- **Adapted:** Pi-native adaptation of upstream `ultrawork/default.md` (Claude) and `ultrawork/gpt.md` (OpenAI), using Pi agents and tools. Pi handles continuation, so there is no loop. Both variants keep a light notepad at `local://ulw/<goal-slug>.md` (requires `session-local`).
 
 ## Local Tweaks
 
-- Both variants selectively vendor uncertainty-sized planning, child GOAL/STOP WHEN/EVIDENCE, and evidence-bounded stopping from upstream [GPT](https://github.com/code-yeongyu/oh-my-openagent/blob/b7a702362ec21ba79c353c4783848ea1d589c5c4/packages/prompts-core/prompts/ultrawork/gpt.md). The test-reading instruction appears in both upstream GPT and [default](https://github.com/code-yeongyu/oh-my-openagent/blob/b7a702362ec21ba79c353c4783848ea1d589c5c4/packages/prompts-core/prompts/ultrawork/default.md).
-- Pi uses advisory xuannv planning under active-mode policy, evidence-checked workers, and orchestrator-owned acceptance. Stopping preserves required verification, manual QA, and approval/handoff gates.
-- Inline coverage-driven testing policies in [default](prompts/default.md#testing-policy) and [GPT](prompts/gpt.md#testing-policy) consider happy-path, boundary/failure, and adjacent-caller risks without scenario quotas; checks must sufficiently cover affected contracts and coupling. Refactors compare relevant baselines with post-change results; missed baselines are recovered in isolation without discarding user/concurrent changes or misrepresenting chronology. Required repository gates, preservation evidence, and manual QA for runnable changed user surfaces remain binding.
+- Both variants copy upstream [GPT](https://github.com/code-yeongyu/oh-my-openagent/blob/b7a702362ec21ba79c353c4783848ea1d589c5c4/packages/prompts-core/prompts/ultrawork/gpt.md) wording for scenario sizing, the WHEN TO STOP line, test decisions, the manual-QA table, and stop rules. They share behavior; [default](prompts/default.md) is canonical and [GPT](prompts/gpt.md) restates it in GPT style.
+- Both variants add only what the Kua Fu body lacks; delegation, packets, verification, and output rules live in [mode.md](../../modes/kuafu/mode.md) and [gpt.md](../../modes/kuafu/gpt.md). Ultrawork authorizes per-increment commits through `git-master` and runs the [gate-review](../../modes/kuafu/skills/gate-review/SKILL.md) finish gate for larger or riskier changes.
 - Notepads use exact-replacement `edit` operations and Agent-tree-shared `local://` storage; requested deliverables retain their required destinations.
 
 ## What It Does
