@@ -63,14 +63,23 @@ Panda Harness fits one person's work ([README](../README.md), [root AGENTS.md](.
 
 ## Specialists, One Owner
 
-**Many hands, one accountable orchestrator.**
+**Many hands, one accountable orchestrator; each worker answers to its parent.**
+
+Orchestrator side:
 
 - Mode Agents route work to leaf Subagents. Subagents do not delegate; nesting stays off unless an agent opts in with `allow_nesting` ([agent frontmatter](guides/agent-frontmatter.md)).
 - Each worker gets one cohesive packet; implementation travels with its tests.
 - Independent chunks run in parallel.
 - The orchestrator keeps routing, review, and acceptance ([agent orchestration](guides/agent-orchestration.md), [mode-scoped delegation](specs/mode-scoped-subagent-delegation.md)).
 
-**Apply it:** Who owns acceptance for this work, and does each worker get one complete packet?
+Worker side:
+
+- A Subagent owns one bounded outcome inside the scope it was given.
+- Results, questions, and blockers go to the parent, never to the human or another channel ([communication contract](../extensions/subagents/src/prompts.ts)). The parent decides whether the human is needed, using the two escalation reasons.
+- The report is evidence the parent can verify: `COMPLETED`, `PARTIAL` with a last-green anchor, or `BLOCKED` ([agent contracts](../agents/AGENTS.md)).
+- Role, description, and tools agree: the model-visible description states the duty, and the tool allowlist grants only what that duty needs.
+
+**Apply it:** Who owns acceptance, does each worker get one complete packet, and does each agent definition give one role, matching tools, and a report the parent can verify?
 
 ---
 
@@ -162,17 +171,17 @@ Prompt style adapts to documented model quirks ([model families](../modes/MODEL-
   any other stop becomes a harness fix
 ```
 
-| Principle                        | Where it lives                                                                                                                                                                                                           |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Intervention is a failure signal | [Kua Fu](../modes/kuafu/mode.md), [ADR 0005](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md), [orchestration guide](guides/orchistration.md)                                                    |
-| Personal by design               | [README](../README.md), [root AGENTS.md](../AGENTS.md)                                                                                                                                                                   |
-| No evidence, no done             | [Kua Fu](../modes/kuafu/mode.md), [Wenchang](../agents/wenchang.md)                                                                                                                                                      |
-| Specialists, one owner           | [agent orchestration](guides/agent-orchestration.md), [mode-scoped delegation](specs/mode-scoped-subagent-delegation.md), [agent frontmatter](guides/agent-frontmatter.md)                                               |
-| Smallest correct change          | [README](../README.md), [extensions contract](../extensions/AGENTS.md)                                                                                                                                                   |
-| Tokens buy evidence              | [subagents.json](../subagents.json), [Kua Fu](../modes/kuafu/mode.md)                                                                                                                                                    |
-| Work survives interruptions      | [tasks](../extensions/tasks/README.md), [goal](../extensions/goal/README.md), [session-local](../extensions/session-local/README.md), [ulw](../extensions/ulw/README.md), [subagents](../extensions/subagents/README.md) |
-| Same rules, model-fit prompts    | [model families](../modes/MODEL-FAMILIES.md), [parity rule](../modes/MODEL-FAMILIES.md#parity-rule)                                                                                                                      |
-| Code is truth                    | [bounded feedback](specs/agent-graph-bounded-feedback.md), [GLOSSARY.md](../GLOSSARY.md), [prompt parity](specs/mode-prompt-parity.md), [ADR 0001](adr/0001-orchestration-sizing-follows-upstream-omo.md)                |
+| Principle                        | Where it lives                                                                                                                                                                                                                                                                       |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Intervention is a failure signal | [Kua Fu](../modes/kuafu/mode.md), [ADR 0005](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md), [orchestration guide](guides/orchistration.md)                                                                                                                |
+| Personal by design               | [README](../README.md), [root AGENTS.md](../AGENTS.md)                                                                                                                                                                                                                               |
+| No evidence, no done             | [Kua Fu](../modes/kuafu/mode.md), [Wenchang](../agents/wenchang.md)                                                                                                                                                                                                                  |
+| Specialists, one owner           | [agent orchestration](guides/agent-orchestration.md), [mode-scoped delegation](specs/mode-scoped-subagent-delegation.md), [agent frontmatter](guides/agent-frontmatter.md), [agent contracts](../agents/AGENTS.md), [communication contract](../extensions/subagents/src/prompts.ts) |
+| Smallest correct change          | [README](../README.md), [extensions contract](../extensions/AGENTS.md)                                                                                                                                                                                                               |
+| Tokens buy evidence              | [subagents.json](../subagents.json), [Kua Fu](../modes/kuafu/mode.md)                                                                                                                                                                                                                |
+| Work survives interruptions      | [tasks](../extensions/tasks/README.md), [goal](../extensions/goal/README.md), [session-local](../extensions/session-local/README.md), [ulw](../extensions/ulw/README.md), [subagents](../extensions/subagents/README.md)                                                             |
+| Same rules, model-fit prompts    | [model families](../modes/MODEL-FAMILIES.md), [parity rule](../modes/MODEL-FAMILIES.md#parity-rule)                                                                                                                                                                                  |
+| Code is truth                    | [bounded feedback](specs/agent-graph-bounded-feedback.md), [GLOSSARY.md](../GLOSSARY.md), [prompt parity](specs/mode-prompt-parity.md), [ADR 0001](adr/0001-orchestration-sizing-follows-upstream-omo.md)                                                                            |
 
 ---
 
