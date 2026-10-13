@@ -310,6 +310,21 @@ export class AgentManager {
     return this.spawnRecord({ pi, ctx, type, prompt, options });
   }
 
+  private registerRun(record: AgentRecord, pool: "foreground" | "background" | undefined): void {
+    record.promise = new Promise<string>(resolve => {
+      this.runs.set(record.id, { resolve, detach: () => {}, active: false, checkInWaiters: new Set(), pool });
+    });
+  }
+
+  private attachCallerSignal(id: string, signal?: AbortSignal): void {
+    const run = this.runs.get(id);
+    if (!signal || !run) return;
+    const onAbort = () => this.abort(id, "caller");
+    signal.addEventListener("abort", onAbort, { once: true });
+    run.detach = () => signal.removeEventListener("abort", onAbort);
+    if (signal.aborted) onAbort();
+  }
+
   private spawnRecord(args: SpawnArgs, foreground = false, onSpawned?: (id: string) => void): string {
     const { ctx, type, options, restore, agentConfig } = args;
     if (this.disposed) throw new Error("Agent manager is disposed");
@@ -351,25 +366,13 @@ export class AgentManager {
       isBackground: options.isBackground,
       invocation: { ...options.invocation, modelName: undefined, thinking: undefined, fast: undefined },
     };
-    record.promise = new Promise<string>(resolve => {
-      this.runs.set(id, {
-        resolve, detach: () => {}, active: false, checkInWaiters: new Set(),
-        pool: options.graphRunId !== undefined ? undefined : options.isBackground ? "background" : foreground ? "foreground" : undefined,
-      });
-    });
+    this.registerRun(record, options.graphRunId !== undefined ? undefined : options.isBackground ? "background" : foreground ? "foreground" : undefined);
     this.agents.set(id, record);
 
     try {
       // Registration must precede callbacks, queueing, and even synchronous startup.
       onSpawned?.(id);
-      const signal = options.signal;
-      const run = this.runs.get(id);
-      if (signal && run) {
-        const onAbort = () => this.abort(id, "caller");
-        signal.addEventListener("abort", onAbort, { once: true });
-        run.detach = () => signal.removeEventListener("abort", onAbort);
-        if (signal.aborted) this.abort(id, "caller");
-      }
+      this.attachCallerSignal(id, options.signal);
       if (record.status === "stopped") return id;
       if (options.graphRunId === undefined && !options.bypassQueue && !this.poolHasRoom(foreground, options.isBackground)) {
         this.queue.push({ id, foreground, background: options.isBackground, start: () => this.start(record, { source: this.openSource(record, args), prompt: args.prompt }, options) });
@@ -692,14 +695,8 @@ export class AgentManager {
     record.status = "queued";
     record.result = undefined;
     record.error = undefined;
-    const onAbort = () => this.abort(id, "caller");
-    record.promise = new Promise<string>(resolve => {
-      this.runs.set(id, { resolve, active: false, checkInWaiters: new Set(),
-        pool: record.isBackground && record.graphRunId === undefined ? "background" : undefined,
-        detach: () => signal?.removeEventListener("abort", onAbort) });
-    });
-    signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) onAbort();
+    this.registerRun(record, record.isBackground && record.graphRunId === undefined ? "background" : undefined);
+    this.attachCallerSignal(id, signal);
     if (record.status === "queued") {
       const start = () => {
         // A live resume starts on its retained session; a start failure fails this record.
