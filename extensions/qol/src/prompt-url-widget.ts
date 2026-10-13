@@ -113,7 +113,11 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
 
   pi.on("before_agent_start", async (event, ctx) => {
     if (!ctx.hasUI) return;
-    const match = extractPromptMatch(event.prompt);
+    // Pi 1.2 also fires this for runs started by pi.sendMessage(..., { triggerTurn: true });
+    // those carry no prompt (pi#10739). `in` narrows the 1.2.0 union and compiles on 1.1.0 types.
+    const prompt = "prompt" in event ? event.prompt : undefined;
+    if (!prompt) return;
+    const match = extractPromptMatch(prompt);
     if (!match) {
       return;
     }

@@ -10,7 +10,7 @@ type SessionEntry = {
 };
 
 type EventHandler = (
-  event: { prompt?: string },
+  event: { prompt?: string; [key: string]: unknown },
   ctx: ReturnType<typeof createHarness>["ctx"],
 ) => unknown | Promise<unknown>;
 
@@ -255,5 +255,18 @@ describe("prompt-url widget characterization", () => {
 
     expect(widgetText(harness.setWidget)).toBe([url, url].join("\n"));
     expect(harness.sessionName()).toBe(`PR: ${url}`);
+  });
+
+  it("ignores pi 1.2 triggerTurn custom runs that carry no prompt", async () => {
+    const harness = createHarness();
+
+    await expect(harness.handlers.get("before_agent_start")?.(
+      { messageType: "custom", message: { customType: "x", content: "y" } },
+      harness.ctx,
+    )).resolves.toBeUndefined();
+
+    expect(harness.exec).not.toHaveBeenCalled();
+    expect(harness.setWidget).not.toHaveBeenCalled();
+    expect(harness.setSessionName).not.toHaveBeenCalled();
   });
 });
