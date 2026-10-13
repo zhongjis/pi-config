@@ -1,57 +1,68 @@
 /**
- * ask — Pure formatting helpers (answer-line text, help bar, display value).
+ * ask — Pure result text, question-list and display formatting.
  *
  * Pure. Imports `./types` only.
  */
 
-import type { Answer, NormalizedQuestion } from "./types.js";
+import type { Answer, AskDetails, AskIssue, AskNote, NormalizedQuestion } from "./types.js";
 
-/**
- * Returns the display string for an option's value/label pair.
- * If they differ, prefer `value`; otherwise return `label` (which equals value).
- */
+/** Prefer the machine value when it differs from the display label. */
 export function displayValue(value: string, label: string): string {
 	return value !== label ? value : label;
 }
 
-export function formatAnswerLine(
-	q: NormalizedQuestion,
-	answer: Answer | undefined,
-): string {
-	if (!answer) return `${q.rawLabel}: (unanswered)`;
-	if (answer.wasCustom) {
-		return `${q.rawLabel}: user wrote: ${answer.customInput ?? ""}`;
+export function formatAnswerLine(q: NormalizedQuestion, answer: Answer | undefined): string {
+	const parts: string[] = [];
+	if (answer?.indices.length) {
+		const selected = answer.indices.map((idx, i) =>
+			`${idx}. ${displayValue(answer.values[i], answer.labels[i])}`,
+		);
+		parts.push(`user selected: ${selected.join(", ")}`);
 	}
-	const idxs = answer.indices ?? [];
-	if (idxs.length === 0) return `${q.rawLabel}: (unanswered)`;
-	if (answer.multi) {
-		const parts = idxs.map((idx, i) => {
-			const v = answer.values[i];
-			const l = answer.labels[i];
-			return `${idx}. ${displayValue(v, l)}`;
+	if (answer?.customInput) parts.push(`user wrote: ${answer.customInput}`);
+	return `${q.rawLabel}: ${parts.length ? parts.join("; ") : `(no answer)${q.required ? " [required]" : ""}`}`;
+}
+
+export function formatNoteLine(q: NormalizedQuestion, note: AskNote): string {
+	const idx = note.optionValue === undefined ? -1 : q.options.findIndex((o) => o.value === note.optionValue);
+	const option = idx < 0 ? "" : ` › ${idx + 1}. ${displayValue(q.options[idx].value, q.options[idx].label)}`;
+	return `- ${q.rawLabel}${option}: ${note.text}`;
+}
+
+export function formatInvalidPayload(issues: AskIssue[]): string {
+	return `Invalid ask payload:\n${issues.map((issue) => `- ${issue.path}: ${issue.message}`).join("\n")}`;
+}
+
+export function formatResultText(questions: NormalizedQuestion[], details: AskDetails, aborted = false): string {
+	if (details.error) return formatInvalidPayload(details.error.issues);
+	if (aborted) return "Ask was aborted before the user answered.";
+	if (details.cancelled) return "User cancelled the questions.";
+	const lines: string[] = [];
+	if (details.mode === "elaborate") {
+		lines.push(
+			"The user wants clarification before finalizing (mode: elaborate).",
+			"Respond to each note first. Then call ask again only for questions that still need a decision; keep the answers below.",
+		);
+	}
+	if (details.title !== undefined) lines.push(details.title);
+	for (const q of questions) lines.push(formatAnswerLine(q, details.answers.find((a) => a.id === q.id)));
+	if (details.notes.length) {
+		lines.push("Notes:");
+		for (const q of questions) {
+			for (const note of details.notes.filter((n) => n.questionId === q.id)) lines.push(formatNoteLine(q, note));
+		}
+	}
+	return lines.join("\n");
+}
+
+export function formatNonTuiQuestions(questions: NormalizedQuestion[]): string {
+	const lines = ["Needs user input: the ask tool requires interactive TUI mode. Ask the user these questions directly:"];
+	questions.forEach((q, i) => {
+		lines.push(`${i + 1}. ${q.rawLabel}: ${q.prompt} (${q.multi ? "choose any" : "choose one"})`);
+		q.options.forEach((o, j) => {
+			lines.push(`   ${j + 1}. ${o.label}${o.description ? ` — ${o.description}` : ""}`);
 		});
-		return `${q.rawLabel}: user selected: ${parts.join(", ")}`;
-	}
-	const v = answer.values[0];
-	const l = answer.labels[0];
-	return `${q.rawLabel}: user selected: ${idxs[0]}. ${displayValue(v, l)}`;
-}
-
-export type HelpMode = "input" | "submit" | "question";
-
-export interface HelpTextOptions {
-	mode: HelpMode;
-	multi: boolean;
-	hasTabBar: boolean;
-}
-
-export function helpText(opts: HelpTextOptions): string {
-	if (opts.mode === "input") return " Enter submit • Esc cancel input";
-	if (opts.mode === "submit") return " Tab/←→ back • Enter submit • Esc cancel";
-	// question mode
-	const tabsHint = opts.hasTabBar ? " • Tab/←→ tabs" : "";
-	if (opts.multi) {
-		return ` ↑↓ navigate • Space toggle • Enter advance${tabsHint} • Esc cancel`;
-	}
-	return ` ↑↓ navigate • Enter select${tabsHint} • Esc cancel`;
+		if (q.allowOther) lines.push("   Other: free text allowed");
+	});
+	return lines.join("\n");
 }

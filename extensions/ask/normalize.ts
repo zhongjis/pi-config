@@ -4,25 +4,57 @@
  * Pure. Imports `./types` only.
  */
 
-import type { IncomingQuestion, NormalizedQuestion } from "./types.js";
+import type { AskDetails, AskIssue, IncomingQuestion, NormalizedQuestion } from "./types.js";
 
 export type ValidateResult =
 	| { ok: true }
-	| { ok: false; error: string };
+	| { ok: false; issues: AskIssue[] };
 
-export function validateInput(input: IncomingQuestion[]): ValidateResult {
-	if (!input || input.length === 0) {
-		return { ok: false, error: "Error: at least one question must be provided" };
+export function validateInput(input: unknown): ValidateResult {
+	const issues: AskIssue[] = [];
+	if (!Array.isArray(input) || input.length === 0) {
+		return { ok: false, issues: [{ path: "questions", message: "Must be a non-empty array" }] };
 	}
-	for (const q of input) {
-		if (!q.options || q.options.length === 0) {
-			return {
-				ok: false,
-				error: `Error: question '${q.id}' has no options; provide at least one option per question`,
-			};
+	const ids = new Set<string>();
+	const nonBlank = (value: unknown, path: string): value is string => {
+		if (typeof value === "string" && value.trim().length > 0) return true;
+		issues.push({ path, message: "Must be a non-blank string" });
+		return false;
+	};
+	input.forEach((question: unknown, i) => {
+		const q = question && typeof question === "object" ? question : {};
+		const path = `questions[${i}]`;
+		const id = "id" in q ? q.id : undefined;
+		if (nonBlank(id, `${path}.id`)) {
+			if (ids.has(id)) issues.push({ path: `${path}.id`, message: "Must be unique across questions" });
+			ids.add(id);
 		}
-	}
-	return { ok: true };
+		nonBlank("prompt" in q ? q.prompt : undefined, `${path}.prompt`);
+		const options = "options" in q && Array.isArray(q.options) ? q.options : [];
+		if (options.length === 0) issues.push({ path: `${path}.options`, message: "Must contain at least one option" });
+		const values = new Set<string>();
+		options.forEach((option: unknown, j) => {
+			const o = option && typeof option === "object" ? option : {};
+			const op = `${path}.options[${j}]`;
+			const value = "value" in o ? o.value : undefined;
+			if (nonBlank(value, `${op}.value`)) {
+				if (values.has(value)) issues.push({ path: `${op}.value`, message: "Must be unique within the question" });
+				values.add(value);
+			}
+			nonBlank("label" in o ? o.label : undefined, `${op}.label`);
+		});
+		if ("recommended" in q && q.recommended !== undefined) {
+			const r = q.recommended;
+			if (typeof r !== "number" || !Number.isInteger(r) || r < 0 || r >= options.length) {
+				issues.push({ path: `${path}.recommended`, message: "Must be an integer indexing an available option" });
+			}
+		}
+	});
+	return issues.length ? { ok: false, issues } : { ok: true };
+}
+
+export function buildInvalidDetails(input: IncomingQuestion[], title: string | undefined, issues: AskIssue[]): AskDetails {
+	return { ...(title === undefined ? {} : { title }), questions: input, answers: [], notes: [], cancelled: true, mode: "submit", error: { issues } };
 }
 
 export function truncateTabLabel(label: string): string {
@@ -47,6 +79,7 @@ export function normalizeQuestions(input: IncomingQuestion[]): NormalizedQuestio
 			options: q.options,
 			allowOther: q.allowOther !== false,
 			multi: q.multi === true,
+			required: q.required === true,
 			recommended,
 		};
 	});

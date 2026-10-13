@@ -1,33 +1,56 @@
 import { describe, expect, it } from "vitest";
-import type { IncomingQuestion } from "../types.js";
-import { normalizeQuestions, truncateTabLabel, validateInput } from "../normalize.js";
+import { AskParams, OptionSchema, QuestionSchema, type IncomingQuestion } from "../types.js";
+import { buildInvalidDetails, normalizeQuestions, truncateTabLabel, validateInput } from "../normalize.js";
 
 const opt = (value: string, label = value) => ({ value, label });
 
 describe("validateInput", () => {
-	it("rejects empty array", () => {
-		const r = validateInput([]);
-		expect(r.ok).toBe(false);
-		if (!r.ok) expect(r.error).toBe("Error: at least one question must be provided");
+	it("invalid details preserve original input and every issue without answers or notes", () => {
+		const input: IncomingQuestion[] = [{ id: "q", prompt: "", options: [] }];
+		const result = validateInput(input);
+		if (result.ok === false) {
+			const details = buildInvalidDetails(input, "Decisions", result.issues);
+			expect(details.questions).toBe(input);
+			expect(details.error?.issues).toBe(result.issues);
+			expect(details).toMatchObject({ title: "Decisions", answers: [], notes: [], cancelled: true, mode: "submit" });
+		}
+		expect(result.ok).toBe(false);
 	});
-
-	it("rejects question with empty options array, includes id", () => {
-		const r = validateInput([{ id: "qX", prompt: "p", options: [] }]);
+	it.each([[], null, undefined, {}, "questions"])("rejects non-array or empty input %j", (input) => {
+		expect(validateInput(input)).toEqual({ ok: false, issues: [{ path: "questions", message: "Must be a non-empty array" }] });
+	});
+	it("collects all issues with precise paths across questions and options", () => {
+		const r = validateInput([
+			{ id: "q", prompt: " ", options: [opt("a"), opt("a", " "), opt(" ")], recommended: 3 },
+			{ id: "q", prompt: "p", options: [], recommended: -1 },
+			{ id: " ", prompt: "", options: [opt("b", "")] },
+		]);
 		expect(r.ok).toBe(false);
-		if (!r.ok) {
-			expect(r.error).toContain("'qX'");
-			expect(r.error).toContain("no options");
+		if (r.ok === false) {
+			expect(r.issues.map((issue) => issue.path)).toEqual([
+				"questions[0].prompt", "questions[0].options[1].value", "questions[0].options[1].label",
+				"questions[0].options[2].value", "questions[0].options[2].label", "questions[0].recommended",
+				"questions[1].id", "questions[1].options", "questions[1].recommended",
+				"questions[2].id", "questions[2].prompt", "questions[2].options[0].label",
+			]);
+			expect(r.issues.every((issue) => issue.message.length > 0)).toBe(true);
 		}
 	});
-
-	it("rejects question with missing options field", () => {
-		const r = validateInput([{ id: "qY", prompt: "p" } as unknown as IncomingQuestion]);
+	it("rejects missing fields without throwing", () => {
+		const r = validateInput([{ id: "q", prompt: "p" }, null, { options: [null] }]);
 		expect(r.ok).toBe(false);
+		if (r.ok === false) expect(r.issues.map((i) => i.path)).toContain("questions[2].options[0].value");
 	});
-
-	it("accepts a valid input", () => {
-		const r = validateInput([{ id: "q1", prompt: "p", options: [opt("a")] }]);
-		expect(r.ok).toBe(true);
+	it.each([-1, 1.5, 1, NaN, Infinity])("rejects invalid recommended %s", (recommended) => {
+		const r = validateInput([{ id: "q", prompt: "p", options: [opt("a")], recommended }]);
+		expect(r.ok).toBe(false);
+		if (r.ok === false) expect(r.issues).toHaveLength(1);
+	});
+	it("accepts trimmed-nonblank strings, repeated values in different questions and valid recommendation", () => {
+		expect(validateInput([
+			{ id: " q1 ", prompt: " p ", options: [opt(" a ")], recommended: 0 },
+			{ id: "q2", prompt: "p", options: [opt(" a ")] },
+		])).toEqual({ ok: true });
 	});
 });
 
@@ -43,6 +66,16 @@ describe("truncateTabLabel", () => {
 });
 
 describe("normalizeQuestions", () => {
+	it("preserves preview and normalizes advisory required", () => {
+		const preview = "code\nmore code";
+		const out = normalizeQuestions([
+			{ id: "a", prompt: "p", options: [{ ...opt("a"), preview }], required: true },
+			{ id: "b", prompt: "p", options: [opt("b")] },
+		]);
+		expect(out[0].options[0].preview).toBe(preview);
+		expect(out[0].required).toBe(true);
+		expect(out[1].required).toBe(false);
+	});
 	it("defaults rawLabel to Q1, Q2, …", () => {
 		const out = normalizeQuestions([
 			{ id: "a", prompt: "p", options: [opt("x")] },
@@ -100,5 +133,18 @@ describe("normalizeQuestions", () => {
 		expect(out[1].recommended).toBeUndefined();
 		expect(out[2].recommended).toBeUndefined();
 		expect(out[3].recommended).toBeUndefined();
+	});
+});
+
+
+describe("schema", () => {
+	it("exposes title, preview and advisory required with agent-facing descriptions", () => {
+		expect(AskParams.properties.title.type).toBe("string");
+		expect(OptionSchema.properties.preview.type).toBe("string");
+		expect(Reflect.get(OptionSchema.properties.preview, "description")).toContain("highlighted");
+		expect(QuestionSchema.properties.required.type).toBe("boolean");
+		expect(Reflect.get(QuestionSchema.properties.required, "description")).toContain("never blocks");
+		expect(QuestionSchema.required).not.toContain("required");
+		expect(AskParams.required).not.toContain("title");
 	});
 });

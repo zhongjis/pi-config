@@ -14,6 +14,9 @@ export const OptionSchema = Type.Object({
 	description: Type.Optional(
 		Type.String({ description: "Optional secondary line shown under the label" }),
 	),
+	preview: Type.Optional(
+		Type.String({ description: "Optional multi-line preview (code, diff, layout) shown beside the options while this option is highlighted" }),
+	),
 });
 
 export const QuestionSchema = Type.Object({
@@ -38,9 +41,13 @@ export const QuestionSchema = Type.Object({
 				"0-indexed cursor pre-position. Adds '(Recommended)' to the option label. Cursor only — never pre-checks in multi-select mode.",
 		}),
 	),
+	required: Type.Optional(
+		Type.Boolean({ description: "Mark this question as required (advisory only; never blocks submission)" }),
+	),
 });
 
 export const AskParams = Type.Object({
+	title: Type.Optional(Type.String({ description: "Optional title shown above the questions and included in the result" })),
 	questions: Type.Array(QuestionSchema, { description: "Questions to ask the user" }),
 });
 
@@ -50,6 +57,7 @@ export interface IncomingOption {
 	value: string;
 	label: string;
 	description?: string;
+	preview?: string;
 }
 
 export interface IncomingQuestion {
@@ -60,6 +68,7 @@ export interface IncomingQuestion {
 	allowOther?: boolean;
 	multi?: boolean;
 	recommended?: number;
+	required?: boolean;
 }
 
 export interface NormalizedQuestion {
@@ -71,6 +80,7 @@ export interface NormalizedQuestion {
 	allowOther: boolean;
 	multi: boolean;
 	recommended?: number;
+	required: boolean;
 }
 
 export interface Answer {
@@ -79,14 +89,31 @@ export interface Answer {
 	wasCustom: boolean;
 	values: string[];
 	labels: string[];
-	indices?: number[];
+	indices: number[];
 	customInput?: string;
 }
 
+export interface AskNote {
+	questionId: string;
+	optionValue?: string;
+	text: string;
+}
+
+export interface AskIssue {
+	path: string;
+	message: string;
+}
+
+export type AskMode = "submit" | "elaborate";
+
 export interface AskDetails {
+	title?: string;
 	questions: IncomingQuestion[];
 	answers: Answer[];
+	notes: AskNote[];
 	cancelled: boolean;
+	mode: AskMode;
+	error?: { issues: AskIssue[] };
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
