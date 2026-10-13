@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import { setImmediate as nextTurn } from "node:timers/promises";
+import { getCurrentTools, type ToolResultMessage } from "@earendil-works/pi-ai";
 import { expect, it } from "vitest";
 import { agentCall, type PrintModeRun, routeBySession, runPrintMode } from "./helpers/print-mode-runner.js";
 
@@ -75,6 +76,91 @@ it("keeps accounting and expanded cost opt-in in a real session", async () => {
     const mainTokens = run.parentSession.messages.reduce((sum, message) => sum + (message.role === "assistant" ? message.usage.totalTokens : 0), 0);
     expect(run.parentSession.getSessionStats().tokens.total).toBe(mainTokens);
   } finally { await run.dispose(); }
+});
+
+it("waits for a queued background result in the real host", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "subagent-queued-result-"));
+  const originalHome = process.env.HOME;
+  let isolatedHome: string | undefined;
+  let run: PrintModeRun | undefined;
+  const blocker = Promise.withResolvers<void>();
+  const target = Promise.withResolvers<void>();
+  const retrievalStarted = Promise.withResolvers<void>();
+  const targetStarted = Promise.withResolvers<void>();
+  let childCalls = 0;
+  let targetId: string | undefined;
+  let retrievalReturned = false;
+  let unsubscribe: (() => void) | undefined;
+  try {
+    mkdirSync(join(cwd, ".pi"), { recursive: true });
+    writeFileSync(join(cwd, ".pi", "subagents.json"), JSON.stringify({ maxConcurrent: 1 }));
+    run = await runPrintMode({
+      cwd,
+      hold: false,
+      prompt: "Delegate.",
+      beforeRun: () => { isolatedHome = process.env.HOME; },
+      respond: async (ctx) => {
+        if (!getCurrentTools(ctx.messages).some((tool) => tool.name === "agent")) {
+          if (++childCalls === 1) {
+            await blocker.promise;
+            return "Blocker complete";
+          }
+          targetStarted.resolve();
+          await target.promise;
+          return "Queued execution payload";
+        }
+        if (targetId) return ctx.messages.some((message) => message.role === "toolResult" && message.toolName === "get_agent_result")
+          ? "Retrieved"
+          : { type: "toolCall", id: "queued-retrieval", name: "get_agent_result", arguments: { run_id: targetId, wait: true } };
+        return ctx.messages.some((message) => message.role === "toolResult") ? "Queued" : ["blocker", "target"].map((description) =>
+          agentCall({ prompt: description, description, isolated: true, run_in_background: true }, { id: description }));
+      },
+    });
+    const launch = run.parentSession.messages.find((message): message is ToolResultMessage => message.role === "toolResult" && message.toolCallId === "target");
+    const details = launch?.details;
+    if (!details || typeof details !== "object" || !("agentId" in details) || typeof details.agentId !== "string") throw new Error("Missing queued agent ID");
+    targetId = details.agentId;
+    const record = run.manager?.getRecord(targetId);
+    if (!record) throw new Error("Missing queued record");
+    const executionId = record.executionId;
+    let statusAtRetrieval: string | undefined;
+    unsubscribe = run.parentSession.subscribe((event) => {
+      if (event.type === "tool_execution_start" && event.toolCallId === "queued-retrieval") {
+        statusAtRetrieval = record.status;
+        retrievalStarted.resolve();
+      }
+      if (event.type === "tool_execution_end" && event.toolCallId === "queued-retrieval") retrievalReturned = true;
+    });
+    const pending = run.parentSession.prompt("Retrieve the queued result.");
+    await retrievalStarted.promise;
+    await nextTurn();
+    expect(statusAtRetrieval).toBe("queued");
+    expect(retrievalReturned).toBe(false);
+    blocker.resolve();
+    await targetStarted.promise;
+    await nextTurn();
+    expect(retrievalReturned).toBe(false);
+    target.resolve();
+    await pending;
+    await run.manager?.waitForAll();
+    const result = run.parentSession.messages.find((message): message is ToolResultMessage => message.role === "toolResult" && message.toolCallId === "queued-retrieval");
+    expect(result?.details).toMatchObject({ agentId: targetId, status: "completed", result: "Queued execution payload" });
+    expect(record.executionId).toBe(executionId);
+    expect(retrievalReturned).toBe(true);
+    expect(run.manager?.hasRunning()).toBe(false);
+  } finally {
+    blocker.resolve();
+    target.resolve();
+    unsubscribe?.();
+    try { await run?.dispose(); } finally {
+      rmSync(cwd, { recursive: true, force: true });
+      if (isolatedHome && isolatedHome !== originalHome) rmSync(isolatedHome, { recursive: true, force: true });
+    }
+  }
+  expect(process.env.HOME).toBe(originalHome);
+  expect(existsSync(cwd)).toBe(false);
+  expect(isolatedHome).toBeDefined();
+  expect(existsSync(isolatedHome ?? "")).toBe(false);
 });
 
 it("returns complete inline results for queued foreground calls in the real host", async () => {

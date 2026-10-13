@@ -45,10 +45,12 @@ vi.mock("../src/env.js", () => ({
 
 import { parseAccessRules, resolveExtensionAccess, resolveToolAccess } from "../../lib/active-tools.js";
 import { AgentManager } from "../src/agent-manager.js";
+import { createAgentResultBuilder } from "../src/agent-result.js";
 import { SUBAGENT_LAUNCH_ENTRY } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
 import { failExecutionStart, startExecution } from "../src/execution.js";
 import { DELEGATE_RESEARCH_TOOL_NAME } from "../src/research-delegation.js";
+import { createResultTools } from "../src/result-tools.js";
 import { sessionFastPolicies } from "../src/session-fast.js";
 import type { AgentConfig, AgentInvocation, AgentRecord } from "../src/types.js";
 
@@ -618,13 +620,27 @@ describe("orchestrator check-in", () => {
       else await manager.resume(id, "work", undefined, undefined, { isBackground: true });
       expect(manager.getRecord(id)?.status).toBe("queued");
       const woken = manager.waitForSettlementOrCheckIn(id);
-      holding.open();
-      await busy.promise;
-
-      await expect(woken).resolves.toBe(1);
-      expect(manager.getRecord(id)?.status).toBe("running");
-      expect(manager.hasPendingExecution(id)).toBe(true);
-      expect(listener).not.toHaveBeenCalled();
+      const buildDetails = createAgentResultBuilder(() => false);
+      const cancelNudge = vi.fn();
+      const tools = createResultTools(pi, manager, {
+        cancelNudge,
+        details: record => buildDetails({ displayName: "probe", description: "probe", subagentType: "probe" }, record),
+      }, { retrieve: vi.fn() });
+      let retrieved: Awaited<ReturnType<typeof tools.getAgentResult.execute>> | undefined;
+      const retrieval = tools.getAgentResult.execute("get", { run_id: id, wait: true }, undefined, undefined, ctx)
+        .then(result => { retrieved = result; return result; });
+      try {
+        holding.open();
+        await busy.promise;
+        await expect(woken).resolves.toBe(1);
+        // Let tool-result promise continuations run without advancing timer tasks.
+        for (let tick = 0; tick < 10; tick++) await Promise.resolve();
+        expect(retrieved?.details).toMatchObject({ status: "running" });
+        expect(manager.getRecord(id)).toMatchObject({ status: "running", resultConsumed: false });
+        expect(manager.hasPendingExecution(id)).toBe(true);
+        expect(cancelNudge).not.toHaveBeenCalled();
+        expect(listener).not.toHaveBeenCalled();
+      } finally { working.open(); await retrieval; }
     } finally { holding.open(); working.open(); }
     await manager.waitForAll();
   });

@@ -393,6 +393,37 @@ describe("AgentManager — background resume admission", () => {
 });
 
 describe("AgentManager — execution-correlated retrieval", () => {
+  it("cancels a queued retrieval without cancelling its execution or consuming its result", async () => {
+    const manager = new AgentManager(undefined, 1);
+    const holding = deferred();
+    vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async () => { await holding.promise; return "busy"; })));
+    manager.spawn(mockPi, mockCtx, "general-purpose", "hold", { description: "busy", isBackground: true });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(() => "queued result")));
+    const id = manager.spawn(mockPi, mockCtx, "general-purpose", "work", { description: "worker", isBackground: true });
+    const record = manager.getRecord(id);
+    const cancelNudge = vi.fn();
+    const buildDetails = createAgentResultBuilder(() => false);
+    const tools = createResultTools(mockPi, manager, {
+      cancelNudge,
+      details: value => buildDetails({ displayName: "worker", description: "worker", subagentType: "general-purpose" }, value),
+    }, { retrieve: vi.fn() });
+    const controller = new AbortController();
+    try {
+      expect(record?.status).toBe("queued");
+      const waiting = tools.getAgentResult.execute("get", { run_id: id, wait: true }, controller.signal, undefined, mockCtx);
+      controller.abort(new Error("retrieval cancelled"));
+      await expect(waiting).rejects.toThrow("retrieval cancelled");
+      expect(record).toMatchObject({ status: "queued", resultConsumed: false });
+      expect(manager.hasPendingExecution(id)).toBe(true);
+      expect(cancelNudge).not.toHaveBeenCalled();
+      holding.resolve();
+      await manager.waitForAll();
+      const result = await tools.getAgentResult.execute("get-final", { run_id: id, wait: true }, undefined, undefined, mockCtx);
+      expect(result.details).toMatchObject({ status: "completed", result: "queued result" });
+      expect(cancelNudge).toHaveBeenCalledExactlyOnceWith(id, record?.executionId);
+    } finally { holding.resolve(); await manager.dispose(); }
+  });
+
   it("waiting retrieval includes partial output after a stopped execution physically drains", async () => {
     const manager = new AgentManager();
     let release: (() => void) | undefined;

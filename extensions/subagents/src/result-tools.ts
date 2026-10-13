@@ -7,7 +7,6 @@ import { formatAgentConversation, getAgentConversation, resolveOwnedSessionFile,
 import { extractText } from "./context.js";
 import { isGraphRunId } from "./graph/graph-snapshot-path.js";
 import type { createGraphResultObserver } from "./graph/result-observer.js";
-import { QUEUE_WAIT_POLL_MS } from "./notification-coordinator.js";
 import { getStatusNote } from "./status-note.js";
 import { renderGetAgentResult, renderGetAgentResultCall, renderSteerSubagentCall, renderSteerSubagentResult } from "./tool-rendering.js";
 import { turnCheckInNotice } from "./turn-ceiling.js";
@@ -19,37 +18,6 @@ import { getSessionContextPercent } from "./usage.js";
 interface ResultDelivery {
   readonly details: (record: AgentRecord) => AgentDetails;
   readonly cancelNudge: (id: string, executionId?: string) => void;
-}
-
-/** Await a promise until it settles or the caller cancels, without aborting the underlying work. */
-function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
-  if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(signal.reason);
-  return new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const cleanup = () => signal.removeEventListener("abort", onAbort);
-    const onAbort = () => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(signal.reason);
-    };
-    signal.addEventListener("abort", onAbort, { once: true });
-    promise.then(
-      (value) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        resolve(value);
-      },
-      (error: unknown) => {
-        if (settled) return;
-        settled = true;
-        cleanup();
-        reject(error);
-      },
-    );
-  });
 }
 
 export function createResultTools(pi: ExtensionAPI, manager: AgentManager, delivery: ResultDelivery, graphs: Pick<ReturnType<typeof createGraphResultObserver>, "retrieve">) {
@@ -97,18 +65,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
 
     const executionId = record.executionId;
     // Cancellation stops only this wait, not the background agent or its notification.
-    // Queued agents acquire their promise only when the queue starts them.
-    let checkIn: number | undefined;
-    if (params.wait) {
-      while (record.status === "queued") {
-        await abortable(
-          new Promise<void>((resolve) => setTimeout(resolve, QUEUE_WAIT_POLL_MS)),
-          signal,
-        );
-      }
-      // An orchestrator check-in during the wait returns it early, still pending.
-      checkIn = await manager.waitForSettlementOrCheckIn(record.id, signal);
-    }
+    const checkIn = params.wait ? await manager.waitForSettlementOrCheckIn(record.id, signal) : undefined;
 
     if (record.executionId !== executionId) {
       return textResult(`Agent "${record.id}" started another execution while this retrieval waited. Retrieve its current result again.`);
