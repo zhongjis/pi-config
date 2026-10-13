@@ -19,7 +19,7 @@
  *      payloads and terminating after the third failure in an Execution.
  *
  * — and, when no valid output was captured and retries remain, one more
- * prompt from `runAgent`. See {@link structuredRetryPrompt}.
+ * prompt from the Execution. See {@link structuredRetryPrompt}.
  *
  * The name matches Claude Code's exactly, so a ported prompt that mentions
  * `StructuredOutput` is still telling the truth.
@@ -69,7 +69,7 @@ export function resetStructuredCapture(capture: StructuredCapture): void {
  * Build the tool for one child.
  *
  * `capture` is the box the caller reads afterwards. It is passed in rather than
- * returned so `runAgent` owns its lifetime and can consult it on every exit
+ * returned so the Execution owns its lifetime and can consult it on every exit
  * path, including the ones where the tool was never reached.
  */
 export function createStructuredOutputTool(

@@ -8,7 +8,7 @@
  *   test/fixtures/.pi/agents/*.md         (pre-configured agent templates)
  *     → real loadCustomAgents()           (frontmatter → signed rules)
  *     → registerAgents()                  (real registry)
- *     → real runAgent() [headless]        (real DefaultResourceLoader discovers
+ *     → real openSession() [headless]        (real DefaultResourceLoader discovers
  *                                          fixtures/.pi/extensions, which
  *                                          re-export the .mjs fixtures)
  *     → real createAgentSession()         (real pi-mono tool gating)
@@ -27,12 +27,13 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { fauxAssistantMessage, fauxText, getCurrentTools } from "@earendil-works/pi-ai";
+import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import { getAgentConfig, registerAgents } from "../src/agent-types.js";
 import { loadCustomAgents } from "../src/custom-agents.js";
+import { execute } from "../src/execution.js";
 import { resolveAgentInvocationConfig } from "../src/invocation-config.js";
 import { createFauxModelRuntime } from "./helpers/pi-ai.js";
 
@@ -81,7 +82,7 @@ describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, he
 
     // Load the templates through the REAL loader (project agents come from
     // <cwd>/.pi/agents → FIXTURES_DIR/.pi/agents) and install them in the
-    // registry runAgent reads from.
+    // registry openSession reads from.
     registerAgents(loadCustomAgents(FIXTURES_DIR));
   });
 
@@ -113,30 +114,23 @@ describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, he
     const pi: any = { exec: async () => ({ code: 1, stdout: "", stderr: "" }) };
 
     // Mirror production: the caller resolves frontmatter-locked fields (isolated,
-    // inherit_context, …) into runAgent options via resolveAgentInvocationConfig.
+    // inherit_context, …) into openSession options via resolveAgentInvocationConfig.
     // isolated is the one that affects tool gating (loads no extensions).
     const resolved = resolveAgentInvocationConfig(getAgentConfig(agentName), { modelFromParams: false } as any);
 
-    let active: string[] = [];
-    let prompt = "";
+    const { session, promptPrefix } = await openSession(ctx, agentName, {
+      pi,
+      model,
+      cwd: FIXTURES_DIR,
+      isolated: resolved.isolated,
+      inheritContext: resolved.inheritContext,
+    });
+    const active = session.getActiveToolNames();
+    const prompt = session.systemPrompt;
     try {
-      await runAgent(ctx, agentName, "go", {
-        pi,
-        model,
-        cwd: FIXTURES_DIR,
-        isolated: resolved.isolated,
-        inheritContext: resolved.inheritContext,
-        onSessionCreated: (s) => {
-          // Both fixed at construction (before any prompt turn): the gated tool
-          // set and the effective system prompt (built from prompt_mode + skills).
-          active = s.getActiveToolNames();
-          prompt = s.systemPrompt;
-        },
-      });
-    } catch {
-      // The empty faux queue may end the prompt after construction; both
-      // observables are already captured by onSessionCreated.
+      await execute(session, (promptPrefix ?? "") + "go");
     } finally {
+      session.dispose();
       fauxRuntime.dispose();
     }
     // `active` is what Pi activated (permission-independent); `declared` is what
@@ -154,7 +148,7 @@ describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, he
     for (const s of SCENARIOS) {
       // Each declares at least one tool expectation, so no scenario is a no-op.
       expect(s.present.length + s.absent.length).toBeGreaterThan(0);
-      // Each loaded as ITS OWN agent — guards against runAgent silently falling
+      // Each loaded as ITS OWN agent — guards against openSession silently falling
       // back to general-purpose when a template fails to parse/register.
       const cfg = getAgentConfig(s.name);
       expect(cfg, `template "${s.name}" did not register (parse error or name mismatch?)`).toBeDefined();

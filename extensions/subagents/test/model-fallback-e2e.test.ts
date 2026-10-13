@@ -7,8 +7,9 @@ import { parseAccessRules } from "../../lib/active-tools.js";
 import { registerRuntimeModelFallback } from "../../lib/runtime-model-fallback.js";
 import { registerModeHooks } from "../../modes/src/hooks.js";
 import { ModeStateManager } from "../../modes/src/mode-state.js";
-import { resumeAgent, runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
+import { execute } from "../src/execution.js";
 import { compileJsonSchema } from "../src/graph/json-schema.js";
 import { getSessionFast } from "../src/session-fast.js";
 
@@ -17,7 +18,7 @@ const chain = "anthropic/claude-opus-4-8:fast,anthropic/claude-sonnet-4-6:high";
 it("main mode override recovers in the same transcript after quota settlement", async () => {
 	const t = await createFastSession([pi => {
 		const state = new ModeStateManager(pi);
-		vi.spyOn(state, "loadConfig").mockReturnValue({ body: "", model: "anthropic/claude-opus-4-8" });
+		vi.spyOn(state, "loadConfig").mockReturnValue({ body: "", model: "anthropic/claude-opus-4-8", toolRules: [] });
 		state.modelOverride = chain;
 		registerModeHooks(pi, state);
 	}]);
@@ -55,7 +56,10 @@ it("isolated child waits through native retries and gated fallback before final 
 		return success(input, init);
 	});
 	let settled = false;
-	const running = runAgent(t.ctx, "recover", "run once", { pi: t.pi, isolated: true, onSessionCreated: session => { children.push(session); expect(getSessionFast(session)).toBe(true); } }).then(result => { settled = true; return result; });
+	const { session, promptPrefix } = await openSession(t.ctx, "recover", { pi: t.pi, isolated: true });
+	children.push(session);
+	expect(getSessionFast(session)).toBe(true);
+	const running = execute(session, (promptPrefix ?? "") + "run once").then(result => { settled = true; return result; });
 	try {
 		await recovering;
 		expect(settled).toBe(false);
@@ -63,10 +67,10 @@ it("isolated child waits through native retries and gated fallback before final 
 		release();
 		const result = await running;
 		expect(result.failure).toBeUndefined();
-		expect(result.responseText).toBe("ok");
-		expect(result.session.model?.id).toBe("claude-sonnet-4-6");
-		expect(getSessionFast(result.session)).toBe(false);
-		expect(result.session.messages.filter(m => m.role === "user")).toHaveLength(1);
+		expect(result.text).toBe("ok");
+		expect(session.model?.id).toBe("claude-sonnet-4-6");
+		expect(getSessionFast(session)).toBe(false);
+		expect(session.messages.filter(m => m.role === "user")).toHaveLength(1);
 		expect(t.requests[0].payload.speed).toBeUndefined();
 	} finally { release(); await running; for (const child of children) child.dispose(); registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }
 });
@@ -86,7 +90,9 @@ it("resume waits for a fast fallback and reports only the recovered turn", async
 	let fallbackPayload: Record<string, unknown> | undefined;
 	let calls = 0;
 	try {
-		const initial = await runAgent(t.ctx, "resume-recover", "first", { pi: t.pi, isolated: true, onSessionCreated: session => { children.push(session); } });
+		const initial = await openSession(t.ctx, "resume-recover", { pi: t.pi, isolated: true });
+		children.push(initial.session);
+		await execute(initial.session, (initial.promptPrefix ?? "") + "first");
 		expect(getSessionFast(initial.session)).toBe(false);
 		t.fetchMock.mockImplementation(async (input, init) => {
 			calls++;
@@ -98,7 +104,7 @@ it("resume waits for a fast fallback and reports only the recovered turn", async
 			return success(input, init);
 		});
 		let settled = false;
-		const resumed = resumeAgent(initial.session, "second").then(result => { settled = true; return result; });
+		const resumed = execute(initial.session, "second").then(result => { settled = true; return result; });
 		await recovering;
 		expect(settled).toBe(false);
 		expect(calls).toBe(2);
@@ -162,12 +168,14 @@ it("keeps completed tools and defers structured-output repair until recovered ou
 		return success(input, init);
 	});
 	try {
-		const result = await runAgent(t.ctx, "structured-recover", "go", { pi: t.pi, isolated: true, structuredOutput: schema.compiled, onSessionCreated: session => { children.push(session); } });
+		const { session, promptPrefix } = await openSession(t.ctx, "structured-recover", { pi: t.pi, isolated: true, structuredOutput: schema.compiled });
+		children.push(session);
+		const result = await execute(session, (promptPrefix ?? "") + "go");
 		expect(result.failure).toBeUndefined();
 		expect(result.structuredRetried).toBe(false);
 		expect(JSON.parse(result.structuredJson ?? "null")).toEqual({ ok: true });
-		expect(result.session.messages.filter(m => m.role === "toolResult" && m.toolName === "read")).toHaveLength(1);
+		expect(session.messages.filter(m => m.role === "toolResult" && m.toolName === "read")).toHaveLength(1);
 		expect(payloads[2]).toContain("retained evidence");
-		expect(result.session.messages.filter(m => m.role === "user")).toHaveLength(1);
+		expect(session.messages.filter(m => m.role === "user")).toHaveLength(1);
 	} finally { for (const child of children) child.dispose(); registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }
 });

@@ -13,13 +13,12 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
+import { deferred, fakeSession, opened } from "./helpers/session-seam.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
@@ -57,9 +56,11 @@ const textOf = (r: any): string => r.content[0].text;
 const pendingRuns: (() => void)[] = [];
 
 async function spawnBackground(tools: Map<string, any>): Promise<string> {
-  vi.mocked(runAgent).mockImplementation(() => new Promise<never>((_resolve, reject) => {
-    pendingRuns.push(() => reject(new Error("Fixture runner drained")));
-  }));
+  vi.mocked(openSession).mockImplementation(async () => {
+    const gate = deferred<string>();
+    pendingRuns.push(() => gate.reject(new Error("Fixture session drained")));
+    return opened(fakeSession(() => gate.promise));
+  });
   const r = await tools.get("agent").execute(
     "tc-spawn",
     { prompt: "go", description: "registry test agent", subagent_type: "general-purpose", run_in_background: true },
@@ -75,7 +76,7 @@ const priorGlobal = (globalThis as any)[MANAGER_KEY];
 afterEach(() => {
   if (priorGlobal === undefined) delete (globalThis as any)[MANAGER_KEY];
   else (globalThis as any)[MANAGER_KEY] = priorGlobal;
-  vi.mocked(runAgent).mockReset();
+  vi.mocked(openSession).mockReset();
 });
 
 describe("Symbol.for manager registry across activations", () => {

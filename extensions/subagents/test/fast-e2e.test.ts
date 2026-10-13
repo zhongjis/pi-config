@@ -4,8 +4,9 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { expect, it, vi } from "vitest";
 import { createFastSession } from "../../../test/integration/helpers/fast-session.js";
 import { AgentManager } from "../src/agent-manager.js";
-import { resumeAgent, runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
+import { execute } from "../src/execution.js";
 import { getSessionFast, sessionFastPolicies } from "../src/session-fast.js";
 import type { AgentConfig, AgentRecord } from "../src/types.js";
 import { AgentWidget, type UICtx } from "../src/ui/agent-widget.js";
@@ -25,7 +26,12 @@ it("isolated concurrent children enforce opposite fixed policies with shared reg
 		["fast-off", config("fast-off", "missing:fast,anthropic/claude-opus-4-8")],
 	]));
 	try {
-		const results = await Promise.all(["fast-on", "fast-off"].map((name) => runAgent(t.ctx, name, name, { pi: t.pi, isolated: true, model: t.model, onSessionCreated: (session) => { children.push(session); } })));
+		const results = await Promise.all(["fast-on", "fast-off"].map(async name => {
+			const opened = await openSession(t.ctx, name, { pi: t.pi, isolated: true, model: t.model });
+			children.push(opened.session);
+			await execute(opened.session, (opened.promptPrefix ?? "") + name);
+			return opened;
+		}));
 		expect(t.requests).toHaveLength(2);
 		expect(results.map(result => getSessionFast(result.session))).toEqual([true, false]);
 		expect(getSessionFast(t.session)).toBeUndefined();
@@ -37,7 +43,7 @@ it("isolated concurrent children enforce opposite fixed policies with shared reg
 		}
 		expect(t.model.headers).toEqual({ "Anthropic-Beta": beta, "ANTHROPIC-BETA": "other" });
 		registerAgents(new Map([["fast-on", config("fast-on", "anthropic/claude-opus-4-8")]]));
-		const resumed = await resumeAgent(results[0].session, "again", {});
+		const resumed = await execute(results[0].session, "again");
 		expect(resumed.text).toBe("ok");
 		expect(t.requests.at(-1)?.payload.speed).toBe("fast");
 		expect(getSessionFast(results[0].session)).toBe(true);
@@ -48,13 +54,11 @@ it("unsupported selected fast fails before child creation rather than choosing f
 	const t = await createFastSession();
 	vi.stubEnv("PI_CODING_AGENT_DIR", t.cwd);
 	registerAgents(new Map([["unsupported", config("unsupported", "anthropic/claude-sonnet-4-6:fast,anthropic/claude-opus-4-8:fast")]]));
-	const children: AgentSession[] = [];
-	const created = vi.fn((session: AgentSession) => { children.push(session); });
+
 	try {
-		await expect(runAgent(t.ctx, "unsupported", "go", { pi: t.pi, model: t.model, onSessionCreated: created })).rejects.toThrow("Explicit :fast is unsupported");
-		expect(created).not.toHaveBeenCalled();
+		await expect(openSession(t.ctx, "unsupported", { pi: t.pi, model: t.model })).rejects.toThrow("Explicit :fast is unsupported");
 		expect(t.requests).toHaveLength(0);
-	} finally { for (const child of children) child.dispose(); registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }
+	} finally { registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }
 });
 
 it("discovered interactive fast copies cannot override the always-retained fixed child policy", async () => {
@@ -67,13 +71,10 @@ it("discovered interactive fast copies cannot override the always-retained fixed
 	registerAgents(new Map([["fixed-off", { ...config("fixed-off", "anthropic/claude-opus-4-8"), extensionRules: [{ sign: "+", selector: "fast" }] }]]));
 	const children: AgentSession[] = [];
 	try {
-		await runAgent(t.ctx, "fixed-off", "go", {
-			pi: t.pi,
-			onSessionCreated: (session) => {
-				children.push(session);
-				session.sessionManager.appendCustomEntry("fast-policy", { version: 1, mode: "kuafu", source: "user", enabled: true });
-			},
-		});
+		const { session, promptPrefix } = await openSession(t.ctx, "fixed-off", { pi: t.pi });
+		children.push(session);
+		session.sessionManager.appendCustomEntry("fast-policy", { version: 1, mode: "kuafu", source: "user", enabled: true });
+		await execute(session, (promptPrefix ?? "") + "go");
 		expect(t.requests[0].payload.speed).toBeUndefined();
 		expect(t.requests[0].headers.get("anthropic-beta") ?? "").not.toContain(beta);
 	} finally { for (const child of children) child.dispose(); registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }

@@ -6,7 +6,7 @@
  * extensions (a matrix tool probe, a re-export of the real subagents src, and
  * an extension that registers tools during `before_agent_start`). Agents load
  * through the real `loadCustomAgents`, are registered, then run headless via
- * `runAgent`. Assertions read the live session: loaded extension ids, the
+ * `openSession` and `execute`. Assertions read the live session: loaded extension ids, the
  * active tool set at construction, the first provider request's declared
  * tools, and tool results.
  *
@@ -20,9 +20,10 @@ import { fauxAssistantMessage, fauxText, fauxToolCall, getCurrentTools } from "@
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { extensionIdsForPath } from "../../lib/active-tools.js";
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
 import { loadCustomAgents } from "../src/custom-agents.js";
+import { execute } from "../src/execution.js";
 import { createFauxModelRuntime, type FauxModelRuntime } from "./helpers/pi-ai.js";
 
 // These tests spin up the REAL pi-mono runtime (loader + dynamic extension
@@ -134,6 +135,7 @@ function writeAgent(name: string, frontmatter: string): void {
 
 describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures)", () => {
 	let fauxRuntime: FauxModelRuntime;
+	const sessions: AgentSession[] = [];
 
 	beforeEach(async () => {
 		installRuntimeFixtures();
@@ -144,13 +146,14 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 	});
 
 	afterEach(() => {
+		for (const session of sessions.splice(0)) session.dispose();
 		fauxRuntime.dispose();
 		cleanupRuntimeFixtures();
 	});
 
 	/**
 	 * Load the hermetic agents through the REAL loader/registry and run
-	 * `agentType` headless via runAgent. Returns the live session, the extension
+	 * `agentType` headless via openSession and execute. Returns the live session, the extension
 	 * ids that loaded (trusted inline hooks excluded), and the active tool names
 	 * captured at construction (before any prompt turn).
 	 */
@@ -159,22 +162,10 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 		const { model, modelRegistry } = fauxRuntime;
 		const ctx: any = { cwd: testCwd, getSystemPrompt: () => "PARENT", model, modelRegistry };
 
-		let session: AgentSession | undefined;
-		let active: string[] = [];
-		try {
-			await runAgent(ctx, agentType, "go", {
-				pi: makePi(),
-				model,
-				onSessionCreated: (s) => {
-					session = s;
-					active = s.getActiveToolNames();
-				},
-			});
-		} catch {
-			// A no-op/erroring prompt turn is fine — loading and the gated tool set
-			// are fixed at construction, which `onSessionCreated` already captured.
-		}
-		if (!session) throw new Error(`no session created for ${agentType}`);
+		const { session, promptPrefix } = await openSession(ctx, agentType, { pi: makePi(), model });
+		sessions.push(session);
+		const active = session.getActiveToolNames();
+		await execute(session, (promptPrefix ?? "") + "go");
 		const loaded = session.extensionRunner
 			.getExtensionPaths()
 			.filter((p) => !p.startsWith("<inline:"))
@@ -287,6 +278,6 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 		const { model, modelRegistry } = fauxRuntime;
 		const ctx: any = { cwd: testCwd, getSystemPrompt: () => "PARENT", model, modelRegistry };
 
-		await expect(runAgent(ctx, "ambiguous", "go", { pi: makePi(), model })).rejects.toThrow(/"twin" is ambiguous/);
+		await expect(openSession(ctx, "ambiguous", { pi: makePi(), model })).rejects.toThrow(/"twin" is ambiguous/);
 	});
 });

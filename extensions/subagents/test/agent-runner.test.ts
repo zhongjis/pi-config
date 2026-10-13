@@ -2,7 +2,6 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TURN_CEILING_REMINDER } from "../src/turn-ceiling.js";
 
 const {
   createAgentSession,
@@ -162,8 +161,7 @@ import {
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import {
   getAgentConversation,
-  resumeAgent,
-  runAgent,
+  openSession,
   SUBAGENT_LAUNCH_ENTRY,
   SUBAGENT_TOOL_NAMES,
 } from "../src/agent-runner.js";
@@ -264,246 +262,42 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (lastSession) expect(lastSession.prompt).not.toHaveBeenCalled();
   vi.unstubAllEnvs();
 });
 
-describe("agent-runner final output capture", () => {
-  it.each(["spawn", "resume"] as const)("%s heartbeats only non-empty thinking/toolcall deltas without exposing their payloads", async (kind) => {
-    const { session, listeners } = createSession("unused");
-    session.subscribe.mockImplementation(listener => {
-      listeners.push(listener);
-      return () => { listeners.splice(listeners.indexOf(listener), 1); };
-    });
-    createAgentSession.mockResolvedValue({ session });
-    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
-    const onProgress = vi.fn();
-    const onTextDelta = vi.fn();
-    const emit = (type: "thinking_delta" | "toolcall_delta" | "text_delta" | "thinking_start" | "toolcall_start", delta: string) => {
-      for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type, delta } });
-    };
-    session.prompt.mockImplementation(async () => {
-      emit("thinking_start", "");
-      emit("toolcall_start", "");
-      emit("thinking_delta", "");
-      emit("toolcall_delta", "");
-      expect(onProgress).not.toHaveBeenCalled();
-      emit("thinking_delta", "private reasoning");
-      emit("toolcall_delta", " ");
-      emit("text_delta", "answer");
-    });
-    const options = { pi, onProgress, onTextDelta };
-    const text = kind === "spawn"
-      ? (await runAgent(ctx, "Explore", "go", options)).responseText
-      : (await resumeAgent(sdkSession, "go", options)).text;
-    expect(onProgress.mock.calls).toEqual([[], []]);
-    expect(onTextDelta.mock.calls).toEqual([["answer", "answer"]]);
-    expect(text).toBe("answer");
-    emit("thinking_delta", "settled");
-    emit("toolcall_delta", "settled");
-    expect(onProgress).toHaveBeenCalledTimes(2);
-  });
+describe("openSession construction", () => {
 
-  it.each([
-    ["spawn", false], ["spawn", true], ["resume", false], ["resume", true],
-  ] as const)("%s drains rejected prompts and retains only execution-local partial text (abort=%s)", async (kind, abort) => {
-    const controller = new AbortController();
-    const { session, listeners } = createSession("unused");
-    createAgentSession.mockResolvedValue({ session });
-    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
-    session.prompt.mockClear();
-    session.messages.push({ role: "assistant", content: [{ type: "text", text: "PRIOR" }] });
-    let releaseIdle: (() => void) | undefined;
-    const idle = new Promise<void>(resolve => { releaseIdle = resolve; });
-    if (!releaseIdle) throw new Error("Missing idle resolver");
-    session.waitForIdle.mockImplementation(() => idle);
-    session.prompt.mockImplementation(async () => {
-      for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "PARTIAL" } });
-      if (abort) controller.abort();
-      throw new Error("prompt failed");
-    });
-    createAgentSession.mockResolvedValue({ session });
-    const onTextDelta = vi.fn();
-    const pending = kind === "spawn"
-      ? runAgent(ctx, "Explore", "go", { pi, signal: controller.signal, onTextDelta }).then(result => ({ text: result.responseText, failure: result.failure }))
-      : resumeAgent(sdkSession, "go", { signal: controller.signal, onTextDelta });
-    let settled = false;
-    void pending.then(() => { settled = true; }, () => { settled = true; });
-    await vi.waitFor(() => expect(session.prompt).toHaveBeenCalled());
-    try {
-      expect(settled).toBe(false);
-      expect(session.waitForIdle).toHaveBeenCalled();
-      for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: " DRAIN" } });
-    } finally {
-      releaseIdle();
-    }
-    await expect(pending).resolves.toMatchObject({ text: "PARTIAL DRAIN", failure: "prompt failed" });
-    expect(onTextDelta.mock.calls).toEqual([["PARTIAL", "PARTIAL"], [" DRAIN", "PARTIAL DRAIN"]]);
-    if (abort) expect(session.abort).toHaveBeenCalledOnce();
-    session.prompt.mockRejectedValueOnce(new Error("empty failure"));
-    await expect(resumeAgent(sdkSession, "again"))
-      .resolves.toMatchObject({ text: "", failure: "empty failure" });
-  });
-
-  it("retains execution-local completed text across compaction and an empty aborted message", async () => {
-    const { session, listeners } = createSession("unused");
-    createAgentSession.mockResolvedValue({ session });
-    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
-    session.prompt.mockClear();
-    session.messages.push({ role: "assistant", content: [{ type: "text", text: "PRIOR" }] });
-    session.prompt.mockImplementation(async () => {
-      for (const listener of listeners) listener({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "PARTIAL" }] } });
-      session.messages.length = 0;
-      for (const listener of listeners) listener({ type: "message_start", message: { role: "assistant", content: [] } });
-      throw new Error("aborted");
-    });
-    await expect(resumeAgent(sdkSession, "go"))
-      .resolves.toMatchObject({ text: "PARTIAL", failure: "aborted" });
-  });
-
-  it("returns the final assistant text even when no text_delta events were streamed", async () => {
-    const { session } = createSession("LOCKED");
-    createAgentSession.mockResolvedValue({ session });
-
-    const result = await runAgent(ctx, "Explore", "Say LOCKED", { pi });
-
-    expect(result.responseText).toBe("LOCKED");
-  });
-
-  it.each([false, true])("A04 does not steer finished turns or terminating tool completions past the ceiling (%s)", async (terminatingTool) => {
-    vi.stubEnv("SUBAGENT_TURN_CEILING", "1");
-    const { session, listeners } = createSession("DONE");
-    session.prompt.mockImplementation(async () => {
-      for (let turn = 0; turn < 8; turn++) {
-        if (terminatingTool) for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: { terminate: true } });
-        for (const listener of listeners) listener({ type: "turn_end", message: {
-          role: "assistant", stopReason: terminatingTool ? "toolUse" : "stop",
-          content: terminatingTool ? [{ type: "toolCall", name: "read" }] : [{ type: "text", text: "DONE" }],
-        }, toolResults: [] });
-      }
-    });
-    createAgentSession.mockResolvedValue({ session });
-    const result = await runAgent(ctx, "Explore", "go", { pi });
-    expect(session.steer).not.toHaveBeenCalled();
-    expect(session.abort).not.toHaveBeenCalled();
-    expect(result.forceSteered).toBe(false);
-  });
-
-  it.each(["spawn", "resume"] as const)("A04 %s steers unfinished tool turns at the ceiling and aborts after the grace turns", async (kind) => {
-    vi.stubEnv("SUBAGENT_TURN_CEILING", "2");
-    const { session, listeners } = createSession("DONE");
-    session.subscribe.mockImplementation(listener => {
-      listeners.push(listener);
-      return () => { listeners.splice(listeners.indexOf(listener), 1); };
-    });
-    createAgentSession.mockResolvedValue({ session });
-    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
-    const turnsAt: Record<string, number> = {};
-    let turns = 0;
-    session.steer.mockImplementation(() => { turnsAt.steer = turns; });
-    session.abort.mockImplementation(() => { turnsAt.abort = turns; });
-    session.prompt.mockImplementation(async () => {
-      for (let turn = 0; turn < 20 && turnsAt.abort === undefined; turn++) {
-        turns++;
-        for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
-        for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
-      }
-    });
-    const onTurnEnd = vi.fn();
-    const result = kind === "spawn"
-      ? await runAgent(ctx, "Explore", "go", { pi, onTurnEnd })
-      : await resumeAgent(sdkSession, "go", { onTurnEnd });
-    expect(session.steer.mock.calls).toEqual([[TURN_CEILING_REMINDER]]);
-    expect(turnsAt).toEqual({ steer: 2, abort: 7 });
-    expect(session.abort).toHaveBeenCalledTimes(1);
-    expect(onTurnEnd).toHaveBeenLastCalledWith(7);
-    expect(result).toMatchObject({ interruptionCause: "turn-limit", forceSteered: true });
-  });
-
-  it.each(["spawn", "resume"] as const)("%s passes the orchestrator check-in to the turn watch", async (kind) => {
-    vi.stubEnv("SUBAGENT_TURN_CHECK_IN", "2");
-    const { session, listeners } = createSession("DONE");
-    session.subscribe.mockImplementation(listener => {
-      listeners.push(listener);
-      return () => { listeners.splice(listeners.indexOf(listener), 1); };
-    });
-    createAgentSession.mockResolvedValue({ session });
-    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
-    session.prompt.mockImplementation(async () => {
-      for (let turn = 0; turn < 4; turn++) {
-        for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
-      }
-    });
-    const onCheckIn = vi.fn();
-    if (kind === "spawn") await runAgent(ctx, "Explore", "go", { pi, onCheckIn });
-    else await resumeAgent(sdkSession, "go", { onCheckIn });
-    expect(onCheckIn).toHaveBeenCalledExactlyOnceWith(2);
-    expect(session.steer).not.toHaveBeenCalled();
-  });
-
-  it("A04 resume counts turns per Execution and reports a forced wrap-up", async () => {
-    vi.stubEnv("SUBAGENT_TURN_CEILING", "2");
-    const { session, listeners } = createSession("DONE");
-    session.subscribe.mockImplementation(listener => {
-      listeners.push(listener);
-      return () => { listeners.splice(listeners.indexOf(listener), 1); };
-    });
-    const toolTurn = () => {
-      for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
-      for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
-    };
-    session.prompt.mockImplementation(async () => { toolTurn(); });
-    createAgentSession.mockResolvedValue({ session });
-    const first = await runAgent(ctx, "Explore", "prior", { pi });
-    expect(first.forceSteered).toBe(false);
-    const resumed = await resumeAgent(first.session, "go");
-    expect(session.steer).not.toHaveBeenCalled();
-    expect(resumed.forceSteered).toBe(false);
-    session.prompt.mockImplementation(async () => {
-      toolTurn();
-      toolTurn();
-      for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "DONE" }] }, toolResults: [] });
-    });
-    const wrapped = await resumeAgent(first.session, "go");
-    expect(session.steer).toHaveBeenCalledTimes(1);
-    expect(session.abort).not.toHaveBeenCalled();
-    expect(wrapped).toMatchObject({ forceSteered: true, interruptionCause: undefined });
-  });
-
-  it("A05 reports warnings separately from real tool completions", async () => {
+  it("A05 reports setup warnings without tool completions", async () => {
     vi.mocked(getConfig).mockReturnValueOnce(makeConfig());
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ toolRules: rules("tools", "+read, +@missing-extension") }));
-    const { session, listeners } = createSession("DONE");
-    session.prompt.mockImplementation(async () => {
-      for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
-    });
+    const { session } = createSession("DONE");
     createAgentSession.mockResolvedValue({ session });
     const activities: Array<{ type: string; toolName: string }> = [];
-    await runAgent(ctx, "Explore", "go", { pi, onToolActivity: (activity) => activities.push(activity) });
-    expect(activities.filter((activity) => activity.type === "end")).toEqual([{ type: "end", toolName: "read" }]);
+    await openSession(ctx, "Explore", { pi, onToolActivity: (activity) => activities.push(activity) });
+    expect(activities.filter((activity) => activity.type === "end")).toEqual([]);
     expect(activities.some((activity) => activity.type === "diagnostic" && activity.toolName.startsWith("tools-warning:"))).toBe(true);
   });
 
-  it("binds extensions before prompting", async () => {
+  it("binds extensions without prompting", async () => {
     const { session } = createSession("BOUND");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "Say BOUND", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect(session.bindExtensions).toHaveBeenCalledTimes(1);
     expect(session.bindExtensions).toHaveBeenCalledWith(
       expect.objectContaining({ onError: expect.any(Function) }),
     );
 
-    const bindOrder = session.bindExtensions.mock.invocationCallOrder[0];
-    const promptOrder = session.prompt.mock.invocationCallOrder[0];
-    expect(bindOrder).toBeLessThan(promptOrder);
+    expect(session.prompt).not.toHaveBeenCalled();
   });
 
   it("passes effective cwd and agentDir to the loader and settings manager", async () => {
     const { session } = createSession("CONFIGURED");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "Say CONFIGURED", { pi, cwd: "/tmp/worktree" });
+    await openSession(ctx, "Explore", { pi, cwd: "/tmp/worktree" });
 
     expect(getAgentDir).toHaveBeenCalledTimes(1);
     expect(defaultResourceLoaderCtor).toHaveBeenCalledWith(expect.objectContaining({
@@ -524,7 +318,7 @@ describe("agent-runner final output capture", () => {
     const model = { provider: "faux", id: "selected", name: "Selected" };
     const context = { ...ctx, model, modelRegistry: { find: () => model, getAll: () => [model], getAvailable: () => [model] } };
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: modelConfig }));
-    await runAgent(context, "Explore", "go", { pi: { ...pi, getThinkingLevel: () => "high" } });
+    await openSession(context, "Explore", { pi: { ...pi, getThinkingLevel: () => "high" } });
     expect(createAgentSession.mock.calls[0][0]).not.toHaveProperty("thinkingLevel");
   });
 
@@ -534,23 +328,23 @@ describe("agent-runner final output capture", () => {
     const model = { provider: "faux", id: "selected", name: "Selected" };
     const context = { ...ctx, modelRegistry: { find: () => model, getAll: () => [model], getAvailable: () => [model] } };
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope,faux/selected:high" }));
-    await runAgent(context, "Explore", "go", { pi });
+    await openSession(context, "Explore", { pi });
     expect(createAgentSession.mock.calls[0][0].model).toBe(model);
     expect(createAgentSession.mock.calls[0][0].thinkingLevel).toBe("high");
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope" }));
     const override = createAgentSession.mock.calls[0][0].model;
-    await expect(runAgent(context, "Explore", "go", { pi, model: override, thinkingLevel: "low" })).rejects.toThrow("No available model");
+    await expect(openSession(context, "Explore", { pi, model: override, thinkingLevel: "low" })).rejects.toThrow("No available model");
     expect(createAgentSession).toHaveBeenCalledTimes(1);
   });
 
   it("A02 direct runner rejects exhausted configuration and inherits only when absent", async () => {
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope" }));
-    await expect(runAgent(ctx, "Explore", "go", { pi })).rejects.toThrow("No available model in configured chain");
+    await expect(openSession(ctx, "Explore", { pi })).rejects.toThrow("No available model in configured chain");
     expect(createAgentSession).not.toHaveBeenCalled();
     const { session } = createSession("DONE");
     createAgentSession.mockResolvedValue({ session });
     const parent = { provider: "parent", id: "parent" };
-    await runAgent({ ...ctx, model: parent }, "Explore", "go", { pi });
+    await openSession({ ...ctx, model: parent }, "Explore", { pi });
     expect(createAgentSession.mock.calls[0][0].model).toBe(parent);
   });
 
@@ -563,7 +357,7 @@ describe("agent-runner final output capture", () => {
       modelRegistry: { ...ctx.modelRegistry, runtime: modelRuntime },
     };
 
-    await runAgent(context, "Explore", "Say AUTHENTICATED", { pi });
+    await openSession(context, "Explore", { pi });
 
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
       modelRuntime,
@@ -574,7 +368,7 @@ describe("agent-runner final output capture", () => {
     const { session } = createSession("ISOLATED");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "Say ISOLATED", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     // noContextFiles skips AGENTS.md/CLAUDE.md at the loader source;
     // appendSystemPromptOverride suppresses APPEND_SYSTEM.md (no flag equivalent).
@@ -597,7 +391,7 @@ describe("agent-runner final output capture", () => {
     const { session } = createSession("CTX");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect(defaultResourceLoaderCtor).toHaveBeenCalledWith(
       expect.objectContaining({ noContextFiles: false }),
@@ -612,27 +406,18 @@ describe("agent-runner final output capture", () => {
     const { session } = createSession("CTX");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, isolated: true });
+    await openSession(ctx, "Explore", { pi, isolated: true });
 
     expect(defaultResourceLoaderCtor).toHaveBeenCalledWith(
       expect.objectContaining({ noContextFiles: true }),
     );
   });
 
-  it("resumeAgent also falls back to the final assistant message text", async () => {
-    const { session } = createSession("RESUMED");
-
-    const result = await resumeAgent(session as any, "Continue");
-
-    expect(result.text).toBe("RESUMED");
-    expect(result.failure).toBeUndefined();
-  });
-
   it("sets the agent name as session name before binding extensions", async () => {
     const { session } = createSession("NAMED");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect(session.setSessionName).toHaveBeenCalledWith("Explore");
     const setOrder = session.setSessionName.mock.invocationCallOrder[0];
@@ -644,325 +429,9 @@ describe("agent-runner final output capture", () => {
     const { session } = createSession("NAMED");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, agentId: "a1b2c3d4e5f6" });
+    await openSession(ctx, "Explore", { pi, agentId: "a1b2c3d4e5f6" });
 
     expect(session.setSessionName).toHaveBeenCalledWith("Explore#a1b2c3d4");
-  });
-});
-
-// #144 — a failed FINAL assistant turn (stopReason "error") must surface as
-// `failure`; how the turn STOPPED decides, never whether it produced text.
-describe("agent-runner failed-final-turn detection (#144)", () => {
-  /** Session whose prompt() appends the given messages to history. */
-  function sessionEnding(...messages: any[]) {
-    const { session } = createSession("");
-    session.prompt = vi.fn(async () => {
-      session.messages.push(...messages);
-    }) as any;
-    return session;
-  }
-
-  const errorFinal = {
-    role: "assistant",
-    content: [],
-    stopReason: "error",
-    errorMessage: "retries exhausted: 529 overloaded",
-  };
-
-  it("propagates SDK abort without a controller as unknown on fresh and resumed runs", async () => {
-    const session = sessionEnding({ role: "assistant", content: [{ type: "text", text: "checkpoint" }], stopReason: "aborted" });
-    createAgentSession.mockResolvedValue({ session });
-    const result = await runAgent(ctx, "Explore", "go", { pi });
-    expect(result).toMatchObject({ interruptionCause: "unknown", aborted: true, responseText: "checkpoint" });
-    const resumed = await resumeAgent(result.session, "continue");
-    expect(resumed).toMatchObject({ interruptionCause: "unknown", text: "checkpoint" });
-  });
-
-  it("flags a run whose final turn is an empty provider error", async () => {
-    const session = sessionEnding(errorFinal);
-    createAgentSession.mockResolvedValue({ session });
-
-    const result = await runAgent(ctx, "Explore", "go", { pi });
-
-    expect(result.failure).toBe("retries exhausted: 529 overloaded");
-  });
-
-  it("flags the failure even when an EARLIER turn produced text (no masking)", async () => {
-    const session = sessionEnding(
-      { role: "assistant", content: [{ type: "text", text: "partial progress" }] },
-      { role: "toolResult", content: [] },
-      errorFinal,
-    );
-    createAgentSession.mockResolvedValue({ session });
-
-    const result = await runAgent(ctx, "Explore", "go", { pi });
-
-    expect(result.failure).toBe("retries exhausted: 529 overloaded");
-    // The earlier text stays available as context — status honesty, not data loss.
-    expect(result.responseText).toBe("partial progress");
-  });
-
-  it("flags a provider error that left partial text in the SAME final message", async () => {
-    const session = sessionEnding({
-      role: "assistant",
-      content: [{ type: "text", text: "truncated answ" }],
-      stopReason: "error",
-      errorMessage: "stream ended before message_stop",
-    });
-    createAgentSession.mockResolvedValue({ session });
-
-    const result = await runAgent(ctx, "Explore", "go", { pi });
-
-    expect(result.failure).toBe("stream ended before message_stop");
-    expect(result.responseText).toBe("truncated answ");
-  });
-
-  it.each([undefined, "", " \n\t"])("flags empty length output %j on fresh and resumed runs (#144)", async (text) => {
-    // stopReason "length" with empty content is a silent max-token death — it
-    // reproduces the #144 "completed with No output." symptom, so it must fail.
-    const session = sessionEnding({ role: "assistant", content: text === undefined ? [] : [{ type: "text", text }], stopReason: "length" });
-    createAgentSession.mockResolvedValue({ session });
-
-    const result = await runAgent(ctx, "Explore", "go", { pi });
-
-    expect(result.failure).toBe("run hit the output token limit before producing any text");
-    expect(result.responseText).toBe("");
-    expect(result.aborted).toBe(false);
-    expect(result.interruptionCause).toBeUndefined();
-    session.messages.push({ role: "assistant", content: [{ type: "text", text: "PRIOR ANSWER" }] });
-    const resumed = await resumeAgent(result.session, "continue");
-    expect(resumed.failure).toBe(result.failure);
-    expect(resumed.text).toBe("");
-    expect(resumed.interruptionCause).toBeUndefined();
-  });
-
-  it("completes fresh and resumed length stops that produced text", async () => {
-    const session = sessionEnding({
-      role: "assistant",
-      content: [{ type: "text", text: "truncated but useful answer" }],
-      stopReason: "length",
-    });
-    createAgentSession.mockResolvedValue({ session });
-
-    const result = await runAgent(ctx, "Explore", "go", { pi });
-
-    expect(result.failure).toBeUndefined();
-    expect(result.responseText).toBe("truncated but useful answer");
-    expect(result.interruptionCause).toBeUndefined();
-    expect(result.aborted).toBe(false);
-    const resumed = await resumeAgent(result.session, "continue");
-    expect(resumed.text).toBe("truncated but useful answer");
-    expect(resumed.failure).toBeUndefined();
-    expect(resumed.interruptionCause).toBeUndefined();
-  });
-
-  it("does NOT flag an empty final turn that stopped cleanly (no false failures)", async () => {
-    const session = sessionEnding(
-      { role: "assistant", content: [{ type: "text", text: "did the work" }] },
-      { role: "toolResult", content: [] },
-      { role: "assistant", content: [], stopReason: "stop" },
-    );
-    createAgentSession.mockResolvedValue({ session });
-
-    const result = await runAgent(ctx, "Explore", "go", { pi });
-
-    expect(result.failure).toBeUndefined();
-    expect(result.responseText).toBe("did the work"); // walk-back fallback preserved
-  });
-
-  it("resumeAgent applies the same rule", async () => {
-    const { session } = createSession("");
-    session.prompt = vi.fn(async () => {
-      session.messages.push(errorFinal);
-    }) as any;
-
-    const result = await resumeAgent(session as any, "Continue");
-
-    expect(result.failure).toBe("retries exhausted: 529 overloaded");
-  });
-
-  it("resume whose new turn fails empty does NOT return the previous turn's answer (#144)", async () => {
-    // The session already carries a completed prior turn; the resume prompt then
-    // fails empty. The walk-back must be bounded to this resume — result "".
-    const { session } = createSession("");
-    session.messages.push(
-      { role: "user", content: "first question" },
-      { role: "assistant", content: [{ type: "text", text: "PREVIOUS ANSWER" }], stopReason: "stop" },
-    );
-    session.prompt = vi.fn(async () => {
-      session.messages.push({ role: "user", content: "follow-up" }, errorFinal);
-    }) as any;
-
-    const result = await resumeAgent(session as any, "follow-up");
-
-    expect(result.failure).toBe("retries exhausted: 529 overloaded");
-    expect(result.text).toBe(""); // NOT "PREVIOUS ANSWER"
-  });
-
-  it("resume that produces partial text before failing returns only THIS resume's text", async () => {
-    const { session } = createSession("");
-    session.messages.push(
-      { role: "assistant", content: [{ type: "text", text: "PREVIOUS ANSWER" }], stopReason: "stop" },
-    );
-    session.prompt = vi.fn(async () => {
-      session.messages.push(
-        { role: "assistant", content: [{ type: "text", text: "new partial" }] },
-        { role: "toolResult", content: [] },
-        errorFinal,
-      );
-    }) as any;
-
-    const result = await resumeAgent(session as any, "go");
-
-    expect(result.failure).toBe("retries exhausted: 529 overloaded");
-    expect(result.text).toBe("new partial"); // this resume's progress, not the prior answer
-  });
-
-  it("collector: a toolResult/user message_start no longer wipes collected assistant text", async () => {
-    const { session, listeners } = createSession("");
-    createAgentSession.mockResolvedValue({ session });
-    session.prompt = vi.fn(async () => {
-      for (const l of listeners) {
-        l({ type: "message_start", message: { role: "assistant" } });
-        l({ type: "message_update", assistantMessageEvent: { type: "text_delta", delta: "STREAMED" } });
-        // pi emits message_start for tool results and queued user messages too.
-        l({ type: "message_start", message: { role: "toolResult" } });
-        l({ type: "message_start", message: { role: "user" } });
-      }
-    }) as any;
-
-    const result = await runAgent(ctx, "Explore", "go", { pi });
-
-    expect(result.responseText).toBe("STREAMED");
-  });
-});
-
-// ─── message_end → onAssistantUsage wiring (issue #38) ─────────────────
-// Both runAgent and resumeAgent dispatch usage to the caller via this
-// callback. The callback feeds the AgentRecord lifetime accumulator, which
-// is the source of truth for total tokens (survives compaction).
-describe("agent-runner usage callback wiring", () => {
-  function emitMessageEnd(listeners: Array<(e: any) => void>, usage: any) {
-    const event = { type: "message_end", message: { role: "assistant", usage } };
-    for (const l of listeners) l(event);
-  }
-
-  it("runAgent forwards full usage from message_end events", async () => {
-    const { session, listeners } = createSession("OK");
-    createAgentSession.mockResolvedValue({ session });
-
-    const seen: Array<{ input: number; output: number; cacheWrite: number }> = [];
-    session.prompt = vi.fn(async () => {
-      // Two assistant messages over the run
-      emitMessageEnd(listeners, { input: 100, output: 50, cacheWrite: 10, cacheRead: 500, cost: { total: 0.25 } });
-      emitMessageEnd(listeners, { input: 200, output: 80, cacheWrite: 20 });
-      session.messages.push({ role: "assistant", content: [{ type: "text", text: "OK" }] });
-    });
-
-    await runAgent(ctx, "Explore", "go", {
-      pi,
-      onAssistantUsage: (u) => seen.push(u),
-    });
-
-    expect(seen).toEqual([
-      { input: 100, output: 50, cacheWrite: 10, cacheRead: 500, cost: 0.25 },
-      { input: 200, output: 80, cacheWrite: 20, cacheRead: 0, cost: 0 },
-    ]);
-  });
-
-  it("runAgent normalizes partial usage objects to 0 for missing fields", async () => {
-    const { session, listeners } = createSession("OK");
-    createAgentSession.mockResolvedValue({ session });
-
-    const seen: any[] = [];
-    session.prompt = vi.fn(async () => {
-      emitMessageEnd(listeners, { input: 50 }); // output, cacheWrite missing
-      session.messages.push({ role: "assistant", content: [{ type: "text", text: "OK" }] });
-    });
-
-    await runAgent(ctx, "Explore", "go", {
-      pi,
-      onAssistantUsage: (u) => seen.push(u),
-    });
-
-    expect(seen).toEqual([{ input: 50, output: 0, cacheWrite: 0, cacheRead: 0, cost: 0 }]);
-  });
-
-  it("runAgent skips the callback when message_end has no usage field", async () => {
-    const { session, listeners } = createSession("OK");
-    createAgentSession.mockResolvedValue({ session });
-
-    const cb = vi.fn();
-    session.prompt = vi.fn(async () => {
-      emitMessageEnd(listeners, undefined);
-      session.messages.push({ role: "assistant", content: [{ type: "text", text: "OK" }] });
-    });
-
-    await runAgent(ctx, "Explore", "go", { pi, onAssistantUsage: cb });
-
-    expect(cb).not.toHaveBeenCalled();
-  });
-
-  it("resume reports completed turn_end separately from assistant usage", async () => {
-    const { session, listeners } = createSession("RESUMED");
-    const onTurnEnd = vi.fn();
-    const onAssistantUsage = vi.fn();
-    session.prompt = vi.fn(async () => {
-      emitMessageEnd(listeners, { input: 10 });
-      emitMessageEnd(listeners, { input: 20 });
-      expect(onTurnEnd).not.toHaveBeenCalled();
-      for (const listener of listeners) listener({ type: "turn_end" });
-    });
-    await resumeAgent(session as unknown as Parameters<typeof resumeAgent>[0], "continue", { onTurnEnd, onAssistantUsage });
-    expect(onAssistantUsage).toHaveBeenCalledTimes(2);
-    expect(onTurnEnd).toHaveBeenCalledExactlyOnceWith(1);
-  });
-
-  it("resumeAgent forwards usage on message_end the same way", async () => {
-    const { session, listeners } = createSession("RESUMED");
-    const seen: any[] = [];
-
-    session.prompt = vi.fn(async () => {
-      emitMessageEnd(listeners, { input: 10, output: 20, cacheWrite: 5, cacheRead: 50, cost: { total: 0.5 } });
-      session.messages.push({ role: "assistant", content: [{ type: "text", text: "RESUMED" }] });
-    });
-
-    await resumeAgent(session as any, "continue", {
-      onAssistantUsage: (u) => seen.push(u),
-    });
-
-    expect(seen).toEqual([{ input: 10, output: 20, cacheWrite: 5, cacheRead: 50, cost: 0.5 }]);
-  });
-
-  it("forwards compaction_end events to onCompaction (only when not aborted)", async () => {
-    const { session, listeners } = createSession("OK");
-    createAgentSession.mockResolvedValue({ session });
-
-    const seen: any[] = [];
-    session.prompt = vi.fn(async () => {
-      // Successful compaction — should fire
-      for (const l of listeners) l({
-        type: "compaction_end",
-        aborted: false,
-        reason: "threshold",
-        result: { tokensBefore: 12345 },
-      });
-      // Aborted compaction — should NOT fire
-      for (const l of listeners) l({
-        type: "compaction_end",
-        aborted: true,
-        reason: "manual",
-        result: { tokensBefore: 99999 },
-      });
-      session.messages.push({ role: "assistant", content: [{ type: "text", text: "OK" }] });
-    });
-
-    await runAgent(ctx, "Explore", "go", {
-      pi,
-      onCompaction: (info) => seen.push(info),
-    });
-
-    expect(seen).toEqual([{ reason: "threshold", tokensBefore: 12345 }]);
   });
 });
 
@@ -1044,7 +513,7 @@ describe("getAgentConversation", () => {
 });
 
 // ─── tool scoping (issues #47, #125) ─────────────────────────────────────
-// runAgent scopes a subagent's tools in one of two ways:
+// openSession scopes a subagent's tools in one of two ways:
 //   • Static allowlist (`tools:` session option) — ONLY when no extension loads
 //     (no `+` extensions: rule, or isolated). Nothing can register
 //     asynchronously there, so pi-mono's `allowedToolNames` gating both
@@ -1098,7 +567,7 @@ function makeConfig(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Configure the next runAgent call with `extensions:` / `tools:` rules (plus extra agent fields). */
+/** Configure the next openSession call with `extensions:` / `tools:` rules (plus extra agent fields). */
 function setupRules(extensions: string, tools: string, overrides: Record<string, unknown> = {}) {
   const access = { extensionRules: rules("extensions", extensions), toolRules: rules("tools", tools) };
   vi.mocked(getConfig).mockReturnValueOnce(makeConfig(access));
@@ -1176,7 +645,14 @@ function lastToolsPassed(): string[] {
   const gates: ToolAccessGates = { allowNesting: agentConfigResult?.allowNesting };
   const allowed = resolveToolAccess(toolRules, toolCandidates(lastSession!.getAllTools()), gates).allowed;
   const ceiling = createToolCeilingTool(TOOL_CEILING_TOOL_NAME, () => allowed);
-  const hidden = new Set(ceiling.prepareLoadout?.({ declared: active.map((name) => ({ name })) })?.hiddenDeclarations ?? []);
+  const declared = active.map((name) => ({
+    name, label: name, description: "fixture tool", parameters: ceiling.parameters,
+    execute: async () => ({ content: [], details: {} }),
+  }));
+  const hidden = new Set(ceiling.prepareLoadout?.({
+    declared, callable: declared, registered: declared,
+    getExposure: () => "direct", getNamespace: () => undefined, getPromptGuidelines: () => [],
+  })?.hiddenDeclarations ?? []);
   return active.filter((name) => !hidden.has(name));
 }
 
@@ -1197,7 +673,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect(sessionManagerInMemory).not.toHaveBeenCalled();
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
@@ -1211,7 +687,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/normal/pi/sessions", undefined);
   });
@@ -1222,7 +698,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, cwd: "/repo" });
+    await openSession(ctx, "Explore", { pi, cwd: "/repo" });
 
     expect(sessionManagerCreate).toHaveBeenCalledWith("/repo", "/repo/.seams/pi-sessions/seam-plan-reviewer", undefined);
   });
@@ -1233,7 +709,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, parentSessionId: "P" });
+    await openSession(ctx, "Explore", { pi, parentSessionId: "P" });
 
     expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", join("/mock/agent-dir", "subagent-sessions", "P"), undefined);
   });
@@ -1243,7 +719,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, parentSessionId: "P", cwd: "/repo" });
+    await openSession(ctx, "Explore", { pi, parentSessionId: "P", cwd: "/repo" });
 
     expect(sessionManagerCreate).toHaveBeenCalledWith("/repo", "/explicit/session/path", undefined);
   });
@@ -1253,10 +729,10 @@ describe("agent-runner session persistence", () => {
     settingsManagerGetSessionDir.mockReturnValue("/normal/pi/sessions");
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
-    await runAgent({
+    await openSession({
       ...ctx,
       sessionManager: { ...ctx.sessionManager, getSessionFile: () => "/tmp/parent.jsonl" },
-    }, "Explore", "go", { pi });
+    }, "Explore", { pi });
     expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/normal/pi/sessions", { parentSession: "/tmp/parent.jsonl" });
   });
 
@@ -1264,7 +740,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", isolated: true, skills: ["call-skill"] });
+    await openSession(ctx, "Explore", { pi, agentId: "agent-1", isolated: true, skills: ["call-skill"] });
 
     expect(sessionManagerAppendCustomEntry).toHaveBeenCalledWith(SUBAGENT_LAUNCH_ENTRY, {
       version: 1, agentId: "agent-1", type: "explore", isolated: true, skills: ["call-skill"],
@@ -1307,19 +783,12 @@ describe("agent-runner session reopen", () => {
 
   it("S10 reopens the given file instead of creating a session", async () => {
     const reopened = reopenWith();
-    const { session, listeners } = createSession("OK");
-    const onProgress = vi.fn();
-    session.prompt.mockImplementation(async () => {
-      for (const type of ["thinking_delta", "toolcall_delta"]) {
-        for (const listener of listeners) listener({ type: "message_update", assistantMessageEvent: { type, delta: "progress" } });
-      }
-    });
+    const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
-    const options = { pi, agentId: "agent-1", resumeSessionFile: file, onProgress };
+    const options = { pi, agentId: "agent-1", resumeSessionFile: file };
 
-    await runAgent(ctx, "Explore", "go", options);
+    await openSession(ctx, "Explore", options);
 
-    expect(onProgress.mock.calls).toEqual([[], []]);
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ sessionManager: reopened }));
     expect(sessionManagerCreate).not.toHaveBeenCalled();
   });
@@ -1329,7 +798,7 @@ describe("agent-runner session reopen", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
+    await openSession(ctx, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file });
 
     expect([createAgentSession.mock.calls[0][0].cwd, lastLoaderOpts().cwd]).toEqual([childCwd, "/tmp"]);
   });
@@ -1340,7 +809,7 @@ describe("agent-runner session reopen", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file, isolated: false });
+    await openSession(ctx, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file, isolated: false });
 
     expect(lastLoaderOpts().noExtensions).toBe(true);
   });
@@ -1350,25 +819,9 @@ describe("agent-runner session reopen", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file, skills: ["call-skill"] });
+    await openSession(ctx, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file, skills: ["call-skill"] });
 
     expect(_preloadSkills).toHaveBeenLastCalledWith(["launch-skill"], "/tmp");
-  });
-
-  it("reopen gets the turn ceiling", async () => {
-    vi.stubEnv("SUBAGENT_TURN_CEILING", "1");
-    reopenWith();
-    const { session, listeners } = createSession("DONE");
-    session.prompt.mockImplementation(async () => {
-      for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
-      for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
-    });
-    createAgentSession.mockResolvedValue({ session });
-
-    const result = await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
-
-    expect(session.steer).toHaveBeenCalledWith(TURN_CEILING_REMINDER);
-    expect(result.forceSteered).toBe(true);
   });
 
   it("S10 reopen re-seeds the parent's Agent-tree scope", async () => {
@@ -1383,7 +836,7 @@ describe("agent-runner session reopen", () => {
       },
     };
 
-    await runAgent(context, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
+    await openSession(context, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file });
 
     expect(reopened.appendCustomEntry).toHaveBeenCalledWith("session-local:scope", { version: 1, rootScopeId: "root-session" });
   });
@@ -1400,9 +853,10 @@ describe("agent-runner session reopen", () => {
       },
     };
 
-    await runAgent(context, "Explore", "continue", { pi, agentId: "agent-1", resumeSessionFile: file, inheritContext: true });
+    const opened = await openSession(context, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file, inheritContext: true });
 
-    expect(session.prompt).toHaveBeenCalledWith("continue");
+    expect(opened.promptPrefix).toBeUndefined();
+    expect(session.prompt).not.toHaveBeenCalled();
   });
 });
 
@@ -1422,7 +876,7 @@ describe("agent-runner session-local Agent-tree scope", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(context, "Explore", "go", { pi });
+    await openSession(context, "Explore", { pi });
 
     expect(sessionManagerAppendCustomEntry).toHaveBeenNthCalledWith(
       1,
@@ -1434,11 +888,12 @@ describe("agent-runner session-local Agent-tree scope", () => {
     );
   });
 
-  it("resume reuses the existing session without reseeding scope metadata", async () => {
-    const { session } = createSession("RESUMED");
-
-    await resumeAgent(session as any, "continue");
-
+  it("later turns do not reseed the existing session scope", async () => {
+    const { session, listeners } = createSession("RESUMED");
+    createAgentSession.mockResolvedValue({ session });
+    await openSession(ctx, "Explore", { pi });
+    sessionManagerAppendCustomEntry.mockClear();
+    for (const listener of listeners) listener({ type: "turn_end" });
     expect(sessionManagerAppendCustomEntry).not.toHaveBeenCalled();
   });
 });
@@ -1459,7 +914,7 @@ describe("agent-runner trusted session-local binding", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const inline = trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
@@ -1481,7 +936,7 @@ describe("agent-runner trusted session-local binding", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, isolated: true });
+    await openSession(ctx, "Explore", { pi, isolated: true });
 
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
@@ -1503,7 +958,7 @@ describe("agent-runner trusted session-local binding", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await runAgent(ctx, "Explore", "go", { pi, onToolActivity });
+    await openSession(ctx, "Explore", { pi, onToolActivity });
 
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
@@ -1527,7 +982,7 @@ describe("agent-runner trusted session-local binding", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
@@ -1556,7 +1011,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
       const { session } = createSession("OK");
       createAgentSession.mockResolvedValue({ session });
 
-      await runAgent(ctx, canonicalType, "go", { pi });
+      await openSession(ctx, canonicalType, { pi });
 
       expect(factories()).toEqual(expect.arrayContaining([
         expect.objectContaining({ name: "session-local", hidden: true }),
@@ -1577,7 +1032,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, canonicalType, "go", { pi });
+    await openSession(ctx, canonicalType, { pi });
 
     expect(factories().map(({ name }) => name)).toEqual(["subagent-model-fallback", "subagent-fast", "session-local"]);
   });
@@ -1589,7 +1044,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "chengfeng", "go", { pi, isolated: true });
+    await openSession(ctx, "chengfeng", { pi, isolated: true });
 
     expect(factories().map(({ name }) => name)).toEqual(["subagent-model-fallback", "subagent-fast", "session-local", "smart-tool-guards"]);
     expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
@@ -1612,7 +1067,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "chengfeng", "go", { pi });
+    await openSession(ctx, "chengfeng", { pi });
 
     expect(loaderExtensionsRef.current.extensions.map(({ path }) => path)).toEqual([
       "/ext/mcp.ts",
@@ -1632,7 +1087,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
       vi.mocked(resolveType).mockReturnValueOnce(canonicalType);
       const { session } = createSession("OK");
       createAgentSession.mockResolvedValue({ session });
-      await runAgent(ctx, canonicalType, "go", { pi });
+      await openSession(ctx, canonicalType, { pi });
       const inline = factories().find(({ name }) => name === "smart-tool-guards");
       const eventListeners = new Map<string, Set<(data: unknown) => void>>();
       const handlers: Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>> = [];
@@ -1679,7 +1134,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     // `tools: +@all` grants grep/find/ls too, but Pi only auto-activates its
     // four default built-ins — no `tools:` rule can turn on a default-off tool.
@@ -1696,7 +1151,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("tool_a");
@@ -1709,7 +1164,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).not.toContain("mcp");     // not granted
@@ -1726,7 +1181,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).not.toContain("agent");
@@ -1740,7 +1195,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect(lastToolsPassed()).toEqual(["read", "grep", "find", "ls"]);
   });
@@ -1751,7 +1206,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     // Allowlist unset so async tools (e.g. MCP on session_start) can register;
     // scope is a denylist of our orchestration tools (every built-in is granted).
@@ -1776,7 +1231,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect(new Set(createAgentSession.mock.calls[0][0].excludeTools)).toEqual(new Set([
       ...Object.values(SUBAGENT_TOOL_NAMES),
@@ -1812,7 +1267,7 @@ describe("agent-runner async extension tool registration", () => {
       registerLate("/ext/mcp.ts", "mcp_search");
     });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect(lastToolsPassed()).toContain("mcp_search");
   });
@@ -1823,11 +1278,11 @@ describe("agent-runner async extension tool registration", () => {
     const { session, listeners } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
     expect(session.getActiveToolNames()).not.toContain("mcp_search");
 
     // A lazy MCP server connects mid-conversation (context-mode registers at
-    // before_agent_start, i.e. after runAgent already installed the scope).
+    // before_agent_start, i.e. after openSession already installed the scope).
     registerLate("/ext/mcp.ts", "mcp_search");
     for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
@@ -1840,7 +1295,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session, listeners } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     registerLate("/ext/foo.ts", "foo_late");
     registerLate("/ext/bar.ts", "bar_late");
@@ -1865,7 +1320,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session, listeners } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     registerLate("/ext/foo.ts", "foo_late");
     registerLate("/ext/bar.ts", "bar_late");
@@ -1885,7 +1340,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     await expect(
       session.agent.beforeToolCall?.({ toolCall: { name: "bar_tool" } }),
@@ -1903,22 +1358,20 @@ describe("agent-runner async extension tool registration", () => {
     session.agent.beforeToolCall = prior;
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
     await session.agent.beforeToolCall?.({ toolCall: { name: "foo_tool" } });
 
     expect(prior).toHaveBeenCalledTimes(1);
   });
 
-  it("scope outlives runAgent so resumed turns stay narrowed", async () => {
-    // runAgent tears down its own turn subscription in `finally`; the scope
-    // hooks must NOT be torn down with it, or resume/steer would drift.
+  it("scope remains installed after opening so later turns stay narrowed", async () => {
+    // Opening must leave the scope hooks installed for later turns.
     setup("+read, +foo_late");
     withExtensions({ "/ext/foo.ts": [], "/ext/bar.ts": [] });
     const { session, listeners } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
-    await resumeAgent(session as any, "keep going");
+    await openSession(ctx, "Explore", { pi });
 
     registerLate("/ext/foo.ts", "foo_late");
     registerLate("/ext/bar.ts", "bar_late");
@@ -1939,7 +1392,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, isolated: true });
+    await openSession(ctx, "Explore", { pi, isolated: true });
 
     // A hard registry gate is the right boundary here: nothing can register
     // asynchronously, so there is no active-set narrowing to maintain.
@@ -1970,7 +1423,7 @@ describe("agent-runner extension rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("mcp");
@@ -1996,7 +1449,7 @@ describe("agent-runner extension rules", () => {
       const { session } = createSession("OK");
       createAgentSession.mockResolvedValue({ session });
 
-      await runAgent(ctx, "Explore", "go", { pi });
+      await openSession(ctx, "Explore", { pi });
 
       expect(lastToolsPassed()).toContain("pkg_tool");
     } finally {
@@ -2014,7 +1467,7 @@ describe("agent-runner extension rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await runAgent(ctx, "Explore", "go", { pi, onToolActivity });
+    await openSession(ctx, "Explore", { pi, onToolActivity });
 
     const tools = lastToolsPassed();
     expect(tools).not.toContain("notify_send");
@@ -2029,7 +1482,7 @@ describe("agent-runner extension rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await runAgent(ctx, "Explore", "go", { pi, onToolActivity });
+    await openSession(ctx, "Explore", { pi, onToolActivity });
 
     expect(diagnosticsOf(onToolActivity, "extension-")).toEqual([]);
     expect(lastToolsPassed()).toContain("mcp_tool");
@@ -2042,9 +1495,9 @@ describe("agent-runner extension rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    const result = await runAgent(ctx, "Explore", "go", { pi, onToolActivity });
+    const result = await openSession(ctx, "Explore", { pi, onToolActivity });
 
-    expect(result.responseText).toBe("OK");
+    expect(result.session).toBe(session);
     expect(diagnosticsOf(onToolActivity, "extension-")).toEqual([
       'extension-warning:"typo" matches no extension (agent "Explore")',
     ]);
@@ -2055,7 +1508,7 @@ describe("agent-runner extension rules", () => {
     withExtensions({ "/a/twin.ts": [], "/b/twin/index.ts": [] });
     createAgentSession.mockResolvedValue(createSession("OK"));
 
-    await expect(runAgent(ctx, "Explore", "go", { pi })).rejects.toThrow(/Agent "Explore" extensions: "twin" is ambiguous/);
+    await expect(openSession(ctx, "Explore", { pi })).rejects.toThrow(/Agent "Explore" extensions: "twin" is ambiguous/);
     expect(createAgentSession).not.toHaveBeenCalled();
   });
 
@@ -2064,7 +1517,7 @@ describe("agent-runner extension rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect((lastLoaderOpts().extensionFactories as Array<Record<string, unknown>>).filter(({ builtin }) => builtin)).toEqual([
       expect.objectContaining({ name: "codemode", builtin: true, replaceable: true }),
@@ -2079,7 +1532,7 @@ describe("agent-runner extension rules", () => {
     createAgentSession.mockResolvedValue({ session });
     createCodemodeExtension.mockClear();
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect({ names: builtinFactoryNames(), options: createCodemodeExtension.mock.calls }).toEqual({
       names: ["codemode"],
@@ -2092,7 +1545,7 @@ describe("agent-runner extension rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect(builtinFactoryNames()).toEqual([]);
   });
@@ -2103,7 +1556,7 @@ describe("agent-runner extension rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect({ noExtensions: lastLoaderOpts().noExtensions, builtins: builtinFactoryNames() })
       .toEqual({ noExtensions: true, builtins: [] });
@@ -2121,7 +1574,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("foo_tool");
@@ -2136,7 +1589,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect([...lastToolsPassed()].sort()).toEqual(["foo_a", "foo_c"]);
   });
@@ -2146,7 +1599,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const factory = (lastLoaderOpts().extensionFactories as Array<{ name: string; hidden?: boolean; factory(pi: unknown): void }>)
       .find(({ name }) => name === "subagent-nested-tool-scope");
@@ -2172,7 +1625,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const factory = (lastLoaderOpts().extensionFactories as Array<{ name: string; factory(pi: unknown): void }>)
       .find(({ name }) => name === "subagent-nested-tool-scope");
@@ -2194,7 +1647,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     expect((lastLoaderOpts().extensionFactories as Array<{ name: string }>).map(({ name }) => name))
       .not.toContain("subagent-nested-tool-scope");
@@ -2206,7 +1659,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("read");
@@ -2219,7 +1672,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("foo_a");
@@ -2234,7 +1687,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi });
+    await openSession(ctx, "Explore", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("Bar");
@@ -2247,7 +1700,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, isolated: true });
+    await openSession(ctx, "Explore", { pi, isolated: true });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("read");
@@ -2261,7 +1714,7 @@ describe("agent-runner tool rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await runAgent(ctx, "Explore", "go", { pi, onToolActivity });
+    await openSession(ctx, "Explore", { pi, onToolActivity });
 
     expect(diagnosticsOf(onToolActivity, "tools-")).toEqual([]);
   });
@@ -2273,7 +1726,7 @@ describe("agent-runner tool rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await runAgent(ctx, "Explore", "go", { pi, onToolActivity });
+    await openSession(ctx, "Explore", { pi, onToolActivity });
     for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
     expect(diagnosticsOf(onToolActivity, "tools-")).toEqual(['tools-warning:"@nope" matches no tool (agent "Explore")']);
@@ -2307,7 +1760,7 @@ describe("agent-runner MCP excludes", () => {
     createAgentSession.mockResolvedValue({ session });
     const getAllTools = () => parentTools.map((name) => ({ name, sourceInfo: { path: "builtin:mcp" } }));
 
-    await runAgent(ctx, "Explore", "go", { pi: { ...pi, getAllTools }, cwd: dir });
+    await openSession(ctx, "Explore", { pi: { ...pi, getAllTools }, cwd: dir });
 
     return createAgentSession.mock.calls[0][0].excludeTools;
   }
@@ -2394,7 +1847,7 @@ describe("agent-runner MCP excludes", () => {
 // ---------- per-call skills injection ----------
 const mockPreloadSkills = vi.mocked(_preloadSkills);
 
-describe("runAgent — per-call skills injection", () => {
+describe("openSession — per-call skills injection", () => {
   beforeEach(() => {
     mockPreloadSkills.mockClear();
   });
@@ -2425,14 +1878,14 @@ describe("runAgent — per-call skills injection", () => {
 
   it("(RED→GREEN) options.skills unions with config.preloadSkills, deduped", async () => {
     setupSkillsTestCtx();
-    await runAgent(ctx, "Worker" as any, "go", { pi, skills: ["a", "b"] });
+    await openSession(ctx, "Worker", { pi, skills: ["a", "b"] });
     // config has ["a"], options has ["a","b"]; union deduped = ["a","b"]
     expect(mockPreloadSkills).toHaveBeenCalledWith(["a", "b"], expect.any(String));
   });
 
   it("(RED→GREEN) isolated:true with options.skills -> preloadSkills called with []", async () => {
     setupSkillsTestCtx();
-    await runAgent(ctx, "Worker" as any, "go", { pi, isolated: true, skills: ["a"] });
+    await openSession(ctx, "Worker", { pi, isolated: true, skills: ["a"] });
     // isolated overrides to empty list; preloadSkills should not be called with non-empty list
     expect(mockPreloadSkills).not.toHaveBeenCalledWith(expect.arrayContaining(["a"]), expect.any(String));
   });
@@ -2446,18 +1899,9 @@ it("retains the previously selected candidate when availability changes before t
   vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: modelInput }));
   const find = vi.fn();
   const context = { ...ctx, modelRegistry: { find, getAll: () => [], getAvailable: () => [], isUsingOAuth: () => false } };
-  await runAgent(context, "Explore", "go", { pi, selectedModel: { model, fast: false, modelInput } });
+  await openSession(context, "Explore", { pi, selectedModel: { model, fast: false, modelInput } });
   expect(find).not.toHaveBeenCalled();
   expect(createAgentSession.mock.calls[0][0].model).toBe(model);
-});
-
-it("does not prompt when the parent aborted during session startup", async () => {
-  const signal = new AbortController();
-  const { session } = createSession("UNREACHABLE");
-  createAgentSession.mockImplementation(async () => { signal.abort(); return { session }; });
-  const result = await runAgent(ctx, "Explore", "go", { pi, signal: signal.signal });
-  expect(session.prompt).not.toHaveBeenCalled();
-  expect(result.aborted).toBe(true);
 });
 
 describe("graph run structured output", () => {
@@ -2470,119 +1914,29 @@ describe("graph run structured output", () => {
     },
   };
 
-  it.each(["stop", "length"])("injects before session creation, repairs %s prose once, and resets capture on resume", async (stopReason) => {
+  it("injects StructuredOutput into the static allowlist before session creation", async () => {
     const { session } = createSession("prose");
     createAgentSession.mockResolvedValue({ session });
-    let calls = 0;
-    session.prompt.mockImplementation(async () => {
-      calls++;
-      session.messages.push({ role: "assistant", content: [{ type: "text", text: "prose" }], stopReason });
-      const tool = createAgentSession.mock.calls[0][0].customTools[0];
-      if (calls === 2 || calls === 4) await tool.execute("result", { answer: `answer-${calls}` });
-    });
-    const result = await runAgent(ctx, "Explore", "answer", { pi, graphRun: true, structuredOutput: schema });
+    await openSession(ctx, "Explore", { pi, graphRun: true, structuredOutput: schema });
     expect(createAgentSession.mock.calls[0][0].tools).toContain("StructuredOutput");
-    expect(result.aborted).toBe(false);
-    expect(result.interruptionCause).toBeUndefined();
-    expect(result.structuredJson).toBe('{"answer":"answer-2"}');
-    expect(result.structuredRetried).toBe(true);
-    expect(result.failure).toBeUndefined();
-    const resumed = await resumeAgent(result.session, "again");
-    expect(resumed.failure).toBeUndefined();
-    expect(resumed.interruptionCause).toBeUndefined();
-    expect(resumed.structuredJson).toBe('{"answer":"answer-4"}');
-    expect(resumed.structuredRetried).toBe(true);
-    expect(session.prompt).toHaveBeenCalledTimes(4);
-  });
-
-  it.each(["stop", "length"])("fails after a single %s prose repair and does not reuse a prior answer", async (stopReason) => {
-    const { session } = createSession("prose");
-    session.prompt.mockImplementation(async () => {
-      session.messages.push({ role: "assistant", content: [{ type: "text", text: "prose" }], stopReason });
-    });
-    createAgentSession.mockResolvedValue({ session });
-    const result = await runAgent(ctx, "Explore", "answer", { pi, structuredOutput: schema });
-    expect(result.failure).toContain("StructuredOutput was not produced");
-    expect(result.structuredJson).toBeUndefined();
-    expect(result.aborted).toBe(false);
-    expect(result.interruptionCause).toBeUndefined();
-    expect(result.structuredRetried).toBe(true);
-    expect(session.prompt).toHaveBeenCalledTimes(2);
-    const resumed = await resumeAgent(result.session, "again");
-    expect(resumed.failure).toContain("StructuredOutput was not produced");
-    expect(resumed.structuredJson).toBeUndefined();
-    expect(resumed.interruptionCause).toBeUndefined();
-    expect(resumed.structuredRetried).toBe(true);
-    expect(session.prompt).toHaveBeenCalledTimes(4);
-  });
-
-  it("validates payloads with a model-visible tool error", async () => {
-    const { session } = createSession("prose");
-    createAgentSession.mockResolvedValue({ session });
-    session.prompt.mockImplementation(async () => {
-      const tool = createAgentSession.mock.calls[0][0].customTools[0];
-      await expect(tool.execute("bad", { answer: 5 })).rejects.toThrow("answer must be a string");
-      await tool.execute("good", { answer: "validated" });
-    });
-    const result = await runAgent(ctx, "Explore", "answer", { pi, structuredOutput: schema });
-    expect(result.structuredJson).toBe('{"answer":"validated"}');
-    expect(result.structuredRetried).toBe(false);
-    expect(session.prompt).toHaveBeenCalledTimes(1);
   });
 
   it("keeps StructuredOutput through live narrowing but blocks child orchestration tools", async () => {
     setupRules("+@all, -@builtin", "+@builtin", { allowNesting: true });
     const { session, listeners } = createSession("prose");
     createAgentSession.mockResolvedValue({ session });
-    const result = await runAgent(ctx, "Explore", "answer", { pi, graphRun: true, structuredOutput: schema });
+    await openSession(ctx, "Explore", { pi, graphRun: true, structuredOutput: schema });
+    expect(createAgentSession.mock.calls[0][0].customTools.map((tool: { name: string }) => tool.name)).toContain("StructuredOutput");
     expect(session.getActiveToolNames()).toContain("StructuredOutput");
     expect(createAgentSession.mock.calls[0][0].excludeTools).toContain("agent_graph");
     await expect(session.agent.beforeToolCall?.({ toolCall: { name: "StructuredOutput" } })).resolves.toBeUndefined();
     await expect(session.agent.beforeToolCall?.({ toolCall: { name: "agent_graph" } })).resolves.toMatchObject({ block: true });
     for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", content: [], stopReason: "stop" } });
-    await resumeAgent(result.session, "again");
+
     expect(session.getActiveToolNames()).toContain("StructuredOutput");
     expect(session.getActiveToolNames()).not.toContain("agent_graph");
   });
 
-  it.each(["sdk", "signal", "turn-limit"])("suppresses structured repair after %s interruption", async (kind) => {
-    const { session, listeners } = createSession("checkpoint");
-    const controller = new AbortController();
-    createAgentSession.mockResolvedValue({ session });
-    session.prompt.mockImplementation(async () => {
-      session.messages.push({ role: "assistant", content: [{ type: "text", text: "checkpoint" }], stopReason: kind === "sdk" ? "aborted" : "length" });
-      if (kind === "signal") controller.abort();
-      if (kind === "turn-limit") {
-        for (let turn = 0; turn < 10 && !session.abort.mock.calls.length; turn++) {
-          for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
-        }
-      }
-    });
-    if (kind === "turn-limit") vi.stubEnv("SUBAGENT_TURN_CEILING", "1");
-    const result = await runAgent(ctx, "Explore", "answer", { pi, structuredOutput: schema, signal: controller.signal });
-    expect(result.aborted).toBe(true);
-    expect(result.interruptionCause).toBe(kind === "turn-limit" ? "turn-limit" : "unknown");
-    expect(result.structuredRetried).toBe(false);
-    expect(session.prompt).toHaveBeenCalledTimes(1);
-    if (kind !== "turn-limit") {
-      const resumed = await resumeAgent(result.session, "again", { signal: controller.signal });
-      expect(resumed.interruptionCause).toBe("unknown");
-      expect(resumed.structuredRetried).toBe(false);
-      expect(session.prompt).toHaveBeenCalledTimes(kind === "sdk" ? 2 : 1);
-    }
-  });
-
-  it("never prompts a pre-aborted structured session", async () => {
-    const { session } = createSession("prose");
-    createAgentSession.mockResolvedValue({ session });
-    const result = await runAgent(ctx, "Explore", "answer", {
-      pi, structuredOutput: schema, signal: AbortSignal.abort(),
-    });
-    expect(result.aborted).toBe(true);
-    expect(session.prompt).not.toHaveBeenCalled();
-    await resumeAgent(result.session, "again", { signal: AbortSignal.abort() });
-    expect(session.prompt).not.toHaveBeenCalled();
-  });
 });
 
 describe("delegate_research bridge loading", () => {
@@ -2603,7 +1957,7 @@ describe("delegate_research bridge loading", () => {
     setupRules("+@all, -@builtin", "+read", bridge);
     createAgentSession.mockResolvedValue(createSession("OK"));
 
-    await runAgent(ctx, "Explore", "go", { pi, nestedSpawn });
+    await openSession(ctx, "Explore", { pi, nestedSpawn });
 
     expect(registeredResearchTools()).toEqual(["delegate_research"]);
   });
@@ -2617,7 +1971,7 @@ describe("delegate_research bridge loading", () => {
     setupRules("+@all, -@builtin", "+read", overrides);
     createAgentSession.mockResolvedValue(createSession("OK"));
 
-    await runAgent(ctx, "Explore", "go", { pi, nestedSpawn, ...callOptions });
+    await openSession(ctx, "Explore", { pi, nestedSpawn, ...callOptions });
 
     expect(registeredResearchTools()).toEqual([]);
     expect(lastToolsPassed() ?? []).not.toContain("delegate_research");
@@ -2627,7 +1981,7 @@ describe("delegate_research bridge loading", () => {
     setupRules("", "+read", bridge);
     createAgentSession.mockResolvedValue(createSession("OK"));
 
-    await runAgent(ctx, "Explore", "go", { pi, nestedSpawn });
+    await openSession(ctx, "Explore", { pi, nestedSpawn });
 
     expect(lastToolsPassed()).toEqual(["read", "delegate_research"]);
   });

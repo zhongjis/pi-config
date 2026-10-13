@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ClassifierResult, Usage } from "@earendil-works/pi-ai";
-import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import * as agentTypes from "../src/agent-types.js";
@@ -14,11 +14,13 @@ import { createNodeHost, type NodeHostOptions } from "../src/graph/node-host-ada
 import { runGraph } from "../src/graph/run-graph.js";
 import type { AgentConfig } from "../src/types.js";
 
-vi.mock("../src/agent-runner.js", () => ({ runAgent: vi.fn(), resumeAgent: vi.fn() }));
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import { graphRunNodeArtifactId } from "../src/graph/history-artifact.js";
 import * as outputFiles from "../src/output-file.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 const ui: Pick<ExtensionContext["ui"], "notify"> = { notify: vi.fn() };
 const ctx = {
@@ -63,8 +65,6 @@ function configureAgent(config: AgentConfig | undefined): void {
   vi.spyOn(agentTypes, "getAgentConfig").mockReturnValue(config);
 }
 
-const session = () => ({ dispose: vi.fn(), subscribe: vi.fn(() => () => {}) }) as unknown as AgentSession;
-
 let manager: AgentManager;
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -88,7 +88,7 @@ function setup(responseText = "done", options: { context?: ExtensionContext; sco
     scopeModels: options.scopeModels,
     awaitEscalation: options.awaitEscalation,
   });
-  vi.mocked(runAgent).mockImplementation(async () => ({ session: session(), responseText, aborted: false, forceSteered: false }));
+  vi.mocked(openSession).mockImplementation(async () => opened(fakeSession(() => responseText)));
   return { host, exec };
 }
 
@@ -144,12 +144,12 @@ describe("createNodeHost", () => {
   it("prepares configured graph model and thinking with graph run ownership", async () => {
     configureAgent(agentConfig({ model: "test/chosen:high" }));
     const { host } = setup("out", { context: modelContext() });
-    vi.mocked(runAgent).mockClear();
+    vi.mocked(openSession).mockClear();
     await host.spawnAgent(
       { nodeId: "a", attempt: 1, agentType: "fixture", prompt: "task" },
       new AbortController().signal,
     );
-    expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3]).toMatchObject({
+    expect(vi.mocked(openSession).mock.calls.at(-1)?.[2]).toMatchObject({
       graphRun: true,
       selectedModel: { model, modelInput: "test/chosen:high" },
       thinkingLevel: "high",
@@ -166,12 +166,12 @@ describe("createNodeHost", () => {
       configureAgent(agentConfig({ model: "test/chosen" }));
       const allowed = { ...model, id: "allowed" };
       const { host } = setup("out", { context: modelContext(cwd, [model, allowed]), scopeModels: () => true });
-      vi.mocked(runAgent).mockClear();
+      vi.mocked(openSession).mockClear();
       await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "fixture", prompt: "task" }, new AbortController().signal);
       await host.spawnAgent({ nodeId: "b", attempt: 1, agentType: "fixture", prompt: "task" }, new AbortController().signal);
       expect(ui.notify).toHaveBeenCalledOnce();
       expect(ui.notify).toHaveBeenCalledWith("Model not in scope: test/chosen", "warning");
-      expect(runAgent).toHaveBeenCalledTimes(2);
+      expect(openSession).toHaveBeenCalledTimes(2);
       await host.dispose();
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -181,10 +181,7 @@ describe("createNodeHost", () => {
 
 it("returns authoritative lifetime USD cost, independently of token counts", async () => {
   const { host } = setup();
-  vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-    options.onAssistantUsage?.({ input: 7, output: 3, cacheRead: 0, cacheWrite: 0, cost: 0.125 });
-    return { session: session(), responseText: "done", aborted: false, forceSteered: false };
-  });
+  vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => ({ text: "done", usage: { input: 7, output: 3, cost: 0.125 } }))));
   const result = await host.spawnAgent({ nodeId: "paid", attempt: 1, agentType: "general-purpose", prompt: "task" }, new AbortController().signal);
   expect(manager.listAgents()[0]?.lifetimeCost).toBe(0.125);
   expect(result.costUsd).toBe(0.125);
@@ -200,11 +197,8 @@ it("uses the registered history index alias for graph transcript paths and entri
   const nodeIndex = vi.fn(() => 17);
   const pi: Pick<ExtensionAPI, "exec"> = { exec: vi.fn() };
   const host = createNodeHost({ pi: pi as ExtensionAPI, ctx, manager, graphRunId: "run-id", nodeIndex });
-  vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-    const child = session();
-    options.onSessionCreated?.(child);
-    return { session: child, responseText: "done", aborted: false, forceSteered: false };
-  });
+  const child = fakeSession(() => "done");
+  vi.mocked(openSession).mockResolvedValue(opened(child));
   await host.spawnAgent({ nodeId: "private-binding", attempt: 1, agentType: "general-purpose", prompt: "FIXTURE" }, new AbortController().signal);
   const alias = graphRunNodeArtifactId("run-id", 17);
   expect(nodeIndex).toHaveBeenCalledWith("private-binding");
@@ -225,7 +219,7 @@ it.each(["unknown", "removed-config", "disabled"])('fails closed for %s graph ag
   const result = await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "fixture", prompt: "task" }, new AbortController().signal);
   expect(result.ok).toBe(false);
   expect(result.error).toMatch(/agent.*fixture.*unavailable/i);
-  expect(runAgent).not.toHaveBeenCalled();
+  expect(openSession).not.toHaveBeenCalled();
   expect(manager.listAgents()).toHaveLength(0);
   await host.dispose();
 });
@@ -235,8 +229,8 @@ it("preserves case-insensitive valid names and resolves the agent's frontmatter 
   const { host } = setup("done", { context: modelContext() });
   const result = await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "FiXtUrE", prompt: "task" }, new AbortController().signal);
   expect(result.ok).toBe(true);
-  expect(vi.mocked(runAgent).mock.calls.at(-1)?.[1]).toBe("fixture");
-  expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3].selectedModel?.model).toEqual(model);
+  expect(vi.mocked(openSession).mock.calls.at(-1)?.[1]).toBe("fixture");
+  expect(vi.mocked(openSession).mock.calls.at(-1)?.[2].selectedModel?.model).toEqual(model);
   await host.dispose();
 });
 
@@ -251,19 +245,10 @@ describe("decision chain", () => {
     api: "fixture-classify", provider: "fixture", model: "cls", answers: { ship: { type: "bool", probability } }, stopReason: "stop", timestamp: 0, ...over,
   });
   const failed = (over: Partial<ClassifierResult> = {}): ClassifierResult => ({ ...classified(0.5), answers: {}, stopReason: "error", errorMessage: "boom", ...over });
-  const evidence = (provider: string, id: string) => ({
-    dispose: vi.fn(), thinkingLevel: "low",
-    subscribe: vi.fn((listener: (event: unknown) => void) => {
-      listener({ type: "message_end", message: { role: "assistant", provider, model: id } });
-      return () => {};
-    }),
-  }) as unknown as AgentSession;
-  const answered = (structuredJson: string | undefined, cost = 0.25) => vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-    const child = evidence("fixture", "chat");
-    options.onSessionCreated?.(child);
-    options.onAssistantUsage?.({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost });
-    return { session: child, responseText: "", aborted: false, forceSteered: false, structuredJson };
-  });
+  const answered = (structuredJson: string | undefined, cost = 0.25) => vi.mocked(openSession).mockResolvedValue(opened(fakeSession((_prompt, child) => {
+    if (structuredJson !== undefined) child.structuredOutput(JSON.parse(structuredJson));
+    return { text: "", usage: { input: 1, output: 1, cost } };
+  }, { model: { provider: "fixture", id: "chat" }, thinkingLevel: "low", structured: true })));
 
   let cwd: string;
   beforeEach(() => {
@@ -316,7 +301,7 @@ describe("decision chain", () => {
     expect(classify).toHaveBeenCalledWith(expect.objectContaining({ provider: "fixture", id: "cls" }), { state: { draft: "fixture draft" }, questions }, { signal });
     expect(onResolved).toHaveBeenCalledWith({ modelId: "cls", modelName: "fixture/cls" });
     expect(spawnInternal).not.toHaveBeenCalled();
-    expect(runAgent).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
     await host.dispose();
   });
 
@@ -379,7 +364,7 @@ describe("decision chain", () => {
     expect(prompt).toContain("fixture draft");
     expect(options).toMatchObject({ graphRunId: "wf", description: "gate", model: models[0], selectedModel: { model: models[0], thinkingLevel: "low" }, thinkingLevel: "low" });
     expect(options.structuredOutput?.schema).toEqual(agentAnswerSchema(questions));
-    expect(vi.mocked(runAgent).mock.calls[0]?.[3]).toMatchObject({ agentConfig: config, graphRun: true, selectedModel: { model: models[0] } });
+    expect(vi.mocked(openSession).mock.calls[0]?.[2]).toMatchObject({ agentConfig: config, graphRun: true, selectedModel: { model: models[0] } });
     expect(onResolved).toHaveBeenCalledWith({ recordId: manager.listAgents()[0]?.id });
     expect(onResolved).toHaveBeenCalledWith({ modelId: "chat", modelName: "fixture/chat", thinking: "low" });
     await host.dispose();
@@ -392,7 +377,7 @@ describe("decision chain", () => {
     answered('{"ship":{"probability":2}}');
     const result = await host.decide?.(request(), new AbortController().signal);
     expect(result).toMatchObject({ ok: true, decidedBy: "classifier", model: "fixture/cls", costUsd: 0.75 });
-    expect(runAgent).toHaveBeenCalledOnce();
+    expect(openSession).toHaveBeenCalledOnce();
     await host.dispose();
   });
 
@@ -405,7 +390,7 @@ describe("decision chain", () => {
       ok: false, costUsd: 0,
       error: "fixture/cls: boom; fixture/locked: unavailable; fixture/missing: unavailable; missing-bare: unavailable",
     });
-    expect(runAgent).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
     await host.dispose();
   });
 
@@ -430,7 +415,7 @@ describe("decision chain", () => {
     const result = await host.decide?.(request(), controller.signal);
     expect(result).toMatchObject({ ok: false, skipped: true, error: "Aborted." });
     expect(classify).toHaveBeenCalledOnce();
-    expect(runAgent).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
     expect(await host.decide?.(request(), controller.signal)).toEqual({ ok: false, skipped: true, error: "Aborted.", costUsd: 0 });
     expect(classify).toHaveBeenCalledOnce();
     await host.dispose();
@@ -442,17 +427,16 @@ describe("decision chain", () => {
     const { host } = setup("", { context });
     let started!: () => void;
     const running = new Promise<void>(resolve => { started = resolve; });
-    let childSignal: AbortSignal | undefined;
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-      childSignal = options.signal;
+    const child = fakeSession(async (_prompt, session) => {
       started();
-      await new Promise(resolve => options.signal?.addEventListener("abort", resolve, { once: true }));
-      return { session: session(), responseText: "", aborted: true, forceSteered: false };
+      await session.aborted;
+      return { aborted: true };
     });
+    vi.mocked(openSession).mockResolvedValue(opened(child));
     const pending = host.decide?.(request(), new AbortController().signal);
     await running;
     await host.dispose();
-    expect(childSignal?.aborted).toBe(true);
+    expect(child.abort).toHaveBeenCalledOnce();
     expect(manager.listAgents()[0]?.status).toBe("stopped");
     await expect(pending).resolves.toMatchObject({ ok: false, skipped: true });
   });
@@ -466,7 +450,7 @@ describe("decision chain", () => {
     const graph: AgentGraph = { nodes: { gate: { type: "decision_gate", state: { draft: { path: "$.draft" } }, questions } }, edges: [], outputs: { result: { node: "gate", path: "$" } } };
     const result = await runGraph(graph, { draft: "fixture draft" }, { host });
     expect(result.outputs).toEqual({ result: { answers: { ship: { value: true, confidence: 0.875 } }, decidedBy: "agent" } });
-    expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3].structuredOutput?.schema).toEqual(agentAnswerSchema(questions));
+    expect(vi.mocked(openSession).mock.calls.at(-1)?.[2].structuredOutput?.schema).toEqual(agentAnswerSchema(questions));
     expect(select).not.toHaveBeenCalled();
     await host.dispose();
   });
@@ -486,7 +470,7 @@ describe("decision chain", () => {
     expect(result.outputs).toEqual({ result: { answers: { ship: { value: false, confidence: 1 } }, decidedBy: "orchestrator" } });
     expect(awaitEscalation).toHaveBeenCalledWith(expect.objectContaining({ reason: expect.stringMatching(reason), questions, correlation: expect.any(Object) }), expect.any(AbortSignal));
     expect(select).not.toHaveBeenCalled();
-    expect(runAgent).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
     await host.dispose();
   });
 });

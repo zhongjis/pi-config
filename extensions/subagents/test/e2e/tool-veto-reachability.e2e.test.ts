@@ -29,7 +29,7 @@
  * This guard closes exactly that gap and nothing else. It asserts against a REAL
  * session that:
  *   1. Pi installs its own `beforeToolCall` (so there IS a prior hook to chain), and
- *   2. after `runAgent`, ours is installed and vetoes an out-of-scope tool in the
+ *   2. after `openSession`, ours is installed and vetoes an out-of-scope tool in the
  *      `{ block, reason }` shape Pi honors.
  *
  * No network: a native faux provider on a per-test `ModelRuntime` satisfies
@@ -39,9 +39,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { fauxAssistantMessage, fauxToolCall } from "@earendil-works/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAccessRules } from "../../../lib/active-tools.js";
-import { runAgent } from "../../src/agent-runner.js";
+import { openSession } from "../../src/agent-runner.js";
 import { registerAgents } from "../../src/agent-types.js";
 import type { AgentConfig } from "../../src/types.js";
 import { createFauxModelRuntime, type FauxModelRuntime } from "../helpers/pi-ai.js";
@@ -80,7 +81,7 @@ describe("tool veto reachability against real pi-mono", () => {
     rmSync(cwd, { recursive: true, force: true });
   });
 
-  it("pi installs a chainable beforeToolCall, and runAgent's veto blocks out-of-scope tools", async () => {
+  it("pi installs a chainable beforeToolCall, and openSession's veto blocks out-of-scope tools", async () => {
     registerAgents(
       new Map([
         [
@@ -106,37 +107,23 @@ describe("tool veto reachability against real pi-mono", () => {
     const { model, modelRegistry } = fauxRuntime;
     const ctx: any = { cwd, getSystemPrompt: () => "PARENT", model, modelRegistry };
 
-    let priorIsFunction: boolean | undefined;
-    let session: any;
-    try {
-      await runAgent(ctx, "veto", "go", {
-        pi: makePi(),
-        model,
-        onSessionCreated: (s: any) => {
-          session = s;
-          // By onSessionCreated our wrapper is already installed, so this being a
-          // function proves the property is reachable and writable. Pi installing
-          // its own in the constructor is what gives us something to chain to —
-          // asserted below via the in-scope path returning undefined rather than
-          // throwing on a missing prior hook.
-          priorIsFunction = typeof s.agent?.beforeToolCall === "function";
-        },
-      });
-    } catch {
-      // A faux-model turn may not complete; the veto is fixed at construction.
-    }
+    const { session } = await openSession(ctx, "veto", { pi: makePi(), model });
+    const priorIsFunction = typeof session.agent.beforeToolCall === "function";
 
     expect(priorIsFunction).toBe(true);
+    const beforeToolCall = session.agent.beforeToolCall;
+    if (!beforeToolCall) throw new Error("Missing beforeToolCall hook");
 
     // Out of scope: beta loaded but the tools: rules do not grant it.
     await expect(
-      session.agent.beforeToolCall({ toolCall: { name: "beta_tool" }, args: {} }),
+      beforeToolCall({ assistantMessage: fauxAssistantMessage([]), toolCall: fauxToolCall("beta_tool", {}), args: {}, context: { messages: session.messages } }),
     ).resolves.toMatchObject({ block: true, reason: expect.any(String) });
 
     // In scope: must NOT be blocked. Reaching Pi's own prior hook without throwing
     // also proves the chain is intact (a clobbered/absent prior would surface here).
     await expect(
-      session.agent.beforeToolCall({ toolCall: { name: "alpha_read" }, args: {} }),
-    ).resolves.toSatisfy((r: any) => !r?.block);
+      beforeToolCall({ assistantMessage: fauxAssistantMessage([]), toolCall: fauxToolCall("alpha_read", {}), args: {}, context: { messages: session.messages } }),
+    ).resolves.toSatisfy((r: { block?: boolean } | undefined) => !r?.block);
+    session.dispose();
   });
 });

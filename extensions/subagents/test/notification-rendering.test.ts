@@ -1,7 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { type AgentPresentation, createNotificationCoordinator } from "../src/notification-coordinator.js";
@@ -14,15 +14,14 @@ vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
   return { ...actual, keyHint: (_key: string, label?: string) => label ?? "" };
 });
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import { graphRunEntryData } from "../src/graph/entry.js";
 import { createGraphRunTask } from "../src/graph/task.js";
 import subagentsExtension from "../src/index.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 type Renderable = {
   render(width: number): string[];
@@ -394,13 +393,7 @@ describe("subagent notification rendering migration", () => {
   it("keeps individual sendMessage payload, options, and 200ms hold unchanged", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-24T00:00:00.000Z"));
-    const session = { dispose: vi.fn(), subscribe: vi.fn(() => vi.fn()) } as unknown as AgentSession;
-    vi.mocked(runAgent).mockResolvedValue({
-      responseText: "Renderer migration complete.",
-      session,
-      aborted: false,
-      forceSteered: false,
-    });
+    vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => "Renderer migration complete.")));
     const tool = tools.get("agent");
     expect(tool).toBeDefined();
 

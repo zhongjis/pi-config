@@ -1,31 +1,36 @@
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
 import type { AgentRecord } from "../src/types.js";
 
-vi.mock("../src/agent-runner.js", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../src/agent-runner.js")>(),
-  runAgent: vi.fn(),
-  resumeAgent: vi.fn(),
-}));
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { createAgentResultBuilder } from "../src/agent-result.js";
-import { resumeAgent, runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import { createResultTools } from "../src/result-tools.js";
 import { startBackgroundSupervision } from "../src/supervision-loop.js";
+import { TURN_CEILING, TURN_CEILING_GRACE, TURN_CHECK_IN } from "../src/turn-ceiling.js";
+import { asAgentSession, deferred, fakeSession, flush, opened, type Script } from "./helpers/session-seam.js";
 
 const mockPi = {} as any;
 const mockCtx = { cwd: "/tmp" } as any;
 
-const mockSession = () => ({ dispose: vi.fn() } as any);
-
-const resolvedRun = () =>
-  vi.mocked(runAgent).mockResolvedValue({
-    responseText: "done",
-    session: mockSession(),
-    aborted: false,
-    forceSteered: false,
-  });
+const scripts = new WeakMap<AgentSession, ReturnType<typeof vi.fn<Script>>>();
+const mockSession = (script: Script = () => "done") => {
+  const run = vi.fn<Script>(script);
+  const session = fakeSession(run);
+  scripts.set(asAgentSession(session), run);
+  return session;
+};
+const scriptFor = (session: AgentSession | undefined) => {
+  const script = session && scripts.get(session);
+  if (!script) throw new Error("Missing session script");
+  return script;
+};
+const resolvedRun = () => vi.mocked(openSession).mockImplementation(async () => opened(mockSession()));
+beforeEach(() => { vi.mocked(openSession).mockReset(); resolvedRun(); });
 
 describe("AgentManager — Bug 1 race condition (resultConsumed vs onComplete)", () => {
   let manager: AgentManager;
@@ -115,22 +120,22 @@ describe("AgentManager — execution activity", () => {
   it("resets execution activity and supervision while retaining lifetime counters and session", async () => {
     vi.useFakeTimers();
     const manager = new AgentManager();
-    const session = { ...mockSession(), steer: vi.fn().mockResolvedValue(undefined) };
+    const session = mockSession();
     const observed = vi.fn();
     const onTextDelta = vi.fn();
     let freshProgressAt: number | undefined;
     manager.setActivityListener(observed);
-    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
-      options.onSessionCreated?.(session);
+    vi.mocked(openSession).mockImplementationOnce(async () => { scriptFor(asAgentSession(session)).mockImplementationOnce(async (_prompt, child) => {
+
       vi.advanceTimersByTime(1);
-      options.onProgress?.();
-      freshProgressAt = manager.getRecord(options.agentId ?? "")?.activity?.lastProgressAt;
-      options.onTextDelta?.("old", "old");
-      options.onToolActivity?.({ type: "end", toolName: "read" });
-      options.onTurnEnd?.(2);
-      options.onAssistantUsage?.({ input: 10, output: 20, cacheWrite: 3, cacheRead: 4, cost: 1 });
-      return { responseText: "old", session, aborted: false, forceSteered: false };
-    });
+      child.thinkingDelta("thinking");
+      freshProgressAt = manager.listAgents()[0]?.activity?.lastProgressAt;
+      child.textDelta("old");
+      child.toolStart("read"); child.toolEnd("read");
+      child.turn(); child.turn();
+      child.usage({ input: 10, output: 20, cacheWrite: 3, cacheRead: 4, cost: 1 });
+      return "old";
+    }); return opened(session); });
     const { record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "worker", onTextDelta });
     const oldActivity = record.activity;
     const oldExecutionId = record.executionId;
@@ -141,9 +146,10 @@ describe("AgentManager — execution activity", () => {
     const lifetimeUsage = record.lifetimeUsage;
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
-    vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "new" }; });
+    scriptFor(record.session).mockImplementationOnce(async () => { await drain; return { text: "new" }; });
     const pending = manager.resume(record.id, "continue");
-    const callbacks = vi.mocked(resumeAgent).mock.lastCall?.[2];
+    await flush();
+    const callbacks = session;
     const activity = record.activity;
     if (!callbacks || !activity || !release) throw new Error("Resume did not start");
     try {
@@ -161,32 +167,32 @@ describe("AgentManager — execution activity", () => {
       expect(activity.turnCount).toBe(2);
       expect(onTextDelta).toHaveBeenCalledExactlyOnceWith("old", "old");
       expect(observed).toHaveBeenCalledTimes(2);
-      const freshCallbacks = vi.mocked(runAgent).mock.lastCall?.[3];
+      const oldProgressAt = oldActivity.lastProgressAt;
       vi.advanceTimersByTime(1);
-      freshCallbacks?.onProgress?.();
       expect(activity.lastProgressAt).toBe(record.startedAt);
       for (const event of [
-        () => callbacks.onProgress?.(),
-        () => callbacks.onTextDelta?.("new", "new"),
-        () => callbacks.onToolActivity?.({ type: "start", toolName: "bash" }),
-        () => callbacks.onToolActivity?.({ type: "start", toolName: "bash" }),
-        () => callbacks.onTurnEnd?.(1),
-        () => callbacks.onAssistantUsage?.({ input: 1, output: 2, cacheWrite: 0, cacheRead: 0, cost: 0.5 }),
+        () => callbacks.thinkingDelta("thinking"),
+        () => callbacks.textDelta("new"),
+        () => callbacks.toolStart("bash"),
+        () => callbacks.toolStart("bash"),
+        () => callbacks.turn(),
+        () => callbacks.usage({ input: 1, output: 2, cacheWrite: 0, cacheRead: 0, cost: 0.5 }),
       ]) {
         vi.advanceTimersByTime(1);
         event();
         expect(activity.lastProgressAt).toBe(Date.now());
       }
+      expect(oldActivity.lastProgressAt).toBe(oldProgressAt);
       expect(activity.responseText).toBe("new");
       expect(activity.activeTools.size).toBe(2);
-      callbacks.onToolActivity?.({ type: "end", toolName: "bash" });
+      callbacks.toolEnd("bash");
       expect(activity.activeTools.size).toBe(1);
       const stop = startBackgroundSupervision(mockPi, { getRunning: () => [{ ...record, isBackground: true }], steer: manager.steer.bind(manager), abort: manager.abort.bind(manager) }, new Map());
       await vi.advanceTimersByTimeAsync(6 * 60_000);
       stop();
       expect(record.status).toBe("running");
       expect(session.steer).not.toHaveBeenCalled();
-      callbacks.onToolActivity?.({ type: "end", toolName: "bash" });
+      callbacks.toolEnd("bash");
       expect(activity.activeTools.size).toBe(0);
       expect(record.toolUses).toBe(3);
       expect(record.turnCount).toBe(3);
@@ -204,23 +210,24 @@ describe("AgentManager — execution activity", () => {
   it.each(["usage", "stream"] as const)("does not treat a %s-progressing resume as idle after five minutes", async (progress) => {
     vi.useFakeTimers();
     const manager = new AgentManager();
-    const session = { ...mockSession(), steer: vi.fn().mockResolvedValue(undefined) };
-    vi.mocked(runAgent).mockResolvedValueOnce({ responseText: "prior", session, aborted: false, forceSteered: false });
+    const session = mockSession();
+    vi.mocked(openSession).mockResolvedValueOnce(opened(session));
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "first", { description: "worker", isBackground: true });
     const record = manager.getRecord(id);
     if (!record) throw new Error("Missing record");
     await record.promise;
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
-    vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "resumed" }; });
+    scriptFor(record.session).mockImplementationOnce(async () => { await drain; return { text: "resumed" }; });
     const pending = manager.resume(id, "continue", undefined, undefined, { isBackground: true });
-    const callbacks = vi.mocked(resumeAgent).mock.lastCall?.[2];
+    await flush();
+    const callbacks = session;
     if (!callbacks || !release) throw new Error("Resume did not start");
     const stop = startBackgroundSupervision(mockPi, manager, new Map());
     try {
       for (let minute = 0; minute < 7; minute++) {
-        if (progress === "stream") callbacks.onProgress?.();
-        else callbacks.onAssistantUsage?.({ input: 1, output: 1, cacheWrite: 0, cacheRead: 0, cost: 0 });
+        if (progress === "stream") callbacks.thinkingDelta("thinking");
+        else callbacks.usage({ input: 1, output: 1, cacheWrite: 0, cacheRead: 0, cost: 0 });
         await vi.advanceTimersByTimeAsync(60_000);
       }
       expect(record.status).toBe("running");
@@ -240,16 +247,17 @@ describe("AgentManager — interruption provenance", () => {
     const manager = new AgentManager();
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
-    vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "checkpoint", session: mockSession(), aborted: true, interruptionCause: "unknown", forceSteered: false }; });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async () => { await drain; return { text: "checkpoint", aborted: true }; })));
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true });
     const record = manager.getRecord(id);
     if (!record) throw new Error("Missing record");
+    await flush();
     if (cause === "unknown") manager.abort(id);
     else manager.abort(id, cause);
     release?.();
     await record.promise;
     expect(record).toMatchObject({ status: "stopped", interruptionCause: cause, result: "checkpoint" });
-    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "done" });
+    scriptFor(record.session).mockResolvedValueOnce({ text: "done" });
     await manager.resume(id, "continue");
     expect(record.interruptionCause).toBeUndefined();
     expect(record.status).toBe("completed");
@@ -260,7 +268,7 @@ describe("AgentManager — interruption provenance", () => {
     const manager = new AgentManager();
     resolvedRun();
     const { id, record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "go", { description: "worker" });
-    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "checkpoint", interruptionCause: cause });
+    scriptFor(record.session).mockResolvedValueOnce({ text: "checkpoint", aborted: true });
     await manager.resume(id, "continue");
     expect(record).toMatchObject({ status: "aborted", interruptionCause: cause, result: "checkpoint" });
     await manager.dispose();
@@ -271,25 +279,28 @@ describe("AgentManager — turn ceiling", () => {
   afterEach(() => { vi.unstubAllEnvs(); });
 
   it("maps a forced wrap-up to force_steered on spawn and live resume, and shows the ceiling", async () => {
-    vi.stubEnv("SUBAGENT_TURN_CEILING", "42");
+    vi.stubEnv("SUBAGENT_TURN_CEILING", String(TURN_CEILING));
     const manager = new AgentManager();
-    vi.mocked(runAgent).mockResolvedValueOnce({ responseText: "spawned", session: mockSession(), aborted: false, forceSteered: true });
+    const forced: Script = (_prompt, child) => { for (let i = 0; i < TURN_CEILING; i++) child.turn(true); return "spawned"; };
+    const session = mockSession(forced);
+    vi.mocked(openSession).mockResolvedValueOnce(opened(session));
     const { id, record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "go", { description: "worker" });
     expect(record.status).toBe("force_steered");
-    expect(record.activity?.maxTurns).toBe(42);
-    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "resumed", forceSteered: true });
+    expect(record.activity?.maxTurns).toBe(TURN_CEILING);
+    scriptFor(record.session).mockImplementationOnce((_prompt, child) => { forced(_prompt, child); return "resumed"; });
     await manager.resume(id, "continue");
     expect(record).toMatchObject({ status: "force_steered", result: "resumed" });
-    expect(record.activity?.maxTurns).toBe(42);
-    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "failed", failure: "boom", forceSteered: true });
+    expect(record.activity?.maxTurns).toBe(TURN_CEILING);
+    scriptFor(record.session).mockImplementationOnce((_prompt, child) => { forced(_prompt, child); return { text: "failed", failure: "boom" }; });
     await manager.resume(id, "continue");
     expect(record.status).toBe("error");
-    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "cut", interruptionCause: "turn-limit", forceSteered: true });
+    scriptFor(record.session).mockImplementationOnce((_prompt, child) => { for (let i = 0; i < TURN_CEILING + TURN_CEILING_GRACE; i++) child.turn(true); return "cut"; });
     await manager.resume(id, "continue");
     expect(record).toMatchObject({ status: "aborted", interruptionCause: "turn-limit" });
-    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "done", forceSteered: false });
+    scriptFor(record.session).mockResolvedValueOnce("done");
     await manager.resume(id, "continue");
     expect(record.status).toBe("completed");
+    expect(openSession).toHaveBeenCalledTimes(1);
     await manager.dispose();
   });
 });
@@ -303,9 +314,9 @@ describe("AgentManager — background resume admission", () => {
     const activity = record.activity;
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
-    vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "busy", session: mockSession(), aborted: false, forceSteered: false }; });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async () => { await drain; return "busy"; })));
     manager.spawn(mockPi, mockCtx, "general-purpose", "busy", { description: "busy", isBackground: true });
-    vi.mocked(resumeAgent).mockClear();
+    scriptFor(record.session).mockClear();
     const controller = new AbortController();
     if (alreadyAborted) controller.abort();
     try {
@@ -315,7 +326,7 @@ describe("AgentManager — background resume admission", () => {
       expect(record.status).toBe("stopped");
       expect(record.activity).toBe(activity);
       expect(record.session).toBe(session);
-      expect(resumeAgent).not.toHaveBeenCalled();
+      expect(scriptFor(session)).not.toHaveBeenCalled();
     } finally { release?.(); await manager.waitForAll(); await manager.dispose(); }
   });
 
@@ -328,9 +339,9 @@ describe("AgentManager — background resume admission", () => {
     let releaseResume: (() => void) | undefined;
     const foregroundDrain = new Promise<void>(resolve => { releaseForeground = resolve; });
     const resumeDrain = new Promise<void>(resolve => { releaseResume = resolve; });
-    vi.mocked(runAgent).mockImplementationOnce(async () => { await foregroundDrain; return { responseText: "foreground", session: mockSession(), aborted: false, forceSteered: false }; });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async () => { await foregroundDrain; return "foreground"; })));
     const foreground = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "busy", { description: "busy" });
-    vi.mocked(resumeAgent).mockImplementationOnce(async () => { await resumeDrain; return { text: "partial" }; });
+    scriptFor(record.session).mockImplementationOnce(async () => { await resumeDrain; return { text: "partial" }; });
     try {
       await manager.resume(id, "again", undefined, mockCtx, { isBackground: true });
       expect(record.status).toBe("running");
@@ -346,7 +357,7 @@ describe("AgentManager — background resume admission", () => {
       await record.promise;
       await manager.getRecord(queued)?.promise;
       expect(manager.getRecord(queued)?.status).toBe("completed");
-      vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "inline" });
+      scriptFor(record.session).mockResolvedValueOnce({ text: "inline" });
       await manager.resume(id, "inline");
       expect(record.isBackground).toBe(false);
       expect(record.resultConsumed).toBe(true);
@@ -361,9 +372,9 @@ describe("AgentManager — background resume admission", () => {
     record.lastSupervisionSteerAt = 123;
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
-    vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "busy", session: mockSession(), aborted: false, forceSteered: false }; });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async () => { await drain; return "busy"; })));
     manager.spawn(mockPi, mockCtx, "general-purpose", "busy", { description: "busy", isBackground: true });
-    vi.mocked(resumeAgent).mockClear().mockResolvedValueOnce({ text: "resumed" });
+    scriptFor(record.session).mockClear().mockResolvedValueOnce({ text: "resumed" });
     const admission = manager.resume(id, "again", undefined, mockCtx, { isBackground: true });
     try {
       expect(record.status).toBe("queued");
@@ -371,7 +382,7 @@ describe("AgentManager — background resume admission", () => {
       expect(record.activity).toBe(prior.activity);
       expect(record.startedAt).toBe(prior.startedAt);
       expect(record.lastSupervisionSteerAt).toBe(123);
-      expect(resumeAgent).not.toHaveBeenCalled();
+      expect(scriptFor(record.session)).not.toHaveBeenCalled();
     } finally { release?.(); await admission; await manager.waitForAll(); }
     expect(record.activity).not.toBe(prior.activity);
     expect(record.lastSupervisionSteerAt).toBeUndefined();
@@ -386,9 +397,10 @@ describe("AgentManager — execution-correlated retrieval", () => {
     const manager = new AgentManager();
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
-    vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "drained checkpoint", session: mockSession(), aborted: false, forceSteered: false }; });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async () => { await drain; return "drained checkpoint"; })));
     const controller = new AbortController();
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true, signal: controller.signal });
+    await flush();
     controller.abort();
     const details = createAgentResultBuilder(() => false);
     const tools = createResultTools(mockPi, manager, { cancelNudge: vi.fn(), details: record => details({ displayName: "worker", description: "worker", subagentType: "general-purpose" }, record) }, { retrieve: vi.fn() });
@@ -407,11 +419,9 @@ describe("AgentManager — execution-correlated retrieval", () => {
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
     const session = mockSession();
-    vi.mocked(runAgent).mockImplementationOnce(async () => {
-      await drain;
-      return { responseText: "old", session, aborted: false, forceSteered: false };
-    });
-    vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "new" });
+    scriptFor(asAgentSession(session)).mockImplementationOnce(async () => { await drain; return "old"; });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(session));
+    scriptFor(asAgentSession(session)).mockResolvedValueOnce({ text: "new" });
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true });
     const record = manager.getRecord(id);
     if (!record?.promise || !release) throw new Error("Run did not start");
@@ -426,6 +436,7 @@ describe("AgentManager — execution-correlated retrieval", () => {
     release();
     const result = await pending;
     await next;
+    await record.promise;
     expect(result.content).toEqual([{ type: "text", text: expect.stringContaining("started another execution") }]);
     expect(record.resultConsumed).toBe(false);
     expect(cancelNudge).not.toHaveBeenCalled();
@@ -446,14 +457,14 @@ describe("AgentManager — physical settlement", () => {
       let id: string;
       if (kind === "resume") {
         ({ id } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" }));
-        vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "finished successfully" }; });
+        scriptFor(manager.getRecord(id)!.session).mockImplementationOnce(async () => { await drain; return { text: "finished successfully" }; });
         await manager.resume(id, "continue", undefined, mockCtx, { isBackground: true });
       } else {
-        vi.mocked(runAgent).mockImplementationOnce(async () => {
-          await drain;
-          if (kind === "error") throw new Error("provider failed");
-          return { responseText: "finished successfully", session: mockSession(), aborted: false, forceSteered: false };
-        });
+        if (kind === "error") {
+          vi.mocked(openSession).mockImplementationOnce(async () => { await drain; throw new Error("provider failed"); });
+        } else {
+          vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async () => { await drain; return "finished successfully"; })));
+        }
         id = manager.spawn(mockPi, mockCtx, "general-purpose", "first", { description: "first", isBackground: true });
       }
       const record = manager.getRecord(id);
@@ -494,10 +505,10 @@ describe("AgentManager — physical settlement", () => {
     const manager = new AgentManager(onComplete, 1);
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
-    vi.mocked(runAgent).mockImplementationOnce(async () => {
+    vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async () => {
       await drain;
-      return { responseText: "done", session: mockSession(), aborted: false, forceSteered: false };
-    });
+      return "done";
+    })));
     const active = manager.spawn(mockPi, mockCtx, "general-purpose", "first", { description: "first", isBackground: true });
     const queued = manager.spawn(mockPi, mockCtx, "general-purpose", "next", { description: "next", isBackground: true });
     const record = manager.getRecord(queued);
@@ -527,10 +538,10 @@ describe("AgentManager — physical settlement", () => {
     let pendingId = id;
     try {
       if (resume) {
-        vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "checkpoint" }; });
+        scriptFor(manager.getRecord(id)!.session).mockImplementationOnce(async () => { await drain; return { text: "checkpoint" }; });
         await manager.resume(id, "continue", undefined, mockCtx, { isBackground: true });
       } else {
-        vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "checkpoint", session: mockSession(), aborted: false, forceSteered: false }; });
+        vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async () => { await drain; return "checkpoint"; })));
         pendingId = manager.spawn(mockPi, mockCtx, "general-purpose", "next", { description: "worker", isBackground: true });
       }
       expect(manager.hasRunning()).toBe(true);
@@ -549,12 +560,12 @@ describe("AgentManager — physical settlement", () => {
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
     if (!release) throw new Error("Missing drain resolver");
-    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
-      options.onSessionCreated?.(session);
+    vi.mocked(openSession).mockImplementationOnce(async () => { scriptFor(asAgentSession(session)).mockImplementationOnce(async () => {
       await drain;
-      return { responseText: "partial", session, aborted: false, forceSteered: false };
-    });
+      return "partial";
+    }); return opened(session); });
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "go" });
+    await flush();
     manager.abort(id);
     let settled = false;
     const pending = manager[action]().then(() => { settled = true; });
@@ -577,13 +588,13 @@ describe("AgentManager — physical settlement", () => {
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
     if (!release) throw new Error("Missing drain resolver");
-    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
-      options.onSessionCreated?.(session);
+    vi.mocked(openSession).mockImplementationOnce(async () => { scriptFor(asAgentSession(session)).mockImplementationOnce(async () => {
       await drain;
-      return { responseText: "PARTIAL", session, aborted: false, forceSteered: false, failure: "prompt failed" };
-    }).mockResolvedValue({ responseText: "next", session: mockSession(), aborted: false, forceSteered: false });
+      return { text: "PARTIAL", failure: "prompt failed" };
+    }); return opened(session); }).mockResolvedValue(opened(mockSession(() => "next")));
     let id = "";
     const first = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" }, value => { id = value; });
+    await flush();
     manager.abort(id);
     const second = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "second", { description: "second" });
     let allSettled = false;
@@ -612,24 +623,13 @@ describe("AgentManager — concurrent foreground calls", () => {
 
   it("starts two spawnAndWait calls before either foreground run resolves", async () => {
     manager = new AgentManager();
-    type MockRunResult = {
-      responseText: string;
-      session: ReturnType<typeof mockSession>;
-      aborted: boolean;
-      forceSteered: boolean;
-    };
-    let resolveFirst: ((result: MockRunResult) => void) | undefined;
-    let resolveSecond: ((result: MockRunResult) => void) | undefined;
+    const firstGate = deferred<string>();
+    const secondGate = deferred<string>();
     const started: string[] = [];
-
-    vi.mocked(runAgent).mockImplementation((_ctx, _type, prompt) =>
-      new Promise((resolve) => {
-        started.push(prompt);
-        if (prompt === "first") resolveFirst = resolve;
-        else resolveSecond = resolve;
-      }),
-    );
-
+    vi.mocked(openSession).mockImplementation(async () => opened(mockSession(prompt => {
+      started.push(prompt);
+      return prompt === "first" ? firstGate.promise : secondGate.promise;
+    })));
     // Manager-level proof only: same-assistant-message host dispatch belongs to pi.
     const first = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" });
     const second = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "second", { description: "second" });
@@ -638,18 +638,17 @@ describe("AgentManager — concurrent foreground calls", () => {
     void first.then(() => { firstSettled = true; });
     void second.then(() => { secondSettled = true; });
 
-    await Promise.resolve();
+    await flush();
     expect(started).toEqual(["first", "second"]);
     expect(firstSettled).toBe(false);
     expect(secondSettled).toBe(false);
 
-    if (!resolveFirst || !resolveSecond) throw new Error("Both foreground runs must start");
-    resolveFirst({ responseText: "first done", session: mockSession(), aborted: false, forceSteered: false });
+    firstGate.resolve("first done");
     await first;
     expect(firstSettled).toBe(true);
     expect(secondSettled).toBe(false);
 
-    resolveSecond({ responseText: "second done", session: mockSession(), aborted: false, forceSteered: false });
+    secondGate.resolve("second done");
     await second;
     expect(secondSettled).toBe(true);
   });
@@ -661,30 +660,21 @@ describe("AgentManager — spawnAndWait onSpawned + foreground output file wirin
 
   it("fields set on the record in onSpawned are visible when onSessionCreated fires", async () => {
     // The load-bearing ordering guarantee: onSpawned fires synchronously inside
-    // spawn(), before runAgent's async onSessionCreated fires. index.ts relies on
+    // spawn(), before Execution attaches the opened session. index.ts relies on
     // this to set record.outputFile so streamToOutputFile can pick it up.
     manager = new AgentManager();
-    let capturedId: string | undefined;
     let outputFileSeenAtSessionCreated: string | undefined;
 
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, opts: any) => {
-      const session = mockSession();
-      // Yield one microtask to mirror real behavior: in production, onSessionCreated
-      // fires async (after network/session setup). onSpawned fires synchronously
-      // inside spawn() before runAgent's promise even starts. This await lets the
-      // remainder of startAgent (record.promise = …, onSpawned?.()) finish first.
-      await Promise.resolve();
-      opts.onSessionCreated?.(session);
-      outputFileSeenAtSessionCreated = capturedId
-        ? manager.getRecord(capturedId)?.outputFile
-        : undefined;
-      return { responseText: "done", session, aborted: false, forceSteered: false };
+    const session = mockSession(() => "done");
+    vi.mocked(openSession).mockResolvedValue(opened(session));
+    manager.setSessionListener(record => {
+      expect(record.session).toBe(asAgentSession(session));
+      outputFileSeenAtSessionCreated = record.outputFile;
     });
 
     await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
     }, (fgId) => {
-      capturedId = fgId;
       manager.getRecord(fgId)!.outputFile = "/fake/agent.jsonl";
     });
 
@@ -704,11 +694,10 @@ describe("AgentManager — spawnAndWait onSpawned + foreground output file wirin
   });
 
   it("onComplete fires on the error path with resultConsumed=true", async () => {
-    // The .then path is covered by the lifecycle-symmetry test above; this guards
-    // the .catch path which lacks try/catch around onComplete (a known asymmetry).
+    // Error settlement retains foreground consumption and completion notification.
     let completedRecord: AgentRecord | undefined;
     manager = new AgentManager((r) => { completedRecord = r; });
-    vi.mocked(runAgent).mockRejectedValue(new Error("agent failed"));
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(() => { throw new Error("agent failed"); })));
 
     const { record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
@@ -761,21 +750,11 @@ describe("AgentManager — cleanup timer", () => {
   it("retains terminal foreground and background sessions for 15 minutes, then disposes them", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(0);
-    const foregroundSession = mockSession();
-    const backgroundSession = mockSession();
-    vi.mocked(runAgent)
-      .mockResolvedValueOnce({
-        responseText: "foreground done",
-        session: foregroundSession,
-        aborted: false,
-        forceSteered: false,
-      })
-      .mockResolvedValueOnce({
-        responseText: "background done",
-        session: backgroundSession,
-        aborted: false,
-        forceSteered: false,
-      });
+    const foregroundSession = mockSession(() => "foreground done");
+    const backgroundSession = mockSession(() => "background done");
+    vi.mocked(openSession)
+      .mockResolvedValueOnce(opened(foregroundSession))
+      .mockResolvedValueOnce(opened(backgroundSession));
     manager = new AgentManager();
 
     const foreground = await manager.spawnAndWait(
@@ -835,10 +814,8 @@ describe("AgentManager — Bug 3 clearCompleted", () => {
     // Use maxConcurrent=0 to keep agents queued, then spawn one running via foreground
     manager = new AgentManager(undefined, 1);
 
-    // Mock runAgent to never resolve (keeps agent "running")
-    vi.mocked(runAgent).mockImplementation(
-      () => new Promise(() => {}), // hangs forever
-    );
+    // Keep the prompt running until cancellation.
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(async (_prompt, child) => { await child.aborted; return { aborted: true }; })));
 
     const id1 = manager.spawn(mockPi, mockCtx, "general-purpose", "test1", {
       description: "running agent",
@@ -867,13 +844,9 @@ describe("AgentManager — Bug 3 clearCompleted", () => {
   it("clearCompleted calls dispose on sessions of removed records", async () => {
     manager = new AgentManager();
     const disposeSpy = vi.fn();
-    const sess = { dispose: disposeSpy };
-    vi.mocked(runAgent).mockResolvedValue({
-      responseText: "done",
-      session: sess as any,
-      aborted: false,
-      forceSteered: false,
-    });
+    const sess = mockSession();
+    sess.dispose = disposeSpy;
+    vi.mocked(openSession).mockResolvedValue(opened(sess));
 
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
@@ -890,8 +863,8 @@ describe("AgentManager — Bug 3 clearCompleted", () => {
     manager = new AgentManager();
     const order: string[] = [];
     const emit = vi.fn(async (event: { type: string; reason: string }) => { order.push(`${event.type}:${event.reason}`); });
-    const sess = { dispose: vi.fn(() => order.push("dispose")), extensionRunner: { hasHandlers: () => true, emit } };
-    vi.mocked(runAgent).mockResolvedValue({ responseText: "done", session: sess as any, aborted: false, forceSteered: false });
+    const sess = Object.assign(mockSession(), { dispose: vi.fn(() => { order.push("dispose"); }), extensionRunner: { hasHandlers: () => true, emit } });
+    vi.mocked(openSession).mockResolvedValue(opened(sess));
 
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", { description: "test", isBackground: true });
     await manager.getRecord(id)!.promise;
@@ -904,7 +877,7 @@ describe("AgentManager — Bug 3 clearCompleted", () => {
 
   it("clearCompleted removes error and stopped records", async () => {
     manager = new AgentManager();
-    vi.mocked(runAgent).mockRejectedValue(new Error("boom"));
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(() => { throw new Error("boom"); })));
 
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
@@ -951,7 +924,7 @@ describe("AgentManager — Bug 3 clearCompleted", () => {
 
   it("clearCompleted(true) still removes running=false queued=false records when resultConsumed=false for error status", async () => {
     manager = new AgentManager();
-    vi.mocked(runAgent).mockRejectedValue(new Error("boom"));
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(() => { throw new Error("boom"); })));
 
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
@@ -981,7 +954,7 @@ describe("AgentManager — lifetime usage + compaction count are eagerly initial
   it("spawn initializes lifetimeUsage to zeros and compactionCount to 0", () => {
     manager = new AgentManager();
     // Don't resolve the run — we just want to inspect the record at spawn time.
-    vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(async (_prompt, child) => { await child.aborted; return { aborted: true }; })));
 
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
@@ -995,18 +968,11 @@ describe("AgentManager — lifetime usage + compaction count are eagerly initial
     manager.abort(id);
   });
 
-  it("onAssistantUsage from runAgent accumulates into record.lifetimeUsage", async () => {
+  it("assistant usage accumulates into record.lifetimeUsage", async () => {
     manager = new AgentManager();
 
-    // Capture the options passed to runAgent so we can drive callbacks
-    let captured: any;
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, opts: any) => {
-      captured = opts;
-      // Two assistant messages with usage
-      opts.onAssistantUsage?.({ input: 100, output: 50, cacheWrite: 10 });
-      opts.onAssistantUsage?.({ input: 200, output: 80, cacheWrite: 20 });
-      return { responseText: "done", session: mockSession(), aborted: false, forceSteered: false };
-    });
+    const usageScript = vi.fn<Script>((_prompt, child) => { child.usage({ input: 100, output: 50, cacheWrite: 10 }); child.usage({ input: 200, output: 80, cacheWrite: 20 }); return "done"; });
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(usageScript)));
 
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
@@ -1014,23 +980,23 @@ describe("AgentManager — lifetime usage + compaction count are eagerly initial
     });
     await manager.getRecord(id)!.promise;
 
-    expect(captured).toBeDefined();
+    expect(usageScript).toHaveBeenCalledOnce();
     expect(manager.getRecord(id)!.lifetimeUsage).toEqual({
       input: 300, output: 130, cacheWrite: 30,
     });
   });
 
-  it("onCompaction from runAgent increments record.compactionCount", async () => {
+  it("compaction events increment record.compactionCount", async () => {
     manager = new AgentManager();
-    const compactSeen: any[] = [];
+    const compactSeen: Array<{ count: number; reason: string }> = [];
 
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, opts: any) => {
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(async (_prompt, child) => {
       // Compaction fires while the agent is still running — the record passed to
       // onCompact should reflect the just-incremented count.
-      opts.onCompaction?.({ reason: "threshold", tokensBefore: 12345 });
-      opts.onCompaction?.({ reason: "manual", tokensBefore: 22222 });
-      return { responseText: "done", session: mockSession(), aborted: false, forceSteered: false };
-    });
+      child.compaction({ reason: "threshold", tokensBefore: 12345 });
+      child.compaction({ reason: "manual", tokensBefore: 22222 });
+      return "done";
+    })));
 
     manager = new AgentManager(undefined, undefined, undefined, (record, info) => {
       compactSeen.push({ count: record.compactionCount, reason: info.reason });
@@ -1053,13 +1019,8 @@ describe("AgentManager — lifetime usage + compaction count are eagerly initial
     manager = new AgentManager();
 
     // First, spawn with a session that resume can latch onto
-    const session = { ...mockSession() };
-    vi.mocked(runAgent).mockResolvedValue({
-      responseText: "first",
-      session: session as any,
-      aborted: false,
-      forceSteered: false,
-    });
+    const session = mockSession(() => "first");
+    vi.mocked(openSession).mockResolvedValue(opened(session));
 
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
@@ -1071,15 +1032,15 @@ describe("AgentManager — lifetime usage + compaction count are eagerly initial
     expect(manager.getRecord(id)!.lifetimeUsage).toEqual({ input: 0, output: 0, cacheWrite: 0 });
     expect(manager.getRecord(id)!.compactionCount).toBe(0);
 
-    // Now resume — drive callbacks via the mocked resumeAgent
-    const { resumeAgent: resumeMock } = await import("../src/agent-runner.js");
+    // The same session emits events for its resumed prompt.
+
     manager.getRecord(id)!.turnCount = 4;
     let turnsAfterUsage: number | undefined;
-    vi.mocked(resumeMock).mockImplementation(async (_session, _prompt, opts) => {
-      opts?.onAssistantUsage?.({ input: 70, output: 30, cacheWrite: 5, cost: 0 });
+    scriptFor(manager.getRecord(id)!.session).mockImplementation(async (_prompt, child) => {
+      child.usage({ input: 70, output: 30, cacheWrite: 5, cost: 0 });
       turnsAfterUsage = manager.getRecord(id)!.turnCount;
-      opts?.onTurnEnd?.(1);
-      opts?.onCompaction?.({ reason: "overflow", tokensBefore: 999 });
+      child.turn();
+      child.compaction({ reason: "overflow", tokensBefore: 999 });
       return { text: "second" };
     });
 
@@ -1096,7 +1057,7 @@ describe("AgentManager — SpawnOptions.cwd passthrough (#96)", () => {
   let manager: AgentManager;
   afterEach(() => manager?.dispose());
 
-  it("passes cwd to runAgent as the working dir, parent cwd as configCwd", async () => {
+  it("passes cwd to openSession as the working dir, parent cwd as configCwd", async () => {
     resolvedRun();
     manager = new AgentManager();
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
@@ -1105,8 +1066,8 @@ describe("AgentManager — SpawnOptions.cwd passthrough (#96)", () => {
     });
     await manager.getRecord(id)!.promise;
 
-    expect(runAgent).toHaveBeenCalledWith(
-      mockCtx, "general-purpose", "test",
+    expect(openSession).toHaveBeenCalledWith(
+      mockCtx, "general-purpose",
       expect.objectContaining({ cwd: "/", configCwd: "/tmp" }),
     );
   });
@@ -1114,7 +1075,7 @@ describe("AgentManager — SpawnOptions.cwd passthrough (#96)", () => {
   it("without cwd, configCwd stays unset — existing behavior untouched", async () => {
     // mockClear + lastCall: toHaveBeenCalledWith would scan the file's whole
     // accumulated call history, where earlier no-cwd spawns already match.
-    vi.mocked(runAgent).mockClear();
+    vi.mocked(openSession).mockClear();
     resolvedRun();
     manager = new AgentManager();
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
@@ -1122,13 +1083,13 @@ describe("AgentManager — SpawnOptions.cwd passthrough (#96)", () => {
     });
     await manager.getRecord(id)!.promise;
 
-    const opts = vi.mocked(runAgent).mock.lastCall![3];
+    const opts = vi.mocked(openSession).mock.lastCall![2];
     expect(opts.cwd).toBeUndefined();
     expect(opts.configCwd).toBeUndefined();
   });
 
   it("cwd: null (RPC 'unset') behaves exactly like omitting cwd", async () => {
-    vi.mocked(runAgent).mockClear();
+    vi.mocked(openSession).mockClear();
     resolvedRun();
     manager = new AgentManager();
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
@@ -1137,46 +1098,46 @@ describe("AgentManager — SpawnOptions.cwd passthrough (#96)", () => {
     });
     await manager.getRecord(id)!.promise;
 
-    const opts = vi.mocked(runAgent).mock.lastCall![3];
+    const opts = vi.mocked(openSession).mock.lastCall![2];
     expect(opts.cwd).toBeUndefined();
     expect(opts.configCwd).toBeUndefined();
   });
 
   it("relative cwd throws immediately; no orphan record", () => {
-    vi.mocked(runAgent).mockClear();
+    vi.mocked(openSession).mockClear();
     manager = new AgentManager();
     expect(() => manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
       cwd: "relative/path",
     })).toThrow(/absolute path/);
     expect(manager.listAgents()).toEqual([]);
-    expect(runAgent).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
   });
 
   it("nonexistent cwd throws immediately; no orphan record", () => {
-    vi.mocked(runAgent).mockClear();
+    vi.mocked(openSession).mockClear();
     manager = new AgentManager();
     expect(() => manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
       cwd: "/nonexistent-pi-subagents-test-dir",
     })).toThrow(/does not exist/);
     expect(manager.listAgents()).toEqual([]);
-    expect(runAgent).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
   });
 
   it("cwd pointing at a regular file throws a curated 'not a directory' error", () => {
-    vi.mocked(runAgent).mockClear();
+    vi.mocked(openSession).mockClear();
     manager = new AgentManager();
     expect(() => manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
       cwd: fileURLToPath(import.meta.url), // this test file: absolute, exists, not a directory
     })).toThrow(/not a directory/);
     expect(manager.listAgents()).toEqual([]);
-    expect(runAgent).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
   });
 
   it("non-string cwd (RPC junk) throws the curated error, not a TypeError from path internals", () => {
-    vi.mocked(runAgent).mockClear();
+    vi.mocked(openSession).mockClear();
     manager = new AgentManager();
     expect(() => manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "test",
@@ -1215,26 +1176,20 @@ describe("AgentManager — abort() state machine", () => {
     expect(manager.abort(queuedId)).toBe(false);
   });
 
-  it("aborts a running agent by firing its AbortController and setting status='stopped'", () => {
+  it("aborts a running agent by forwarding to the SDK and setting status='stopped'", async () => {
     manager = new AgentManager();
-    let receivedSignal: AbortSignal | undefined;
-    vi.mocked(runAgent).mockImplementation((_ctx, _type, _prompt, opts) => {
-      receivedSignal = (opts as { signal?: AbortSignal })?.signal;
-      return Promise.resolve({ responseText: "done", session: mockSession(), aborted: false, forceSteered: false });
-    });
-
-    const id = manager.spawn(mockPi, mockCtx, "X", "p", {
-      description: "r",
-      isBackground: true,
-    });
+    const session = mockSession(async (_prompt, child) => { await child.aborted; return "done"; });
+    vi.mocked(openSession).mockResolvedValue(opened(session));
+    const id = manager.spawn(mockPi, mockCtx, "X", "p", { description: "r", isBackground: true });
     const record = manager.getRecord(id)!;
+    await flush();
     expect(record.status).toBe("running");
-    expect(receivedSignal?.aborted).toBe(false);
-
+    expect(session.abort).not.toHaveBeenCalled();
     expect(manager.abort(id)).toBe(true);
     expect(record.status).toBe("stopped");
     expect(record.completedAt).toBeGreaterThan(0);
-    expect(receivedSignal?.aborted).toBe(true);
+    expect(session.abort).toHaveBeenCalledOnce();
+    await record.promise;
   });
 
   it("returns false (and does not change status) for an already-completed agent", async () => {
@@ -1253,23 +1208,24 @@ describe("AgentManager — abort() state machine", () => {
 
   it("a user abort survives the agent settling — stays 'stopped', never 'completed'", async () => {
     // Guards the `if (record.status !== "stopped")` check in the completion
-    // handler: after a user abort, runAgent's promise still settles (here with
-    // aborted:false, as a non-cooperative mock would), and must NOT flip the
+    // handler: after a user abort, a non-cooperative prompt still settles
+    // normally, and must NOT flip the
     // user-stopped status back to "completed" — otherwise the parent agent
     // would read the partial output as a finished result.
     manager = new AgentManager();
-    let resolveRun!: (v: unknown) => void;
-    vi.mocked(runAgent).mockImplementation(() => new Promise((res) => { resolveRun = res as (v: unknown) => void; }));
+    const gate = deferred<string>();
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(() => gate.promise)));
 
     const id = manager.spawn(mockPi, mockCtx, "X", "p", { description: "r", isBackground: true });
     const record = manager.getRecord(id)!;
+    await flush();
     expect(record.status).toBe("running");
 
     expect(manager.abort(id)).toBe(true);
     expect(record.status).toBe("stopped");
 
     // The agent loop ends and the promise settles "normally".
-    resolveRun({ responseText: "partial output", session: mockSession(), aborted: false, forceSteered: false });
+    gate.resolve("partial output");
     await record.promise;
 
     expect(record.status).toBe("stopped");        // not overwritten to "completed"
@@ -1284,37 +1240,36 @@ describe("AgentManager — steer()", () => {
   let manager: AgentManager;
   afterEach(() => manager?.dispose());
 
-  it("returns false for an unknown id", () => {
+  it("refuses an unknown id", () => {
     manager = new AgentManager();
-    expect(manager.steer("nope", "hi")).toBe(false);
+    expect(manager.steer("nope", "hi")).toEqual({ status: "refused" });
   });
 
-  it("delivers to a live session via session.steer()", () => {
+  it("delivers to a live session via session.steer()", async () => {
     manager = new AgentManager();
-    const steer = vi.fn(() => Promise.resolve());
-    let captured: ((s: any) => void) | undefined;
-    vi.mocked(runAgent).mockImplementation((_ctx, _type, _prompt, opts) => {
-      captured = (opts as any)?.onSessionCreated;
-      return Promise.resolve({ responseText: "done", session: mockSession(), aborted: false, forceSteered: false });
-    });
+    const session = mockSession(async (_prompt, child) => { await child.aborted; return "done"; });
+    vi.mocked(openSession).mockResolvedValue(opened(session));
     const id = manager.spawn(mockPi, mockCtx, "X", "p", { description: "r", isBackground: true });
-    // Simulate the session becoming ready.
-    captured?.({ steer, dispose: vi.fn() });
-
-    expect(manager.steer(id, "go left")).toBe(true);
-    expect(steer).toHaveBeenCalledWith("go left");
+    await flush();
+    expect(manager.steer(id, "go left")).toMatchObject({ status: "delivered" });
+    expect(session.steer).toHaveBeenCalledWith("go left");
+    manager.abort(id);
+    await manager.getRecord(id)?.promise;
   });
 
-  it("queues onto pendingSteers when the session isn't ready yet", () => {
+  it("queues onto pendingSteers when the session isn't ready yet", async () => {
     manager = new AgentManager();
-    resolvedRun();
+    const opening = deferred<ReturnType<typeof opened>>();
+    vi.mocked(openSession).mockReturnValueOnce(opening.promise);
     const id = manager.spawn(mockPi, mockCtx, "X", "p", { description: "r", isBackground: true });
     const record = manager.getRecord(id)!;
     record.session = undefined; // not ready
 
-    expect(manager.steer(id, "first")).toBe(true);
-    expect(manager.steer(id, "second")).toBe(true);
+    expect(manager.steer(id, "first")).toEqual({ status: "pending" });
+    expect(manager.steer(id, "second")).toEqual({ status: "pending" });
     expect(record.pendingSteers).toEqual(["first", "second"]);
+    opening.resolve(opened(mockSession()));
+    await record.promise;
   });
 
   it("refuses to steer an agent that is no longer running", async () => {
@@ -1323,7 +1278,7 @@ describe("AgentManager — steer()", () => {
     const id = manager.spawn(mockPi, mockCtx, "X", "p", { description: "x", isBackground: false });
     await manager.getRecord(id)?.promise;
     expect(manager.getRecord(id)?.status).toBe("completed");
-    expect(manager.steer(id, "too late")).toBe(false);
+    expect(manager.steer(id, "too late")).toEqual({ status: "refused" });
   });
 });
 
@@ -1436,13 +1391,13 @@ describe("AgentManager — hasRunning", () => {
   });
 });
 
-describe("AgentManager — runAgent rejection leaves the record visible with error status", () => {
+describe("AgentManager — prompt rejection leaves the record visible with error status", () => {
   let manager: AgentManager;
   afterEach(() => manager?.dispose());
 
   it("sets status='error', captures the error message, and stamps completedAt", async () => {
     manager = new AgentManager();
-    vi.mocked(runAgent).mockRejectedValue(new Error("boom"));
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(() => { throw new Error("boom"); })));
 
     const id = manager.spawn(mockPi, mockCtx, "X", "p", {
       description: "x",
@@ -1464,13 +1419,7 @@ describe("AgentManager — resolved runs with a failed final turn map to error (
   afterEach(() => manager?.dispose());
 
   const failedRun = (failure: string, responseText = "") =>
-    vi.mocked(runAgent).mockResolvedValue({
-      responseText,
-      session: mockSession(),
-      aborted: false,
-      forceSteered: false,
-      failure,
-    } as any);
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(() => ({ text: responseText, failure }))));
 
   it("sets status='error' and captures the provider message", async () => {
     manager = new AgentManager();
@@ -1511,14 +1460,23 @@ describe("AgentManager — resolved runs with a failed final turn map to error (
   it.each(["stopped", "unknown", "turn-limit"] as const)("retains failure independently of %s outcome", async (cause) => {
     const onComplete = vi.fn((record: AgentRecord) => ({ ...record }));
     manager = new AgentManager(onComplete);
-    let resolveRun: ((v: Awaited<ReturnType<typeof runAgent>>) => void) | undefined;
-    const session = mockSession();
-    vi.mocked(runAgent).mockImplementation(() => new Promise((r) => { resolveRun = r; }));
-
+    const gate = deferred<void>();
+    const session = mockSession(async (_prompt, child) => {
+      await gate.promise;
+      if (cause === "turn-limit") for (let i = 0; i < TURN_CEILING + TURN_CEILING_GRACE; i++) child.turn(true);
+      child.textDelta("partial");
+      child.reply({ failure: "late error" });
+      if (cause === "unknown") {
+        child.reply({ text: "partial", aborted: true });
+      }
+      throw new Error("late error");
+    });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(session));
     const id = manager.spawn(mockPi, mockCtx, "X", "p", { description: "x", isBackground: true });
     const record = manager.getRecord(id)!;
+    await flush();
     if (cause === "stopped") manager.abort(id, "caller");
-    resolveRun!({ responseText: "partial", session, aborted: cause !== "stopped", forceSteered: false, failure: "late error", interruptionCause: cause === "stopped" ? undefined : cause });
+    gate.resolve();
     await record.promise;
 
     expect(record.status).toBe(cause === "stopped" ? "stopped" : "aborted");
@@ -1537,10 +1495,10 @@ describe("AgentManager — resolved runs with a failed final turn map to error (
     await record.promise;
     expect(record.status).toBe("completed");
 
-    const { resumeAgent: resumeMock } = await import("../src/agent-runner.js");
-    // resumeAgent bounds its fallback to this invocation, so a failed empty
+
+    // Execution bounds its fallback to this invocation, so a failed empty
     // resume yields text "" — never the prior turn's answer (#144 root-fix).
-    vi.mocked(resumeMock).mockResolvedValue({
+    scriptFor(manager.getRecord(id)!.session).mockResolvedValue({
       text: "",
       failure: "retries exhausted on resume",
     });
@@ -1559,8 +1517,8 @@ describe("AgentManager — resolved runs with a failed final turn map to error (
     const record = manager.getRecord(id)!;
     await record.promise;
 
-    const { resumeAgent: resumeMock } = await import("../src/agent-runner.js");
-    vi.mocked(resumeMock).mockResolvedValue({
+
+    scriptFor(manager.getRecord(id)!.session).mockResolvedValue({
       text: "new partial progress",
       failure: "provider died mid-turn",
     });
@@ -1582,7 +1540,7 @@ describe("AgentManager — injected delegation policy checker", () => {
   it("fails closed: a denying checker prevents spawn and throws its reason", () => {
     manager = new AgentManager();
     resolvedRun();
-    vi.mocked(runAgent).mockClear();
+    vi.mocked(openSession).mockClear();
     manager.setPolicyChecker(() => "delegation_policy_denied: blocked");
 
     expect(() =>
@@ -1593,7 +1551,7 @@ describe("AgentManager — injected delegation policy checker", () => {
     ).toThrow(/delegation_policy_denied: blocked/);
     // No orphaned record left behind on a denied spawn.
     expect(manager.listAgents()).toHaveLength(0);
-    expect(runAgent).not.toHaveBeenCalled();
+    expect(openSession).not.toHaveBeenCalled();
   });
 
   it("permits spawn when the checker returns undefined (no false denial)", async () => {
@@ -1607,7 +1565,7 @@ describe("AgentManager — injected delegation policy checker", () => {
     });
     await manager.getRecord(id)!.promise;
 
-    expect(runAgent).toHaveBeenCalled();
+    expect(openSession).toHaveBeenCalled();
     expect(manager.getRecord(id)!.status).toBe("completed");
   });
 
@@ -1635,17 +1593,17 @@ describe("AgentManager — lifetime cost tracking", () => {
 
   it("(happy) two agents emitting cost:0.1 and cost:0.2 → getLifetimeCost() ≈ 0.3", async () => {
     manager = new AgentManager();
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, opts: any) => {
-      opts.onAssistantUsage?.({ input: 100, output: 50, cacheWrite: 10, cost: 0.1 });
-      return { responseText: "done", session: mockSession(), aborted: false, forceSteered: false };
-    });
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(async (_prompt, child) => {
+      child.usage({ input: 100, output: 50, cacheWrite: 10, cost: 0.1 });
+      return "done";
+    })));
     const id1 = manager.spawn(mockPi, mockCtx, "general-purpose", "test1", { description: "a", isBackground: true });
     await manager.getRecord(id1)!.promise;
 
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, opts: any) => {
-      opts.onAssistantUsage?.({ input: 100, output: 50, cacheWrite: 10, cost: 0.2 });
-      return { responseText: "done", session: mockSession(), aborted: false, forceSteered: false };
-    });
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(async (_prompt, child) => {
+      child.usage({ input: 100, output: 50, cacheWrite: 10, cost: 0.2 });
+      return "done";
+    })));
     const id2 = manager.spawn(mockPi, mockCtx, "general-purpose", "test2", { description: "b", isBackground: true });
     await manager.getRecord(id2)!.promise;
 
@@ -1654,10 +1612,10 @@ describe("AgentManager — lifetime cost tracking", () => {
 
   it("(edge) usage delta with no/undefined cost → no NaN; total unchanged (finite)", async () => {
     manager = new AgentManager();
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, opts: any) => {
-      opts.onAssistantUsage?.({ input: 100, output: 50, cacheWrite: 10 } as any);
-      return { responseText: "done", session: mockSession(), aborted: false, forceSteered: false };
-    });
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(async (_prompt, child) => {
+      child.usage({ input: 100, output: 50, cacheWrite: 10 });
+      return "done";
+    })));
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", { description: "x", isBackground: true });
     await manager.getRecord(id)!.promise;
 
@@ -1667,11 +1625,11 @@ describe("AgentManager — lifetime cost tracking", () => {
 
   it("record.lifetimeCost accumulates per-record cost across messages", async () => {
     manager = new AgentManager();
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, opts: any) => {
-      opts.onAssistantUsage?.({ input: 100, output: 50, cacheWrite: 10, cost: 0.05 });
-      opts.onAssistantUsage?.({ input: 100, output: 50, cacheWrite: 10, cost: 0.05 });
-      return { responseText: "done", session: mockSession(), aborted: false, forceSteered: false };
-    });
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(async (_prompt, child) => {
+      child.usage({ input: 100, output: 50, cacheWrite: 10, cost: 0.05 });
+      child.usage({ input: 100, output: 50, cacheWrite: 10, cost: 0.05 });
+      return "done";
+    })));
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", { description: "x", isBackground: true });
     await manager.getRecord(id)!.promise;
 
@@ -1689,9 +1647,7 @@ describe("AgentManager.getRunning()", () => {
   it("returns only records whose status === 'running'", async () => {
     manager = new AgentManager();
     // A never-resolving run keeps the background agent in 'running'.
-    vi.mocked(runAgent).mockImplementation(
-      () => new Promise(() => {}) as Promise<any>,
-    );
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(async (_prompt, child) => { await child.aborted; return { aborted: true }; })));
 
     const runningId = manager.spawn(mockPi, mockCtx, "general-purpose", "test", {
       description: "running",
@@ -1720,7 +1676,7 @@ it("forwards selected fast metadata unchanged from Agent/RPC options into the ru
   try {
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "test", { description: "test", selectedModel });
     await manager.getRecord(id)!.promise;
-    expect(vi.mocked(runAgent).mock.lastCall?.[3].selectedModel).toBe(selectedModel);
+    expect(vi.mocked(openSession).mock.lastCall?.[2].selectedModel).toBe(selectedModel);
   } finally { manager.dispose(); }
 });
 
@@ -1742,14 +1698,15 @@ describe("AgentManager — independent foreground pool", () => {
   const prepare = () => {
     finishes.clear(); starts.length = 0; ids.clear();
     manager = new AgentManager(undefined, 1);
-    vi.mocked(runAgent).mockImplementation((_ctx, _type, prompt, options) => {
+    vi.mocked(openSession).mockImplementation(async () => opened(mockSession((prompt, child) => {
       starts.push(prompt);
-      return new Promise(resolve => {
-        const finish = () => resolve({ responseText: prompt, session: mockSession(), aborted: false, forceSteered: false });
+      return new Promise<string>(resolve => {
+        const finish = () => resolve(prompt);
         finishes.set(prompt, finish);
-        options.signal?.addEventListener("abort", finish, { once: true });
+        void child.aborted.then(finish);
       });
-    });
+    })));
+
   };
   afterEach(() => { manager?.dispose(); });
 
@@ -1758,13 +1715,17 @@ describe("AgentManager — independent foreground pool", () => {
     manager.spawn(mockPi, mockCtx, "general-purpose", "bg", { description: "bg", isBackground: true });
     manager.spawn(mockPi, mockCtx, "general-purpose", "bg2", { description: "bg2", isBackground: true });
     const a = foreground("a"), b = foreground("b"), c = foreground("c");
+    await flush();
     expect(starts).toEqual(["bg", "a"]);
     expect(record("b").status).toBe("queued");
     let completed = false; void b.then(() => { completed = true; });
     await Promise.resolve(); expect(completed).toBe(false);
+    await flush();
     finishes.get("a")?.(); await a;
+    await flush();
     expect(starts).toEqual(["bg", "a", "b"]);
     finishes.get("b")?.(); await b;
+    await flush();
     expect(starts).toEqual(["bg", "a", "b", "c"]);
     finishes.get("c")?.(); await c;
   });
@@ -1776,6 +1737,7 @@ describe("AgentManager — independent foreground pool", () => {
     const a = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "a", { description: "a" }, callback);
     const b = foreground("b");
     manager.spawn(mockPi, mockCtx, "general-purpose", "detached", { description: "detached" });
+    await flush();
     expect(starts).toEqual(["a", "b", "detached"]);
     expect(callback).toHaveBeenCalledTimes(1);
     finishes.get("a")?.(); finishes.get("b")?.(); await Promise.all([a, b]);
@@ -1785,6 +1747,7 @@ describe("AgentManager — independent foreground pool", () => {
     prepare(); manager.setMaxConcurrentForeground(1);
     const signal = new AbortController();
     const a = foreground("a"), b = foreground("b", signal.signal);
+    await flush();
     switch (action) {
       case "signal": signal.abort(); break;
       case "stop": manager.abort(record("b").id); break;
@@ -1792,6 +1755,7 @@ describe("AgentManager — independent foreground pool", () => {
       case "dispose": manager.dispose(); break;
     }
     expect((await b).record.status).toBe("stopped");
+    await flush();
     expect(starts).toEqual(["a"]);
     finishes.get("a")?.(); await a;
   });
@@ -1799,6 +1763,7 @@ describe("AgentManager — independent foreground pool", () => {
   it("does not start a foreground call with an already aborted parent", async () => {
     prepare(); const signal = new AbortController(); signal.abort();
     expect((await foreground("a", signal.signal)).record.status).toBe("stopped");
+    await flush();
     expect(starts).toEqual([]);
   });
 
@@ -1808,25 +1773,30 @@ describe("AgentManager — independent foreground pool", () => {
     const b = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "b",
       { description: "b", signal: signal.signal }, () => signal.abort());
     expect((await b).record.status).toBe("stopped");
+    await flush();
     finishes.get("a")?.(); await a;
+    await flush();
     expect(starts).toEqual(["a"]);
   });
 
   it("holds a cancelled running slot until the runner settles", async () => {
     prepare(); manager.setMaxConcurrentForeground(1);
     const a = foreground("a"), b = foreground("b");
+    await flush();
     manager.abort(record("a").id);
     expect(starts).toEqual(["a"]);
-    await a; expect(starts).toEqual(["a", "b"]);
+    await a; await flush(); expect(starts).toEqual(["a", "b"]);
     finishes.get("b")?.(); await b;
   });
 
   it("drains after a queued startup failure without losing a slot", async () => {
     prepare(); manager.setMaxConcurrentForeground(1);
     const a = foreground("a"), b = foreground("b"), c = foreground("c");
-    vi.mocked(runAgent).mockImplementationOnce(() => { throw new Error("startup failed"); });
+    vi.mocked(openSession).mockImplementationOnce(() => { throw new Error("startup failed"); });
+    await flush();
     finishes.get("a")?.(); await a;
     expect((await b).record.error).toBe("startup failed");
+    await flush();
     expect(starts).toEqual(["a", "c"]);
     finishes.get("c")?.(); await c;
   });
@@ -1836,6 +1806,7 @@ describe("AgentManager — independent foreground pool", () => {
     const notify = vi.fn(() => { throw new Error("notification failed"); });
     manager = new AgentManager(notify);
     const pending = foreground("a");
+    await flush();
     finishes.get("a")?.();
     const { record: completed } = await pending;
     await Promise.resolve(); // Observe any detached completion handler too.
@@ -1851,14 +1822,16 @@ describe("AgentManager — independent foreground pool", () => {
     const notify = vi.fn(() => { throw new Error("notification failed"); });
     manager = new AgentManager(notify); manager.setMaxConcurrentForeground(1);
     const a = foreground("a"), b = foreground("b"), c = foreground("c"), d = foreground("d");
-    vi.mocked(runAgent).mockImplementationOnce(() => { throw new Error("startup failed"); });
+    vi.mocked(openSession).mockImplementationOnce(() => { throw new Error("startup failed"); });
     expect(() => manager.setMaxConcurrentForeground(2)).not.toThrow();
     const { record: failed } = await b;
     expect(failed.status).toBe("error");
     expect(failed.error).toBe("startup failed");
     expect(failed.diagnostics).toEqual(["Completion callback failed: notification failed"]);
+    await flush();
     expect(starts).toEqual(["a", "c"]);
     finishes.get("c")?.(); await c;
+    await flush();
     expect(starts).toEqual(["a", "c", "d"]);
     finishes.get("a")?.(); finishes.get("d")?.(); await Promise.all([a, d]);
     expect(notify).toHaveBeenCalledTimes(4);
@@ -1869,6 +1842,7 @@ describe("AgentManager — independent foreground pool", () => {
     prepare(); manager.setMaxConcurrentForeground(1);
     const a = foreground("a"), b = foreground("b"), c = foreground("c");
     manager.setMaxConcurrentForeground(0);
+    await flush();
     expect(starts).toEqual(["a", "b", "c"]);
     finishes.forEach(finish => { finish(); }); await Promise.all([a, b, c]);
   });
@@ -1877,25 +1851,27 @@ describe("AgentManager — independent foreground pool", () => {
     prepare(); manager.setMaxConcurrentForeground(1);
     const a = foreground("a"), b = foreground("b");
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "direct", { description: "direct", isBackground: false });
+    await flush();
     expect(starts).toEqual(["a", "direct"]);
     finishes.get("direct")?.(); await manager.getRecord(id)?.promise;
-    const { resumeAgent } = await import("../src/agent-runner.js");
-    vi.mocked(resumeAgent).mockResolvedValue({ text: "resumed" });
+
+    scriptFor(manager.getRecord(id)!.session).mockResolvedValue({ text: "resumed" });
     expect((await manager.resume(id, "resume"))?.result).toBe("resumed");
+    await flush();
     finishes.get("a")?.(); await a; finishes.get("b")?.(); await b;
   });
 
   it("reports fresh and resumed usage once alongside live costs", async () => {
     prepare(); const listener = vi.fn(); manager.setUsageListener(listener);
     const delta = { input: 10, output: 20, cacheWrite: 5, cacheRead: 100, cost: 0.25 };
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-      options.onAssistantUsage?.(delta);
-      return { responseText: "done", session: mockSession(), aborted: false, forceSteered: false };
-    });
+    vi.mocked(openSession).mockResolvedValue(opened(mockSession(async (_prompt, child) => {
+      child.usage(delta);
+      return "done";
+    })));
     const { id, record: completed } = await foreground("a");
-    const { resumeAgent } = await import("../src/agent-runner.js");
-    vi.mocked(resumeAgent).mockImplementation(async (_session, _prompt, options) => {
-      options?.onAssistantUsage?.(delta); return { text: "resumed" };
+
+    scriptFor(completed.session).mockImplementation(async (_prompt, child) => {
+      child.usage(delta); return { text: "resumed" };
     });
     await manager.resume(id, "resume");
     expect(listener.mock.calls).toEqual([[delta], [delta]]);
@@ -1921,11 +1897,11 @@ describe("graph run pool ownership", () => {
     manager.setMaxConcurrentForeground(1);
     manager.setUsageListener(usage);
     let finishGraphRun: (() => void) | undefined;
-    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => {
-      options.onAssistantUsage?.({ input: 2, output: 3, cacheWrite: 0, cacheRead: 7, cost: 0.25 });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession(async (_prompt, child) => {
+      child.usage({ input: 2, output: 3, cacheWrite: 0, cacheRead: 7, cost: 0.25 });
       await new Promise<void>(resolve => { finishGraphRun = resolve; });
-      return { responseText: "graph run", session: mockSession(), aborted: false, forceSteered: false };
-    }).mockResolvedValue({ responseText: "ordinary", session: mockSession(), aborted: false, forceSteered: false });
+      return "graph run";
+    }))).mockResolvedValue(opened(mockSession(() => "ordinary")));
     const pending = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "graph run", {
       description: "graph run", graphRunId: "wf-1",
     });
@@ -1946,16 +1922,17 @@ describe("graph run pool ownership", () => {
   });
 
   it("tracks resumed graph run promises, rejects concurrent resumes, and aborts via manager", async () => {
-    const { resumeAgent } = await import("../src/agent-runner.js");
+
     manager = new AgentManager();
     resolvedRun();
     const { record } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "child", graphRunId: "wf" });
-    vi.mocked(resumeAgent).mockImplementationOnce(async (_session, _prompt, options) => {
-      await new Promise<void>(resolve => options?.signal?.addEventListener("abort", () => resolve(), { once: true }));
+    scriptFor(record.session).mockImplementationOnce(async (_prompt, child) => {
+      await child.aborted;
       return { text: "cancelled" };
     });
     const resumed = manager.resume(record.id, "next");
     await expect(manager.resume(record.id, "overlap")).rejects.toThrow("already running");
+    await flush();
     expect(manager.abort(record.id)).toBe(true);
     await manager.waitForAll();
     expect((await resumed)?.status).toBe("stopped");
@@ -1967,23 +1944,14 @@ describe("AgentManager session listener", () => {
   let manager: AgentManager;
   afterEach(() => manager?.dispose());
   function persisted(sessionFile: string, persistedSession = true) {
-    return {
-      dispose: vi.fn(),
-      sessionManager: {
-        isPersisted: () => persistedSession,
-        getSessionFile: () => sessionFile,
-      },
-    };
+    return fakeSession(() => "done", persistedSession ? { sessionFile } : {});
   }
   it("fires with sessionFile for a persisted session and leaves it absent for in-memory", async () => {
     manager = new AgentManager();
     const listener = vi.fn();
     manager.setSessionListener(listener);
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, prompt, opts) => {
-      const session = prompt === "memory" ? persisted("/tmp/ignored.jsonl", false) : persisted("/tmp/child.jsonl");
-      opts?.onSessionCreated?.(session as never);
-      return { responseText: "done", session, aborted: false, forceSteered: false };
-    });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(persisted("/tmp/child.jsonl")))
+      .mockResolvedValueOnce(opened(persisted("/tmp/ignored.jsonl", false)));
     const persistedId = manager.spawn(mockPi, mockCtx, "general-purpose", "persisted", { description: "persisted", isBackground: true });
     const memoryId = manager.spawn(mockPi, mockCtx, "general-purpose", "memory", { description: "memory", isBackground: true });
     await manager.getRecord(persistedId)!.promise;
@@ -1998,11 +1966,7 @@ describe("AgentManager session listener", () => {
     manager = new AgentManager();
     const listener = vi.fn();
     manager.setSessionListener(listener);
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, opts) => {
-      const session = persisted("/tmp/graph-child.jsonl");
-      opts?.onSessionCreated?.(session as never);
-      return { responseText: "done", session, aborted: false, forceSteered: false };
-    });
+    vi.mocked(openSession).mockResolvedValueOnce(opened(persisted("/tmp/graph-child.jsonl")));
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "graph", { description: "graph", graphRunId: "run-1" });
     await manager.getRecord(id)!.promise;
     expect(listener).not.toHaveBeenCalled();
@@ -2010,21 +1974,17 @@ describe("AgentManager session listener", () => {
 });
 
 describe("AgentManager — orchestrator check-in", () => {
-  /** A run that stays physically pending until released; returns its runner options. */
-  function parkRun(kind: "spawn" | "resume" = "spawn") {
-    let release = () => {};
-    const drain = new Promise<void>(resolve => { release = resolve; });
-    if (kind === "spawn") {
-      vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "done", session: mockSession(), aborted: false, forceSteered: false }; });
-    } else {
-      vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "resumed" }; });
-    }
+  afterEach(() => { vi.unstubAllEnvs(); });
+  function parkRun(session = mockSession()) {
+    vi.stubEnv("SUBAGENT_TURN_CHECK_IN", String(TURN_CHECK_IN));
+    const drain = deferred<string>();
+    scriptFor(asAgentSession(session)).mockImplementationOnce(() => drain.promise);
     return {
-      release: () => release(),
-      checkIn: (threshold = 150) => {
-        const options = kind === "spawn" ? vi.mocked(runAgent).mock.lastCall?.[3] : vi.mocked(resumeAgent).mock.lastCall?.[2];
-        if (!options?.onCheckIn) throw new Error("No check-in callback");
-        options.onCheckIn(threshold);
+      session,
+      release: () => drain.resolve("done"),
+      checkIn: async () => {
+        await flush();
+        for (let i = 0; i < TURN_CHECK_IN; i++) session.turn(true);
       },
     };
   }
@@ -2034,12 +1994,13 @@ describe("AgentManager — orchestrator check-in", () => {
     const listener = vi.fn();
     manager.setCheckInListener(listener);
     const run = parkRun();
+    vi.mocked(openSession).mockResolvedValueOnce(opened(run.session));
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true });
     try {
       const first = manager.waitForSettlementOrCheckIn(id);
       const second = manager.waitForSettlementOrCheckIn(id);
-      run.checkIn();
-      await expect(Promise.all([first, second])).resolves.toEqual([150, 150]);
+      await run.checkIn();
+      await expect(Promise.all([first, second])).resolves.toEqual([TURN_CHECK_IN, TURN_CHECK_IN]);
       expect(listener).not.toHaveBeenCalled();
       expect(manager.hasPendingExecution(id)).toBe(true);
       expect(manager.getRecord(id)?.resultConsumed).toBe(false);
@@ -2060,6 +2021,7 @@ describe("AgentManager — orchestrator check-in", () => {
     const listener = vi.fn();
     manager.setCheckInListener(listener);
     const run = parkRun();
+    vi.mocked(openSession).mockResolvedValueOnce(opened(run.session));
     const id = manager.spawn(mockPi, mockCtx, "general-purpose", "go", { description: "worker", isBackground: true });
     try {
       const controller = new AbortController();
@@ -2067,25 +2029,30 @@ describe("AgentManager — orchestrator check-in", () => {
       controller.abort(new Error("retrieval cancelled"));
       await expect(aborted).rejects.toThrow("retrieval cancelled");
       expect(manager.getRecord(id)?.status).toBe("running");
-      run.checkIn(7);
-      expect(listener).toHaveBeenCalledExactlyOnceWith(manager.getRecord(id), 7);
+      await run.checkIn();
+      expect(listener).toHaveBeenCalledExactlyOnceWith(manager.getRecord(id), TURN_CHECK_IN);
     } finally { run.release(); await manager.dispose(); }
   });
 
   it("gives graph-owned runs no check-in and checks in again on resume", async () => {
     const manager = new AgentManager();
     try {
-      resolvedRun();
+      const listener = vi.fn();
+      manager.setCheckInListener(listener);
+      vi.mocked(openSession).mockResolvedValueOnce(opened(mockSession((_prompt, child) => { for (let i = 0; i < TURN_CHECK_IN; i++) child.turn(true); return "graph"; })));
       const graph = manager.spawn(mockPi, mockCtx, "general-purpose", "graph", { description: "graph", graphRunId: "run-1" });
       await manager.getRecord(graph)?.promise;
-      expect(vi.mocked(runAgent).mock.lastCall?.[3].onCheckIn).toBeUndefined();
+      expect(listener).not.toHaveBeenCalled();
+      const session = mockSession();
+      vi.mocked(openSession).mockResolvedValueOnce(opened(session));
       const { id } = await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" });
-      expect(vi.mocked(runAgent).mock.lastCall?.[3].onCheckIn).toBeTypeOf("function");
-      const run = parkRun("resume");
+      const run = parkRun(session);
+      vi.mocked(openSession).mockClear();
       await manager.resume(id, "again", undefined, mockCtx, { isBackground: true });
       const woken = manager.waitForSettlementOrCheckIn(id);
-      run.checkIn();
-      await expect(woken).resolves.toBe(150);
+      await run.checkIn();
+      await expect(woken).resolves.toBe(TURN_CHECK_IN);
+      expect(openSession).not.toHaveBeenCalled();
       run.release();
       await manager.getRecord(id)?.promise;
     } finally { await manager.dispose(); }
@@ -2095,12 +2062,13 @@ describe("AgentManager — orchestrator check-in", () => {
     const manager = new AgentManager();
     manager.setMaxConcurrentForeground(1);
     const run = parkRun();
+    vi.mocked(openSession).mockResolvedValueOnce(opened(run.session));
     const controller = new AbortController();
     const waiting = manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "go", { description: "worker", signal: controller.signal }, undefined, true);
     try {
-      run.checkIn();
+      await run.checkIn();
       const { id, record, checkIn } = await waiting;
-      expect(checkIn).toBe(150);
+      expect(checkIn).toBe(TURN_CHECK_IN);
       expect(manager.hasPendingExecution(id)).toBe(true);
       controller.abort();
       expect(record.status).toBe("running");

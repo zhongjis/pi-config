@@ -1,20 +1,23 @@
 import { tmpdir } from "node:os";
-import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAccessRules } from "../../lib/active-tools.js";
 import { AgentManager } from "../src/agent-manager.js";
-import type { RunOptions, RunResult } from "../src/agent-runner.js";
+import type { OpenSessionOptions } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
 import { createDelegateResearchTool } from "../src/research-delegation.js";
 import { getStatusNote } from "../src/status-note.js";
 import type { AgentConfig, AgentRecord } from "../src/types.js";
 
-vi.mock("../src/agent-runner.js", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../src/agent-runner.js")>(),
-  runAgent: vi.fn(),
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
+vi.mock("../src/turn-ceiling.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/turn-ceiling.js")>(), TURN_CEILING: 10, TURN_CHECK_IN: 3,
 }));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
+import { TURN_CEILING, TURN_CEILING_GRACE, TURN_CHECK_IN } from "../src/turn-ceiling.js";
+import { fakeSession, opened, type ScriptedSession } from "./helpers/session-seam.js";
 
 const pi = {} as ExtensionAPI;
 const ctx = { cwd: tmpdir() } as ExtensionContext;
@@ -38,18 +41,21 @@ function setAgents(...configs: AgentConfig[]) {
   registerAgents(new Map(configs.map((config) => [config.name, config])));
 }
 
-type Script = (options: RunOptions) => Promise<string>;
+type ScriptOptions = OpenSessionOptions & { signal: AbortSignal; session: ScriptedSession };
+type Script = (options: ScriptOptions) => Promise<string>;
 
 /** Each run follows its type's script; the parent's script drives `delegate_research`. */
 function scriptRuns(scripts: Record<string, Script>) {
-  vi.mocked(runAgent).mockImplementation(async (_ctx, type, _prompt, options): Promise<RunResult> => {
-    const responseText = await (scripts[type]?.(options) ?? Promise.resolve(`${type} answer`));
-    return { responseText, session: {} as AgentSession, aborted: options.signal?.aborted === true, forceSteered: false };
-  });
+  vi.mocked(openSession).mockImplementation(async (_ctx, type, options) => opened(fakeSession(async (_prompt, session) => {
+    const controller = new AbortController();
+    void session.aborted.then(() => controller.abort());
+    const text = await (scripts[type]?.({ ...options, signal: controller.signal, session }) ?? Promise.resolve(`${type} answer`));
+    return { text, aborted: controller.signal.aborted };
+  })));
 }
 
 /** One `delegate_research` call from the parent run, with the parent's abort signal as the tool signal. */
-async function delegate(options: RunOptions, subagentType = "leaf") {
+async function delegate(options: ScriptOptions, subagentType = "leaf") {
   const { nestedSpawn } = options;
   if (!nestedSpawn) return "no bridge";
   const tool = createDelegateResearchTool("parent", parentCwd, nestedSpawn, () => false);
@@ -58,17 +64,20 @@ async function delegate(options: RunOptions, subagentType = "leaf") {
   return content?.type === "text" ? content.text : "";
 }
 
-const spawnedTypes = () => vi.mocked(runAgent).mock.calls.map(([, type]) => type);
+const spawnedTypes = () => vi.mocked(openSession).mock.calls.map(([, type]) => type);
 
 let manager: AgentManager;
 
 beforeEach(() => {
-  vi.mocked(runAgent).mockReset();
+  vi.mocked(openSession).mockReset();
+  vi.stubEnv("SUBAGENT_TURN_CEILING", String(TURN_CEILING));
+  vi.stubEnv("SUBAGENT_TURN_CHECK_IN", String(TURN_CHECK_IN));
   manager = new AgentManager();
 });
 
 afterEach(async () => {
   await manager.dispose();
+  vi.unstubAllEnvs();
 });
 
 describe("delegate_research bridge", () => {
@@ -84,22 +93,31 @@ describe("delegate_research bridge", () => {
 
   it("gives only the root run an orchestrator check-in", async () => {
     setAgents(PARENT, agent("leaf"));
-    scriptRuns({ parent: (options) => delegate(options) });
+    const checkIns: Array<[string, number]> = [];
+    manager.setCheckInListener((record, threshold) => checkIns.push([record.type, threshold]));
+    scriptRuns({
+      parent: async (options) => {
+        for (let turn = 0; turn < TURN_CHECK_IN; turn++) options.session.turn(true);
+        return delegate(options);
+      },
+      leaf: async (options) => {
+        for (let turn = 0; turn < TURN_CHECK_IN; turn++) options.session.turn(true);
+        return "leaf answer";
+      },
+    });
 
     await manager.spawnAndWait(pi, ctx, "parent", "go", { description: "parent" });
 
-    expect(vi.mocked(runAgent).mock.calls.map(([, type, , options]) => [type, typeof options.onCheckIn]))
-      .toEqual([["parent", "function"], ["leaf", "undefined"]]);
+    expect(checkIns).toEqual([["parent", TURN_CHECK_IN]]);
+    expect(manager.listAgents().find((record) => record.type === "leaf")?.turnCount).toBe(TURN_CHECK_IN);
   });
 
   it("includes the turn-ceiling warning in the result header", async () => {
     setAgents(PARENT, agent("leaf"));
-    scriptRuns({ parent: (options) => delegate(options) });
-    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => ({
-      responseText: await delegate(options), session: {} as AgentSession, aborted: false, forceSteered: false,
-    })).mockResolvedValueOnce({
-      responseText: "leaf answer", session: {} as AgentSession, aborted: false, forceSteered: true,
-    });
+    scriptRuns({ parent: (options) => delegate(options), leaf: async (options) => {
+      for (let turn = 0; turn < TURN_CEILING; turn++) options.session.turn(true);
+      return "leaf answer";
+    } });
 
     const { record } = await manager.spawnAndWait(pi, ctx, "parent", "go", { description: "parent" });
 
@@ -108,11 +126,11 @@ describe("delegate_research bridge", () => {
 
   it("identifies a nested turn-ceiling abort in the result header", async () => {
     setAgents(PARENT, agent("leaf"));
-    vi.mocked(runAgent).mockImplementationOnce(async (_ctx, _type, _prompt, options) => ({
-      responseText: await delegate(options), session: {} as AgentSession, aborted: false, forceSteered: false,
-    })).mockResolvedValueOnce({
-      responseText: "partial leaf answer", session: {} as AgentSession, aborted: true, forceSteered: true, interruptionCause: "turn-limit",
-    });
+    scriptRuns({ parent: (options) => delegate(options), leaf: async (options) => {
+      for (let turn = 0; turn < TURN_CEILING + TURN_CEILING_GRACE; turn++) options.session.turn(true);
+      await options.session.aborted;
+      return "partial leaf answer";
+    } });
 
     const { record } = await manager.spawnAndWait(pi, ctx, "parent", "go", { description: "parent" });
 
@@ -125,7 +143,7 @@ describe("delegate_research bridge", () => {
 
     await manager.spawnAndWait(pi, ctx, "parent", "go", { description: "parent" });
 
-    expect(vi.mocked(runAgent).mock.calls[1]?.[3]).toMatchObject({ cwd: parentCwd, inheritContext: false });
+    expect(vi.mocked(openSession).mock.calls[1]?.[2]).toMatchObject({ cwd: parentCwd, inheritContext: false });
   });
 
   it("consumes the nested completion so the root receives no notification", async () => {
@@ -225,6 +243,45 @@ describe("delegate_research bridge", () => {
     const { record } = await manager.spawnAndWait(pi, ctx, "parent", "go", { description: "parent" });
 
     expect(record.result).toMatch(/status: completed\n\nleaf answer$/);
+  });
+
+  it("starts the nested run while its background parent holds the only background slot", async () => {
+    await manager.dispose();
+    manager = new AgentManager(undefined, 1);
+    setAgents(PARENT, agent("leaf"));
+    let leafStatus: AgentRecord["status"] | undefined;
+    scriptRuns({
+      parent: (options) => {
+        const pending = delegate(options);
+        leafStatus = manager.listAgents().find((candidate) => candidate.type === "leaf")?.status;
+        return pending;
+      },
+    });
+
+    const id = manager.spawn(pi, ctx, "parent", "go", { description: "parent", isBackground: true });
+    await manager.getRecord(id)?.promise;
+
+    expect(leafStatus).toBe("running");
+    expect(manager.getRecord(id)?.result).toMatch(/status: completed\n\nleaf answer$/);
+  });
+
+  it("stops only the nested run, as a caller cancellation, when the tool's signal aborts", async () => {
+    setAgents(PARENT, agent("leaf"));
+    const toolSignal = new AbortController();
+    scriptRuns({
+      parent: (options) => delegate({ ...options, signal: toolSignal.signal }),
+      leaf: (options) => new Promise((resolve) => {
+        options.signal?.addEventListener("abort", () => resolve("partial"), { once: true });
+        toolSignal.abort();
+      }),
+    });
+
+    const { record } = await manager.spawnAndWait(pi, ctx, "parent", "go", { description: "parent" });
+
+    const child = manager.listAgents().find((candidate) => candidate.type === "leaf");
+    expect(child).toMatchObject({ status: "stopped", interruptionCause: "caller", result: "partial" });
+    expect(record.status).toBe("completed");
+    expect(record.result).toContain(`status: stopped${getStatusNote("stopped", "caller")}\n\npartial`);
   });
 
   it("aborts the nested run when the parent aborts", async () => {

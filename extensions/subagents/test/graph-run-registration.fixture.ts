@@ -2,13 +2,11 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentSession, ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal<typeof import("../src/agent-runner.js")>()));
 const settingsUI = vi.hoisted(() => ({ change: undefined as ((id: string, value: string) => void) | undefined }));
 vi.mock("@earendil-works/pi-tui", async () => {
   const actual = await vi.importActual<typeof import("@earendil-works/pi-tui")>("@earendil-works/pi-tui");
@@ -19,8 +17,9 @@ vi.mock("@earendil-works/pi-tui", async () => {
   } };
 });
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import extension from "../src/index.js";
+import { type FakeSessionInit, fakeSession, opened, type Script } from "./helpers/session-seam.js";
 
 type Result = { content: { type: string; text?: string }[]; details?: { taskId?: string }; usage?: ToolResultEvent["usage"] };
 const plainTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
@@ -29,7 +28,6 @@ type Hook = (event: unknown, ctx: ExtensionContext) => unknown;
 const model = { provider: "test", id: "chosen", name: "Chosen", reasoning: true };
 let dir: string;
 let originalCwd: string;
-let session: AgentSession;
 let shutdown: (() => Promise<void>) | undefined;
 const artifactDirs = new Set<string>();
 
@@ -46,16 +44,7 @@ beforeEach(() => {
   vi.stubEnv("HOME", dir);
   mkdirSync(join(dir, ".pi", "agents"), { recursive: true });
   writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\ndescription: test\n---\nTask");
-  const sessionFixture: Partial<AgentSession> = {
-    model: model as AgentSession["model"], thinkingLevel: "low", dispose: vi.fn(), subscribe: vi.fn(() => vi.fn()),
-    getSessionStats: () => ({ tokens: { input: 0, output: 0, cacheWrite: 0 } }) as ReturnType<AgentSession["getSessionStats"]>,
-  };
-  session = sessionFixture as AgentSession;
-  vi.mocked(runAgent).mockImplementation(async (_ctx, _type, prompt, options) => {
-    options.onSessionCreated?.(session);
-    options.onAssistantUsage?.({ input: 10, output: 2, cacheWrite: 3, cacheRead: 7, cost: 0.25 });
-    return { responseText: prompt, session, aborted: false, forceSteered: false };
-  });
+  mockSessions((prompt) => ({ text: prompt, usage: { input: 10, output: 2, cacheWrite: 3, cacheRead: 7, cost: 0.25 } }));
 });
 afterEach(async () => {
   await shutdown?.(); shutdown = undefined;
@@ -109,8 +98,12 @@ function boot(settings: Record<string, unknown> = {}, sessionId = "parent") {
     setFlag: (value: unknown) => { flag = value; }, setForeign: (value: typeof foreign) => { foreign = value; } };
 }
 
-function mockRunAgent(impl: typeof runAgent): void {
-  vi.mocked(runAgent).mockImplementation(impl);
+/** Every child session opened from now on is a fresh fake session running `script`. */
+function mockSessions(script: Script, init?: FakeSessionInit): void {
+  vi.mocked(openSession).mockImplementation(async () => opened(fakeSession(script, init)));
 }
 
-export { artifactDirs, boot, dir, mockRunAgent, originalCwd, plainTheme, required, session, settingsUI };
+/** The mocked `openSession`; importers take it from here, where the mock is registered. */
+const openSessionMock = vi.mocked(openSession);
+
+export { artifactDirs, boot, dir, mockSessions, openSessionMock, originalCwd, plainTheme, required, settingsUI };

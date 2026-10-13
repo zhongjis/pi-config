@@ -51,7 +51,7 @@ describe("startBackgroundSupervision", () => {
     const base = Date.now();
     const record = makeRecord(base - 3 * 60_000);
     const activity = makeActivity(base - 3 * 60_000);
-    const steer = vi.fn(() => true);
+    const steer = vi.fn(() => ({ status: "pending" as const }));
     const abort = vi.fn(() => true);
     const manager: SupervisionManager = {
       getRunning: () => [record],
@@ -77,10 +77,26 @@ describe("startBackgroundSupervision", () => {
     record.lastSupervisionSteerAt = now;
     const activity = makeActivity(reason === "idle" ? now - 10 * 60_000 : now);
     const abort = vi.fn(() => true);
-    const stop = startBackgroundSupervision(mockPi, { getRunning: () => [record], steer: () => true, abort }, new Map([[record.id, activity]]));
+    const stop = startBackgroundSupervision(mockPi, { getRunning: () => [record], steer: () => ({ status: "pending" }), abort }, new Map([[record.id, activity]]));
     try {
       vi.advanceTimersByTime(BACKGROUND_SUPERVISION_INTERVAL_MS);
       expect(abort).toHaveBeenCalledWith(record.id, `supervisor-${reason}`);
+    } finally { stop(); }
+  });
+
+  it("diagnoses delivery rejection and does not stamp refused steering", async () => {
+    const now = Date.now();
+    const record = makeRecord(now - 3 * 60_000);
+    const activity = makeActivity(now - 3 * 60_000);
+    const steer = vi.fn<SupervisionManager["steer"]>(() => ({ status: "refused" }));
+    const stop = startBackgroundSupervision(mockPi, { getRunning: () => [record], steer, abort: vi.fn() }, new Map([[record.id, activity]]));
+    try {
+      await vi.advanceTimersByTimeAsync(BACKGROUND_SUPERVISION_INTERVAL_MS);
+      expect(record.lastSupervisionSteerAt).toBeUndefined();
+      steer.mockImplementationOnce(() => ({ status: "delivered", delivery: Promise.reject(new Error("supervision SDK failure")) }));
+      await vi.advanceTimersByTimeAsync(BACKGROUND_SUPERVISION_INTERVAL_MS);
+      expect(record.lastSupervisionSteerAt).toBeDefined();
+      expect(record.diagnostics).toContain("Failed to steer agent: supervision SDK failure");
     } finally { stop(); }
   });
 
@@ -88,7 +104,7 @@ describe("startBackgroundSupervision", () => {
     const base = Date.now();
     const record = makeRecord(base - 10_000);
     const activity = makeActivity(base); // fresh progress
-    const steer = vi.fn(() => true);
+    const steer = vi.fn(() => ({ status: "pending" as const }));
     const abort = vi.fn(() => true);
     const manager: SupervisionManager = {
       getRunning: () => [record],
@@ -112,7 +128,7 @@ describe("startBackgroundSupervision", () => {
     const base = Date.now();
     const record = makeRecord(base - 3 * 60_000);
     const activity = makeActivity(base - 3 * 60_000);
-    const steer = vi.fn(() => true);
+    const steer = vi.fn(() => ({ status: "pending" as const }));
     const manager: SupervisionManager = {
       getRunning: () => [record],
       steer,

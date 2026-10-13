@@ -6,14 +6,21 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
+import { deferred, fakeSession, opened } from "./helpers/session-seam.js";
+
+vi.mock("../src/turn-ceiling.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/turn-ceiling.js")>(),
+  TURN_CEILING: 3,
+  TURN_CHECK_IN: 100,
+}));
+
 import subagentsExtension from "../src/index.js";
 import { getForegroundOutcomeNote, getStatusNote } from "../src/status-note.js";
+import { TURN_CEILING, TURN_CEILING_GRACE, TURN_CHECK_IN } from "../src/turn-ceiling.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
@@ -70,24 +77,26 @@ describe("status note reaches the parent through the real handlers", () => {
   let priorManager: unknown;
 
   beforeEach(() => {
+    vi.stubEnv("SUBAGENT_TURN_CEILING", String(TURN_CEILING));
+    vi.stubEnv("SUBAGENT_TURN_CHECK_IN", String(TURN_CHECK_IN));
     priorManager = Reflect.get(globalThis, MANAGER_KEY);
     Reflect.deleteProperty(globalThis, MANAGER_KEY);
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     if (priorManager === undefined) Reflect.deleteProperty(globalThis, MANAGER_KEY);
     else Reflect.set(globalThis, MANAGER_KEY, priorManager);
     vi.restoreAllMocks();
   });
 
   it("foreground turn-limit abort → the Agent result flags an incomplete outcome", async () => {
-    vi.mocked(runAgent).mockResolvedValue({
-      responseText: "partial work so far",
-      session: { dispose: vi.fn() } as any,
-      aborted: true, // hard turn-limit abort
-      interruptionCause: "turn-limit",
-      forceSteered: false,
-    });
+    vi.mocked(openSession).mockResolvedValue(opened(fakeSession(async (_prompt, child) => {
+      child.textDelta("partial work so far");
+      for (let turn = 0; turn < TURN_CEILING + TURN_CEILING_GRACE; turn++) child.turn(true);
+      await child.aborted;
+      return { aborted: true };
+    })));
     const { pi, tools } = makePi();
     subagentsExtension(pi);
 
@@ -114,8 +123,8 @@ describe("status note reaches the parent through the real handlers", () => {
   });
 
   it("foreground generic parent cancellation is not a proven human stop", async () => {
-    let finish: (v: any) => void = () => {};
-    vi.mocked(runAgent).mockReturnValue(new Promise((r) => { finish = r; }) as any);
+    const gate = deferred<string>();
+    vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => gate.promise)));
 
     const { pi, tools } = makePi();
     subagentsExtension(pi);
@@ -129,7 +138,7 @@ describe("status note reaches the parent through the real handlers", () => {
 
     await new Promise((r) => setImmediate(r));
     parent.abort("user"); // arbitrary caller reason is not evidence of human action
-    finish({ responseText: "partial work so far", session: { dispose: vi.fn() }, aborted: false, forceSteered: false });
+    gate.resolve("partial work so far");
 
     const out = textOf(await call);
     expect(out).not.toContain("STOPPED BY THE USER");
@@ -149,7 +158,7 @@ describe("status note reaches the parent through the real handlers", () => {
     // A background agent that never settles on its own — only a stop ends it.
     let release: (() => void) | undefined;
     const drain = new Promise<void>(resolve => { release = resolve; });
-    vi.mocked(runAgent).mockImplementation(async () => { await drain; throw new Error("cancelled"); });
+    vi.mocked(openSession).mockResolvedValue(opened(fakeSession(async () => { await drain; throw new Error("cancelled"); })));
     const { pi, tools, eventHandlers, lifecycle } = makePi();
     subagentsExtension(pi);
     await bind(lifecycle); // register RPC channels via session_start (#142)

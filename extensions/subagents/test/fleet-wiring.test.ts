@@ -6,7 +6,7 @@
  * These prove the bits only the extension can: that `tool_execution_start`
  * hands the fleet the live UI (so it captures input), that spawning a background
  * agent actually registers the `belowEditor` widget once the agent has a session,
- * and that `session_shutdown` tears it down. runAgent is mocked (no LLM); the
+ * and that `session_shutdown` tears it down. openSession is mocked (no LLM); the
  * manager, settings load, completion routing, and lifecycle handlers are real.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -14,13 +14,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
@@ -118,12 +117,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
 
   it("registers the AgentWidget and FleetView together, then clears both on shutdown", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
-    vi.mocked(runAgent).mockResolvedValue({
-      responseText: "done",
-      session: { dispose: vi.fn() } as any,
-      aborted: false,
-      forceSteered: false,
-    });
+    vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => "done")));
 
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);

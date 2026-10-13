@@ -1,5 +1,5 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { AgentSession, AgentSessionEvent, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { AgentManager } from "../src/agent-manager.js";
@@ -17,9 +17,11 @@ import { initialPanelState, renderPanelLines } from "../src/ui/observability-pan
 
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 
-vi.mock("../src/agent-runner.js", () => ({ runAgent: vi.fn(), resumeAgent: vi.fn() }));
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 let manager: AgentManager;
 beforeEach(() => {
@@ -54,18 +56,6 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
     const identity: ExecutionCorrelation = { runId: "provenance", instanceId: "11111111-1111-4111-8111-111111111111" as NodeInstanceId, activation: 1, graphAttempt: 1, executionAttemptId: executionAttemptId("22222222-2222-4222-8222-222222222222") };
     const running = { status: "running" as const, attempt: 1, activation: 1, graphAttempt: 1, currentExecutionAttemptId: identity.executionAttemptId };
     reporter.update("a", running, identity);
-    const listeners = new Set<(event: AgentSessionEvent) => void>();
-    const child = {
-      model: { provider: "test", id: "selected-not-executed", name: "Selected only" },
-      messages: [assistant("unrelated-inherited-model")],
-      dispose: vi.fn(),
-      subscribe: (listener: (event: AgentSessionEvent) => void) => { listeners.add(listener); return () => { listeners.delete(listener); }; },
-    } as unknown as AgentSession;
-    const emit = (modelId: string) => {
-      const message = assistant(modelId);
-      if (scenario === "missing-provider") Reflect.deleteProperty(message, "provider");
-      for (const listener of listeners) listener({ type: "message_end", message });
-    };
     if (scenario === "early-session") {
       const spawnAndWait = manager.spawnAndWait.bind(manager);
       vi.spyOn(manager, "spawnAndWait").mockImplementation(async (pi, context, type, prompt, options, onSpawned) => {
@@ -74,8 +64,7 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
         return result;
       });
     }
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-      options.onSessionCreated?.(child);
+    const child = fakeSession(() => {
       expect(collapse(task.graphRunProgress).agents[0]?.modelId).toBeUndefined();
       if (scenario !== "no-evidence") {
         emit("first-model");
@@ -87,8 +76,23 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
         }
       }
       if (scenario === "failure") throw new Error("provider failed after assistant");
-      return { session: child, responseText: "done", aborted: false, forceSteered: false };
+      return undefined;
+    }, { model: { provider: "test", id: "selected-not-executed" }, messages: [assistant("unrelated-inherited-model")] });
+    const unsubscribers: ReturnType<typeof vi.fn>[] = [];
+    const subscribe = child.subscribe.getMockImplementation();
+    if (!subscribe) throw new Error("Missing fake session subscribe implementation");
+    child.subscribe.mockImplementation(listener => {
+      const unsubscribe = vi.fn(subscribe(listener));
+      unsubscribers.push(unsubscribe);
+      return unsubscribe;
     });
+    const emit = (modelId: string) => {
+      const message = assistant(modelId);
+      if (scenario === "missing-provider") Reflect.deleteProperty(message, "provider");
+      child.messages.push(message);
+      child.emit({ type: "message_end", message });
+    };
+    vi.mocked(openSession).mockResolvedValue(opened(child));
     const result = await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "general-purpose", prompt: "task", correlation: identity, onResolved: info => reporter.setResolved("a", info, identity) }, new AbortController().signal);
     expect(result.ok).toBe(scenario !== "failure");
     reporter.update("a", { ...running, status: result.ok ? "completed" : "failed", output: result.output, error: result.error }, identity);
@@ -125,7 +129,8 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
       }
     }
     expect(collapse(source.progress).agents[0]?.modelId).toBe(expected);
-    expect(listeners.size).toBe(0);
+    expect(unsubscribers.length).toBeGreaterThan(0);
+    for (const unsubscribe of unsubscribers) expect(unsubscribe).toHaveBeenCalledOnce();
     await host.dispose();
   },
 );

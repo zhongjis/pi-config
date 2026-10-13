@@ -20,14 +20,21 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, resumeAgent: vi.fn(), runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { resumeAgent, runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
+
+vi.mock("../src/turn-ceiling.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("../src/turn-ceiling.js")>(),
+  TURN_CEILING: 3,
+  TURN_CHECK_IN: 100,
+}));
+
 import subagentsExtension from "../src/index.js";
 import { getForegroundOutcomeNote } from "../src/status-note.js";
+import { TURN_CEILING, TURN_CHECK_IN } from "../src/turn-ceiling.js";
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -64,19 +71,18 @@ const textOf = (r: any): string => r.content[0].text;
 
 /**
  * Run a FOREGROUND agent that wraps up at the turn ceiling — the exact #174
- * shape. `forceSteered: true` is what agent-manager turns into status "force_steered",
+ * shape. Unfinished SDK turns drive the real watch into status "force_steered",
  * which produces the reporter's turn-ceiling completion note.
  *
  * Returns the tool result plus the authoritative ID from structured details
  * so tests can compare it with the model-visible handle.
  */
 async function runForegroundSteeredAgent(tools: Map<string, any>) {
-  vi.mocked(runAgent).mockResolvedValue({
-    responseText: "THE-RESULT-PAYLOAD",
-    session: { dispose: vi.fn() } as any,
-    aborted: false,
-    forceSteered: true,
+  const session = fakeSession(() => {
+    for (let turn = 0; turn < TURN_CEILING; turn++) session.turn(true);
+    return "THE-RESULT-PAYLOAD";
   });
+  vi.mocked(openSession).mockResolvedValue(opened(session));
   const res = await tools.get("agent").execute(
     "tc-fg",
     {
@@ -90,7 +96,7 @@ async function runForegroundSteeredAgent(tools: Map<string, any>) {
   );
   const id = (res as any).details?.agentId as string | undefined;
   expect(id, "foreground spawn should have produced a record id in details").toBeTruthy();
-  return { res, id: id as string };
+  return { res, id: id as string, session };
 }
 
 describe("issue #174: foreground agent that hits the turn ceiling", () => {
@@ -101,6 +107,8 @@ describe("issue #174: foreground agent that hits the turn ceiling", () => {
   let prevHome: string | undefined;
 
   beforeEach(() => {
+    vi.stubEnv("SUBAGENT_TURN_CEILING", String(TURN_CEILING));
+    vi.stubEnv("SUBAGENT_TURN_CHECK_IN", String(TURN_CHECK_IN));
     // Hermetic cwd + global dir, scheduling off — same isolation as
     // clear-completed-wiring.test.ts, so session_start doesn't spin a
     // scheduler or touch the dev's filesystem.
@@ -117,6 +125,7 @@ describe("issue #174: foreground agent that hits the turn ceiling", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllEnvs();
     process.chdir(prevCwd);
     if (prevAgentDir == null) delete process.env.PI_CODING_AGENT_DIR;
     else process.env.PI_CODING_AGENT_DIR = prevAgentDir;
@@ -147,11 +156,12 @@ describe("issue #174: foreground agent that hits the turn ceiling", () => {
   it("hands the model the real agent id and that id resumes", async () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
-    const { res, id } = await runForegroundSteeredAgent(tools);
+    const { res, id, session } = await runForegroundSteeredAgent(tools);
 
     expect(textOf(res)).toContain(`Agent ID: ${id}`);
 
-    vi.mocked(resumeAgent).mockResolvedValue({ text: "RESUMED-PAYLOAD" });
+    session.prompt.mockImplementationOnce(async () => { session.reply({ text: "RESUMED-PAYLOAD" }); });
+    const openingCount = vi.mocked(openSession).mock.calls.length;
     const resumed = await tools.get("agent").execute(
       "tc-resume",
       {
@@ -165,6 +175,9 @@ describe("issue #174: foreground agent that hits the turn ceiling", () => {
       ctx(),
     );
     expect(textOf(resumed)).toBe("RESUMED-PAYLOAD");
+    expect(session.prompt).toHaveBeenCalledTimes(2);
+    expect(session.prompt.mock.calls[1]?.[0]).toContain("Continue from the previous result.");
+    expect(openSession).toHaveBeenCalledTimes(openingCount);
 
     await lifecycle.get("session_shutdown")?.({}, ctx());
   });

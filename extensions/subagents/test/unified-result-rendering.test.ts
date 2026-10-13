@@ -1,6 +1,6 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { expect, it, vi } from "vitest";
-import { boot, mockRunAgent, plainTheme, required, session } from "./graph-run-registration.fixture.js";
+import { boot, mockSessions, plainTheme, required } from "./graph-run-registration.fixture.js";
 import { gateNode, launch, pendingGate, resolveGate, retrieve } from "./gate-tools.fixture.js";
 
 vi.mock("@earendil-works/pi-coding-agent", async importOriginal => {
@@ -40,7 +40,7 @@ it("renders canonical calls and graph escalations with bounded rows and complete
 it("preserves a graph's declared outcome independently of successful execution", async () => {
   const host = boot();
   await host.lifecycle("session_start");
-  mockRunAgent(async () => ({ responseText: '{"status":"partial","reason":"Missing source"}', session, aborted: false, forceSteered: false }));
+  mockSessions(() => '{"status":"partial","reason":"Missing source"}');
   const id = await launch(host, { nodes: { result: { type: "agent", agent: "fixture", prompt: "work", outputSchema: { type: "object" } } }, edges: [], outputs: { $agentGraphOutcome: { node: "result", path: "$" } } });
   const result = await retrieve(host, id);
   expect(result.details).toMatchObject({ status: "completed", outcome: { status: "partial", reason: "Missing source" }, output: {} });

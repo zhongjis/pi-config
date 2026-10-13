@@ -10,19 +10,19 @@
  * queues, call the real tool with wait:true, drain the queue, and assert the
  * call returns the final result.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 import { QUEUE_WAIT_POLL_MS } from "../src/notification-coordinator.js";
+import { deferred, fakeSession, opened } from "./helpers/session-seam.js";
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -60,22 +60,14 @@ const flush = async () => {
   await new Promise((r) => setImmediate(r));
 };
 
-/** runAgent mock where each call blocks until we resolve it manually. */
+/** Each session prompt blocks until we resolve it manually. */
 function deferredRuns() {
-  const resolvers: Array<(v: any) => void> = [];
-  vi.mocked(runAgent).mockImplementation(
-    () =>
-      new Promise((resolve) => {
-        resolvers.push(() =>
-          resolve({
-            responseText: "THE-RESULT-PAYLOAD",
-            session: { dispose: vi.fn() } as any,
-            aborted: false,
-            forceSteered: false,
-          }),
-        );
-      }) as any,
-  );
+  const resolvers: Array<() => void> = [];
+  vi.mocked(openSession).mockImplementation(async () => {
+    const gate = deferred<string>();
+    resolvers.push(() => gate.resolve("THE-RESULT-PAYLOAD"));
+    return opened(fakeSession(() => gate.promise));
+  });
   return resolvers;
 }
 
@@ -129,7 +121,7 @@ describe("get_agent_result wait:true on a queued agent", () => {
         await flush();
         expect(settled).toBe(false); // shutdown must wait for the parked runners
       } finally {
-        while (resolvers.length) resolvers.shift()?.(undefined);
+        while (resolvers.length) resolvers.shift()?.();
         await shutdown;
       }
     }
@@ -183,22 +175,12 @@ describe("get_agent_result wait:true on a queued agent", () => {
       pi.events.emit.mockImplementation((name: string) => { if (name === "subagents:completed") resolve(); });
     });
 
-    let resolveRun: (() => void) | undefined;
-    let childSignal: AbortSignal | undefined;
-    vi.mocked(runAgent).mockImplementation(
-      (_ctx, _type, _prompt, options) =>
-        new Promise((resolve) => {
-          childSignal = options.signal;
-          resolveRun = () => resolve({
-            responseText: "THE-RESULT-PAYLOAD",
-            session: { dispose: vi.fn() } as any,
-            aborted: false,
-            forceSteered: false,
-          });
-        }),
-    );
+    const gate = deferred<string>();
+    const session = fakeSession(() => gate.promise);
+    vi.mocked(openSession).mockResolvedValue(opened(session));
 
     const { id } = await spawnBackground(tools);
+    await flush();
     const controller = new AbortController();
     const removeListener = vi.spyOn(controller.signal, "removeEventListener");
     const waitOutcome = tools
@@ -214,9 +196,9 @@ describe("get_agent_result wait:true on a queued agent", () => {
       waitOutcome,
       new Promise<string>((resolve) => setTimeout(() => resolve("timed-out"), 100)),
     ]);
-    const childWasAborted = childSignal?.aborted;
+    const childWasAborted = session.abort.mock.calls.length > 0;
 
-    resolveRun?.();
+    gate.resolve("THE-RESULT-PAYLOAD");
     await flush();
     await waitOutcome;
     await completed;

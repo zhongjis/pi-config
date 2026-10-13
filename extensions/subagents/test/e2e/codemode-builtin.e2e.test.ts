@@ -15,8 +15,9 @@ import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAccessRules } from "../../../lib/active-tools.js";
 import { disposeChildSession } from "../../src/agent-manager.js";
-import { runAgent } from "../../src/agent-runner.js";
+import { openSession } from "../../src/agent-runner.js";
 import { registerAgents } from "../../src/agent-types.js";
+import { execute } from "../../src/execution.js";
 import type { AgentConfig } from "../../src/types.js";
 import { createFauxModelRuntime, type FauxModelRuntime } from "../helpers/pi-ai.js";
 
@@ -101,20 +102,18 @@ export default function(pi: ExtensionAPI) {
     } satisfies AgentConfig]]));
     const { model, modelRegistry } = fauxRuntime;
     const ctx: any = { cwd, getSystemPrompt: () => "PARENT", model, modelRegistry, isProjectTrusted: () => true };
-    let session: any;
-    let active: string[] = [];
-    try {
-      await runAgent(ctx, "coder", "go", {
-        pi: makePi(),
-        model,
-        isolated: options.isolated,
-        onSessionCreated: (s) => { session = s; active = s.getActiveToolNames(); },
-      });
-    } catch {
-      // The faux turn may fail; loading and scope are fixed at construction.
-    }
+    const { session, promptPrefix } = await openSession(ctx, "coder", {
+      pi: makePi(), model, isolated: options.isolated,
+    });
+    const active = session.getActiveToolNames();
+    await execute(session, (promptPrefix ?? "") + "go");
     const paths: string[] = session.extensionRunner.getExtensionPaths();
-    const veto = options.probeVeto ? await session.agent.beforeToolCall({ toolCall: { name: "codemode" }, args: {} }) : undefined;
+    const beforeToolCall = session.agent.beforeToolCall;
+    if (options.probeVeto && !beforeToolCall) throw new Error("Missing beforeToolCall hook");
+    const veto = options.probeVeto && beforeToolCall ? await beforeToolCall({
+      assistantMessage: fauxAssistantMessage([]), toolCall: fauxToolCall("codemode", {}),
+      args: {}, context: { messages: session.messages },
+    }) : undefined;
     await disposeChildSession(session);
     return { active, loaded: paths.includes("builtin:codemode"), veto };
   }

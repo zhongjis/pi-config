@@ -3,7 +3,7 @@ import { Type } from "typebox";
 import { mergeAgentHistory, readHistoryConversation } from "./agent-history.js";
 import type { AgentManager } from "./agent-manager.js";
 import { formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
-import { formatAgentConversation, getAgentConversation, resolveOwnedSessionFile, SUBAGENT_TOOL_NAMES, steerAgent } from "./agent-runner.js";
+import { formatAgentConversation, getAgentConversation, resolveOwnedSessionFile, SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
 import { extractText } from "./context.js";
 import { isGraphRunId } from "./graph/graph-snapshot-path.js";
 import type { createGraphResultObserver } from "./graph/result-observer.js";
@@ -158,12 +158,12 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     name: SUBAGENT_TOOL_NAMES.STEER,
     label: "Steer Agent",
     description:
-      "Send a steering message to a running agent. The message will interrupt the agent after its current tool execution " +
-      "and be injected into its conversation, allowing you to redirect its work mid-run. Only works on running agents.",
+      "Send a steering message to a running or queued agent. The message will interrupt the agent after its current tool execution " +
+      "and be injected into its conversation, allowing you to redirect its work mid-run. Queued messages wait for the execution's session.",
     promptSnippet: "Send a steering message to redirect a running background agent",
     parameters: Type.Object({
       agent_id: Type.String({
-        description: "The agent ID to steer (must be currently running).",
+        description: "The agent ID to steer (must be currently running or queued).",
       }),
       message: Type.String({
         description: "The steering message to send. This will appear as a user message in the agent's conversation.",
@@ -186,18 +186,16 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
         if (evicted) return notRunning(evicted.status, true);
         return textResult(`Agent not found: "${params.agent_id}". It may have been cleaned up.`);
       }
-      if (record.status !== "running") {
-        // Queued or still-draining executions cannot be resumed yet.
+      const result = manager.steer(record.id, params.message);
+      if (result.status === "refused") {
         return notRunning(record.status, !manager.hasPendingExecution(record.id));
       }
-      if (!record.session) {
-        if (!record.pendingSteers) record.pendingSteers = [];
-        record.pendingSteers.push(params.message);
+      if (result.status === "pending") {
         pi.events.emit("subagents:steered", { id: record.id, message: params.message });
         return textResult(`Steering message queued for agent ${record.id}. It will be delivered once the session initializes.`);
       }
       try {
-        await steerAgent(record.session, params.message);
+        await result.delivery;
         pi.events.emit("subagents:steered", { id: record.id, message: params.message });
         const tokens = formatLifetimeTokens(record);
         const contextPercent = getSessionContextPercent(record.session);

@@ -2,19 +2,18 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Usage } from "@earendil-works/pi-ai";
-import type { AgentSession, ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolResultEvent } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn(), resumeAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
 import { AgentManager } from "../src/agent-manager.js";
-import { resumeAgent, runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import extension from "../src/index.js";
 import * as settingsModule from "../src/settings.js";
 import type { AgentDetails } from "../src/ui/agent-widget.js";
+import { type FakeSession, fakeSession, flush, opened } from "./helpers/session-seam.js";
 
 interface Result { content: unknown[]; details?: AgentDetails; usage?: Usage }
 interface Tool { name: string; execute(id: string, params: Record<string, unknown>, signal: AbortSignal | undefined, update: ((result: Result) => void) | undefined, ctx: ExtensionContext): Promise<Result> }
@@ -24,7 +23,7 @@ let dir: string;
 let cwd: string;
 let cleanup: (() => Promise<void>) | undefined;
 const model = { provider: "test", id: "chosen", name: "Chosen", reasoning: true };
-const session = { model, thinkingLevel: "low", dispose: vi.fn(), getSessionStats: () => ({ tokens: { input: 0, output: 0, cacheWrite: 0 } }) } as unknown as AgentSession;
+let session: FakeSession;
 const delta = { input: 10, output: 2, cacheWrite: 3, cacheRead: 7, cost: 0.25 };
 const params = { prompt: "task", description: "test", subagent_type: "fixture" };
 beforeEach(() => {
@@ -35,14 +34,9 @@ beforeEach(() => {
   process.chdir(dir);
   mkdirSync(join(dir, ".pi", "agents"), { recursive: true });
   writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\ndescription: fixture\n---\nTask");
-  vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-    options.onSessionCreated?.(session);
-    options.onAssistantUsage?.(delta);
-    return { responseText: "done", session, aborted: false, forceSteered: false };
-  });
-  vi.mocked(resumeAgent).mockImplementation(async (_session, _prompt, options) => {
-    options?.onAssistantUsage?.(delta);
-    return { text: "continued" };
+  vi.mocked(openSession).mockReset().mockImplementation(async () => {
+    session = fakeSession((_prompt, child) => ({ text: child.messages.length === 0 ? "done" : "continued", usage: delta }), { model });
+    return opened(session);
   });
 });
 afterEach(async () => {
@@ -96,7 +90,7 @@ it.each([
   vi.useFakeTimers();
   let release: (() => void) | undefined;
   const drain = new Promise<void>(resolve => { release = resolve; });
-  vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "retained stopped checkpoint", session, aborted: false, forceSteered: false }; });
+  vi.mocked(openSession).mockResolvedValueOnce(opened(fakeSession(async () => { await drain; return "retained stopped checkpoint"; })));
   try {
     const started = await execute("agent", { ...params, run_in_background: true });
     if (grouped) await execute("agent", { ...params, run_in_background: true });
@@ -139,7 +133,7 @@ it("async queued cancellation notifies once without starting its SDK runner", as
   vi.useFakeTimers();
   let release: (() => void) | undefined;
   const drain = new Promise<void>(resolve => { release = resolve; });
-  vi.mocked(runAgent).mockClear().mockImplementationOnce(async () => { await drain; return { responseText: "busy", session, aborted: false, forceSteered: false }; });
+  vi.mocked(openSession).mockClear().mockResolvedValueOnce(opened(fakeSession(async () => { await drain; return "busy"; })));
   try {
     await execute("agent", { ...params, run_in_background: true });
     const queued = await execute("agent", { ...params, run_in_background: true });
@@ -153,7 +147,7 @@ it("async queued cancellation notifies once without starting its SDK runner", as
     await vi.advanceTimersByTimeAsync(300);
     expect(pi.sendMessage).toHaveBeenCalledTimes(1);
     expect(vi.mocked(pi.sendMessage).mock.calls[0]?.[0].content).toContain(`<task-id>${queued.details?.agentId}</task-id>`);
-    expect(runAgent).toHaveBeenCalledTimes(1);
+    expect(openSession).toHaveBeenCalledTimes(1);
     const retrieved = await execute("get_agent_result", { run_id: queued.details?.agentId, wait: true });
     expect(retrieved.details).toMatchObject({ status: "stopped", interruptionCause: "caller" });
   } finally { release?.(); await vi.advanceTimersByTimeAsync(0); vi.useRealTimers(); }
@@ -168,7 +162,7 @@ it("returns background resume immediately with the same ID and delivers once", a
   const completed = new Promise<void>(resolve => vi.mocked(pi.events.emit).mockImplementation(name => { if (name === "subagents:completed") resolve(); }));
   let release: (() => void) | undefined;
   const drain = new Promise<void>(resolve => { release = resolve; });
-  vi.mocked(resumeAgent).mockImplementationOnce(async () => { await drain; return { text: "background continued" }; });
+  session.prompt.mockImplementationOnce(async () => { await drain; session.reply({ text: "background continued" }); });
   const pending = execute("agent", { ...params, resume: id, run_in_background: true });
   try {
     const early = await Promise.race([pending, new Promise<undefined>(resolve => setImmediate(() => resolve(undefined)))]);
@@ -182,18 +176,29 @@ it("returns background resume immediately with the same ID and delivers once", a
   expect(retrieved.details?.result).toBe("background continued");
   const foreground = await execute("agent", { ...params, resume: id });
   expect(foreground.details?.result).toBe("continued");
+  expect(openSession).toHaveBeenCalledTimes(1);
+  expect(session.prompt).toHaveBeenCalledTimes(3);
   await vi.runOnlyPendingTimersAsync();
   expect(pi.sendMessage).toHaveBeenCalledTimes(1);
 });
 
 it.each(["user", "unknown", "supervisor-idle"] as const)("foreground resume reports %s interruption rather than completion", async (cause) => {
+  const resumes = vi.spyOn(AgentManager.prototype, "resume");
   const { execute } = activate();
   const original = await execute();
   const id = original.details?.agentId;
   if (!id) throw new Error("Missing agent ID");
-  vi.mocked(resumeAgent).mockResolvedValueOnce({ text: "retained checkpoint", interruptionCause: cause });
+  session.prompt.mockImplementationOnce(async () => {
+    if (cause !== "unknown") {
+      const manager = resumes.mock.contexts.at(-1);
+      if (!manager) throw new Error("Missing resuming manager");
+      manager.abort(id, cause);
+      await session.aborted;
+    }
+    session.reply({ text: "retained checkpoint", aborted: true });
+  });
   const resumed = await execute("agent", { ...params, resume: id });
-  expect(resumed.details).toMatchObject({ status: "aborted", interruptionCause: cause, result: "retained checkpoint" });
+  expect(resumed.details).toMatchObject({ status: cause === "unknown" ? "aborted" : "stopped", interruptionCause: cause, result: "retained checkpoint" });
   const content = JSON.stringify(resumed.content);
   expect(content).toContain("task is unfinished");
   expect(content.includes("STOPPED BY THE USER")).toBe(cause === "user");
@@ -216,7 +221,7 @@ it("reports final deltas once across retrieval and resume, never on partial resu
 it("holds background usage for an eligible result and merges foreign usage", async () => {
   const { execute, finish } = activate({ reportUsage: true });
   const result = await execute("agent", { ...params, run_in_background: true } as typeof params);
-  await Promise.resolve();
+  await flush();
   expect((await finish("agent", result, "")).usage).toBeUndefined();
   expect((await finish("read", result)).usage).toBeUndefined();
   const foreign: Usage = { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, totalTokens: 10, cost: { input: 1, output: 2, cacheRead: 3, cacheWrite: 4, total: 10 } };
@@ -280,15 +285,15 @@ it("shows configuration thinking clamping even without a caller thinking overrid
 it("keeps queued details free of actual and mismatch claims, then reports running spend", async () => {
   let release: (() => void) | undefined;
   const wait = new Promise<void>((resolve) => { release = resolve; });
-  vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-    options.onSessionCreated?.(session);
-    options.onAssistantUsage?.(delta);
+  vi.mocked(openSession).mockImplementation(async () => opened(fakeSession(async (_prompt, child) => {
+    child.usage(delta);
     await wait;
-    return { responseText: "done", session, aborted: false, forceSteered: false };
-  });
+    return "done";
+  }, { model })));
   const { execute, finish } = activate({ maxConcurrent: 1, reportUsage: true });
   const first = await execute("agent", { ...params, run_in_background: true } as typeof params);
   const queued = await execute("agent", { ...params, run_in_background: true } as typeof params);
+  await flush();
   expect(queued.details?.status).toBe("queued");
   for (const field of ["modelName", "thinking", "requestedModel", "requestedThinking"] as const) expect(queued.details?.[field]).toBeUndefined();
   const running = await execute("get_agent_result", { run_id: first.details!.agentId } as unknown as typeof params);
@@ -299,11 +304,10 @@ it("keeps queued details free of actual and mismatch claims, then reports runnin
 });
 
 it("retains spent deltas through failed calls", async () => {
-  vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-    options.onSessionCreated?.(session);
-    options.onAssistantUsage?.(delta);
+  vi.mocked(openSession).mockImplementation(async () => opened(fakeSession((_prompt, child) => {
+    child.usage(delta);
     throw new Error("cancelled after billing");
-  });
+  }, { model })));
   const { execute, finish } = activate({ reportUsage: true });
   const result = await execute();
   expect(result.details?.status).toBe("error");
@@ -325,9 +329,9 @@ it("prepares configured direct model and thinking before spawning", async () => 
     "---\nname: fixture\ndescription: fixture\nmodel: test/chosen:high\n---\nTask",
   );
   const { execute } = activate();
-  vi.mocked(runAgent).mockClear();
+  vi.mocked(openSession).mockClear();
   await execute("agent", { ...params, model: "test/missing", thinking: "low" } as typeof params);
-  expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3]).toMatchObject({
+  expect(vi.mocked(openSession).mock.calls.at(-1)?.[2]).toMatchObject({
     selectedModel: { model, modelInput: "test/chosen:high" },
     thinkingLevel: "high",
   });
@@ -342,8 +346,8 @@ it("warns but runs when the configured direct model is out of scope", async () =
   const { execute, ctx } = activate({ scopeModels: true });
   const allowed = { ...model, id: "allowed" };
   (ctx.modelRegistry as { getAvailable: () => typeof model[] }).getAvailable = () => [model, allowed];
-  vi.mocked(runAgent).mockClear();
+  vi.mocked(openSession).mockClear();
   await execute();
   expect(ctx.ui.notify).toHaveBeenCalledWith('Agent "fixture" using out-of-scope model "test/chosen"', "warning");
-  expect(runAgent).toHaveBeenCalledOnce();
+  expect(openSession).toHaveBeenCalledOnce();
 });

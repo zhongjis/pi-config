@@ -6,6 +6,7 @@ import { homedir } from "node:os";
 import { isAbsolute, relative, sep } from "node:path";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { type HistoryConversation, readHistoryConversation } from "../agent-history.js";
+import type { SteerResult } from "../execution.js";
 import type { AgentRecord } from "../types.js";
 import type { AgentActivity } from "./agent-widget.js";
 import { ConversationViewer, VIEWPORT_HEIGHT_PCT } from "./conversation-viewer.js";
@@ -15,7 +16,7 @@ import type { GraphRunUIContext } from "./graph-run-menu.js";
 type MenuUI = Pick<GraphRunUIContext["ui"], "custom" | "notify">;
 type FleetUI = Pick<FleetUICtx, "custom" | "notify">;
 type OverlayDeps = {
-  manager: { abort(id: string, cause?: AgentRecord["interruptionCause"]): boolean; steer(id: string, message: string): unknown };
+  manager: { abort(id: string, cause?: AgentRecord["interruptionCause"]): boolean; steer(id: string, message: string): SteerResult };
   agentActivity: ReadonlyMap<string, AgentActivity>;
 };
 type OverlayOptions = { onOpen?(close: () => void): void };
@@ -102,7 +103,15 @@ export function openConversationOverlay(
     () => {
       if (deps.manager.abort(record.id, "user")) ui.notify(`Stopped "${record.description}".`, "info");
     },
-    message => { deps.manager.steer(record.id, message); },
+    message => {
+      const result = deps.manager.steer(record.id, message);
+      if (result.status === "refused") ui.notify(`Agent "${record.description}" cannot accept steering.`, "warning");
+      if (result.status === "delivered") {
+        void result.delivery.catch(error => {
+          ui.notify(`Failed to steer agent: ${error instanceof Error ? error.message : String(error)}`, "error");
+        });
+      }
+    },
     options,
   );
 }

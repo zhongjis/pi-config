@@ -2,7 +2,7 @@
  * agent-runner-e2e.test.ts — End-to-end test against the REAL pi-mono runtime.
  *
  * Every other agent-runner test mocks `@earendil-works/pi-coding-agent`: it
- * asserts that `runAgent` hands the right `tools:` allowlist to a *simulated*
+ * asserts that `openSession` hands the right `tools:` allowlist to a *simulated*
  * `createAgentSession`. That proves our allowlist math, but not the assumption
  * the math rests on — that real pi-mono actually gates a session to that
  * allowlist, admitting extension-registered tools (the #47 fix) and dropping
@@ -13,7 +13,7 @@
  *   - the real `DefaultResourceLoader` discovers it as the project extension
  *     `e2e-probe` and `extensions:` rules select it,
  *   - the real `createAgentSession` builds the session,
- *   - we read the real `session.getActiveToolNames()` at `onSessionCreated`
+ *   - we read the real `session.getActiveToolNames()` after `openSession`
  *     (fires after construction, before any prompt) and assert what the LLM
  *     would actually be allowed to call.
  *
@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAccessRules } from "../../lib/active-tools.js";
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
 import type { AgentConfig } from "../src/types.js";
 import { createFauxModelRuntime, type FauxModelRuntime } from "./helpers/pi-ai.js";
@@ -52,6 +52,7 @@ function makePi() {
 describe("agent-runner end-to-end (real pi-mono session + real extension)", () => {
   let cwd: string;
   let fauxRuntime: FauxModelRuntime;
+  const sessions: AgentSession[] = [];
 
   beforeEach(async () => {
     cwd = mkdtempSync(join(tmpdir(), "subagents-e2e-"));
@@ -65,6 +66,7 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
     });
   });
   afterEach(() => {
+    for (const session of sessions.splice(0)) session.dispose();
     fauxRuntime.dispose();
     vi.unstubAllEnvs();
     rmSync(cwd, { recursive: true, force: true });
@@ -72,10 +74,10 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
 
   /**
    * Register an agent type "e2e" with the given `extensions:` / `tools:` rules,
-   * run it through the REAL runAgent, and return the real session plus its
+   * run it through the REAL openSession, and return the real session plus its
    * active tool names captured at construction time.
    */
-  async function runFor(extensions: string, tools: string): Promise<{ session: AgentSession | undefined; active: string[] }> {
+  async function runFor(extensions: string, tools: string): Promise<{ session: AgentSession; active: string[] }> {
     registerAgents(
       new Map([
         [
@@ -99,21 +101,9 @@ describe("agent-runner end-to-end (real pi-mono session + real extension)", () =
     const { model, modelRegistry } = fauxRuntime;
     const ctx: any = { cwd, getSystemPrompt: () => "PARENT", model, modelRegistry };
 
-    let session: AgentSession | undefined;
-    let active: string[] = [];
-    try {
-      await runAgent(ctx, "e2e", "go", {
-        pi: makePi(),
-        model,
-        onSessionCreated: (s) => {
-          session = s;
-          active = s.getActiveToolNames();
-        },
-      });
-    } catch {
-      // A no-op/erroring prompt turn is fine — the gated tool set is fixed at
-      // construction, which `onSessionCreated` already captured.
-    }
+    const { session } = await openSession(ctx, "e2e", { pi: makePi(), model });
+    sessions.push(session);
+    const active = session.getActiveToolNames();
     return { session, active };
   }
 

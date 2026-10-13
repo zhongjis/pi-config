@@ -19,6 +19,7 @@ import {
   parseBackgroundSupervisionMode,
   parseSubagentSupervisionCeilingMs,
 } from "./background-supervision.js";
+import type { SteerResult } from "./execution.js";
 import type { AgentRecord } from "./types.js";
 import type { AgentActivity } from "./ui/agent-widget.js";
 
@@ -29,7 +30,7 @@ export const AUTO_STEER_MESSAGE =
 /** Minimal manager surface the loop depends on (satisfied by AgentManager). */
 export interface SupervisionManager {
   getRunning(): AgentRecord[];
-  steer(id: string, message: string): boolean;
+  steer(id: string, message: string): SteerResult;
   abort(id: string, cause: AgentRecord["interruptionCause"]): boolean;
 }
 
@@ -69,8 +70,15 @@ export function startBackgroundSupervision(
       if (action === "none") continue;
 
       if (action === "steer") {
-        manager.steer(record.id, AUTO_STEER_MESSAGE);
+        const result = manager.steer(record.id, AUTO_STEER_MESSAGE);
+        if (result.status === "refused") continue;
         record.lastSupervisionSteerAt = now;
+        if (result.status === "delivered") {
+          void result.delivery.catch(error => {
+            record.diagnostics ??= [];
+            record.diagnostics.push(`Failed to steer agent: ${error instanceof Error ? error.message : String(error)}`);
+          });
+        }
         continue;
       }
 

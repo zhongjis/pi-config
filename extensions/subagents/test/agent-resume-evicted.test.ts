@@ -6,20 +6,20 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async (importOriginal) => ({
-  ...await importOriginal<typeof import("../src/agent-runner.js")>(),
-  runAgent: vi.fn(),
-}));
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
 import { AgentManager } from "../src/agent-manager.js";
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
 import type { AgentConfig, EvictedAgent } from "../src/types.js";
+import { deferred, fakeSession, opened } from "./helpers/session-seam.js";
 
 const PARENT_ID = "parent-1";
-const pi = {} as any;
+const pi = {} as ExtensionAPI;
 
 function agentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {
@@ -35,13 +35,10 @@ function agentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
   };
 }
 
-const finished = (responseText = "done", session: any = { dispose: vi.fn() }) =>
-  ({ responseText, session, aborted: false, forceSteered: false });
-
 describe("AgentManager.restoreEvicted", () => {
   let root: string;
   let sessionsDir: string;
-  let ctx: any;
+  let ctx: ExtensionContext;
   let manager: AgentManager | undefined;
 
   beforeEach(() => {
@@ -50,8 +47,8 @@ describe("AgentManager.restoreEvicted", () => {
     sessionsDir = join(root, "agent-dir", "subagent-sessions", PARENT_ID);
     mkdirSync(sessionsDir, { recursive: true });
     registerAgents(new Map([["probe", agentConfig()]]));
-    ctx = { cwd: root, sessionManager: { getSessionId: () => PARENT_ID } };
-    vi.mocked(runAgent).mockReset().mockResolvedValue(finished());
+    ctx = { cwd: root, sessionManager: { getSessionId: () => PARENT_ID } } as ExtensionContext;
+    vi.mocked(openSession).mockReset().mockImplementation(async () => opened(fakeSession(() => "done")));
   });
   afterEach(async () => {
     await manager?.dispose();
@@ -111,12 +108,13 @@ describe("AgentManager.restoreEvicted", () => {
 
     await manager.restoreEvicted(pi, ctx, run.id, "again");
 
-    expect(vi.mocked(runAgent).mock.lastCall).toEqual([ctx, "probe", "again", expect.objectContaining({
+    expect(vi.mocked(openSession).mock.lastCall).toEqual([ctx, "probe", expect.objectContaining({
       agentId: run.id,
       resumeSessionFile: realpathSync(run.sessionFile),
       cwd: undefined,
       configCwd: root,
     })]);
+    expect(manager.getRecord(run.id)?.session?.prompt).toHaveBeenCalledWith("again");
   });
 
   it.each(["retention cleanup", "clearCompleted"] as const)("S4 a run evicted by %s is live again with its lifetime accounting seeded", async (eviction) => {
@@ -134,29 +132,30 @@ describe("AgentManager.restoreEvicted", () => {
   it("S4 a background restore returns at once and joins the background pool", async () => {
     const manager = managerWith(entry("evicted-1", writeFile(join(sessionsDir, "child.jsonl"))));
     manager.setMaxConcurrent(1);
-    let release!: () => void;
-    vi.mocked(runAgent).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve(finished()); }));
+    const gate = deferred<string>();
+    vi.mocked(openSession).mockResolvedValueOnce(opened(fakeSession(() => gate.promise)));
     manager.spawn(pi, ctx, "probe", "occupy", { description: "occupant", isBackground: true });
 
     try {
       const record = await manager.restoreEvicted(pi, ctx, "evicted-1", "again", { isBackground: true });
 
       expect(record.status).toBe("queued");
-    } finally { release(); }
+    } finally { gate.resolve("done");
+      await manager.getRecord("evicted-1")?.promise; }
   });
 
   it("S4 a foreground restore bypasses the foreground pool", async () => {
     const manager = managerWith(entry("evicted-1", writeFile(join(sessionsDir, "child.jsonl"))));
     manager.setMaxConcurrentForeground(1);
-    let release!: () => void;
-    vi.mocked(runAgent).mockImplementationOnce(() => new Promise((resolve) => { release = () => resolve(finished()); }));
+    const gate = deferred<string>();
+    vi.mocked(openSession).mockResolvedValueOnce(opened(fakeSession(() => gate.promise)));
     const occupant = manager.spawnAndWait(pi, ctx, "probe", "occupy", { description: "occupant" });
 
     try {
       const record = await manager.restoreEvicted(pi, ctx, "evicted-1", "again");
 
       expect(record.status).toBe("completed");
-    } finally { release(); await occupant; }
+    } finally { gate.resolve("done"); await occupant; }
   });
 
   it("S5 an empty manager restores a run known only from the history index", async () => {
@@ -165,9 +164,10 @@ describe("AgentManager.restoreEvicted", () => {
 
     await manager.restoreEvicted(pi, ctx, run.id, "again");
 
-    expect(runAgent).toHaveBeenCalledWith(ctx, "probe", "again", expect.objectContaining({
+    expect(openSession).toHaveBeenCalledWith(ctx, "probe", expect.objectContaining({
       agentId: run.id, resumeSessionFile: realpathSync(run.sessionFile),
     }));
+    expect(manager.getRecord(run.id)?.session?.prompt).toHaveBeenCalledWith("again");
   });
 
   it.each([
@@ -184,7 +184,7 @@ describe("AgentManager.restoreEvicted", () => {
 
     await expect(manager.restoreEvicted(pi, ctx, "evicted-1", "again")).rejects.toThrow(error);
 
-    expect({ agents: manager.listAgents(), runs: vi.mocked(runAgent).mock.calls.length }).toEqual({ agents: [], runs: 0 });
+    expect({ agents: manager.listAgents(), runs: vi.mocked(openSession).mock.calls.length }).toEqual({ agents: [], runs: 0 });
   });
 
   it("S8 refuses an id with no history entry", async () => {
@@ -201,7 +201,7 @@ describe("AgentManager.restoreEvicted", () => {
 
     await expect(manager.restoreEvicted(pi, ctx, id, "again")).rejects.toThrow(/still live/);
 
-    expect({ agents: manager.listAgents().map((record) => record.id), runs: vi.mocked(runAgent).mock.calls.length }).toEqual({ agents: [id], runs: 1 });
+    expect({ agents: manager.listAgents().map((record) => record.id), runs: vi.mocked(openSession).mock.calls.length }).toEqual({ agents: [id], runs: 1 });
   });
 
   it("S9 refuses a pointer outside the owned session directories", async () => {
@@ -226,24 +226,24 @@ describe("AgentManager.restoreEvicted", () => {
 
     await manager.restoreEvicted(pi, ctx, "evicted-1", "again");
 
-    expect(runAgent).toHaveBeenCalledWith(ctx, "probe", "again", expect.objectContaining({ resumeSessionFile: realpathSync(file) }));
+    expect(openSession).toHaveBeenCalledWith(ctx, "probe", expect.objectContaining({ resumeSessionFile: realpathSync(file) }));
+    expect(manager.getRecord("evicted-1")?.session?.prompt).toHaveBeenCalledWith("again");
   });
 
   it("S13 the runner reopens the file only after the evicted session's shutdown settles", async () => {
     const order: string[] = [];
     let releaseShutdown!: () => void;
     const shutdown = new Promise<void>((resolve) => { releaseShutdown = resolve; });
-    const session = {
-      dispose: vi.fn(),
+    const session = Object.assign(fakeSession(() => "first"), {
       extensionRunner: { hasHandlers: () => true, emit: () => shutdown.then(() => { order.push("shutdown settled"); }) },
-    };
+    });
     manager = new AgentManager();
-    vi.mocked(runAgent).mockResolvedValueOnce(finished("first", session));
+    vi.mocked(openSession).mockResolvedValueOnce(opened(session));
     const id = manager.spawn(pi, ctx, "probe", "first", { description: "probe run", isBackground: true });
     await manager.getRecord(id)!.promise;
     manager.clearCompleted();
     manager.setEvictedIndex(() => entry(id, writeFile(join(sessionsDir, "child.jsonl"))));
-    vi.mocked(runAgent).mockImplementationOnce(async () => { order.push("runner"); return finished(); });
+    vi.mocked(openSession).mockImplementationOnce(async () => { order.push("runner"); return opened(fakeSession(() => "done")); });
 
     const record = await manager.restoreEvicted(pi, ctx, id, "again", { isBackground: true });
     await new Promise((resolve) => setImmediate(resolve));

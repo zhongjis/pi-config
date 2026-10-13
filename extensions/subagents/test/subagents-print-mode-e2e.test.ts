@@ -5,7 +5,7 @@
  * Unlike agent-runner-e2e / ext-templates-e2e (which assert on the gated tool
  * set captured at construction and never drive a turn), these tests drive a real
  * parent turn that calls the `agent` tool, lets the extension spawn a real child
- * session via the real `runAgent`, and waits for it through the real subagent
+ * session via the real Execution, and waits for it through the real subagent
  * hold condition — then asserts on what actually flowed back.
  *
  * Deterministic by default: a scripted faux model drives both parent and child
@@ -202,7 +202,7 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
   it("spawns a FRONTMATTER-defined (.pi/agents/*.md) agent and its prompt reaches the child", async () => {
     // A project agent whose body is a distinctive system prompt. Proving the
     // child SAW it proves the full chain: the extension discovers the .md from
-    // process.cwd(), parses its frontmatter, and runAgent's buildAgentPrompt
+    // process.cwd(), parses its frontmatter, and the runner's buildAgentPrompt
     // feeds the body into the real child session.
     const MARKER = "SPYMARKER_FRONTMATTER_REACHED_CHILD";
     const cwd = mkdtempSync(join(tmpdir(), "subagents-fm-"));

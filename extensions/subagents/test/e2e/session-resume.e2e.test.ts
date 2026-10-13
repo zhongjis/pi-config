@@ -7,11 +7,12 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, w
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fauxAssistantMessage, fauxText, type Message } from "@earendil-works/pi-ai";
-import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
+import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentManager, disposeChildSession } from "../../src/agent-manager.js";
-import { runAgent, SUBAGENT_LAUNCH_ENTRY } from "../../src/agent-runner.js";
+import { openSession, SUBAGENT_LAUNCH_ENTRY } from "../../src/agent-runner.js";
 import { registerAgents } from "../../src/agent-types.js";
+import { execute } from "../../src/execution.js";
 import type { AgentConfig, EvictedAgent } from "../../src/types.js";
 import { createFauxModelRuntime, type FauxModelRuntime } from "../helpers/pi-ai.js";
 
@@ -75,8 +76,8 @@ describe("subagent session resume against real pi-mono", () => {
     };
   }
 
-  function run(prompt: string, options: { resumeSessionFile?: string; onSessionCreated?: (session: AgentSession) => void } = {}) {
-    return runAgent(parentCtx(), AGENT_TYPE, prompt, {
+  function open(options: { resumeSessionFile?: string } = {}) {
+    return openSession(parentCtx(), AGENT_TYPE, {
       pi: makePi(),
       model: fauxRuntime.model,
       agentId: AGENT_ID,
@@ -96,9 +97,9 @@ describe("subagent session resume against real pi-mono", () => {
   }
 
   it("resuming from the file continues the same conversation in the same file", async () => {
-    let first: AgentSession | undefined;
     fauxRuntime.faux.setResponses([fauxAssistantMessage([fauxText("FIRST")])]);
-    await run("remember ALPHA", { onSessionCreated: (session) => { first = session; } });
+    const { session: first, promptPrefix } = await open();
+    await execute(first, (promptPrefix ?? "") + "remember ALPHA");
     const file = first?.sessionManager.getSessionFile();
     if (!first || !file) throw new Error("fresh spawn did not persist a session file");
     await disposeChildSession(first);
@@ -111,13 +112,13 @@ describe("subagent session resume against real pi-mono", () => {
       }
       return fauxAssistantMessage([fauxText("SECOND")]);
     }]);
-    let resumed: AgentSession | undefined;
-    const result = await run("what did I ask?", { resumeSessionFile: file, onSessionCreated: (session) => { resumed = session; } });
-    if (resumed) await disposeChildSession(resumed);
+    const { session: resumed } = await open({ resumeSessionFile: file });
+    const result = await execute(resumed, "what did I ask?");
+    await disposeChildSession(resumed);
 
     expect({
       requested,
-      responseText: result.responseText,
+      responseText: result.text,
       files: readdirSync(sessionsDir),
       grew: statSync(file).size > sizeBefore,
     }).toEqual({
@@ -160,7 +161,7 @@ describe("subagent session resume against real pi-mono", () => {
   it("S6 refuses a missing file without creating it", async () => {
     const file = join(root, "missing.jsonl");
 
-    await expect(run("go", { resumeSessionFile: file })).rejects.toThrow(/missing or empty/);
+    await expect(open({ resumeSessionFile: file })).rejects.toThrow(/missing or empty/);
 
     expect(existsSync(file)).toBe(false);
   });
@@ -169,7 +170,7 @@ describe("subagent session resume against real pi-mono", () => {
     const file = join(root, "empty.jsonl");
     writeFileSync(file, "");
 
-    await expect(run("go", { resumeSessionFile: file })).rejects.toThrow(/missing or empty/);
+    await expect(open({ resumeSessionFile: file })).rejects.toThrow(/missing or empty/);
 
     expect(statSync(file).size).toBe(0);
   });
@@ -178,7 +179,7 @@ describe("subagent session resume against real pi-mono", () => {
     const file = join(root, "notes.jsonl");
     writeFileSync(file, "not a pi session\nsecond line");
 
-    await expect(run("go", { resumeSessionFile: file })).rejects.toThrow(/not a valid .*session/);
+    await expect(open({ resumeSessionFile: file })).rejects.toThrow(/not a valid .*session/);
 
     expect(readFileSync(file, "utf8")).toBe("not a pi session\nsecond line");
   });
@@ -187,7 +188,7 @@ describe("subagent session resume against real pi-mono", () => {
     const file = join(root, "header-only.jsonl");
     writeFileSync(file, `${JSON.stringify(SessionManager.create(root, sessionsDir).getHeader())}\n`);
 
-    await expect(run("go", { resumeSessionFile: file })).rejects.toThrow(/has no conversation/);
+    await expect(open({ resumeSessionFile: file })).rejects.toThrow(/has no conversation/);
   });
 
   it.each([
@@ -199,6 +200,6 @@ describe("subagent session resume against real pi-mono", () => {
   ] as const)("S7 refuses a session when %s", async (_case, fixture, error) => {
     const file = writeChild(fixture());
 
-    await expect(run("go", { resumeSessionFile: file })).rejects.toThrow(error);
+    await expect(open({ resumeSessionFile: file })).rejects.toThrow(error);
   });
 });

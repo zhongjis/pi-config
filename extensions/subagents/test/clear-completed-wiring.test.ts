@@ -17,13 +17,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -60,7 +59,7 @@ function ctx() {
 }
 
 const textOf = (r: any): string => r.content[0].text;
-// Let runAgent's resolved .then() chain settle so the record reaches "completed".
+// Let the session execution settle so the record reaches "completed".
 const flush = async () => {
   await new Promise((r) => setImmediate(r));
   await new Promise((r) => setImmediate(r));
@@ -69,12 +68,7 @@ const flush = async () => {
 // Spawn a real background agent and drive it to status "completed" with
 // resultConsumed=false (only get_agent_result sets that flag for background).
 async function spawnCompletedBackgroundAgent(tools: Map<string, any>): Promise<string> {
-  vi.mocked(runAgent).mockResolvedValue({
-    responseText: "THE-RESULT-PAYLOAD",
-    session: { dispose: vi.fn() } as any,
-    aborted: false,
-    forceSteered: false,
-  });
+  vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => "THE-RESULT-PAYLOAD")));
   const spawn = await tools.get("agent").execute(
     "tc-spawn",
     { prompt: "go", description: "Review monero_en.rs in depth", subagent_type: "general-purpose", run_in_background: true },

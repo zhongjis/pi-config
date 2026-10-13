@@ -3,15 +3,16 @@
  * whose final assistant turn is a provider error must be reported as a
  * failure, not as "completed" with an empty (or stale) result.
  *
- * Full-stack: real pi loader + real extension + real runAgent + real child
+ * Full-stack: real pi loader + real extension + real Execution + real child
  * sessions on a faux model.
  */
-import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
-import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fauxAssistantMessage, fauxText, fauxToolCall } from "@earendil-works/pi-ai";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   agentCall,
   type PrintModeRun,

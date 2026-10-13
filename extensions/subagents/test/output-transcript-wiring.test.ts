@@ -3,10 +3,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
 vi.mock("../src/output-file.js", () => ({
   createOutputFilePath: vi.fn(() => "/tmp/fake-subagent.output"),
@@ -14,9 +12,10 @@ vi.mock("../src/output-file.js", () => ({
   streamToOutputFile: vi.fn(() => vi.fn()),
 }));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../src/output-file.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -71,12 +70,7 @@ describe("output_transcript agent wiring", () => {
     writeFileSync(join(cwd, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false }));
     mkdirSync(join(agentDir, "agents"), { recursive: true });
     process.chdir(cwd);
-    vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
-      await Promise.resolve();
-      const session = { messages: [], subscribe: vi.fn(() => vi.fn()), dispose: vi.fn() } as any;
-      options.onSessionCreated?.(session);
-      return { responseText: "done", session, aborted: false, forceSteered: false };
-    });
+    vi.mocked(openSession).mockImplementation(async () => opened(fakeSession(() => "done")));
   });
 
   afterEach(() => {

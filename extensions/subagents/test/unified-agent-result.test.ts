@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { boot, mockRunAgent, required, session } from "./graph-run-registration.fixture.js";
+import { boot, mockSessions, required } from "./graph-run-registration.fixture.js";
 
 describe("registered result retrieval", () => {
   it("returns a durable human request before completion without opening UI", async () => {
@@ -26,9 +26,9 @@ describe("registered result retrieval", () => {
     await host.lifecycle("session_start");
     let release: (() => void) | undefined;
     const parked = new Promise<void>(resolve => { release = resolve; });
-    mockRunAgent(async () => {
+    mockSessions(async () => {
       await parked;
-      return { responseText: "graph-result", session, aborted: false, forceSteered: false };
+      return "graph-result";
     });
     const launched = await required(host.tools.get("agent_graph")).execute("launch", {
       graph: { nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [], outputs: { answer: { node: "a", path: "$" } } },
@@ -65,13 +65,11 @@ describe("registered result retrieval", () => {
     await host.lifecycle("session_start");
     const round = `round-secret-${"x".repeat(800)}`;
     const prompts: string[] = [];
-    mockRunAgent(async (_ctx, _type, prompt, options) => {
+    mockSessions((prompt) => {
       prompts.push(prompt);
-      options.onSessionCreated?.(session);
-      const responseText = prompt.startsWith("EVAL")
+      return prompt.startsWith("EVAL")
         ? JSON.stringify({ decision: "sufficient", gaps: [], tasks: [] })
         : JSON.stringify({ blob: round });
-      return { responseText, session, aborted: false, forceSteered: false };
     });
     const launched = await required(host.tools.get("agent_graph")).execute("launch", {
       graph: {
@@ -176,9 +174,9 @@ describe("turn-boundary completion notifications", () => {
     fakeTimers();
     let release: (() => void) | undefined;
     const parked = new Promise<void>((resolve) => { release = resolve; });
-    mockRunAgent(async () => {
+    mockSessions(async () => {
       await parked;
-      return { responseText: "graph-result", session, aborted: false, forceSteered: false };
+      return "graph-result";
     });
     const launched = await required(host.tools.get("agent_graph")).execute("launch", {
       graph: { nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [], outputs: { answer: { node: "a", path: "$" } } },

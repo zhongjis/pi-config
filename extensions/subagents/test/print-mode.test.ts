@@ -1,15 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return {
-    ...actual,
-    runAgent: vi.fn(),
-  };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -71,12 +67,7 @@ describe("print mode background notifications", () => {
   });
 
   it("ignores stale-context errors from delayed completion nudges", async () => {
-    vi.mocked(runAgent).mockResolvedValue({
-      responseText: "done",
-      session: { dispose: vi.fn() } as any,
-      aborted: false,
-      forceSteered: false,
-    });
+    vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => "done")));
 
     const { pi, tools, handlers } = makePi();
     subagentsExtension(pi);

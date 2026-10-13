@@ -11,15 +11,14 @@ import { statSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { Model } from "@earendil-works/pi-ai";
 import type { AgentSession, ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resolveOwnedSessionFile, resumeAgent, runAgent, type ToolActivity } from "./agent-runner.js";
+import { openSession, resolveOwnedSessionFile } from "./agent-runner.js";
 import { isValidType } from "./agent-types.js";
+import { failExecutionStart, type SessionSource, type SteerResult, startExecution, steerExecution, stopExecution, type ToolActivity } from "./execution.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import type { SelectedAgentModel } from "./model-resolution.js";
 import type { NestedSpawn } from "./research-delegation.js";
-import { getSessionFast } from "./session-fast.js";
-import { parseTurnCeiling } from "./turn-ceiling.js";
-import type { AgentActivity, AgentConfig, AgentInvocation, AgentRecord, EvictedAgent, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
-import { addUsage, type LifetimeUsage } from "./usage.js";
+import type { AgentConfig, AgentInvocation, AgentRecord, EvictedAgent, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
+import type { LifetimeUsage } from "./usage.js";
 
 export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
@@ -373,10 +372,10 @@ export class AgentManager {
       }
       if (record.status === "stopped") return id;
       if (options.graphRunId === undefined && !options.bypassQueue && !this.poolHasRoom(foreground, options.isBackground)) {
-        this.queue.push({ id, foreground, background: options.isBackground, start: () => this.startAgent(id, record, args) });
+        this.queue.push({ id, foreground, background: options.isBackground, start: () => this.start(record, { source: this.openSource(record, args), prompt: args.prompt }, options) });
         return id;
       }
-      this.startAgent(id, record, args);
+      this.start(record, { source: this.openSource(record, args), prompt: args.prompt }, options);
     } catch (err) {
       this.agents.delete(id);
       this.releaseRun(id, record);
@@ -389,181 +388,98 @@ export class AgentManager {
     this.activityListener = listener;
   }
 
-  /** Start a fresh execution view without resetting lifetime accounting. */
-  private trackExecution(record: AgentRecord, options: Pick<SpawnOptions, "onToolActivity" | "onTextDelta" | "onTurnEnd" | "onAssistantUsage"> = {}) {
-    const previousTurns = record.turnCount ?? 0;
-    const state: AgentActivity = {
-      activeTools: new Map(),
-      responseText: "",
-      lastProgressAt: record.startedAt,
-      maxTurns: parseTurnCeiling(),
-      get toolUses() { return record.toolUses; },
-      get turnCount() { return record.turnCount ?? 1; },
-      get session() { return record.session; },
-      lifetimeUsage: record.lifetimeUsage,
-    };
-    record.activity = state;
-    record.lastSupervisionSteerAt = undefined;
-    record.lastSupervisionAbortAt = undefined;
-    if (record.graphRunId === undefined) this.activityListener?.(record);
-    let toolSequence = 0;
-    return {
-      onProgress: () => { state.lastProgressAt = Date.now(); },
-      onToolActivity: (activity: ToolActivity) => {
-        if (activity.type === "start") state.activeTools.set(String(++toolSequence), activity.toolName);
-        if (activity.type === "end") {
-          for (const [key, name] of state.activeTools) {
-            if (name === activity.toolName) { state.activeTools.delete(key); break; }
-          }
-          record.toolUses++;
-        }
-        if (activity.type === "diagnostic") {
-          record.diagnostics ??= [];
-          record.diagnostics.push(activity.toolName);
-        }
-        state.lastProgressAt = Date.now();
-        options.onToolActivity?.(activity);
-      },
-      onTextDelta: (delta: string, fullText: string) => {
-        state.responseText = fullText;
-        state.lastProgressAt = Date.now();
-        options.onTextDelta?.(delta, fullText);
-      },
-      onTurnEnd: (turnCount: number) => {
-        record.turnCount = previousTurns + turnCount;
-        state.lastProgressAt = Date.now();
-        options.onTurnEnd?.(turnCount);
-      },
-      // Graph-owned and nested owners cannot act on a check-in.
-      onCheckIn: record.graphRunId === undefined && record.parentAgentId === undefined
-        ? (threshold: number) => this.checkIn(record, threshold)
-        : undefined,
-      onAssistantUsage: (usage: LifetimeUsage) => {
-        addUsage(record.lifetimeUsage, usage);
-        record.lifetimeCost = (record.lifetimeCost ?? 0) + (usage.cost ?? 0);
-        this.lifetimeCost += usage.cost ?? 0;
-        state.lastProgressAt = Date.now();
-        this.usageListener?.(usage);
-        options.onAssistantUsage?.(usage);
-      },
-    };
-  }
-
-  /** Actually start an agent (called immediately or from queue drain). */
-  private startAgent(id: string, record: AgentRecord, { pi, ctx, type, prompt, options, restore, agentConfig }: SpawnArgs) {
-    // Re-validate a caller-supplied cwd: queued spawns can start minutes after
-    // spawn()'s check, and the directory may be gone by then (TOCTOU). Same
-    // curated errors; drainQueue parks a throw on the record as an error.
+  /**
+   * The create/reopen session source of a spawn or evicted restore. A queued
+   * spawn's caller cwd is re-validated here: it can start minutes after
+   * spawn()'s check, and the directory may be gone by then (TOCTOU). Same
+   * curated errors; drainQueue parks a throw on the record as an error.
+   */
+  private openSource(record: AgentRecord, { pi, ctx, type, options, restore, agentConfig }: SpawnArgs): SessionSource {
     assertValidSpawnCwd(options.cwd);
     // Single resolution point for the caller-supplied cwd — both the working
     // dir and configCwd below MUST agree on this value forever.
     const customCwd = options.cwd ?? undefined; // null (RPC "unset") → undefined
+    // A reopened file must not race the evicted session's session_shutdown writes.
+    const disposal = restore ? this.disposals.get(record.id) : undefined;
+    return ({ onToolActivity }) => {
+      const open = () => openSession(ctx, type, {
+        pi,
+        agentId: record.id,
+        agentConfig,
+        graphRun: options.graphRunId !== undefined,
+        structuredOutput: options.structuredOutput,
+        model: options.model,
+        selectedModel: options.selectedModel,
+        isolated: options.isolated,
+        inheritContext: options.inheritContext,
+        thinkingLevel: options.thinkingLevel,
+        // The agent runs at the caller-supplied cwd (undefined → parent cwd, or the
+        // reopened session's cwd). When a caller-supplied cwd or a reopened file is
+        // in play, config stays with the parent project (configCwd = ctx.cwd);
+        // otherwise configCwd stays undefined so config resolves from the working dir.
+        cwd: customCwd,
+        configCwd: customCwd !== undefined || restore ? ctx.cwd : undefined,
+        resumeSessionFile: restore?.sessionFile,
+        skills: options.skills,
+        parentSessionId: getParentSessionId(ctx),
+        nestedSpawn: this.nestedSpawnFor(record, pi, ctx),
+        onToolActivity,
+      });
+      return disposal ? disposal.then(open) : open();
+    };
+  }
 
-    record.status = "running";
-    record.startedAt = Date.now();
-    const run = this.runs.get(id);
+  /**
+   * The one start path of every admitted Execution (called immediately or from
+   * queue drain): take its pool slot, start it, and own it until Settlement.
+   */
+  private start(
+    record: AgentRecord,
+    input: { readonly source: SessionSource; readonly prompt: string },
+    options: Pick<SpawnOptions, "onSessionCreated" | "onTextDelta" | "onToolActivity" | "onTurnEnd" | "onAssistantUsage" | "onCompaction">,
+  ): void {
+    const { source, prompt } = input;
+    const run = this.runs.get(record.id);
     if (run) {
       run.active = true;
       if (run.pool === "background") this.runningBackground++;
       if (run.pool === "foreground") this.runningForeground++;
     }
-    const activityCallbacks = this.trackExecution(record, options);
-    if (record.graphRunId === undefined) this.onStart?.(record);
-
-    // A reopened file must not race the evicted session's session_shutdown writes.
-    const disposal = restore ? this.disposals.get(id) : undefined;
-    const execute = () => runAgent(ctx, type, prompt, {
-      pi,
-      agentId: id,
-      agentConfig,
-      graphRun: options.graphRunId !== undefined,
-      structuredOutput: options.structuredOutput,
-      model: options.model,
-      selectedModel: options.selectedModel,
-      isolated: options.isolated,
-      inheritContext: options.inheritContext,
-      thinkingLevel: options.thinkingLevel,
-      // The agent runs at the caller-supplied cwd (undefined → parent cwd, or the
-      // reopened session's cwd). When a caller-supplied cwd or a reopened file is
-      // in play, config stays with the parent project (configCwd = ctx.cwd);
-      // otherwise configCwd stays undefined so config resolves from the working dir.
-      cwd: customCwd,
-      configCwd: customCwd !== undefined || restore ? ctx.cwd : undefined,
-      resumeSessionFile: restore?.sessionFile,
-      signal: record.abortController!.signal,
-      skills: options.skills,
-      parentSessionId: getParentSessionId(ctx),
-      nestedSpawn: this.nestedSpawnFor(record, pi, ctx),
-      ...activityCallbacks,
+    const opened = typeof source === "function";
+    const execution = startExecution(record, {
+      onToolActivity: options.onToolActivity,
+      onTextDelta: options.onTextDelta,
+      onTurnEnd: options.onTurnEnd,
+      onAssistantUsage: options.onAssistantUsage,
+      onUsage: (usage) => {
+        this.lifetimeCost += usage.cost ?? 0;
+        this.usageListener?.(usage);
+      },
+      // Graph-owned and nested owners cannot act on a check-in.
+      onCheckIn: record.graphRunId === undefined && record.parentAgentId === undefined
+        ? (threshold: number) => this.checkIn(record, threshold)
+        : undefined,
       onCompaction: (info) => {
         record.compactionCount++;
         if (record.graphRunId === undefined) this.onCompact?.(record, info);
         options.onCompaction?.(info);
       },
       onSessionCreated: (session) => {
-        record.session = session;
-        record.invocation = {
-          ...record.invocation,
-          modelName: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
-          thinking: session.thinkingLevel,
-          fast: getSessionFast(session),
-        };
-        // Flush any steers that arrived before the session was ready
-        if (record.pendingSteers?.length) {
-          for (const msg of record.pendingSteers) {
-            session.steer(msg).catch(() => {});
-          }
-          record.pendingSteers = undefined;
+        // A created or reopened session is new to history; a live resume's is not.
+        if (opened) {
+          const childSession = session.sessionManager as { isPersisted?: () => boolean; getSessionFile?: () => string | undefined } | undefined;
+          const sessionFile = childSession?.isPersisted?.() ? childSession.getSessionFile?.() : undefined;
+          if (sessionFile) record.sessionFile = sessionFile;
+          if (record.graphRunId === undefined) this.sessionListener?.(record);
         }
-        const childSession = session.sessionManager as { isPersisted?: () => boolean; getSessionFile?: () => string | undefined } | undefined;
-        const sessionFile = childSession?.isPersisted?.() ? childSession.getSessionFile?.() : undefined;
-        if (sessionFile) record.sessionFile = sessionFile;
-        if (record.graphRunId === undefined) this.sessionListener?.(record);
         options.onSessionCreated?.(session);
       },
     });
-    void (disposal ? disposal.then(execute) : execute())
-      .then(({ responseText, session, aborted, forceSteered, failure, interruptionCause, structuredJson, structuredRetried }) => {
-        record.interruptionCause ??= interruptionCause ?? (aborted ? "unknown" : undefined);
-        record.structuredJson = structuredJson;
-        record.structuredRetried = structuredRetried;
-        if (failure) record.error = failure;
-        // Don't overwrite status if externally stopped via abort()
-        if (record.status !== "stopped") {
-          // Precedence: a hard abort keeps "aborted"; then a failed final turn
-          // (provider error that pi resolved instead of rejecting, #144) is an
-          // honest "error" — not a completion with an empty or stale result.
-          if (record.interruptionCause) {
-            record.status = "aborted";
-          } else if (failure) {
-            record.status = "error";
-          } else {
-            record.status = forceSteered ? "force_steered" : "completed";
-          }
-        }
-        record.result = responseText;
-        record.session = session;
-        record.invocation = {
-          ...record.invocation,
-          modelName: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
-          thinking: session.thinkingLevel,
-          fast: getSessionFast(session),
-        };
-        record.completedAt ??= Date.now();
-
-        return responseText;
-      })
-      .catch((err) => {
-        // Don't overwrite status if externally stopped via abort()
-        if (record.status !== "stopped") {
-          record.status = "error";
-        }
-        record.error = err instanceof Error ? err.message : String(err);
-        record.completedAt ??= Date.now();
-
-        return "";
-      })
-      .finally(() => this.completeRun(record));
+    if (record.graphRunId === undefined) {
+      this.activityListener?.(record);
+      this.onStart?.(record);
+    }
+    void execution.run(source, prompt).finally(() => this.completeRun(record));
   }
 
   /**
@@ -684,9 +600,7 @@ export class AgentManager {
       try {
         next.start();
       } catch (err) {
-        record.status = "error";
-        record.error = err instanceof Error ? err.message : String(err);
-        record.completedAt = Date.now();
+        failExecutionStart(record, err);
         this.completeRun(record);
       }
     }
@@ -787,7 +701,16 @@ export class AgentManager {
     signal?.addEventListener("abort", onAbort, { once: true });
     if (signal?.aborted) onAbort();
     if (record.status === "queued") {
-      const start = () => { void this.startResume(record, prompt, options); };
+      const start = () => {
+        // A live resume starts on its retained session; a start failure fails this record.
+        if (!record.session) return;
+        try {
+          this.start(record, { source: record.session, prompt }, options);
+        } catch (err) {
+          failExecutionStart(record, err);
+          this.completeRun(record);
+        }
+      };
       if (record.graphRunId === undefined && !this.poolHasRoom(false, record.isBackground)) {
         this.queue.push({ id, foreground: false, background: record.isBackground, start });
       } else start();
@@ -796,81 +719,10 @@ export class AgentManager {
     return record;
   }
 
-  private async startResume(
-    record: AgentRecord,
-    prompt: string,
-    options: Pick<SpawnOptions, "onSessionCreated" | "onTextDelta" | "onToolActivity" | "onTurnEnd" | "onAssistantUsage">,
-  ): Promise<void> {
-    const session = record.session;
-    const signal = record.abortController?.signal;
-    const run = this.runs.get(record.id);
-    if (!session || !run) return;
-    run.active = true;
-    if (run.pool === "background") this.runningBackground++;
-    record.structuredJson = undefined;
-    record.structuredRetried = undefined;
-
-    record.status = "running";
-    record.startedAt = Date.now();
-    record.completedAt = undefined;
-    record.result = undefined;
-    record.error = undefined;
-    record.invocation = {
-      ...record.invocation,
-      modelName: session.model ? `${session.model.provider}/${session.model.id}` : undefined,
-      thinking: session.thinkingLevel,
-      fast: getSessionFast(session),
-    };
-
-    try {
-      const activityCallbacks = this.trackExecution(record, options);
-      if (record.graphRunId === undefined) this.onStart?.(record);
-      options.onSessionCreated?.(session);
-      const { text, failure, interruptionCause, forceSteered, structuredJson, structuredRetried } = await resumeAgent(session, prompt, {
-        ...activityCallbacks,
-        onCompaction: (info) => {
-          record.compactionCount++;
-          if (record.graphRunId === undefined) this.onCompact?.(record, info);
-        },
-        signal,
-      });
-      // Same contract as the spawn path (#144): a failed final turn is an
-      // error, not a completion — but the resumed text stays available.
-      record.interruptionCause ??= interruptionCause;
-      record.structuredJson = structuredJson;
-      record.structuredRetried = structuredRetried;
-      record.status = signal?.aborted ? "stopped" : record.interruptionCause ? "aborted" : failure ? "error" : forceSteered ? "force_steered" : "completed";
-      if (failure) record.error = failure;
-      record.result = text;
-      record.completedAt = Date.now();
-    } catch (err) {
-      record.status = signal?.aborted ? "stopped" : "error";
-      record.error = err instanceof Error ? err.message : String(err);
-      record.completedAt = Date.now();
-    } finally {
-      this.completeRun(record);
-    }
-  }
-
-  /**
-   * Send a steering message to an agent from the UI (mirrors the steer_subagent
-   * tool). A live session delivers it now — it interrupts the agent after its
-   * current tool execution and appears as a user message. If the session isn't
-   * ready yet, the message is queued on `pendingSteers` and flushed when the
-   * session is created. Returns false if the agent can't accept steering
-   * (unknown id, or no longer running/queued).
-   */
-  steer(id: string, message: string): boolean {
+  /** Accept steering only for queued/running Executions; delivery requires current attachment. */
+  steer(id: string, message: string): SteerResult {
     const record = this.agents.get(id);
-    if (!record) return false;
-    if (record.status !== "running" && record.status !== "queued") return false;
-    if (record.session) {
-      record.session.steer(message).catch(() => {});
-    } else {
-      if (!record.pendingSteers) record.pendingSteers = [];
-      record.pendingSteers.push(message);
-    }
-    return true;
+    return record ? steerExecution(record, message) : { status: "refused" };
   }
 
   getLifetimeCost(): number {
@@ -903,19 +755,13 @@ export class AgentManager {
     // Remove from queue if queued
     if (record.status === "queued") {
       this.queue = this.queue.filter(q => q.id !== id);
-      record.status = "stopped";
-      record.completedAt = Date.now();
-      record.interruptionCause = cause;
-      record.abortController?.abort(cause);
+      stopExecution(record, cause);
       this.completeRun(record);
       return true;
     }
 
     if (record.status !== "running") return false;
-    record.interruptionCause = cause;
-    record.abortController?.abort(cause);
-    record.status = "stopped";
-    record.completedAt = Date.now();
+    stopExecution(record, cause);
     return true;
   }
 

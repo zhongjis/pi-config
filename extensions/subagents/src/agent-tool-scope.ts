@@ -32,7 +32,7 @@ import {
  *   - `beforeToolCall` blocks top-level calls outside the allowed set.
  *
  * Both are installed on the session and deliberately NOT unsubscribed: they must
- * outlive the `runAgent` call so resumed/steered turns stay scoped. pi's `dispose()`
+ * outlive each Execution so resumed/steered turns stay scoped. pi's `dispose()`
  * clears `_eventListeners`, so they die with the session rather than leaking.
  *
  * Trusted `<inline:`/`<sdk:` tools (StructuredOutput, the ceiling) are always allowed

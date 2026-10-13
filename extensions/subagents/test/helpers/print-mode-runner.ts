@@ -10,7 +10,7 @@
  * This runner closes that gap: it boots a real headless pi session with the
  * pi-subagents extension loaded, drives a real assistant turn that calls the
  * `agent` tool, and lets the extension spawn a real child session through the
- * real `runAgent` path — then waits for it to finish exactly like a production
+ * real Execution path — then waits for it to finish exactly like a production
  * print-mode host does.
  *
  * It is the pi-subagents analogue of pi-chonky-step's `src/agent.ts` headless

@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAccessRules } from "../../../lib/active-tools.js";
 import { disposeChildSession } from "../../src/agent-manager.js";
-import { runAgent } from "../../src/agent-runner.js";
+import { openSession } from "../../src/agent-runner.js";
 import { registerAgents } from "../../src/agent-types.js";
 import type { AgentConfig } from "../../src/types.js";
 import { createFauxModelRuntime, type FauxModelRuntime } from "../helpers/pi-ai.js";
@@ -78,12 +78,7 @@ export default function(pi: ExtensionAPI) {
     const { model, modelRegistry } = fauxRuntime;
     const ctx: any = { cwd, getSystemPrompt: () => "PARENT", model, modelRegistry };
     if (projectTrusted !== undefined) ctx.isProjectTrusted = () => projectTrusted;
-    let session: any;
-    try {
-      await runAgent(ctx, "probe", "go", { pi: makePi(), model, onSessionCreated: (s) => { session = s; } });
-    } catch {
-      // The faux turn may fail; the session is fixed at construction.
-    }
+    const { session } = await openSession(ctx, "probe", { pi: makePi(), model });
     return session;
   }
 

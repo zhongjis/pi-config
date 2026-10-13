@@ -20,13 +20,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("../src/agent-runner.js", async () => {
-  const actual = await vi.importActual<typeof import("../src/agent-runner.js")>("../src/agent-runner.js");
-  return { ...actual, runAgent: vi.fn() };
-});
+vi.mock("../src/agent-runner.js", async (importOriginal) =>
+  (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
-import { runAgent } from "../src/agent-runner.js";
+import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 const RPC_CHANNELS = ["subagents:rpc:ping", "subagents:rpc:spawn", "subagents:rpc:stop"] as const;
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
@@ -135,7 +134,10 @@ describe("issue #142: RPC handlers + subagents:ready are gated on session_start"
     }
 
     // spawn no longer hits the "No active session" trap — currentCtx is set.
-    vi.mocked(runAgent).mockImplementation(() => new Promise(() => {}) as any); // never resolves
+    vi.mocked(openSession).mockResolvedValue(opened(fakeSession(async (_prompt, session) => {
+      await session.aborted;
+      return { aborted: true };
+    })));
     const requestId = "req-142";
     await busHandlers.get("subagents:rpc:spawn")!({
       requestId,
@@ -150,6 +152,7 @@ describe("issue #142: RPC handlers + subagents:ready are gated on session_start"
     expect(reply, "spawn emitted a reply").toBeTruthy();
     expect(reply![1].success, `spawn succeeded, got: ${JSON.stringify(reply![1])}`).toBe(true);
     expect(reply![1].data.id).toBeTruthy();
+    await lifecycle.get("session_shutdown")?.({}, ctx());
   });
 
   it("is idempotent — a second session_start does not re-advertise or double-register", async () => {
