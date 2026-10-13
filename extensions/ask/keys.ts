@@ -24,9 +24,11 @@ const defaults: Record<AskKeybinding, KeyId[]> = {
 	"tui.input.submit": ["enter"],
 };
 
+/** Hint label for one key id: arrows as glyphs, named keys and chords capitalized (`Esc`, `Ctrl+C`), plain letters as-is. */
 export function keyLabel(key: string): string {
-	const labels: Record<string, string> = { up: "↑", down: "↓", left: "←", right: "→", enter: "Enter", escape: "Esc" };
-	return labels[key] ?? key;
+	const labels: Record<string, string> = { up: "↑", down: "↓", left: "←", right: "→", escape: "Esc" };
+	const parts = key.split("+");
+	return parts.map((part) => labels[part] ?? (parts.length > 1 || part.length > 1 ? part.charAt(0).toUpperCase() + part.slice(1) : part)).join("+");
 }
 
 export function createAskKeys(keybindings?: AskKeybindings): {
@@ -50,8 +52,8 @@ export function createAskKeys(keybindings?: AskKeybindings): {
 			return undefined;
 		},
 		label(id) {
-			const keys = keybindings?.getKeys?.(id) ?? defaults[id];
-			return keys.map(keyLabel).join("/") || "Unbound";
+			const first = (keybindings?.getKeys?.(id) ?? defaults[id])[0];
+			return first === undefined ? "Unbound" : keyLabel(first);
 		},
 	};
 }

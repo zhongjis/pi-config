@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { displayValue, formatAnswerLine, formatInvalidPayload, formatNonTuiQuestions, formatResultText } from "../format.js";
+import { displayValue, formatAnswerLine, formatInvalidPayload, formatNonTuiQuestions, formatResultText, humanAnswer, humanNote } from "../format.js";
 import { normalizeQuestions } from "../normalize.js";
 import type { Answer, AskDetails } from "../types.js";
 
@@ -23,6 +23,20 @@ describe("displayValue", () => {
 	it("prefers value when different and label when equal", () => {
 		expect(displayValue("a", "Alpha")).toBe("a");
 		expect(displayValue("same", "same")).toBe("same");
+	});
+});
+
+describe("human-facing text", () => {
+	it("humanAnswer lists labels then quoted typed text, undefined when empty", () => {
+		expect(humanAnswer(selected)).toBe("Alpha");
+		expect(humanAnswer({ ...selected, multi: true, labels: ["Alpha", "Charlie"], wasCustom: true, customInput: "extra" })).toBe("Alpha, Charlie, “extra”");
+		expect(humanAnswer(custom)).toBe("“hello”");
+		expect(humanAnswer({ ...selected, labels: [], values: [], indices: [] })).toBeUndefined();
+		expect(humanAnswer(undefined)).toBeUndefined();
+	});
+	it("humanNote prefixes option notes with the option label only", () => {
+		expect(humanNote(q, { questionId: "q1", text: "why?" })).toBe("why?");
+		expect(humanNote(q, { questionId: "q1", optionValue: "a", text: "why?" })).toBe("Alpha: why?");
 	});
 });
 

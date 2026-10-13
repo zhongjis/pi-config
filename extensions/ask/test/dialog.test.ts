@@ -7,7 +7,7 @@ import type { IncomingQuestion } from "../types.js";
 
 vi.mock("@earendil-works/pi-tui", async () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 
-const theme = { fg: (_color: string, text: string) => text, bg: (_color: string, text: string) => text, bold: (text: string) => text };
+const theme = { fg: (_color: string, text: string) => text, bg: (_color: string, text: string) => text, bold: (text: string) => text, italic: (text: string) => text };
 const question = (extra: Partial<IncomingQuestion> = {}): IncomingQuestion => ({ id: "q", label: "Scope", prompt: "Choose an approach", options: [{ value: "a", label: "Alpha" }, { value: "b", label: "Beta" }], ...extra });
 function setup(input = [question()], options: { signal?: AbortSignal; keybindings?: AskKeybindings; title?: string } = {}) {
 	const done = vi.fn<(result: AskDialogResult) => void>();
@@ -23,7 +23,7 @@ const remapped: AskKeybindings = {
 };
 
 describe("ask dialog input and lifecycle", () => {
-	it("forwards focus to Editor and emits its cursor marker only when focused", () => {
+	it("forwards focus to the inline Input and emits its cursor marker only when focused", () => {
 		const { dialog, text, feed } = setup();
 		feed("N");
 		dialog.focused = true;
@@ -69,16 +69,19 @@ describe("ask dialog input and lifecycle", () => {
 	});
 	it("uses remapped select keys and their hint labels", () => {
 		const { feed, text, done } = setup(undefined, { keybindings: remapped });
-		expect(text()).toContain("k/j navigate");
+		expect(text()).toContain("k/j move");
+		expect(text()).toContain("y submit");
 		feed("k");
-		expect(text()).toContain("> Other");
+		expect(text()).toMatch(/› +Other…/);
+		expect(text()).toContain("y type");
 		feed("k", "y");
 		expect(done.mock.calls[0][0].details.answers[0].values).toEqual(["b"]);
 	});
 	it("digit quickPick finalizes immediately without notes", () => {
 		const { feed, done, text } = setup();
-		expect(text()).not.toContain("✓ Review");
-		expect(text()).toContain("1–9 select");
+		expect(text()).not.toContain("Review");
+		expect(text()).not.toContain("Tab next");
+		expect(text()).toContain("↑↓ move · 1–2 pick · Enter submit · n/N note · Esc cancel");
 		feed("2");
 		expect(done).toHaveBeenCalledTimes(1);
 		expect(done.mock.calls[0][0].details).toMatchObject({ mode: "submit", cancelled: false, answers: [{ indices: [2], values: ["b"] }] });
@@ -88,10 +91,14 @@ describe("ask dialog input and lifecycle", () => {
 		feed("n", "why Alpha?", "\r", "N", "what scope?", "\r");
 		expect(text()).toContain("✎ why Alpha?");
 		expect(text()).toContain("✎ what scope?");
+		expect(text()).toContain("Enter review");
 		feed("1");
 		expect(done).not.toHaveBeenCalled();
-		expect(text()).toContain("✓ Review");
-		expect(text()).toContain("1–3 action");
+		expect(text()).toContain("Review");
+		expect(text()).toContain("↑↓ move · 1–3 action · Enter run · Tab back · Esc cancel");
+		expect(text()).toMatch(/Scope +Alpha/);
+		expect(text()).toContain("✎ what scope?");
+		expect(text()).toContain("✎ Alpha: why Alpha?");
 		feed("2");
 		expect(done.mock.calls[0][0].details).toMatchObject({ mode: "elaborate", answers: [{ values: ["a"] }], notes: [
 			{ questionId: "q", text: "what scope?" }, { questionId: "q", optionValue: "a", text: "why Alpha?" },
@@ -100,7 +107,7 @@ describe("ask dialog input and lifecycle", () => {
 	it("keeps cancelled editor drafts, prefills on reopen and uses bound editor cancel", () => {
 		const { feed, text, done } = setup(undefined, { keybindings: remapped });
 		feed("k", "y", "draft text", "q");
-		expect(text()).toContain("draft: draft text");
+		expect(text()).toContain("Other  draft “draft text”");
 		feed("y");
 		expect(text()).toContain("draft text");
 		feed("\r");
@@ -109,10 +116,10 @@ describe("ask dialog input and lifecycle", () => {
 	it("renders a bound dismiss notice, clears it on another key and guards twice", () => {
 		const { feed, text, done } = setup([question({ multi: true })], { keybindings: remapped });
 		feed("1", "q");
-		expect(text()).toContain("Press q again to discard your answers");
+		expect(text()).toContain("q again discards your answers · any other key keeps them");
 		expect(done).not.toHaveBeenCalled();
 		feed("x");
-		expect(text()).not.toContain("Press q again");
+		expect(text()).not.toContain("q again");
 		feed("q", "q");
 		expect(done).toHaveBeenCalledTimes(1);
 		expect(done.mock.calls[0][0].details.cancelled).toBe(true);
@@ -120,14 +127,20 @@ describe("ask dialog input and lifecycle", () => {
 	it("renders mixed multi custom, Other draft and advisory required; Review submits partial", () => {
 		const { feed, text, done } = setup([question({ multi: true, required: true }), question({ id: "next", label: "Next", required: true })]);
 		expect(text()).toContain("□ Scope*");
+		expect(text()).toContain("0/2 answered");
+		expect(text()).toContain("1–2/Space toggle · Enter next");
 		feed("1", "\u001b[A", "\r", "extra", "\r");
-		expect(text()).toContain("☑ 1. Alpha");
-		expect(text()).toContain("☑ Other (type your own): extra");
+		expect(text()).toContain("■ Scope ");
+		expect(text()).toContain("1/2 answered");
+		expect(text()).toContain("☑ 1  Alpha");
+		expect(text()).toMatch(/☑ +Other {2}“extra”/);
 		feed(" ");
-		expect(text()).toContain("draft: extra");
+		expect(text()).toMatch(/☐ +Other {2}draft “extra”/);
 		feed(" ", "\t", "\t");
-		expect(text()).toContain("Next: (no answer) [required]");
-		expect(text()).toContain("2 Elaborate (add a note first: n / N)");
+		expect(text()).toMatch(/Scope +Alpha, “extra”/);
+		expect(text()).toMatch(/Next +! no answer · required/);
+		expect(text()).toContain("› 1  Submit  · 1 required unanswered");
+		expect(text()).toContain("2  Elaborate  add a note first (n/N)");
 		feed("2");
 		expect(done).not.toHaveBeenCalled();
 		feed("1");
@@ -140,13 +153,60 @@ describe("ask dialog preview and widths", () => {
 	it("uses wide columns, narrow box, cursor previews, missing preview and line cap", () => {
 		const preview = Array.from({ length: 20 }, (_, i) => `code ${i}`).join("\n");
 		const { text, feed, dialog } = setup([question({ options: [{ value: "a", label: "Alpha", preview }, { value: "b", label: "Beta" }] })]);
-		expect(text(120)).toContain(" │ Preview");
-		expect(text(120)).toContain("… +8 more lines");
-		expect(text(80)).toContain("┌");
-		expect(text(80)).toContain("Preview");
+		expect(text(120)).toContain(" │ Preview · Alpha");
+		expect(text(120)).toContain("code 10");
+		expect(text(120)).not.toContain("code 11");
+		expect(text(120)).toContain("… +9 more lines");
+		expect(text(80)).toContain("── Preview · Alpha ──");
+		expect(text(80)).not.toContain("┌");
 		feed("\u001b[B");
-		expect(text()).toContain("(no preview)");
+		expect(text()).toContain("Preview · Beta");
+		expect(text()).toContain("no preview");
 		dialog.dispose();
+	});
+	it("keeps the dialog height fixed while the cursor crosses previews of different lengths", () => {
+		const lines = (n: number) => Array.from({ length: n }, (_, i) => `line ${i}`).join("\n");
+		const { dialog, feed } = setup([question({ options: [
+			{ value: "a", label: "Alpha", preview: lines(2) }, { value: "b", label: "Beta", preview: lines(7) }, { value: "c", label: "Gamma" },
+		] })]);
+		for (const width of [60, 120]) {
+			const heights = new Set<number>();
+			for (let i = 0; i < 4; i++) {
+				heights.add(dialog.render(width).length);
+				feed("\u001b[B");
+			}
+			expect(heights.size, `width ${width}`).toBe(1);
+		}
+		dialog.dispose();
+	});
+	it("edits notes and Other inline while the options stay visible", () => {
+		const { dialog, text, feed } = setup([question({ options: [{ value: "a", label: "Alpha", description: "First" }, { value: "b", label: "Beta" }] })]);
+		feed("n", "why");
+		expect(text()).toMatch(/First.*\n.*✎ why/);
+		expect(text()).toContain("Beta");
+		expect(text()).toContain("Enter save · Esc keep draft");
+		feed("\r", "N", "scope");
+		expect(text()).toMatch(/Choose an approach.*\n.*✎ scope/);
+		feed("\u001b", "\u001b[A", "\r", "own");
+		expect(text()).toContain("Other  own");
+		expect(text()).toContain("Alpha");
+		dialog.dispose();
+	});
+	it("frames the dialog with the title and progress, dropping chrome below the box width", () => {
+		const { text } = setup([question(), question({ id: "next" })], { title: "Plan" });
+		const lines = text(60).split("\n");
+		expect(lines[0]).toMatch(/^╭─ Plan ─+ 0\/2 answered ─╮$/);
+		expect(lines[1]).toMatch(/^│ □ Scope {3}□ Scope {6}Review +│$/);
+		expect(lines[2]).toMatch(/^│ +│$/);
+		expect(lines.at(-1)).toMatch(/^╰─ ↑↓ move · .* Esc cancel ─+╯$/);
+		expect(text(23)).not.toMatch(/[╭╰│]/);
+		expect(text(23).split("\n")[0]).toBe("Plan");
+		for (const line of text(320).split("\n")) expect(visibleWidth(line)).toBe(140);
+	});
+	it("keeps a gap between the header and the prompt in quick-pick", () => {
+		const lines = setup().text(60).split("\n");
+		expect(lines[1]).toMatch(/^│ +│$/);
+		expect(lines[2]).toContain("Choose an approach");
 	});
 	it("wraps preview text to its column rather than dropping long text", () => {
 		const { text, dialog } = setup([question({ options: [{ value: "a", label: "A", preview: "start " + "word ".repeat(25) + "end" }] })]);
@@ -172,6 +232,8 @@ describe("ask dialog preview and widths", () => {
 		check();
 		feed("x", "\u001b[A", "\r", "draft ".repeat(40));
 		dialog.focused = true;
+		check();
+		feed("\u001b", "n", "inline ".repeat(40));
 		check();
 		feed("\u001b", "\t", "\t");
 		check();

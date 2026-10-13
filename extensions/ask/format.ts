@@ -11,6 +11,20 @@ export function displayValue(value: string, label: string): string {
 	return value !== label ? value : label;
 }
 
+/** Human-facing answer: picked option labels, then typed text in quotes. Undefined when unanswered. */
+export function humanAnswer(answer: Answer | undefined): string | undefined {
+	if (!answer) return undefined;
+	const parts = [...(answer.labels ?? [])];
+	if (answer.customInput) parts.push(`“${answer.customInput}”`);
+	return parts.length ? parts.join(", ") : undefined;
+}
+
+/** Human-facing note text, prefixed with the option label for option notes. */
+export function humanNote(q: Pick<NormalizedQuestion, "options">, note: AskNote): string {
+	const label = note.optionValue === undefined ? undefined : q.options.find((o) => o.value === note.optionValue)?.label;
+	return label === undefined ? note.text : `${label}: ${note.text}`;
+}
+
 export function formatAnswerLine(q: NormalizedQuestion, answer: Answer | undefined): string {
 	const parts: string[] = [];
 	if (answer?.indices.length) {

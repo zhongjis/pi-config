@@ -3,7 +3,7 @@ import { createAskKeys, keyLabel, type AskKeybinding, type AskKeybindings } from
 
 const remapped: AskKeybindings = {
 	matches: (data, id) => data === ({
-		"tui.select.up": "k", "tui.select.down": "j", "tui.select.confirm": "y", "tui.select.cancel": "q",
+		"tui.select.up": "k", "tui.select.down": "j", "tui.select.confirm": "y", "tui.select.cancel": "q", "tui.input.submit": "y",
 	} satisfies Record<AskKeybinding, string>)[id],
 	getKeys: (id) => id === "tui.select.up" ? ["k"] : id === "tui.select.cancel" ? [] : ["enter"],
 };
@@ -45,15 +45,15 @@ describe("key labels", () => {
 		expect(keys.label("tui.select.confirm")).toBe("Enter");
 		expect(keys.label("tui.select.cancel")).toBe("Unbound");
 	});
-	it("uses symbolic defaults without getKeys and joins multiple bindings", () => {
+	it("uses symbolic defaults without getKeys and labels only the first binding", () => {
 		const keys = createAskKeys({ matches: remapped.matches });
 		expect(keys.label("tui.select.up")).toBe("↑");
 		expect(keys.label("tui.select.down")).toBe("↓");
 		expect(keys.label("tui.select.confirm")).toBe("Enter");
-		expect(keys.label("tui.select.cancel")).toBe("Esc/ctrl+c");
-		expect(createAskKeys({ matches: remapped.matches, getKeys: () => ["up", "k"] }).label("tui.select.up")).toBe("↑/k");
+		expect(keys.label("tui.select.cancel")).toBe("Esc");
+		expect(createAskKeys({ matches: remapped.matches, getKeys: () => ["k", "up"] }).label("tui.select.up")).toBe("k");
 	});
-	it.each([["left", "←"], ["right", "→"], ["shift+tab", "shift+tab"]])("labels fixed key %s", (key, label) => {
+	it.each([["left", "←"], ["right", "→"], ["enter", "Enter"], ["escape", "Esc"], ["ctrl+c", "Ctrl+C"], ["shift+tab", "Shift+Tab"], ["k", "k"]])("labels fixed key %s", (key, label) => {
 		expect(keyLabel(key)).toBe(label);
 	});
 });

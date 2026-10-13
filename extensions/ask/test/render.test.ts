@@ -7,7 +7,7 @@ vi.mock("@earendil-works/pi-tui", async () =>
 );
 
 type RenderableText = { render?: (width: number) => string[]; text?: string };
-type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
+type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string; italic: (text: string) => string };
 type ToolResult = { content?: readonly { type: "text"; text: string }[]; details?: unknown };
 type ToolDefinition = {
 	name: string;
@@ -23,17 +23,28 @@ type ToolDefinition = {
 const plainTheme: PlainTheme = {
 	fg: vi.fn((_color: string, text: string) => text),
 	bold: vi.fn((text: string) => text),
+	italic: vi.fn((text: string) => text),
+};
+/** Marks every colour role so tests can assert which token styles each segment. */
+const tagTheme: PlainTheme = {
+	fg: (color, text) => `<${color}>${text}</${color}>`,
+	bold: (text) => text,
+	italic: (text) => `<i>${text}</i>`,
 };
 
-function renderText(component: RenderableText, width = 120): string {
-	if (typeof component.render === "function") return component.render(width).join("\n");
-	return component.text ?? "";
+function lines(component: RenderableText, width = 120): string[] {
+	expect(component.render).toBeTypeOf("function");
+	return component.render!(width);
+}
+
+/** Rendered rows without Text's trailing width padding. */
+function rows(component: RenderableText, width = 120): string[] {
+	return lines(component, width).map((line) => line.trimEnd());
 }
 
 function expectWidthSafe(component: RenderableText): void {
-	expect(component.render).toBeTypeOf("function");
 	for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
-		for (const line of component.render!(width)) {
+		for (const line of lines(component, width)) {
 			expect(visibleWidth(line), `${JSON.stringify(line)} at width ${width}`).toBeLessThanOrEqual(width);
 		}
 	}
@@ -57,77 +68,163 @@ const questions = Object.freeze([
 		prompt: "Which scope should be reviewed?",
 		multi: true,
 		recommended: 0,
-		options: Object.freeze([Object.freeze({ value: "src", label: "Source" })]),
+		options: Object.freeze([Object.freeze({ value: "src", label: "Source" }), Object.freeze({ value: "docs", label: "Docs" })]),
 	}),
 	Object.freeze({
 		id: "risk",
 		label: "Risk",
 		prompt: "How much risk is acceptable?",
+		required: true,
 		allowOther: false,
 		options: Object.freeze([Object.freeze({ value: "low", label: "Low" })]),
 	}),
+	Object.freeze({ id: "extra", prompt: "Anything else?", options: Object.freeze([Object.freeze({ value: "no", label: "No" })]) }),
 ]);
+const scopeAnswer = Object.freeze({ id: "scope", multi: true, wasCustom: true, values: ["src"], labels: ["Source"], indices: [1], customInput: "docs" });
+const notes = Object.freeze([
+	Object.freeze({ questionId: "scope", optionValue: "docs", text: "public API only" }),
+	Object.freeze({ questionId: "risk", text: "why ask?" }),
+]);
+const answered = { title: "Decisions", questions, answers: [scopeAnswer], notes: [], cancelled: false, mode: "submit" };
+const elaborate = { ...answered, notes, mode: "elaborate" };
+const cancelled = { ...answered, answers: [], cancelled: true };
+const aborted = { ...cancelled, aborted: true };
+const submittedEmpty = { ...answered, answers: [] };
+const legacy = { questions, cancelled: false, answers: [{ id: "scope", multi: true, wasCustom: true, values: [], labels: [], customInput: "hand-typed" }] };
+const invalid = {
+	questions: [],
+	answers: [],
+	notes: [],
+	cancelled: true,
+	mode: "submit",
+	error: { issues: [{ path: "questions[0].id", message: "Must be unique across questions" }, { path: "questions[1].options", message: "Must contain at least one option" }] },
+};
+const wide = {
+	...answered,
+	questions: [{ ...questions[0], label: "範囲🎉" }],
+	answers: [{ ...scopeAnswer, customInput: `/very/long/${"unbroken".repeat(20)}/path` }],
+	notes: [{ questionId: "scope", text: "e\u0301 combining 漢字 note" }],
+};
+
+function result(details: unknown, text = "raw model text"): ToolResult {
+	return { content: [{ type: "text", text }], details };
+}
 
 describe("ask tool rendering", () => {
-	it("prefixes title, retains first prompt and adds preview/required flags", () => {
+	it("renders the call as one row: title or first prompt, then question count", () => {
 		const tool = registerAskTool();
-		const call = tool.renderCall!({ title: "Decisions", questions: [{ id: "q", prompt: "Compare", required: true, options: [{ value: "a", label: "A", preview: "code" }] }] }, plainTheme);
-		expect(renderText(call)).toContain("Decisions · 1 question · other, preview, required · first: Compare");
-		expectWidthSafe(call);
-	});
-	it("summarizes invalid and elaborate before cancelled or no-answer branches", () => {
-		const tool = registerAskTool();
-		const invalid = tool.renderResult!({ content: [{ type: "text", text: "Invalid ask payload" }], details: { cancelled: true, error: { issues: [{ path: "questions", message: "empty" }] } } }, {}, plainTheme);
-		expect(renderText(invalid)).toContain("status: invalid payload · 1 issue");
-		expectWidthSafe(invalid);
-		const elaborate = tool.renderResult!({ content: [{ type: "text", text: "clarification" }], details: { mode: "elaborate", cancelled: false, answers: [], notes: [{ questionId: "q", text: "why?" }] } }, {}, plainTheme);
-		expect(renderText(elaborate)).toContain("status: elaborate · 1 note");
-		expectWidthSafe(elaborate);
-	});
-	it("summarizes answers from fields, including saved custom answers without indices", () => {
-		const tool = registerAskTool();
-		const legacy = tool.renderResult!({ content: [{ type: "text", text: "Scope: user wrote: hand-typed" }], details: { questions, cancelled: false, answers: [{ id: "scope", multi: true, wasCustom: true, values: [], labels: [], customInput: "hand-typed" }] } }, {}, plainTheme);
-		expect(renderText(legacy)).toContain("answer: Scope · wrote: hand-typed");
-		const mixed = tool.renderResult!({ content: [{ type: "text", text: "raw" }], details: { questions, cancelled: false, mode: "submit", notes: [], answers: [{ id: "scope", multi: true, wasCustom: true, values: ["src"], labels: ["Source"], indices: [1], customInput: "docs" }] } }, {}, plainTheme);
-		expect(renderText(mixed)).toContain("answer: Scope · 1. src; wrote: docs");
-		expectWidthSafe(mixed);
-	});
-	it("renders call count, flags, and first prompt only", () => {
-		const tool = registerAskTool();
-		const call = tool.renderCall!({ questions }, plainTheme);
-		const text = renderText(call);
+		const titled = tool.renderCall!({ title: "Decisions", questions }, plainTheme);
+		expect(rows(titled)).toEqual(["▸ ask · Decisions · 3 questions"]);
+		const untitled = tool.renderCall!({ questions }, plainTheme);
+		expect(rows(untitled)).toEqual(["▸ ask · Which scope should be reviewed? · 3 questions"]);
+		expect(rows(tool.renderCall!({ questions: [] }, plainTheme))).toEqual(["▸ ask · 0 questions"]);
 
-		expect(text).toContain("▸ ask · 2 questions · multi, recommended, other · first: Which scope should be reviewed?");
-		expect(text).not.toContain("How much risk is acceptable?");
-		expectWidthSafe(call);
+		const long = tool.renderCall!({ title: `Decide ${"everything ".repeat(20)}\nnow`, questions: [questions[0]] }, plainTheme);
+		const [row, ...rest] = rows(long, 78);
+		expect(rest).toEqual([]);
+		expect(row).toContain("…");
+		expect(row).toMatch(/· 1 question$/);
+		expectWidthSafe(titled);
+		expectWidthSafe(long);
 	});
 
-	it("summarizes answer, cancel, no-answer, and raw error while preserving expanded raw", () => {
+	it("collapses an answered result to status, human answers and the expand hint", () => {
 		const tool = registerAskTool();
-		const raw = "Scope: user selected: 1. Source\nRisk: user selected: 1. Low";
-		const result = Object.freeze({
-			content: Object.freeze([Object.freeze({ type: "text" as const, text: raw })]),
-			details: Object.freeze({
-				questions,
-				cancelled: false,
-				answers: Object.freeze([
-					Object.freeze({ id: "scope", multi: true, wasCustom: false, values: Object.freeze(["src"]), labels: Object.freeze(["Source"]), indices: Object.freeze([1]) }),
-				]),
-			}),
-		});
+		const collapsed = tool.renderResult!(result(answered), { expanded: false }, plainTheme);
+		const [status, answers, hint, ...rest] = rows(collapsed);
+		expect(status).toBe("├─ ✓ answered 1/3 · 1 required missing");
+		expect(answers).toBe("├─ Scope Source, “docs”");
+		expect(hint).toMatch(/^└─ .*all answers$/);
+		expect(rest).toEqual([]);
 
-		const collapsed = tool.renderResult!(result, { expanded: false }, plainTheme, {});
-		expect(renderText(collapsed)).toContain("status: answered · 1/2");
-		expect(renderText(collapsed)).toContain("answer: Scope · 1. src");
-		expect(tool.renderResult!(result, { expanded: true }, plainTheme, {}).text).toBe(raw);
-		expect(result.content[0].text).toBe(raw);
-		expectWidthSafe(collapsed);
+		const [tagged, taggedAnswers] = rows(tool.renderResult!(result(answered), { expanded: false }, tagTheme), 1000);
+		expect(tagged).toContain("<success>✓</success><muted> answered 1/3</muted>");
+		expect(tagged).toContain("<warning>1 required missing</warning>");
+		expect(taggedAnswers).toContain("<muted>Scope </muted><text>Source, “docs”</text>");
+	});
 
-		expect(renderText(tool.renderResult!({ content: [{ type: "text", text: "User cancelled the questions." }], details: { questions, answers: [], cancelled: true } }, { expanded: false }, plainTheme, {})))
-			.toContain("answer: user cancelled");
-		expect(renderText(tool.renderResult!({ content: [{ type: "text", text: "" }], details: { questions, answers: [], cancelled: false } }, { expanded: false }, plainTheme, {})))
-			.toContain("status: no answer · 2 questions");
-		expect(renderText(tool.renderResult!({ content: [{ type: "text", text: "Error: ask tool requires interactive mode" }] }, { expanded: false }, plainTheme, {})))
-			.toContain("result: Error: ask tool requires interactive mode");
+	it("collapses elaborate to note count and the first note with its question label", () => {
+		const tool = registerAskTool();
+		const [status, note, hint, ...rest] = rows(tool.renderResult!(result(elaborate), { expanded: false }, plainTheme));
+		expect(status).toBe("├─ ✎ elaborate · 2 notes · 1/3 answered");
+		expect(note).toBe("├─ Scope ✎ Docs: public API only");
+		expect(hint).toMatch(/^└─ .*answers and notes$/);
+		expect(rest).toEqual([]);
+		const [, tagged] = rows(tool.renderResult!(result(elaborate), { expanded: false }, tagTheme), 1000);
+		expect(tagged).toContain("<muted>Scope </muted><muted><i>✎ Docs: public API only</i></muted>");
+	});
+
+	it("renders cancelled, aborted and empty submissions as single terminal rows", () => {
+		const tool = registerAskTool();
+		expect(rows(tool.renderResult!(result(cancelled), { expanded: false }, plainTheme))).toEqual(["└─ ✗ cancelled by user"]);
+		expect(rows(tool.renderResult!(result(aborted), { expanded: false }, plainTheme))).toEqual(["└─ ✗ aborted before the user answered"]);
+		expect(rows(tool.renderResult!(result(aborted), { expanded: true }, plainTheme))).toEqual(["✗ aborted before the user answered"]);
+		expect(rows(tool.renderResult!(result(submittedEmpty), { expanded: false }, plainTheme))).toEqual(["└─ ✓ submitted · 0/3 answered · 1 required missing"]);
+	});
+
+	it("summarizes an invalid payload by its first issue and expands to the raw issue list", () => {
+		const tool = registerAskTool();
+		const raw = "Invalid ask payload:\n- questions[0].id: Must be unique across questions\n- questions[1].options: Must contain at least one option";
+		const [status, issue, hint, ...rest] = rows(tool.renderResult!(result(invalid, raw), { expanded: false }, plainTheme));
+		expect(status).toBe("├─ ✗ invalid payload · 2 issues");
+		expect(issue).toBe("├─ questions[0].id: Must be unique across questions");
+		expect(hint).toMatch(/^└─ .*all issues$/);
+		expect(rest).toEqual([]);
+		expect(rows(tool.renderResult!(result(invalid, raw), { expanded: false }, tagTheme), 1000)[0]).toContain("<error>✗</error>");
+		expect(rows(tool.renderResult!(result(invalid, raw), { expanded: true }, plainTheme))).toEqual(raw.split("\n"));
+	});
+
+	it("expands to an aligned report of every answer and note from details, not the model text", () => {
+		const tool = registerAskTool();
+		const expanded = tool.renderResult!(result(elaborate, "Scope: user selected: 1. src"), { expanded: true }, plainTheme);
+		expect(rows(expanded)).toEqual([
+			"✎ elaborate · 2 notes · 1/3 answered",
+			"",
+			"Scope  Source, “docs”",
+			"Risk   ! no answer · required",
+			"Q3     — no answer",
+			"",
+			"Notes",
+			"Scope  Docs: public API only",
+			"Risk   why ask?",
+		]);
+		expect(rows(expanded, 20)).toEqual(expect.arrayContaining(["Scope", "  Source, “docs”", "Notes", "Risk", "  why ask?"]));
+		const tagged = rows(tool.renderResult!(result(elaborate), { expanded: true }, tagTheme), 1000).join("\n");
+		expect(tagged).toContain("<warning>! no answer · required</warning>");
+		expect(tagged).toContain("<muted>— no answer</muted>");
+		expect(tagged).toContain("<text>Source, “docs”</text>");
+	});
+
+	it("renders legacy details without indices, notes or mode", () => {
+		const tool = registerAskTool();
+		const [status, answer] = rows(tool.renderResult!(result(legacy), { expanded: false }, plainTheme));
+		expect(status).toBe("├─ ✓ answered 1/3 · 1 required missing");
+		expect(answer).toBe("├─ Scope “hand-typed”");
+		const expanded = rows(tool.renderResult!(result(legacy), { expanded: true }, plainTheme));
+		expect(expanded).toContain("Scope  “hand-typed”");
+		expect(expanded).not.toContain("Notes");
+	});
+
+	it("falls back to raw text when details are missing or malformed", () => {
+		const tool = registerAskTool();
+		const raw = "Error: ask tool requires interactive mode";
+		for (const details of [undefined, null, { answers: "nope", cancelled: false }, { cancelled: true, answers: [], error: {} }]) {
+			const [row, hint] = rows(tool.renderResult!(result(details, raw), { expanded: false }, plainTheme));
+			expect(row).toBe(`├─ result: ${raw}`);
+			expect(hint).toMatch(/^└─ .*full result$/);
+			expect(rows(tool.renderResult!(result(details, raw), { expanded: true }, plainTheme))).toEqual([raw]);
+		}
+		expect(rows(tool.renderResult!({ content: [] }, { expanded: false }, plainTheme))).toEqual(["└─ result: no answer details"]);
+	});
+
+	it("keeps collapsed results within three rows and every view width-safe", () => {
+		const tool = registerAskTool();
+		for (const details of [answered, elaborate, cancelled, aborted, submittedEmpty, legacy, invalid, wide, undefined]) {
+			const collapsed = tool.renderResult!(result(details, "raw\nmodel text"), { expanded: false }, plainTheme);
+			for (const width of [1, 2, 8, 20, 40, 80, 120]) expect(rows(collapsed, width).length).toBeLessThanOrEqual(3);
+			expectWidthSafe(collapsed);
+			expectWidthSafe(tool.renderResult!(result(details, "raw\nmodel text"), { expanded: true }, plainTheme));
+		}
+		expectWidthSafe(tool.renderCall!({ title: "範囲🎉 ".repeat(30), questions }, plainTheme));
 	});
 });

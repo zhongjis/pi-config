@@ -50,6 +50,7 @@ describe("ask execution", () => {
 		expect(result.content[0].text).toContain("1. Scope: Which scope? (choose one)");
 		expect(result.content[0].text).toContain("   1. Source — Source files");
 		expect(result.details).toMatchObject({ answers: [], notes: [], cancelled: true, mode: "submit" });
+		expect(result.details.aborted).toBeUndefined();
 		expect(custom).not.toHaveBeenCalled();
 	});
 	it("pre-aborted TUI execution returns aborted without UI or events", async () => {
@@ -58,7 +59,7 @@ describe("ask execution", () => {
 		controller.abort();
 		const result = await execute(undefined, controller.signal);
 		expect(result.content[0].text).toBe("Ask was aborted before the user answered.");
-		expect(result.details.cancelled).toBe(true);
+		expect(result.details).toMatchObject({ cancelled: true, aborted: true });
 		expect(custom).not.toHaveBeenCalled();
 		expect(emit).not.toHaveBeenCalled();
 	});
@@ -81,7 +82,7 @@ describe("ask execution", () => {
 		const { execute, status, emit } = setup(["1"], "tui", () => controller.abort());
 		const result = await execute(undefined, controller.signal);
 		expect(result.content[0].text).toBe("Ask was aborted before the user answered.");
-		expect(result.details.cancelled).toBe(true);
+		expect(result.details).toMatchObject({ cancelled: true, aborted: true });
 		expect(status.mock.calls.at(-1)?.[0].state).toBe("working");
 		expect(emit.mock.calls.at(-1)).toEqual(["herdr:blocked", { active: false }]);
 	});
@@ -90,5 +91,6 @@ describe("ask execution", () => {
 		const result = await execute(undefined, undefined, "Decisions");
 		expect(result.content[0].text).toBe("Decisions\nScope: user selected: 1. src");
 		expect(result.details).toMatchObject({ mode: "submit", cancelled: false, notes: [], answers: [{ indices: [1] }] });
+		expect(result.details.aborted).toBeUndefined();
 	});
 });

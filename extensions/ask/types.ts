@@ -38,7 +38,7 @@ export const QuestionSchema = Type.Object({
 	recommended: Type.Optional(
 		Type.Number({
 			description:
-				"0-indexed cursor pre-position. Adds '(Recommended)' to the option label. Cursor only — never pre-checks in multi-select mode.",
+				"0-indexed cursor pre-position. Marks the option as recommended. Cursor only — never pre-checks in multi-select mode.",
 		}),
 	),
 	required: Type.Optional(
@@ -112,11 +112,8 @@ export interface AskDetails {
 	answers: Answer[];
 	notes: AskNote[];
 	cancelled: boolean;
+	/** True when the tool call was aborted before the user answered (cancelled is also true). */
+	aborted?: boolean;
 	mode: AskMode;
 	error?: { issues: AskIssue[] };
 }
-
-// ─── Constants ───────────────────────────────────────────────────────────────
-
-export const RECOMMENDED_SUFFIX = " (Recommended)";
-export const OTHER_LABEL = "Other (type your own)";

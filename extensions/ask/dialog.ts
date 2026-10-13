@@ -1,16 +1,16 @@
 /**
- * ask — Interactive component: state effects, editor, previews and rendering.
+ * ask — Interactive component: state effects, inline input, previews and rendering.
  *
  * Owns the abort listener for one interaction; completion and disposal remove it.
  * The pure AskState owns all decision semantics.
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Editor, type EditorTheme, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import { formatAnswerLine, formatNoteLine } from "./format.js";
+import { Input, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { humanAnswer, humanNote } from "./format.js";
 import { createAskKeys, type AskKeybindings } from "./keys.js";
-import { AskState, type AskEffect, REVIEW_ACTIONS, type ReviewAction } from "./state.js";
-import { type AskDetails, type IncomingQuestion, type NormalizedQuestion, OTHER_LABEL, RECOMMENDED_SUFFIX } from "./types.js";
+import { AskState, type AskEffect, REVIEW_ACTIONS } from "./state.js";
+import type { AskDetails, IncomingQuestion, NormalizedQuestion } from "./types.js";
 
 export interface AskDialogResult {
 	details: AskDetails;
@@ -22,26 +22,26 @@ export interface AskDialogOptions {
 	input: IncomingQuestion[];
 	title?: string;
 	tui: TUI;
-	theme: Pick<Theme, "fg" | "bg" | "bold">;
+	theme: Pick<Theme, "fg" | "bg" | "bold" | "italic">;
 	keybindings?: AskKeybindings;
 	signal?: AbortSignal;
 	done(result: AskDialogResult): void;
 }
 
+/** Preview rows per question, including the overflow line. */
+const PREVIEW_CAP = 12;
+/** Narrower terminals drop the box chrome. */
+const BOX_MIN_WIDTH = 24;
+/** Inner width at which the preview moves beside the options. */
+const WIDE_PREVIEW_WIDTH = 96;
+/** Ultra-wide terminals keep a readable card instead of stretching options and preview apart. */
+const MAX_WIDTH = 140;
+const ACTION_NAMES = { submit: "Submit", elaborate: "Elaborate", cancel: "Cancel" } as const;
+
 export function createAskDialog({ questions, input, title, tui, theme, keybindings, signal, done }: AskDialogOptions) {
 	const state = new AskState(questions);
 	const keys = createAskKeys(keybindings);
-	const editorTheme: EditorTheme = {
-		borderColor: (s) => theme.fg("accent", s),
-		selectList: {
-			selectedPrefix: (s) => theme.fg("accent", s),
-			selectedText: (s) => theme.fg("accent", s),
-			description: (s) => theme.fg("muted", s),
-			scrollInfo: (s) => theme.fg("dim", s),
-			noMatch: (s) => theme.fg("warning", s),
-		},
-	};
-	const editor = new Editor(tui, editorTheme);
+	const editor = new Input({ prompt: "" });
 	let finished = false;
 	function dispose() {
 		finished = true;
@@ -50,7 +50,7 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 	}
 	function apply(effect: AskEffect | undefined, aborted = false) {
 		if (!effect || finished) return;
-		if (effect.kind === "openEditor") editor.setText(effect.initialText);
+		if (effect.kind === "openEditor") editor.setValue(effect.initialText);
 		else {
 			dispose();
 			done({ details: state.buildDetails(input, title, effect.result), aborted });
@@ -71,114 +71,177 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 		if (finished) return;
 		const key = keys.resolve(data);
 		if (state.editorTarget) {
-			if (key?.kind === "cancel") state.cancelEditor(editor.getText());
+			if (key?.kind === "cancel") state.cancelEditor(editor.getValue());
 			else editor.handleInput(data);
 		} else apply(state.dispatch(key));
 		refresh();
 	}
 
-	function wrapped(text: string, width: number, prefix = ""): string[] {
-		return wrapTextWithAnsi(text, Math.max(1, width - visibleWidth(prefix))).map((line) => `${prefix}${line}`);
+	const muted = (s: string) => theme.fg("muted", s);
+	const plain = (s: string) => theme.fg("text", s);
+	const border = (s: string) => theme.fg("borderMuted", s);
+	const noteStyle = (s: string) => muted(theme.italic(s));
+	const cursorMark = (on: boolean) => on ? theme.fg("accent", "› ") : "  ";
+	function pad(line: string, width: number): string {
+		const cell = truncateToWidth(line, Math.max(0, width));
+		return cell + " ".repeat(Math.max(0, width - visibleWidth(cell)));
 	}
+	/** Wrap plain text, style each line, and indent every line by `indent` columns. */
+	function wrap(text: string, width: number, style: (s: string) => string, indent = 0): string[] {
+		return wrapTextWithAnsi(text, Math.max(1, width - indent)).map((line) => `${" ".repeat(indent)}${style(line)}`);
+	}
+	function editRow(width: number): string {
+		return `${theme.fg("accent", "✎ ")}${editor.render(Math.max(1, width - 2))[0] ?? ""}`;
+	}
+	function editingNote(qId: string, optionIndex?: number): boolean {
+		const target = state.editorTarget;
+		return target?.kind === "note" && target.questionId === qId && target.optionIndex === optionIndex;
+	}
+	function noteLines(qId: string, width: number, indent: number, optionIndex?: number): string[] {
+		if (editingNote(qId, optionIndex)) return [`${" ".repeat(indent)}${editRow(width - indent)}`];
+		const note = state.getNote(qId, optionIndex);
+		return note ? wrap(`✎ ${note}`, width, noteStyle, indent) : [];
+	}
+
 	function optionLines(q: NormalizedQuestion, width: number): string[] {
+		const numWidth = String(q.options.length).length + 2;
+		const labelCol = 2 + (q.multi ? 2 : 0) + numWidth;
+		const box = (on: boolean) => q.multi ? (on ? plain("☑ ") : muted("☐ ")) : "";
 		const lines: string[] = [];
 		q.options.forEach((option, i) => {
 			const cursor = i === state.optionIndex;
-			const mark = q.multi ? `${state.isOptionToggled(q.id, i) ? "☑" : "☐"} ` : "";
-			const label = `${mark}${i + 1}. ${option.label}${q.recommended === i ? RECOMMENDED_SUFFIX : ""}`;
-			lines.push(`${cursor ? "> " : "  "}${theme.fg(cursor ? "accent" : "text", label)}`);
-			if (option.description) lines.push(...wrapped(theme.fg("muted", option.description), width, "    "));
-			const note = state.getNote(q.id, i);
-			if (note) lines.push(...wrapped(theme.fg("muted", `✎ ${note}`), width, "    "));
+			const tag = q.recommended === i ? muted("  recommended") : "";
+			lines.push(`${cursorMark(cursor)}${box(state.isOptionToggled(q.id, i))}${theme.fg(cursor ? "text" : "muted", String(i + 1).padEnd(numWidth))}${theme.fg(cursor ? "accent" : "text", option.label)}${tag}`);
+			if (option.description) lines.push(...wrap(option.description, width, muted, labelCol));
+			lines.push(...noteLines(q.id, width, labelCol, i));
 		});
 		if (q.allowOther) {
+			const cursor = state.isOtherRow(q, state.optionIndex);
 			const custom = state.getCustomInput(q.id);
 			const draft = state.getDraft({ kind: "custom", questionId: q.id });
-			const cursor = state.isOtherRow(q, state.optionIndex);
-			const mark = q.multi ? `${custom ? "☑" : "☐"} ` : "";
-			const value = custom ? `: ${custom} ✎` : draft !== undefined ? ` (draft: ${draft})` : "";
-			lines.push(`${cursor ? "> " : "  "}${theme.fg(cursor ? "accent" : "text", `${mark}${OTHER_LABEL}${value}`)}`);
-		}
-		return lines.map((line) => truncateToWidth(line, width));
-	}
-	function previewLines(q: NormalizedQuestion, width: number): string[] {
-		const preview = q.options[state.optionIndex]?.preview;
-		const all = preview === undefined ? [theme.fg("dim", "(no preview)")] : wrapped(preview, width);
-		return [theme.fg("muted", "Preview"), ...all.slice(0, 12), ...(all.length > 12 ? [theme.fg("dim", `… +${all.length - 12} more lines`)] : [])];
-	}
-	function questionLines(q: NormalizedQuestion, width: number): string[] {
-		const lines = wrapped(theme.fg("text", q.prompt), width, " ");
-		const note = state.getNote(q.id);
-		if (note) lines.push(...wrapped(theme.fg("muted", `✎ ${note}`), width, " "));
-		lines.push("");
-		if (!q.options.some((o) => o.preview !== undefined)) return [...lines, ...optionLines(q, width)];
-		if (width >= 100) {
-			const leftWidth = Math.floor((width - 3) * 0.45);
-			const rightWidth = width - leftWidth - 3;
-			const left = optionLines(q, leftWidth);
-			const right = previewLines(q, rightWidth);
-			for (let i = 0; i < Math.max(left.length, right.length); i++) {
-				const row = left[i] ?? "";
-				lines.push(`${row}${" ".repeat(leftWidth - visibleWidth(row))} ${theme.fg("dim", "│")} ${right[i] ?? ""}`);
-			}
-		} else {
-			lines.push(...optionLines(q, width), theme.fg("dim", `┌${"─".repeat(Math.max(0, width - 2))}┐`));
-			for (const line of previewLines(q, Math.max(1, width - 4))) {
-				const cell = truncateToWidth(line, Math.max(1, width - 4));
-				lines.push(`│ ${cell}${" ".repeat(Math.max(0, width - 4 - visibleWidth(cell)))} │`);
-			}
-			lines.push(theme.fg("dim", `└${"─".repeat(Math.max(0, width - 2))}┘`));
+			const word = (s: string) => theme.fg(cursor ? "accent" : "muted", s);
+			const lead = `${cursorMark(cursor)}${box(custom !== undefined)}${" ".repeat(numWidth)}`;
+			const target = state.editorTarget;
+			const value = target?.kind === "custom" && target.questionId === q.id
+				? `${word("Other")}  ${editor.render(Math.max(1, width - labelCol - 7))[0] ?? ""}`
+				: custom !== undefined ? `${word("Other")}  ${plain(`“${custom}”`)}`
+					: draft !== undefined ? `${word("Other")}  ${muted(`draft “${draft}”`)}` : word("Other…");
+			lines.push(`${lead}${value}`);
 		}
 		return lines;
 	}
+	/** Exactly H rows for every cursor position, so moving the cursor never changes the dialog height. */
+	function previewRows(q: NormalizedQuestion, width: number): string[] {
+		const w = Math.max(1, width);
+		const height = Math.min(PREVIEW_CAP, Math.max(...q.options.map((o) => o.preview === undefined ? 1 : wrapTextWithAnsi(o.preview, w).length)));
+		const preview = q.options[state.optionIndex]?.preview;
+		const all = preview === undefined ? [] : wrapTextWithAnsi(preview, w);
+		const rows = preview === undefined ? [muted("no preview")]
+			: all.length > height ? [...all.slice(0, height - 1).map(plain), muted(`… +${all.length - height + 1} more lines`)]
+				: all.map(plain);
+		return [...rows, ...Array<string>(Math.max(0, height - rows.length)).fill("")];
+	}
+	function questionLines(q: NormalizedQuestion, width: number): string[] {
+		const lines = [...wrap(q.prompt, width, (s) => plain(theme.bold(s))), ...noteLines(q.id, width, 0), ""];
+		if (!q.options.some((o) => o.preview !== undefined)) return [...lines, ...optionLines(q, width)];
+		const heading = `Preview · ${q.options[state.optionIndex]?.label ?? "Other"}`;
+		if (width >= WIDE_PREVIEW_WIDTH) {
+			const leftWidth = Math.floor((width - 3) * 0.45);
+			const left = optionLines(q, leftWidth);
+			const right = [muted(heading), ...previewRows(q, width - leftWidth - 3)];
+			for (let i = 0; i < Math.max(left.length, right.length); i++) lines.push(`${pad(left[i] ?? "", leftWidth)} ${border("│")} ${right[i] ?? ""}`);
+			return lines;
+		}
+		const label = truncateToWidth(heading, Math.max(0, width - 5));
+		lines.push(...optionLines(q, width), "", `${border("── ")}${muted(label)} ${border("─".repeat(Math.max(0, width - 4 - visibleWidth(label))))}`);
+		return [...lines, ...previewRows(q, width - 2).map((row) => `  ${row}`)];
+	}
 	function reviewLines(width: number): string[] {
-		const lines = [theme.fg("accent", theme.bold("Review"))];
+		const labelWidth = Math.min(Math.max(...questions.map((q) => visibleWidth(q.rawLabel))) + 3, Math.floor(width / 2));
+		const lines: string[] = [];
 		for (const q of questions) {
-			const answer = state.buildAnswer(q);
-			lines.push(...wrapped(theme.fg(answer ? "text" : q.required ? "warning" : "dim", formatAnswerLine(q, answer)), width));
-			for (const note of state.getNotes().filter((n) => n.questionId === q.id)) lines.push(...wrapped(theme.fg("muted", `✎ ${formatNoteLine(q, note)}`), width, "  "));
+			const answer = humanAnswer(state.buildAnswer(q));
+			const [first = "", ...rest] = answer !== undefined ? wrap(answer, width - labelWidth, plain)
+				: [q.required ? theme.fg("warning", "! no answer · required") : muted("— no answer")];
+			lines.push(`${pad(muted(q.rawLabel), labelWidth - 2)}  ${first}`, ...rest.map((line) => `${" ".repeat(labelWidth)}${line}`));
+			for (const note of state.getNotes().filter((n) => n.questionId === q.id)) lines.push(...wrap(`✎ ${humanNote(q, note)}`, width, noteStyle, labelWidth));
 		}
 		lines.push("");
-		const labels: Record<ReviewAction, string> = { submit: "Submit", elaborate: `Elaborate${state.elaborateEnabled ? "" : " (add a note first: n / N)"}`, cancel: "Cancel" };
+		const missing = questions.filter((q) => q.required && !state.isAnswered(q)).length;
 		REVIEW_ACTIONS.forEach((action, i) => {
-			const color = action === "elaborate" && !state.elaborateEnabled ? "dim" : i === state.reviewActionIndex ? "accent" : "text";
-			lines.push(...wrapped(theme.fg(color, `${i === state.reviewActionIndex ? "> " : "  "}${i + 1} ${labels[action]}`), width));
+			const cursor = i === state.reviewActionIndex;
+			const disabled = action === "elaborate" && !state.elaborateEnabled;
+			const suffix = action === "submit" && missing ? theme.fg("warning", `  · ${missing} required unanswered`)
+				: disabled ? muted("  add a note first (n/N)") : "";
+			lines.push(`${cursorMark(cursor)}${theme.fg(cursor ? "text" : "muted", `${i + 1}  `)}${theme.fg(disabled ? "muted" : cursor ? "accent" : "text", ACTION_NAMES[action])}${suffix}`);
 		});
 		return lines;
 	}
-	function hint(): string {
-		const confirm = keys.label("tui.select.confirm");
+	function tabRow(): string {
+		const cells = questions.map((q, i) => {
+			const answered = state.isAnswered(q);
+			const active = i === state.currentTab;
+			const label = active ? theme.fg("accent", theme.bold(q.tabLabel)) : theme.fg(answered ? "text" : "muted", q.tabLabel);
+			const cell = ` ${answered ? theme.fg("success", "■") : muted("□")} ${label}${q.required && !answered ? theme.fg("warning", "*") : ""} `;
+			return active ? theme.bg("selectedBg", cell) : cell;
+		});
+		const reviewActive = state.currentTab === questions.length;
+		const review = reviewActive ? theme.bg("selectedBg", ` ${theme.fg("accent", theme.bold("Review"))} `) : ` ${muted("Review")} `;
+		return `${cells.join(" ")}    ${review}`;
+	}
+	/** `<key> <word>` segments; drops the lowest-priority segments to fit while always keeping the cancel segment last. */
+	function hints(max: number): string {
 		const cancel = keys.label("tui.select.cancel");
-		if (state.dismissPending) return `Press ${cancel} again to discard your answers`;
-		if (state.editorTarget) return `${keys.label("tui.input.submit")} submit • ${cancel} cancel input`;
-		const navigate = `${keys.label("tui.select.up")}/${keys.label("tui.select.down")} navigate`;
+		if (state.dismissPending) return theme.fg("warning", `${cancel} again discards your answers · any other key keeps them`);
+		const seg = (key: string, word: string) => `${plain(key)} ${muted(word)}`;
+		const sep = border(" · ");
+		function fitHints(segments: string[], last: string): string {
+			const kept = [...segments];
+			while (kept.length && visibleWidth([...kept, last].join(sep)) > max) kept.pop();
+			return [...kept, last].join(sep);
+		}
+		if (state.editorTarget) return fitHints([seg(keys.label("tui.input.submit"), "save")], seg(cancel, "keep draft"));
+		const up = keys.label("tui.select.up");
+		const down = keys.label("tui.select.down");
+		const move = seg(up === "↑" && down === "↓" ? "↑↓" : `${up}/${down}`, "move");
+		const confirm = keys.label("tui.select.confirm");
+		const esc = seg(cancel, "cancel");
 		const q = state.getCurrentQuestion();
-		if (!q) return `${navigate} • 1–3 action • ${confirm} action • Tab/←→ tabs • ${cancel} dismiss`;
-		const action = state.isOtherRow(q, state.optionIndex) ? "edit Other" : q.multi ? "advance" : "select";
-		return `${navigate} • 1–9 ${q.multi ? "toggle" : "select"}${q.multi ? " • Space toggle" : ""} • ${confirm} ${action} • n option note / N question note • Tab/←→ tabs • ${cancel} dismiss`;
+		if (!q) return fitHints([move, seg(`1–${REVIEW_ACTIONS.length}`, "action"), seg(confirm, "run"), seg("Tab", "back")], esc);
+		const count = Math.min(9, q.options.length);
+		const digits = count > 1 ? `1–${count}` : "1";
+		const enter = state.isOtherRow(q, state.optionIndex) ? "type" : q.multi ? "next"
+			: state.quickPick ? state.elaborateEnabled ? "review" : "submit" : "pick";
+		return fitHints([
+			move, q.multi ? seg(`${digits}/Space`, "toggle") : seg(digits, "pick"), seg(confirm, enter), seg("n/N", "note"),
+			...(state.quickPick ? [] : [seg("Tab", "next")]),
+		], esc);
+	}
+	function header(width: number, boxed: boolean): string {
+		const name = title === undefined ? muted("ask") : plain(theme.bold(title.replace(/\s+/g, " ")));
+		if (!boxed) return truncateToWidth(name, width);
+		const progress = muted(`${questions.filter((q) => state.isAnswered(q)).length}/${questions.length} answered`);
+		const fits = visibleWidth(name) + visibleWidth(progress) + 9 <= width;
+		const right = fits ? `${border(" ")}${progress}${border(" ─╮")}` : border("╮");
+		const label = truncateToWidth(name, width - 6);
+		return `${border("╭─ ")}${label}${border(` ${"─".repeat(Math.max(1, width - 4 - visibleWidth(label) - visibleWidth(right)))}`)}${right}`;
+	}
+	function footer(width: number, boxed: boolean): string {
+		if (!boxed) return truncateToWidth(hints(width), width);
+		const text = truncateToWidth(hints(width - 6), width - 6);
+		return `${border("╰─ ")}${text}${border(` ${"─".repeat(Math.max(1, width - 5 - visibleWidth(text)))}╯`)}`;
 	}
 	function render(width: number): string[] {
-		width = Math.max(0, Math.floor(width));
-		const lines = [theme.fg("accent", "─".repeat(width))];
-		if (title !== undefined) lines.push(...wrapped(theme.fg("accent", theme.bold(title)), width));
-		if (state.hasTabBar) {
-			const cells = questions.map((q, i) => {
-				const text = ` ${state.isAnswered(q) ? "■" : "□"} ${q.tabLabel}${q.required ? "*" : ""} `;
-				return i === state.currentTab ? theme.bg("selectedBg", theme.fg("text", text)) : theme.fg(q.required && !state.isAnswered(q) ? "warning" : state.isAnswered(q) ? "success" : "muted", text);
-			});
-			cells.push(state.currentTab === questions.length ? theme.bg("selectedBg", " ✓ Review ") : theme.fg("muted", " ✓ Review "));
-			lines.push(cells.join(" "), "");
-		}
+		width = Math.min(MAX_WIDTH, Math.max(0, Math.floor(width)));
+		const boxed = width >= BOX_MIN_WIDTH;
+		const inner = boxed ? width - 4 : width;
 		const q = state.getCurrentQuestion();
-		if (state.editorTarget && q) {
-			lines.push(...wrapped(theme.fg("text", q.prompt), width, " "));
-			const target = state.editorTarget;
-			const label = target.kind === "custom" ? "Your answer:" : `Note for ${q.rawLabel}${target.optionIndex === undefined ? "" : ` › ${q.options[target.optionIndex].label}`}:`;
-			lines.push(...wrapped(theme.fg("muted", label), width, " "));
-			lines.push(...editor.render(Math.max(1, width - 2)).map((line) => ` ${line}`));
-		} else lines.push(...(q ? questionLines(q, width) : reviewLines(width)));
-		lines.push("", ...wrapped(theme.fg(state.dismissPending ? "warning" : "dim", hint()), width), theme.fg("accent", "─".repeat(width)));
-		return lines.map((line) => truncateToWidth(line, width));
+		const side = border("│");
+		const rows = (q ? questionLines(q, inner) : reviewLines(inner)).map((line) => boxed ? `${side} ${pad(line, inner)} ${side}` : truncateToWidth(line, width));
+		// Tab cells carry their own padding, so the row starts in the gutter and glyphs share the body's left edge.
+		if (state.hasTabBar) rows.unshift(...(boxed ? [`${side}${pad(tabRow(), inner + 2)}${side}`, `${side}${" ".repeat(inner + 2)}${side}`] : [truncateToWidth(tabRow(), width), ""]));
+		else rows.unshift(boxed ? `${side}${" ".repeat(inner + 2)}${side}` : "");
+		return [header(width, boxed), ...rows, footer(width, boxed)];
 	}
 	signal?.addEventListener("abort", onAbort);
 	if (signal?.aborted) onAbort();
