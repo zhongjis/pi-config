@@ -328,7 +328,9 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 				);
 				currentStep = state.consumed;
 				await session.prompt(turn.prompt);
-				await (session.agent as any).waitForIdle?.();
+				// Session-level wait: pi 1.2 counts a run as busy while it is starting
+				// (pi#10739), so runs triggered by commands inside prompt() are covered.
+				await session.waitForIdle();
 				assertMockWrappersIntact(session, effectiveMockTools);
 			}
 
