@@ -28,3 +28,5 @@ Based on `questionnaire.ts` from the [`badlogic/pi-mono`](https://github.com/bad
 ## Events
 
 - Emits `user-prompted` (`{ tool: "ask" }`) once per execution before the blocking UI is shown — see [`extensions/CONVENTIONS.md`](../CONVENTIONS.md). Used by `task-continuation-reminder` to suppress same-run automatic follow-ups while the user is answering.
+- While the dialog is open, the terminal program status (OSC 7501) is set to `blocked`/`question` and restored to `working` on close; this is a local shim because Pi reports no status for `ctx.ui.custom()` — see the `ponytail:` comment in [`index.ts`](index.ts). The tool registers `executionMode: "sequential"` so parallel tool batches cannot displace the dialog.
+- Emits `herdr:blocked` (`{ active: true, label: "Ask" }` on open, `{ active: false }` in a `finally` on close) so the Herdr agent-state integration marks the pane blocked while the dialog waits; see [`extensions/CONVENTIONS.md`](../CONVENTIONS.md) for the counter contract.

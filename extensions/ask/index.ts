@@ -20,6 +20,7 @@ type EditorTheme,
 Key,
 matchesKey,
 truncateToWidth,
+type TUI,
 wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { extractToolText, renderToolCall, renderToolExpanded, renderToolSummary } from "../lib/tool-output.js";
@@ -171,6 +172,9 @@ export default function ask(pi: ExtensionAPI) {
 			"- For multiple questions, a tab bar lets the user navigate with Tab / Shift+Tab / ←→ between questions and a Submit tab",
 		].join("\n"),
 		parameters: AskParams,
+		// Parallel batches share one editor slot: a second blocking dialog would displace
+		// this one, and pi never resolves the displaced custom() promise.
+		executionMode: "sequential",
 
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const inputQuestions = (params.questions as IncomingQuestion[]) ?? [];
@@ -217,8 +221,20 @@ export default function ask(pi: ExtensionAPI) {
 			const hasTabBar = !autoFinalize;
 
 			pi.events.emit("user-prompted", { tool: "ask" });
+			// Herdr's agent-state integration counts blockers on this channel; the .finally()
+			// below emits the mandatory balancing `active:false`.
+			pi.events.emit("herdr:blocked", { active: true, label: "Ask" });
 
+			// ponytail: ctx.ui.custom() does not report OSC 7501 "blocked" program status
+			// (pi-side gap; built-in dialogs set it inside interactive-mode). Delete the
+			// setProgramStatus pair when pi wires it into showExtensionCustom. The restore in
+			// .finally() is mandatory: pi's reporter dedupes on its own last report and would
+			// never re-emit "working". Ceiling: hardcodes app "pi".
+			let dialogTui: TUI | undefined;
 			const outcome = await ctx.ui.custom<AskDetails>((tui, theme, _kb, done) => {
+				dialogTui = tui;
+				tui.terminal.setProgramStatus({ state: "blocked", kind: "question", message: "Ask", app: "pi" });
+
 				// ── State ─────────────────────────────────────────────────────────
 				let currentTab = 0;
 				let optionIndex = 0;
@@ -642,6 +658,9 @@ export default function ask(pi: ExtensionAPI) {
 					},
 					handleInput,
 				};
+			}).finally(() => {
+				dialogTui?.terminal.setProgramStatus({ state: "working", message: pi.getSessionName(), app: "pi" });
+				pi.events.emit("herdr:blocked", { active: false });
 			});
 
 			if (outcome.cancelled) {

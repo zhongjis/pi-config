@@ -77,3 +77,4 @@ Continuation contract:
 | `tasks:rpc:*` | Task-specific integration helpers | Same scoped reply-channel RPC contract | Internal |
 | `ulw:activated` | Accepted kuafu ULW input | `{ sessionId: string }`; emitted during input, before all `before_agent_start` hooks; Goal owns access/bootstrap, no Goal mutation | Session-scoped notification |
 | `fast:policy-changed` | Refresh Fast UI after a mode default changes | `{ sessionId: string }`; notification only, never policy transport | Session-scoped; requests read branch-local `fast-policy` entries |
+| `herdr:blocked` | Blocking UI opened/closed, for Herdr pane agent state | `{ active: boolean, label?: string }`; counter-based — every `active: true` MUST pair with exactly one `active: false` (use `try`/`finally`) | External: listener is Herdr-managed (`herdr-agent-state.ts`); emitters live in this repo |
