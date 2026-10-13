@@ -53,6 +53,7 @@ import { createDelegateResearchTool, DELEGATE_RESEARCH_TOOL_NAME, type NestedSpa
 import { sessionFastPolicies } from "./session-fast.js";
 import { preloadSkills } from "./skill-loader.js";
 import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, repairStructuredOutput, resetStructuredCapture, STRUCTURED_OUTPUT_TOOL_NAME, structuredFailure, takeStructuredCapture } from "./structured-output.js";
+import { watchTurns } from "./turn-ceiling.js";
 import type { AgentConfig, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
 import type { LifetimeUsage } from "./usage.js";
 
@@ -188,28 +189,6 @@ interface SubagentLaunch {
   skills?: string[];
 }
 
-/** Default max turns. undefined = unlimited (no turn limit). */
-let defaultMaxTurns: number | undefined;
-
-/** Normalize max turns. undefined or 0 = unlimited, otherwise minimum 1. */
-export function normalizeMaxTurns(n: number | undefined): number | undefined {
-  if (n == null || n === 0) return undefined;
-  return Math.max(1, n);
-}
-
-/** Get the default max turns value. undefined = unlimited. */
-export function getDefaultMaxTurns(): number | undefined { return defaultMaxTurns; }
-/** Set the default max turns value. undefined or 0 = unlimited, otherwise minimum 1. */
-export function setDefaultMaxTurns(n: number | undefined): void { defaultMaxTurns = normalizeMaxTurns(n); }
-
-/** Additional turns allowed after the soft limit steer message. */
-let graceTurns = 5;
-
-/** Get the grace turns value. */
-export function getGraceTurns(): number { return graceTurns; }
-/** Set the grace turns value (minimum 1). */
-export function setGraceTurns(n: number): void { graceTurns = Math.max(1, n); }
-
 /** Info about a tool event in the subagent. */
 export interface ToolActivity {
   type: "start" | "end" | "diagnostic";
@@ -227,7 +206,6 @@ export interface RunOptions {
   agentConfig?: AgentConfig;
   model?: Model<any>;
   selectedModel?: SelectedAgentModel;
-  maxTurns?: number;
   signal?: AbortSignal;
   isolated?: boolean;
   inheritContext?: boolean;
@@ -255,6 +233,8 @@ export interface RunOptions {
   onSessionCreated?: (session: AgentSession) => void;
   /** Called at the end of each agentic turn with the cumulative count. */
   onTurnEnd?: (turnCount: number) => void;
+  /** Orchestrator check-in; the manager supplies it only for orchestrator-owned runs. */
+  onCheckIn?: (threshold: number) => void;
   /**
    * Called once per assistant message_end with that message's usage delta.
    * Lets callers accumulate observed billing deltas independently of history.
@@ -277,7 +257,7 @@ export interface RunOptions {
   /**
    * Existing child session file to reopen instead of creating a new session.
    * It must carry this agent's launch entry and the current parent lineage;
-   * its launch-time isolated/skills replace the per-call options. A reopened run has no turn limit.
+   * its launch-time isolated/skills replace the per-call options. A reopened run gets the turn ceiling like any Execution.
    */
   resumeSessionFile?: string;
   /** Root-manager `delegate_research` bridge; the manager supplies it only for root-level, non-graph runs. */
@@ -292,8 +272,8 @@ export interface RunResult {
   session: AgentSession;
   /** True when execution was interrupted rather than cleanly completed. */
   aborted: boolean;
-  /** True if the agent was steered to wrap up (hit soft turn limit) but finished in time. */
-  steered: boolean;
+  /** True when the agent got the turn-ceiling wrap-up reminder and finished in time. */
+  forceSteered: boolean;
   /** Final provider/runtime failure; partial output remains available separately. */
   failure?: string;
 }
@@ -900,38 +880,12 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
 
   options.onSessionCreated?.(session);
 
-  // Track turns for graceful max_turns enforcement
-  let turnCount = 0;
-  // A reopened run enforces no turn limit, like a live in-memory resume.
-  const maxTurns = reopened ? undefined : normalizeMaxTurns(options.maxTurns ?? agentConfig?.maxTurns ?? defaultMaxTurns);
-  let softLimitReached = false;
-  let aborted = false;
+  // Every Execution, including a reopened run, gets the hidden turn ceiling.
+  const turns = watchTurns(session, { onTurnEnd: options.onTurnEnd, onCheckIn: options.onCheckIn });
   let interruptionCause: InterruptionCause | undefined;
 
   let currentMessageText = "";
-  let completedTools = 0;
-  let allToolsTerminate = true;
   const unsubTurns = session.subscribe((event: AgentSessionEvent) => {
-    if (event.type === "turn_end") {
-      turnCount++;
-      options.onTurnEnd?.(turnCount);
-      const unfinished = event.message.role === "assistant"
-        && event.message.stopReason !== "error" && event.message.stopReason !== "aborted"
-        && event.message.content.some((block) => block.type === "toolCall")
-        && !(completedTools > 0 && allToolsTerminate);
-      completedTools = 0;
-      allToolsTerminate = true;
-      if (maxTurns != null && unfinished) {
-        if (!softLimitReached && turnCount >= maxTurns) {
-          softLimitReached = true;
-          session.steer("You have reached your turn limit. Wrap up immediately — provide your final answer now.");
-        } else if (softLimitReached && turnCount >= maxTurns + graceTurns) {
-          aborted = true;
-          interruptionCause = "turn-limit";
-          session.abort();
-        }
-      }
-    }
     if (event.type === "message_start") {
       currentMessageText = "";
     }
@@ -943,8 +897,6 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
       options.onToolActivity?.({ type: "start", toolName: event.toolName });
     }
     if (event.type === "tool_execution_end") {
-      completedTools++;
-      allToolsTerminate = allToolsTerminate && event.result?.terminate === true;
       options.onToolActivity?.({ type: "end", toolName: event.toolName });
     }
     if (event.type === "message_end" && event.message.role === "assistant") {
@@ -980,11 +932,11 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   let structuredRetried = false;
   let failure: string | undefined;
   try {
-    if (options.signal?.aborted) { aborted = true; interruptionCause = "unknown"; }
+    if (options.signal?.aborted) interruptionCause = "unknown";
     else {
       await session.prompt(effectivePrompt);
       await session.waitForIdle();
-      if (structuredCapture && !aborted && !options.signal?.aborted && !finalTurnError(session, startLen) && !finalInterruption(session, startLen)) {
+      if (structuredCapture && !turns.interruptionCause && !options.signal?.aborted && !finalTurnError(session, startLen) && !finalInterruption(session, startLen)) {
         structuredRetried = await repairStructuredOutput(session, structuredCapture);
       }
     }
@@ -995,6 +947,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     try {
       await session.waitForIdle();
     } finally {
+      turns.unsubscribe();
       unsubTurns();
       collector.unsubscribe();
       cleanupAbort();
@@ -1002,8 +955,8 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   }
 
   const responseText = collector.getText().trim() || getLastAssistantText(session, startLen);
-  interruptionCause ??= options.signal?.aborted ? "unknown" : finalInterruption(session, startLen);
-  return { responseText, session, aborted: interruptionCause !== undefined, interruptionCause, steered: softLimitReached,
+  interruptionCause ??= turns.interruptionCause ?? (options.signal?.aborted ? "unknown" : finalInterruption(session, startLen));
+  return { responseText, session, aborted: interruptionCause !== undefined, interruptionCause, forceSteered: turns.forceSteered,
     structuredJson: structuredCapture?.json, structuredRetried,
     failure: failure ?? finalTurnError(session, startLen) ?? structuredFailure(structuredCapture),
   };
@@ -1020,11 +973,12 @@ export async function resumeAgent(
     onTextDelta?: RunOptions["onTextDelta"];
     onProgress?: RunOptions["onProgress"];
     onTurnEnd?: (turnCount: number) => void;
+    onCheckIn?: RunOptions["onCheckIn"];
     onAssistantUsage?: (usage: LifetimeUsage) => void;
     onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
     signal?: AbortSignal;
   } = {},
-): Promise<{ text: string; failure?: string; interruptionCause?: InterruptionCause; structuredJson?: string; structuredRetried?: boolean }> {
+): Promise<{ text: string; failure?: string; interruptionCause?: InterruptionCause; forceSteered?: boolean; structuredJson?: string; structuredRetried?: boolean }> {
   // Boundary for the history fallback: the session already holds prior turns,
   // so only assistant text produced by THIS resume prompt counts as its output
   // — a failed resume must not surface the previous turn's answer (#144).
@@ -1032,10 +986,9 @@ export async function resumeAgent(
   const collector = collectResponseText(session, options.onTextDelta, options.onProgress);
   const cleanupAbort = forwardAbortSignal(session, options.signal);
 
-  let turnCount = 0;
-  const unsubEvents = (options.onToolActivity || options.onTurnEnd || options.onAssistantUsage || options.onCompaction)
+  const turns = watchTurns(session, { onTurnEnd: options.onTurnEnd, onCheckIn: options.onCheckIn });
+  const unsubEvents = (options.onToolActivity || options.onAssistantUsage || options.onCompaction)
     ? session.subscribe((event: AgentSessionEvent) => {
-        if (event.type === "turn_end") options.onTurnEnd?.(++turnCount);
         if (event.type === "tool_execution_start") options.onToolActivity?.({ type: "start", toolName: event.toolName });
         if (event.type === "tool_execution_end") options.onToolActivity?.({ type: "end", toolName: event.toolName });
         if (event.type === "message_end" && event.message.role === "assistant") {
@@ -1062,7 +1015,7 @@ export async function resumeAgent(
     if (!options.signal?.aborted) {
       await session.prompt(prompt);
       await session.waitForIdle();
-      if (capture && !options.signal?.aborted && !finalTurnError(session, startLen) && !finalInterruption(session, startLen)) {
+      if (capture && !turns.interruptionCause && !options.signal?.aborted && !finalTurnError(session, startLen) && !finalInterruption(session, startLen)) {
         structuredRetried = await repairStructuredOutput(session, capture);
       }
     }
@@ -1072,6 +1025,7 @@ export async function resumeAgent(
     try {
       await session.waitForIdle();
     } finally {
+      turns.unsubscribe();
       collector.unsubscribe();
       unsubEvents();
       cleanupAbort();
@@ -1080,7 +1034,8 @@ export async function resumeAgent(
 
   return {
     text: collector.getText().trim() || getLastAssistantText(session, startLen),
-    interruptionCause: options.signal?.aborted ? "unknown" : finalInterruption(session, startLen),
+    interruptionCause: turns.interruptionCause ?? (options.signal?.aborted ? "unknown" : finalInterruption(session, startLen)),
+    forceSteered: turns.forceSteered,
     failure: failure ?? finalTurnError(session, startLen) ?? structuredFailure(capture),
     structuredJson: capture?.json, structuredRetried,
   };

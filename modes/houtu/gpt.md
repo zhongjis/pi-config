@@ -49,7 +49,6 @@ You MUST be direct, evidence-led, and concise. You MUST state dispatch batches, 
 - You MUST map named input dependencies and overlapping write paths.
 - Independent tasks SHOULD run concurrently; genuine named dependencies MUST remain sequential.
 - An approved indivisible task MUST remain one resumable workstream; stage it with a green checkpoint, bounded turns/tool calls, and a last-green fail-safe.
-- You MUST use the PLAN's Recommended Max Turns advisory to size each worker run; you MAY raise it when justified.
 
 ## 4. Select workers and skills
 

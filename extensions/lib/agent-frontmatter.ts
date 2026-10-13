@@ -27,7 +27,6 @@ export interface ParsedAgentFrontmatter {
   discoverSkills: boolean;
   preloadSkills: string[];
   model?: string;
-  maxTurns?: number;
   promptMode: PromptMode;
   inheritContext?: boolean;
   runInBackground?: boolean;
@@ -101,7 +100,6 @@ export function parseAgentFrontmatter(
     discoverSkills: parseDiscoverSkills(fm.discover_skills),
     preloadSkills: csvListOptional(fm.preload_skills) ?? [],
     model: str(fm.model),
-    maxTurns: nonNegativeInt(fm.max_turns),
     promptMode: parsePromptMode(fm.prompt_mode),
     inheritContext: fm.inherit_context != null ? fm.inherit_context === true : undefined,
     runInBackground: fm.run_in_background != null ? fm.run_in_background === true : undefined,
@@ -115,10 +113,6 @@ export function parseAgentFrontmatter(
 
 function str(val: unknown): string | undefined {
   return typeof val === "string" ? val : undefined;
-}
-
-function nonNegativeInt(val: unknown): number | undefined {
-  return typeof val === "number" && val >= 0 ? val : undefined;
 }
 
 function hasField(fm: Record<string, unknown>, field: string): boolean {

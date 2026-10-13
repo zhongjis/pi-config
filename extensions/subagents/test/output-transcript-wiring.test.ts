@@ -75,7 +75,7 @@ describe("output_transcript agent wiring", () => {
       await Promise.resolve();
       const session = { messages: [], subscribe: vi.fn(() => vi.fn()), dispose: vi.fn() } as any;
       options.onSessionCreated?.(session);
-      return { responseText: "done", session, aborted: false, steered: false };
+      return { responseText: "done", session, aborted: false, forceSteered: false };
     });
   });
 

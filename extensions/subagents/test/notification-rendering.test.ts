@@ -282,7 +282,7 @@ describe("subagent notification rendering migration", () => {
   });
 
   it.each([
-    ["steered", "✓ Steered · turn limit"],
+    ["force_steered", "✓ Steered · turn ceiling"],
     ["stopped", "■ Stopped · stopped"],
     ["aborted", "✗ Aborted · aborted"],
     ["error", "✗ Error · error: process exited 1"],
@@ -399,7 +399,7 @@ describe("subagent notification rendering migration", () => {
       responseText: "Renderer migration complete.",
       session,
       aborted: false,
-      steered: false,
+      forceSteered: false,
     });
     const tool = tools.get("agent");
     expect(tool).toBeDefined();
@@ -445,7 +445,7 @@ describe("subagent notification rendering migration", () => {
         status: "completed",
         toolUses: 0,
         turnCount: 0,
-        maxTurns: undefined,
+        maxTurns: 300,
         totalTokens: 0,
         durationMs: 0,
         outputFile: undefined,

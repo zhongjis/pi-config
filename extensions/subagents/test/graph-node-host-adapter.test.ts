@@ -88,7 +88,7 @@ function setup(responseText = "done", options: { context?: ExtensionContext; sco
     scopeModels: options.scopeModels,
     awaitEscalation: options.awaitEscalation,
   });
-  vi.mocked(runAgent).mockImplementation(async () => ({ session: session(), responseText, aborted: false, steered: false }));
+  vi.mocked(runAgent).mockImplementation(async () => ({ session: session(), responseText, aborted: false, forceSteered: false }));
   return { host, exec };
 }
 
@@ -141,8 +141,8 @@ describe("createNodeHost", () => {
     await host.dispose();
   });
 
-  it("prepares configured graph model, thinking, and raw max turns with graph run ownership", async () => {
-    configureAgent(agentConfig({ model: "test/chosen:high", maxTurns: 0 }));
+  it("prepares configured graph model and thinking with graph run ownership", async () => {
+    configureAgent(agentConfig({ model: "test/chosen:high" }));
     const { host } = setup("out", { context: modelContext() });
     vi.mocked(runAgent).mockClear();
     await host.spawnAgent(
@@ -153,7 +153,6 @@ describe("createNodeHost", () => {
       graphRun: true,
       selectedModel: { model, modelInput: "test/chosen:high" },
       thinkingLevel: "high",
-      maxTurns: 0,
     });
     expect(manager.listAgents()[0]?.graphRunId).toBe("wf");
     await host.dispose();
@@ -184,7 +183,7 @@ it("returns authoritative lifetime USD cost, independently of token counts", asy
   const { host } = setup();
   vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
     options.onAssistantUsage?.({ input: 7, output: 3, cacheRead: 0, cacheWrite: 0, cost: 0.125 });
-    return { session: session(), responseText: "done", aborted: false, steered: false };
+    return { session: session(), responseText: "done", aborted: false, forceSteered: false };
   });
   const result = await host.spawnAgent({ nodeId: "paid", attempt: 1, agentType: "general-purpose", prompt: "task" }, new AbortController().signal);
   expect(manager.listAgents()[0]?.lifetimeCost).toBe(0.125);
@@ -204,7 +203,7 @@ it("uses the registered history index alias for graph transcript paths and entri
   vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
     const child = session();
     options.onSessionCreated?.(child);
-    return { session: child, responseText: "done", aborted: false, steered: false };
+    return { session: child, responseText: "done", aborted: false, forceSteered: false };
   });
   await host.spawnAgent({ nodeId: "private-binding", attempt: 1, agentType: "general-purpose", prompt: "FIXTURE" }, new AbortController().signal);
   const alias = graphRunNodeArtifactId("run-id", 17);
@@ -263,7 +262,7 @@ describe("decision chain", () => {
     const child = evidence("fixture", "chat");
     options.onSessionCreated?.(child);
     options.onAssistantUsage?.({ input: 1, output: 1, cacheRead: 0, cacheWrite: 0, cost });
-    return { session: child, responseText: "", aborted: false, steered: false, structuredJson };
+    return { session: child, responseText: "", aborted: false, forceSteered: false, structuredJson };
   });
 
   let cwd: string;
@@ -448,7 +447,7 @@ describe("decision chain", () => {
       childSignal = options.signal;
       started();
       await new Promise(resolve => options.signal?.addEventListener("abort", resolve, { once: true }));
-      return { session: session(), responseText: "", aborted: true, steered: false };
+      return { session: session(), responseText: "", aborted: true, forceSteered: false };
     });
     const pending = host.decide?.(request(), new AbortController().signal);
     await running;

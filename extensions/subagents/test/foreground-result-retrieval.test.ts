@@ -2,9 +2,9 @@
  * foreground-result-retrieval.test.ts — issue #174, via the REAL Agent,
  * get_agent_result, and resume paths.
  *
- * A foreground agent that wraps up at max_turns remains resumable. Its exact
- * Agent ID must therefore reach model-visible content, not renderer-only
- * details, so the parent can continue that session without inventing an ID.
+ * A foreground agent that wraps up at the turn ceiling keeps its record available.
+ * Its exact Agent ID must stay available in model-visible content, not only
+ * renderer details.
  *
  * These tests pin three lifecycle guarantees:
  *
@@ -12,8 +12,8 @@
  *   2. The foreground result exposes the real ID and that ID resumes.
  *   3. Session switching still evicts consumed foreground records.
  *
- * The turn-limit shape stays covered because issue #174 occurred after a
- * graceful max_turns wrap-up (`status: "steered"`).
+ * The turn-ceiling shape stays covered because issue #174 occurred after a
+ * graceful turn-ceiling wrap-up (`status: "force_steered"`).
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -27,6 +27,7 @@ vi.mock("../src/agent-runner.js", async () => {
 
 import { resumeAgent, runAgent } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
+import { getForegroundOutcomeNote } from "../src/status-note.js";
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -62,9 +63,9 @@ function ctx() {
 const textOf = (r: any): string => r.content[0].text;
 
 /**
- * Run a FOREGROUND agent that wraps up at the turn limit — the exact #174
- * shape. `steered: true` is what agent-manager turns into status "steered",
- * which produces the reporter's turn-limit completion note.
+ * Run a FOREGROUND agent that wraps up at the turn ceiling — the exact #174
+ * shape. `forceSteered: true` is what agent-manager turns into status "force_steered",
+ * which produces the reporter's turn-ceiling completion note.
  *
  * Returns the tool result plus the authoritative ID from structured details
  * so tests can compare it with the model-visible handle.
@@ -74,7 +75,7 @@ async function runForegroundSteeredAgent(tools: Map<string, any>) {
     responseText: "THE-RESULT-PAYLOAD",
     session: { dispose: vi.fn() } as any,
     aborted: false,
-    steered: true,
+    forceSteered: true,
   });
   const res = await tools.get("agent").execute(
     "tc-fg",
@@ -82,7 +83,6 @@ async function runForegroundSteeredAgent(tools: Map<string, any>) {
       prompt: "Perform a very thorough read-only codebase exploration.",
       description: "Locate organization-scope changes",
       subagent_type: "Explore",
-      max_turns: 20,
     },
     undefined,
     undefined,
@@ -93,7 +93,7 @@ async function runForegroundSteeredAgent(tools: Map<string, any>) {
   return { res, id: id as string };
 }
 
-describe("issue #174: foreground agent that hits max_turns", () => {
+describe("issue #174: foreground agent that hits the turn ceiling", () => {
   let tmpDir: string;
   let agentDir: string;
   let prevCwd: string;
@@ -132,8 +132,8 @@ describe("issue #174: foreground agent that hits max_turns", () => {
     subagentsExtension(pi);
     const { res, id } = await runForegroundSteeredAgent(tools);
 
-    // The inline result is the turn-limit wrap-up the reporter described.
-    expect(textOf(res)).toContain("wrapped up at the turn limit");
+    // The inline result is the turn-ceiling wrap-up the reporter described.
+    expect(textOf(res)).toContain(getForegroundOutcomeNote("force_steered"));
 
     // No /new, no /resume, no session switch — exactly the reporter's sequence.
     const read = await tools.get("get_agent_result").execute("tc-read", { run_id: id }, undefined, undefined, ctx());

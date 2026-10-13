@@ -19,7 +19,7 @@ Derived from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)
 - **Custom agent types** — define agents in `.pi/agents/<name>.md` or `.agents/agents/<name>.md` (project) or globally, with YAML frontmatter: custom system prompts, model selection, thinking levels, tool restrictions
 - **Mid-run steering** — inject messages into running agents to redirect their work without restarting
 - **Session resume** — pick up where an agent left off, preserving full conversation context. Every independent agent session is persisted. A terminal Agent record stays in memory for 15 minutes within the current parent session; after it is evicted (retention, session switch, reload, or a Pi restart followed by `/resume` of the same parent session), `agent({resume: id})` reopens the persisted session file and continues the conversation under the current agent config and delegation policy. The resumed run appends to the agent's existing `.output` transcript when transcripts are enabled. `get_agent_result` on an evicted id reads the result from the file without reviving the agent.
-- **Graceful turn limits** — agents get a "wrap up" warning before hard abort, producing clean partial results instead of cut-off output
+- **Hidden turn ceiling** — every Execution, including resumes, gets a friendly wrap-up reminder at a turn ceiling far above normal work, producing clean results instead of cut-off output
 - **Case-insensitive agent types** — `"explore"`, `"Explore"`, `"EXPLORE"` all work. Unknown types fall back to general-purpose with a note
 - **Fuzzy model selection** — specify models by name (`"haiku"`, `"sonnet"`) instead of full IDs, with automatic filtering to only available/configured models
 - **Context inheritance** — optionally fork the parent conversation into a sub-agent so it knows what's been discussed
@@ -126,9 +126,9 @@ Agent and result-retrieval reports use at most three compact result rows, includ
 └─ ctrl+o to expand full result
 ```
 
-Compact rows omit redundant status/result/activity/error labels and the model prefix; turns, soft limit, tools, tokens, and duration appear only expanded. Queued IDs/next actions and pending thinking remain available. Expansion shows the complete Markdown answer or error, then Run metadata (including zero tool uses), diagnostic warnings, and transcript artifacts; requested verbose conversation remains accessible. Legacy or malformed details use a compact raw preview and retain the complete raw body when expanded.
+Compact rows omit redundant status/result/activity/error labels and the model prefix; turns, turn ceiling, tools, tokens, and duration appear only expanded. Queued IDs/next actions and pending thinking remain available. Expansion shows the complete Markdown answer or error, then Run metadata (including zero tool uses), diagnostic warnings, and transcript artifacts; requested verbose conversation remains accessible. Legacy or malformed details use a compact raw preview and retain the complete raw body when expanded.
 
-Model metadata is the actual SDK `provider/id`, even when identical to the parent. Thinking is the SDK's effective level, including clamping or `off`; queued/pre-session reports do not claim requested settings as actual. Expanded Run metadata discloses requested model/thinking when they differ from actual execution, with equivalent fuzzy model names kept quiet. Resume retains the original request rather than presenting resume-call overrides as applied. Optional estimated cost is also expanded-only; compact rows and model-visible result text remain unchanged. A live resume uses the retained session; resuming an evicted agent rebuilds it from the current agent configuration. Turns and soft limit have separate labels; accumulated lifetime usage is labeled `tokens`, not context.
+Model metadata is the actual SDK `provider/id`, even when identical to the parent. Thinking is the SDK's effective level, including clamping or `off`; queued/pre-session reports do not claim requested settings as actual. Expanded Run metadata discloses requested model/thinking when they differ from actual execution, with equivalent fuzzy model names kept quiet. Resume retains the original request rather than presenting resume-call overrides as applied. Optional estimated cost is also expanded-only; compact rows and model-visible result text remain unchanged. A live resume uses the retained session; resuming an evicted agent rebuilds it from the current agent configuration. Turns and turn ceiling have separate labels; accumulated lifetime usage is labeled `tokens`, not context.
 
 By default, foreground and background agents each stream their full conversation to a per-subagent transcript — a JSON-lines file at `<os-tmpdir>/pi-subagents-<uid>/<cwd>/<session>/tasks/<agent-id>.output` (owner-only `0700`, cleared on reboot). Set `output_transcript: false` on a custom agent to write no transcript path or file for it, or set `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (frontmatter overrides the project default). This governs **only** the transcript: it is independent of the persisted pi session (always written) and `memory:` (durable files). Background agent completion notifications render as styled boxes:
 
@@ -175,7 +175,6 @@ description: Security Code Reviewer
 tools: read, grep, find, bash
 model: anthropic/claude-opus-4-6
 thinking: high
-max_turns: 30
 ---
 
 You are a security auditor. Review code for vulnerabilities including:
@@ -197,7 +196,7 @@ agent({ subagent_type: "auditor", prompt: "Review the auth module", description:
 
 All fields are optional. [src/types.ts](src/types.ts) defines the fields and [../lib/agent-frontmatter.ts](../lib/agent-frontmatter.ts) parses them; the [agent frontmatter guide](../../docs/guides/agent-frontmatter.md) explains their use.
 
-Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `max_turns`, `inherit_context`, `run_in_background`, or `isolated`, those values are locked for that agent. `agent` tool parameters only fill fields the agent config leaves unspecified.
+Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `inherit_context`, `run_in_background`, or `isolated`, those values are locked for that agent. `agent` tool parameters only fill fields the agent config leaves unspecified.
 
 Model candidates accept `provider/model[:thinking]:fast`; no suffix means fixed off, never the parent's `/fast` toggle. Resume retains the selected setting. See [child policy contracts](MAINTENANCE.md#invocation-and-model-policy) for validation/isolation and [shared helpers](../lib/README.md#fast-request-helpers) for strict request mechanics.
 
@@ -289,18 +288,20 @@ The agent-graph skill (`skills/agent-graphs/SKILL.md`) is discovered via `resour
 - `/agent-monitor` opens the Agent Monitor.
 - `/agent-graph-replay <runId> <graph>` replays a current-session run trace through a saved or file graph's planner without model calls and shows a display-only diff.
 
-## Graceful Max Turns
+## Turn Ceiling
 
-Instead of hard-aborting at the turn limit, agents get a graceful shutdown. `max_turns` limits only the original spawn; resumed agents, live or reopened from file, run without a turn limit:
+Every Execution — fresh spawn, live resume, or resume reopened from file — counts its own turns against a hidden ceiling; [src/turn-ceiling.ts](src/turn-ceiling.ts) owns its value and environment override. Agents doing their job finish far below it; it is a safety net, not a budget:
 
-1. At the `max_turns` soft limit, a final answer completes normally. Only an unfinished tool-use turn receives the wrap-up steering message.
-2. Up to 5 grace turns to finish cleanly
-3. Hard abort only after the grace period
+1. At the ceiling, a final answer completes normally. Only an unfinished tool-use turn receives one friendly wrap-up reminder, and the Execution finishes as `force_steered`.
+2. A short grace period to finish cleanly
+3. Abort only after the grace turns
+
+Below the ceiling, an Execution the orchestrator owns (not a graph node or a `delegate_research` run) checks in once at the threshold in [src/turn-ceiling.ts](src/turn-ceiling.ts), which also owns its environment override. The agent keeps running, and the orchestrator is asked to check that it stays on task, makes progress, and converges. A waiting `get_agent_result` returns its still-pending report with the notice, without consuming the result. A foreground `agent` call returns and the agent continues as a background agent. With neither waiting, a background agent's notice arrives as one follow-up notification.
 
 | Status | Meaning | Icon |
 |--------|---------|------|
 | `completed` | Finished naturally | `✓` green |
-| `steered` | Hit limit, wrapped up in time | `✓` yellow |
+| `force_steered` | Got the turn-ceiling reminder, wrapped up in time | `✓` yellow |
 | `aborted` | Grace period exceeded | `✗` red |
 | `stopped` | User-initiated abort | `■` dim |
 
@@ -308,7 +309,7 @@ Instead of hard-aborting at the turn limit, agents get a graceful shutdown. `max
 
 Background agents are subject to a configurable concurrency limit (default: 4). Excess agents are automatically queued and start as running agents complete. The widget shows queued agents as a collapsed count.
 
-Foreground calls have an independent FIFO pool controlled by `maxConcurrentForeground` (`0` = unlimited, the default). Set it in `/agents → Settings` to bound new blocking `agent` calls without competing with background capacity. Queued calls still wait for their complete inline result; Esc cancels a queued or running foreground call. Detached/RPC spawns and resume do not use the foreground pool. Stopping queued work or shutting down releases its waiting caller.
+Foreground calls have an independent FIFO pool controlled by `maxConcurrentForeground` (`0` = unlimited, the default). Set it in `/agents → Settings` to bound new blocking `agent` calls without competing with background capacity. Queued calls still wait for their complete inline result; Esc cancels a queued or running foreground call. A foreground call converted to background at the [turn check-in](#turn-ceiling) keeps its slot until the agent settles. Detached/RPC spawns and resume do not use the foreground pool. Stopping queued work or shutting down releases its waiting caller.
 
 ## Join Strategies
 
@@ -388,13 +389,12 @@ Placeholders: `{{typeList}}` (full per-agent descriptions), `{{compactTypeList}}
 mkdir -p ~/.pi/agent
 cat > ~/.pi/agent/subagents.json <<'EOF'
 {
-  "maxConcurrent": 16,
-  "graceTurns": 10
+  "maxConcurrent": 16
 }
 EOF
 ```
 
-Every project now starts with concurrency 16 and grace 10, without ever touching the menu. Individual projects can still override via `/agents` → Settings.
+Every project now starts with concurrency 16, without ever touching the menu. Individual projects can still override via `/agents` → Settings.
 
 **Failure behavior:** missing file is silent; malformed JSON logs a warning to stderr; invalid/out-of-range field values are dropped per-field; write failures downgrade the `/agents` toast to a warning with `(session only; failed to persist)`.
 

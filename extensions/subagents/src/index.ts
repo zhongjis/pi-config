@@ -23,7 +23,7 @@ import { Container, Text } from "@earendil-works/pi-tui";
 import { AgentHistoryStore, mergeAgentHistory } from "./agent-history.js";
 import { AgentManager } from "./agent-manager.js";
 import { registerAgentPolicyDenialResultHook } from "./agent-policy-denial-result.js";
-import { getDefaultMaxTurns, getGraceTurns, SUBAGENT_TOOL_NAMES, setDefaultMaxTurns, setGraceTurns } from "./agent-runner.js";
+import { SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
 import { getAvailableTypes, isDefaultsDisabled, registerAgents, setDefaultsDisabled } from "./agent-types.js";
 import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgents } from "./custom-agents.js";
@@ -243,6 +243,7 @@ export default function (pi: ExtensionAPI) {
 
   const collectManagerUsage = (usage: LifetimeUsage) => { if (reportUsage) pendingUsage.add(usage); };
   manager.setUsageListener(collectManagerUsage);
+  manager.setCheckInListener(notifications.checkIn);
   manager.setSessionListener(record => {
     if (!agentHistory || !record.sessionFile) return;
     historyOwners.set(record, agentHistory);
@@ -501,8 +502,6 @@ export default function (pi: ExtensionAPI) {
       setShowCost,
       setGraphRuntimeTrace,
       setDecisionGateMinConfidence,
-      setDefaultMaxTurns,
-      setGraceTurns,
       setDefaultJoinMode,
       setScopeModels: setScopeModelsEnabled,
       setDisableDefaultAgents: setDisableDefaultAgents,
@@ -580,10 +579,6 @@ export default function (pi: ExtensionAPI) {
       showCost,
       graphRuntimeTrace,
       decisionGateMinConfidence,
-      // 0 = unlimited — per SubagentsSettings.defaultMaxTurns docstring and
-      // normalizeMaxTurns() in agent-runner.ts (which maps 0 → undefined).
-      defaultMaxTurns: getDefaultMaxTurns() ?? 0,
-      graceTurns: getGraceTurns(),
       defaultJoinMode: getDefaultJoinMode(),
       scopeModels: isScopeModelsEnabled(),
       disableDefaultAgents: isDefaultsDisabled(),
@@ -616,21 +611,6 @@ export default function (pi: ExtensionAPI) {
     } else if (id === "graphRuntimeTrace") {
       setGraphRuntimeTrace(value === "on");
       notifyApplied(ctx, `Graph runtime trace ${graphRuntimeTrace ? "enabled" : "disabled"} for new graph runs`);
-    } else if (id === "defaultMaxTurns") {
-      const n = parseInt(value, 10);
-      if (n === 0) {
-        setDefaultMaxTurns(undefined);
-        notifyApplied(ctx, "Default max turns set to unlimited");
-      } else if (n >= 1) {
-        setDefaultMaxTurns(n);
-        notifyApplied(ctx, `Default max turns set to ${n}`);
-      }
-    } else if (id === "graceTurns") {
-      const n = parseInt(value, 10);
-      if (n >= 1) {
-        setGraceTurns(n);
-        notifyApplied(ctx, `Grace turns set to ${n}`);
-      }
     } else if (id === "joinMode") {
       setDefaultJoinMode(value as JoinMode);
       notifyApplied(ctx, `Default join mode set to ${value}`);

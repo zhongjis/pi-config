@@ -25,7 +25,7 @@ describe("independent agent history lifecycle", () => {
         else options?.signal?.addEventListener("abort", () => resolve(), { once: true });
       });
       settled = true;
-      return { responseText: "SECRET_RESULT", session, aborted: true, steered: false };
+      return { responseText: "SECRET_RESULT", session, aborted: true, forceSteered: false };
     });
     await host.tools.get("agent")!.execute("call", {
       prompt: "SECRET_PROMPT",

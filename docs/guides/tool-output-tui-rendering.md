@@ -209,7 +209,7 @@ Use short, truthful, action-oriented labels:
 | Queued | `Queued · waiting for a slot` | Why it has not started |
 | Running | `Running · searching tests` | Current meaningful activity |
 | Completed | `Completed` | Result preview or result body |
-| Limit completion | `Completed at turn limit` | Partial/complete result truthfully |
+| Turn-ceiling wrap-up | `completed after turn-ceiling reminder` | Partial/complete result truthfully |
 | Stopped | `Stopped by user` or known actor | Recovery or resumability |
 | Aborted | `Aborted at hard limit` | Limit and retained artifacts |
 | Failed | `Failed` | Decisive error and next action |

@@ -99,7 +99,7 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
     try {
       mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
       writeFileSync(join(cwd, ".pi", "agents", "final.md"),
-        "---\ndescription: Final\ntools: +missing-tool\nmax_turns: 1\n---\nReport.\n");
+        "---\ndescription: Final\ntools: +missing-tool\n---\nReport.\n");
       localRun = await runPrintMode({ cwd, prompt: "Delegate.", respond: routeBySession({
         parentInitial: agentCall({ subagent_type: "final", description: "final", prompt: "Report." }),
         parentFinal: "Done", subagent: () => { childCalls++; return "FINAL_OK"; },
@@ -292,7 +292,7 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
 // (auto-resolved from the local `pi` login). Skipped unless PI_E2E_LIVE=1.
 //
 // These are SMOKE tests, not strict assertions: a live model decides whether and
-// how to call the tool, so we cover the subset it can be reliably steered into
+// how to call the tool, so we cover the subset it can be reliably guided into
 // (foreground spawn, background spawn + get_agent_result, an Explore spawn)
 // and assert robust invariants (a real spawn happened and produced output).
 // Per-feature determinism lives in the faux suite above, which scripts exact calls.

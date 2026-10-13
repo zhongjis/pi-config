@@ -97,15 +97,11 @@ export type SubagentEventPayloads = {
   "subagents:settings_loaded": {
     settings: {
       maxConcurrent?: number;
-      defaultMaxTurns?: number;
-      graceTurns?: number;
     };
   };
   "subagents:settings_changed": {
     settings: {
       maxConcurrent?: number;
-      defaultMaxTurns?: number;
-      graceTurns?: number;
     };
     persisted: boolean;
   };

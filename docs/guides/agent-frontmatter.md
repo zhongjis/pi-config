@@ -75,11 +75,9 @@ Fields whose purpose the code does not make obvious:
 - `isolated` — no extensions load, so only granted built-in tools remain.
 - `session_dir` — overrides where the agent's persisted session files are written (Subagents only). Every subagent session is persisted; this only relocates it.
 
-> **Not a frontmatter field:** `thinking`. Per-call `thinking`, `model`, and
-> `max_turns` are also **`agent` tool invocation parameters**; frontmatter sets
-> the defaults, the tool call can override. Thinking level for the frontmatter
-> `model` is expressed as a suffix in the model spec (`:high`, `:xhigh`), not a
-> separate key.
+Model and thinking policy comes from agent frontmatter, as resolved by
+[`prepareAgentInvocation`](../../extensions/subagents/src/invocation-config.ts).
+Thinking can be expressed as a model-spec suffix or the Subagent loader's `thinking` field; agent tool calls use that configured policy.
 
 ---
 
@@ -102,7 +100,7 @@ These commonly appear in `mode.md` frontmatter for parity/documentation but are
 - `display_name`, `description` — the mode label comes from `MODE_META` in
   [`extensions/modes/src/constants.ts`](../../extensions/modes/src/constants.ts),
   not the frontmatter.
-- `inherit_context`, `run_in_background`, `isolated`, `max_turns`,
+- `inherit_context`, `run_in_background`, `isolated`,
   `discover_skills`, `preload_skills`, `enabled`, `prompt_mode` — ignored by `parseModeAgentConfig`.
 
 Mode-scoped skills are handled separately through `<mode>/skills/*/SKILL.md`

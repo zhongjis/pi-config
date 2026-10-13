@@ -93,7 +93,7 @@ describe("independent agent history", () => {
 
   it("reloads a terminal row unchanged and drops invalid rows", async () => {
     const store = await AgentHistoryStore.load("session-a");
-    store.capture(record(sessionFile, { status: "steered", completedAt: 25 }));
+    store.capture(record(sessionFile, { status: "force_steered", completedAt: 25 }));
     await store.flush();
     const path = historyPath("session-a");
     const saved = JSON.parse(await readFile(path, "utf8"));

@@ -10,7 +10,7 @@ it("cancels one parked retrieval without affecting another waiter or a later esc
   const host = boot();
   await host.lifecycle("session_start");
   const work = deferred<void>();
-  mockRunAgent(async () => { await work.promise; return { responseText: "done", session, aborted: false, steered: false }; });
+  mockRunAgent(async () => { await work.promise; return { responseText: "done", session, aborted: false, forceSteered: false }; });
   const id = await launch(host, { ...gateGraph, nodes: { before: { type: "agent", agent: "fixture", prompt: "work" }, gate: gateNode }, edges: [{ from: "before", to: "gate" }] });
   const controller = new AbortController();
   const cancelled = retrieve(host, id, true, controller.signal);

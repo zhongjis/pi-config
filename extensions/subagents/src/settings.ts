@@ -19,13 +19,6 @@ export interface SubagentsSettings {
   graphRuntimeTrace?: boolean;
   /** Run-wide decision_gate confidence threshold in [0, 1]; a node's own `minConfidence` wins. Defaults to 0.8. */
   decisionGateMinConfidence?: number;
-  /**
-   * 0 = unlimited — the extension's single source of truth for that convention:
-   * `normalizeMaxTurns()` in agent-runner.ts treats 0 → `undefined`, and the
-   * `/agents` → Settings input prompt explicitly says "0 = unlimited".
-   */
-  defaultMaxTurns?: number;
-  graceTurns?: number;
   defaultJoinMode?: JoinMode;
   /**
    * When true, the effective model of each subagent spawn is validated
@@ -106,8 +99,6 @@ export interface SettingsAppliers {
   setShowCost?: (b: boolean) => void;
   setGraphRuntimeTrace?: (b: boolean) => void;
   setDecisionGateMinConfidence?: (n: number) => void;
-  setDefaultMaxTurns: (n: number) => void;
-  setGraceTurns: (n: number) => void;
   setDefaultJoinMode: (mode: JoinMode) => void;
   setScopeModels: (enabled: boolean) => void;
   setDisableDefaultAgents: (b: boolean) => void;
@@ -128,8 +119,6 @@ const VALID_WIDGET_MODES: ReadonlySet<string> = new Set<WidgetMode>(["all", "bac
 // make no operational sense (e.g. 1e6 concurrent subagents). Permissive enough
 // that any realistic power-user setting passes through.
 const MAX_CONCURRENT_CEILING = 1024;
-const MAX_TURNS_CEILING = 10_000;
-const GRACE_TURNS_CEILING = 1_000;
 
 /** Drop fields that don't match the expected shape. Silent — garbage becomes absent. */
 function sanitize(raw: unknown): SubagentsSettings {
@@ -153,20 +142,6 @@ function sanitize(raw: unknown): SubagentsSettings {
     (r.maxConcurrent as number) <= MAX_CONCURRENT_CEILING
   ) {
     out.maxConcurrent = r.maxConcurrent as number;
-  }
-  if (
-    Number.isInteger(r.defaultMaxTurns) &&
-    (r.defaultMaxTurns as number) >= 0 &&
-    (r.defaultMaxTurns as number) <= MAX_TURNS_CEILING
-  ) {
-    out.defaultMaxTurns = r.defaultMaxTurns as number;
-  }
-  if (
-    Number.isInteger(r.graceTurns) &&
-    (r.graceTurns as number) >= 1 &&
-    (r.graceTurns as number) <= GRACE_TURNS_CEILING
-  ) {
-    out.graceTurns = r.graceTurns as number;
   }
   if (typeof r.defaultJoinMode === "string" && VALID_JOIN_MODES.has(r.defaultJoinMode)) {
     out.defaultJoinMode = r.defaultJoinMode as JoinMode;
@@ -245,8 +220,6 @@ export function applySettings(s: SubagentsSettings, appliers: SettingsAppliers):
   if (typeof s.graphRuntimeTrace === "boolean") appliers.setGraphRuntimeTrace?.(s.graphRuntimeTrace);
   if (typeof s.decisionGateMinConfidence === "number") appliers.setDecisionGateMinConfidence?.(s.decisionGateMinConfidence);
   if (typeof s.maxConcurrent === "number") appliers.setMaxConcurrent(s.maxConcurrent);
-  if (typeof s.defaultMaxTurns === "number") appliers.setDefaultMaxTurns(s.defaultMaxTurns);
-  if (typeof s.graceTurns === "number") appliers.setGraceTurns(s.graceTurns);
   if (s.defaultJoinMode) appliers.setDefaultJoinMode(s.defaultJoinMode);
   if (typeof s.scopeModels === "boolean") appliers.setScopeModels(s.scopeModels);
   if (typeof s.disableDefaultAgents === "boolean") appliers.setDisableDefaultAgents(s.disableDefaultAgents);

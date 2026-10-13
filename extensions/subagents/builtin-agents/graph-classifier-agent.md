@@ -4,7 +4,6 @@ description: Internal decision-gate classifier that judges caller questions from
 prompt_mode: replace
 isolated: true
 discover_skills: false
-max_turns: 3
 ---
 
 <role>

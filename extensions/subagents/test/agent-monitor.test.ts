@@ -13,6 +13,7 @@ import {
   monitorSections,
   monitorStatusWord,
   showAgentMonitor,
+  statusMark,
 } from "../src/ui/agent-monitor.js";
 import type { AgentActivity } from "../src/ui/agent-widget.js";
 import type { FleetGraphRun } from "../src/ui/fleet-list.js";
@@ -202,11 +203,15 @@ describe("monitorStatusWord", () => {
     expect(monitorStatusWord(makeRecord({ status: "queued" }))).toBe("queued");
     expect(monitorStatusWord(makeRecord({ status: "running" }))).toBe("running");
     expect(monitorStatusWord(makeRecord({ status: "completed" }))).toBe("done");
-    expect(monitorStatusWord(makeRecord({ status: "steered" }))).toBe("steered");
+    expect(monitorStatusWord(makeRecord({ status: "force_steered" }))).toBe("completed after turn-ceiling reminder");
     expect(monitorStatusWord(makeRecord({ status: "aborted" }))).toBe("aborted");
     expect(monitorStatusWord(makeRecord({ status: "stopped" }))).toBe("stopped");
     expect(monitorStatusWord(makeRecord({ status: "error" }))).toBe("failed");
   });
+});
+
+it("marks turn-ceiling completion as success with a warning", () => {
+  expect(statusMark(makeRecord({ status: "force_steered" }))).toEqual({ glyph: "✓", color: "warning" });
 });
 
 describe("historyFleetGraphRun", () => {

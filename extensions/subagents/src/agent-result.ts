@@ -59,7 +59,7 @@ export function createAgentResultBuilder(showCost: () => boolean) {
       toolUses: record.toolUses,
       tokens: formatLifetimeTokens(record),
       turnCount: record.turnCount ?? activity?.turnCount,
-      maxTurns: record.maxTurns ?? activity?.maxTurns,
+      maxTurns: activity?.maxTurns,
       durationMs: (record.completedAt ?? Date.now()) - record.startedAt,
       status: record.status as AgentDetails["status"],
       agentId: record.id,

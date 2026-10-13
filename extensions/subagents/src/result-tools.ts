@@ -10,6 +10,7 @@ import type { createGraphResultObserver } from "./graph/result-observer.js";
 import { QUEUE_WAIT_POLL_MS } from "./notification-coordinator.js";
 import { getStatusNote } from "./status-note.js";
 import { renderGetAgentResult, renderGetAgentResultCall, renderSteerSubagentCall, renderSteerSubagentResult } from "./tool-rendering.js";
+import { turnCheckInNotice } from "./turn-ceiling.js";
 import type { AgentRecord, EvictedAgent } from "./types.js";
 import { type AgentDetails, formatDuration, getDisplayName } from "./ui/agent-widget.js";
 import { getSessionContextPercent } from "./usage.js";
@@ -97,6 +98,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     const executionId = record.executionId;
     // Cancellation stops only this wait, not the background agent or its notification.
     // Queued agents acquire their promise only when the queue starts them.
+    let checkIn: number | undefined;
     if (params.wait) {
       while (record.status === "queued") {
         await abortable(
@@ -104,7 +106,8 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
           signal,
         );
       }
-      if (record.promise) await abortable(record.promise, signal);
+      // An orchestrator check-in during the wait returns it early, still pending.
+      checkIn = await manager.waitForSettlementOrCheckIn(record.id, signal);
     }
 
     if (record.executionId !== executionId) {
@@ -121,12 +124,13 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     if (record.compactionCount) statsParts.push(`Compactions: ${record.compactionCount}`);
     statsParts.push(`Duration: ${duration}`);
 
+    const pending = manager.hasPendingExecution(params.agent_id);
     let output =
+      (checkIn !== undefined && pending ? `${turnCheckInNotice(record, checkIn)}\n\n` : "") +
       `Agent: ${record.id}\n` +
       `Type: ${displayName} | Status: ${record.status}${getStatusNote(record.status, record.interruptionCause)} | ${statsParts.join(" | ")}\n` +
       `Description: ${record.description}\n\n`;
 
-    const pending = manager.hasPendingExecution(params.agent_id);
     if (pending) {
       output += "Agent execution is still pending. When no other work remains, call get_agent_result with wait: true; do not resume this agent and do not end your turn.";
       const partial = record.result?.trim();

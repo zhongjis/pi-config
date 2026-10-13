@@ -73,7 +73,7 @@ async function spawnCompletedBackgroundAgent(tools: Map<string, any>): Promise<s
     responseText: "THE-RESULT-PAYLOAD",
     session: { dispose: vi.fn() } as any,
     aborted: false,
-    steered: false,
+    forceSteered: false,
   });
   const spawn = await tools.get("agent").execute(
     "tc-spawn",

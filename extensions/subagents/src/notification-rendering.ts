@@ -14,7 +14,7 @@ function toSummaryStatus(status: string): SubagentSummaryStatus {
     case "queued":
     case "running":
     case "completed":
-    case "steered":
+    case "force_steered":
     case "aborted":
     case "stopped":
     case "error":

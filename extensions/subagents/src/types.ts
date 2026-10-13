@@ -51,7 +51,6 @@ export interface AgentConfig {
   preloadSkills: string[];
   model?: string;
   thinking?: ThinkingLevel;
-  maxTurns?: number;
   /** Write the subagent's .output transcript. Defaults to true; false suppresses only that transcript. */
   outputTranscript?: boolean;
   /** Session file directory override; when set it always wins over the default subagent session location. */
@@ -91,7 +90,7 @@ export interface AgentActivity {
   session?: SessionLike;
   /** Current turn count. */
   turnCount: number;
-  /** Effective max turns for this agent (undefined = unlimited). */
+  /** Hidden turn ceiling for display. */
   maxTurns?: number;
   /** Lifetime usage breakdown — see LifetimeUsage docs. */
   lifetimeUsage: LifetimeUsage;
@@ -118,13 +117,12 @@ export interface AgentRecord {
   id: string;
   type: SubagentType;
   description: string;
-  status: "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error";
+  status: "queued" | "running" | "completed" | "force_steered" | "aborted" | "stopped" | "error";
   result?: string;
   error?: string;
   toolUses: number;
   diagnostics?: string[];
   turnCount?: number;
-  maxTurns?: number;
   startedAt: number;
   completedAt?: number;
   session?: AgentSession;
@@ -165,6 +163,8 @@ export interface AgentRecord {
    * which only the `agent` tool path populates.
    */
   isBackground?: boolean;
+  /** Converted foreground Execution retains its unsupervised behavior until the next admission. */
+  convertedAtCheckIn?: boolean;
   /** Effective runtime metadata, refreshed from the retained session. */
   invocation?: AgentInvocation;
   /** Wall-clock ms of the last auto-steer emitted by background supervision (cooldown gate). */
@@ -182,7 +182,7 @@ export interface EvictedAgent {
   id: string;
   type: string;
   description: string;
-  status: "running" | "completed" | "steered" | "aborted" | "stopped" | "error";
+  status: "running" | "completed" | "force_steered" | "aborted" | "stopped" | "error";
   startedAt: number;
   completedAt?: number;
   toolUses: number;
@@ -205,7 +205,6 @@ export interface AgentInvocation {
   fast?: boolean;
   /** Configuration intent only: omitted thinking uses SDK defaults, not an actual level. */
   thinkingDefault?: boolean;
-  maxTurns?: number;
   isolated?: boolean;
   inheritContext?: boolean;
   runInBackground?: boolean;

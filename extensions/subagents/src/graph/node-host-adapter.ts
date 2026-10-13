@@ -47,7 +47,7 @@ export interface NodeHostOptions {
 
 function toNodeResult(record: AgentRecord): NodeSpawnResult {
   return {
-    ok: record.status === "completed" || record.status === "steered",
+    ok: record.status === "completed" || record.status === "force_steered",
     output: record.structuredJson ?? record.result ?? "",
     error: record.error,
     skipped: record.status === "stopped",
@@ -140,7 +140,6 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
             selectedModel,
             model: selectedModel.model,
             thinkingLevel: invocation.thinking,
-            maxTurns: invocation.maxTurns,
             isolated: invocation.isolated,
             inheritContext: invocation.inheritContext,
             structuredOutput: request.schema,
@@ -278,7 +277,7 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
           });
           spend(record.lifetimeCost);
           if (record.status === "stopped" || combined.aborted) return skipped();
-          if ((record.status !== "completed" && record.status !== "steered") || record.structuredJson === undefined) {
+          if ((record.status !== "completed" && record.status !== "force_steered") || record.structuredJson === undefined) {
             failures.push(`${label}: ${record.error ?? `agent ${record.status} without a decision`}`);
             continue;
           }

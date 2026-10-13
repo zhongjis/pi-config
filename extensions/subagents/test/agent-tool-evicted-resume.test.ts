@@ -37,7 +37,7 @@ function recordRuns(): Array<string | undefined> {
   mockRunAgent(async (_ctx, _type, prompt, options) => {
     runs.push(options.resumeSessionFile);
     options.onSessionCreated?.(session);
-    return { responseText: prompt, session, aborted: false, steered: false };
+    return { responseText: prompt, session, aborted: false, forceSteered: false };
   });
   return runs;
 }
@@ -64,7 +64,7 @@ describe("agent resume of an evicted, indexed run", () => {
     let release!: () => void;
     mockRunAgent(async (_ctx, _type, prompt) => {
       await new Promise<void>((resolve) => { release = resolve; });
-      return { responseText: prompt, session, aborted: false, steered: false };
+      return { responseText: prompt, session, aborted: false, forceSteered: false };
     });
 
     try {
@@ -122,7 +122,7 @@ describe("agent resume of an evicted, indexed run", () => {
       const persisted = { ...session, sessionManager: { isPersisted: () => true, getSessionFile: () => realpathSync(file) } } as unknown as AgentSession;
       options.onSessionCreated?.(persisted);
       options.onAssistantUsage?.({ input: 10, output: 2, cacheWrite: 3 });
-      return { responseText: prompt, session: persisted, aborted: false, steered: false };
+      return { responseText: prompt, session: persisted, aborted: false, forceSteered: false };
     });
 
     await resume(host);
@@ -156,7 +156,7 @@ describe("agent resume of an evicted, indexed run", () => {
         options.onSessionCreated?.(live);
         messages.push({ role: "user", content: prompt }, { role: "assistant", content: [{ type: "text", text: "NEW" }] });
         for (const fn of listeners) fn({ type: "turn_end" });
-        return { responseText: "NEW", session: live, aborted: false, steered: false };
+        return { responseText: "NEW", session: live, aborted: false, forceSteered: false };
       });
       const result = await resume(host);
       return { path, result };

@@ -54,7 +54,7 @@ beforeEach(() => {
   vi.mocked(runAgent).mockImplementation(async (_ctx, _type, prompt, options) => {
     options.onSessionCreated?.(session);
     options.onAssistantUsage?.({ input: 10, output: 2, cacheWrite: 3, cacheRead: 7, cost: 0.25 });
-    return { responseText: prompt, session, aborted: false, steered: false };
+    return { responseText: prompt, session, aborted: false, forceSteered: false };
   });
 });
 afterEach(async () => {

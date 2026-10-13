@@ -48,7 +48,7 @@ describe("renderSubagentSummary", () => {
   });
 
   it.each([
-    ["steered", "✓ Jintong · turn limit"],
+    ["force_steered", "✓ Jintong · turn ceiling"],
     ["stopped", "■ Jintong · stopped"],
     ["aborted", "✗ Jintong · aborted"],
     ["error", "✗ Jintong · error: process exited 1"],

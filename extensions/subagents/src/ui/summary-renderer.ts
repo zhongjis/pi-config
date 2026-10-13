@@ -51,7 +51,6 @@ export const SUMMARY_SPINNER = SPINNER;
 export const SUMMARY_ERROR_STATUSES = new Set<SubagentSummaryStatus>([
   "error",
   "aborted",
-  "steered",
   "stopped",
 ]);
 
@@ -104,7 +103,7 @@ export function statusIcon(status: SubagentSummaryStatus, spinnerFrame = 0): str
     case "queued":
       return GLYPH.queued;
     case "completed":
-    case "steered":
+    case "force_steered":
       return GLYPH.done;
     case "stopped":
       return GLYPH.stopped;
@@ -152,7 +151,7 @@ function getTokenText(agent: SubagentSummaryAgent): string | undefined {
 }
 
 function getStatusSuffix(agent: SubagentSummaryAgent): string | undefined {
-  if (agent.status === "steered") return "turn limit";
+  if (agent.status === "force_steered") return "turn ceiling";
   if (agent.status === "stopped") return "stopped";
   if (agent.status === "aborted") return "aborted";
   if (agent.status === "error") {
@@ -175,7 +174,7 @@ function firstContentLine(text?: string): string | undefined {
 function inferGroupStatus(agents: SubagentSummaryAgent[]): SubagentSummaryStatus {
   if (agents.some((agent) => agent.status === "running" || agent.status === "queued")) return "running";
   if (agents.some((agent) => agent.status === "error" || agent.status === "aborted")) return "error";
-  if (agents.some((agent) => agent.status === "steered")) return "steered";
+  if (agents.some((agent) => agent.status === "force_steered")) return "force_steered";
   if (agents.some((agent) => agent.status === "stopped")) return "stopped";
   return "completed";
 }

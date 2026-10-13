@@ -38,7 +38,7 @@ beforeEach(() => {
   vi.mocked(runAgent).mockImplementation(async (_ctx, _type, _prompt, options) => {
     options.onSessionCreated?.(session);
     options.onAssistantUsage?.(delta);
-    return { responseText: "done", session, aborted: false, steered: false };
+    return { responseText: "done", session, aborted: false, forceSteered: false };
   });
   vi.mocked(resumeAgent).mockImplementation(async (_session, _prompt, options) => {
     options?.onAssistantUsage?.(delta);
@@ -96,7 +96,7 @@ it.each([
   vi.useFakeTimers();
   let release: (() => void) | undefined;
   const drain = new Promise<void>(resolve => { release = resolve; });
-  vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "retained stopped checkpoint", session, aborted: false, steered: false }; });
+  vi.mocked(runAgent).mockImplementationOnce(async () => { await drain; return { responseText: "retained stopped checkpoint", session, aborted: false, forceSteered: false }; });
   try {
     const started = await execute("agent", { ...params, run_in_background: true });
     if (grouped) await execute("agent", { ...params, run_in_background: true });
@@ -139,7 +139,7 @@ it("async queued cancellation notifies once without starting its SDK runner", as
   vi.useFakeTimers();
   let release: (() => void) | undefined;
   const drain = new Promise<void>(resolve => { release = resolve; });
-  vi.mocked(runAgent).mockClear().mockImplementationOnce(async () => { await drain; return { responseText: "busy", session, aborted: false, steered: false }; });
+  vi.mocked(runAgent).mockClear().mockImplementationOnce(async () => { await drain; return { responseText: "busy", session, aborted: false, forceSteered: false }; });
   try {
     await execute("agent", { ...params, run_in_background: true });
     const queued = await execute("agent", { ...params, run_in_background: true });
@@ -284,7 +284,7 @@ it("keeps queued details free of actual and mismatch claims, then reports runnin
     options.onSessionCreated?.(session);
     options.onAssistantUsage?.(delta);
     await wait;
-    return { responseText: "done", session, aborted: false, steered: false };
+    return { responseText: "done", session, aborted: false, forceSteered: false };
   });
   const { execute, finish } = activate({ maxConcurrent: 1, reportUsage: true });
   const first = await execute("agent", { ...params, run_in_background: true } as typeof params);
@@ -319,18 +319,17 @@ it("preserves pending usage through a switch preflight that does not commit", as
   expect((await finish("get_agent_result", result)).usage).toBeUndefined();
 });
 
-it("prepares configured direct model, thinking, and normalized max turns before spawning", async () => {
+it("prepares configured direct model and thinking before spawning", async () => {
   writeFileSync(
     join(dir, ".pi", "agents", "fixture.md"),
-    "---\nname: fixture\ndescription: fixture\nmodel: test/chosen:high\nmax_turns: 0\n---\nTask",
+    "---\nname: fixture\ndescription: fixture\nmodel: test/chosen:high\n---\nTask",
   );
   const { execute } = activate();
   vi.mocked(runAgent).mockClear();
-  await execute("agent", { ...params, model: "test/missing", thinking: "low", max_turns: 3 } as typeof params);
+  await execute("agent", { ...params, model: "test/missing", thinking: "low" } as typeof params);
   expect(vi.mocked(runAgent).mock.calls.at(-1)?.[3]).toMatchObject({
     selectedModel: { model, modelInput: "test/chosen:high" },
     thinkingLevel: "high",
-    maxTurns: undefined,
   });
 });
 

@@ -36,7 +36,7 @@ function agentConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
 }
 
 const finished = (responseText = "done", session: any = { dispose: vi.fn() }) =>
-  ({ responseText, session, aborted: false, steered: false });
+  ({ responseText, session, aborted: false, forceSteered: false });
 
 describe("AgentManager.restoreEvicted", () => {
   let root: string;

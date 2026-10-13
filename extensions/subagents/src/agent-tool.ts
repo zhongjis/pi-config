@@ -5,7 +5,7 @@ import { Type } from "typebox";
 import { formatAccessRules } from "../../lib/active-tools.js";
 import type { AgentManager } from "./agent-manager.js";
 import { createAgentResultBuilder, formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
-import { getDefaultMaxTurns, normalizeMaxTurns, SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
+import { SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
 import { getAgentConfig, getAvailableTypes, resolveType } from "./agent-types.js";
 import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ResolvedDelegationPolicy } from "./delegation-policy.js";
 import { prepareAgentInvocation, resolveJoinMode } from "./invocation-config.js";
@@ -15,11 +15,16 @@ import { SUBAGENT_COMMUNICATION_CONTRACT } from "./prompts.js";
 import type { SubagentsSettings } from "./settings.js";
 import { getForegroundOutcomeNote } from "./status-note.js";
 import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js";
+import { turnCheckInNotice } from "./turn-ceiling.js";
 import type { AgentConfig, AgentInvocation, AgentRecord, SubagentType } from "./types.js";
 import { type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel, SPINNER, type UICtx } from "./ui/agent-widget.js";
 
 /** Shared by the tool description and agent-authoring menus. */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
+const BACKGROUND_GUIDANCE = "Do not end your turn while this agent runs: continue non-overlapping work, then call get_agent_result with run_id and wait: true.\n" +
+  "Use get_agent_result to retrieve full results, or steer_subagent to send it messages.\n" +
+  "Do not duplicate this agent's work.";
 
 /** The Agent execution host; settings remain activation-owned and live. */
 export interface AgentToolHost {
@@ -195,12 +200,6 @@ Terse command-style prompts produce shallow, generic work.
       subagent_type: Type.String({
         description: "Select a configured agent type from this tool's configured roster. The current delegation policy may permit only a subset.",
       }),
-      max_turns: Type.Optional(
-        Type.Number({
-          description: "Maximum number of agentic turns before stopping. Omit for unlimited (default).",
-          minimum: 1,
-        }),
-      ),
       run_in_background: Type.Optional(
         Type.Boolean({
           description: "Set to true to run in background. Returns agent ID immediately; collect with get_agent_result (wait: true once no other work remains).",
@@ -248,20 +247,40 @@ Terse command-style prompts produce shallow, generic work.
         );
       }
       const displayName = getDisplayName(subagentType);
+      const trackBackground = (record: AgentRecord) => {
+        record.joinMode = resolveJoinMode(settings.defaultJoinMode, true);
+        record.toolCallId = toolCallId;
+        notifications.track(record.id, record.joinMode);
+        widget.ensureTimer();
+        widget.update();
+        fleet.ensureTimer();
+        fleet.update();
+      };
+      // Check-in: the waiting foreground call returns; the run continues as a background agent in its current pool.
+      let converted = false;
+      const convertToBackground = (
+        record: AgentRecord,
+        checkIn: number,
+        base: Parameters<typeof buildDetails>[0] = { displayName: getDisplayName(record.type), description: record.description, subagentType: record.type },
+      ) => {
+        converted = true;
+        record.isBackground = true;
+        record.convertedAtCheckIn = true;
+        record.invocation = { ...record.invocation, runInBackground: true };
+        trackBackground(record);
+        return textResult(
+          `${turnCheckInNotice(record, checkIn, true)}\n\n` +
+          `Agent ID: ${record.id}\n` +
+          (record.outputFile ? `Output file: ${record.outputFile}\n` : "") +
+          `\n${BACKGROUND_GUIDANCE}`,
+          buildDetails(base, record, { activity: record.activity, overrides: { status: "background" } }),
+        );
+      };
       if (params.resume) {
         const resumeId = params.resume;
         const background = params.run_in_background === true;
         const streamForeground = (record: AgentRecord, text: string) => {
-          if (!background) onUpdate?.(textResult(text, buildDetails({ displayName: getDisplayName(record.type), description: record.description, subagentType: record.type }, record, { activity: record.activity })));
-        };
-        const trackBackground = (record: AgentRecord) => {
-          record.joinMode = resolveJoinMode(settings.defaultJoinMode, true);
-          record.toolCallId = toolCallId;
-          notifications.track(record.id, record.joinMode);
-          widget.ensureTimer();
-          widget.update();
-          fleet.ensureTimer();
-          fleet.update();
+          if (!background && !converted) onUpdate?.(textResult(text, buildDetails({ displayName: getDisplayName(record.type), description: record.description, subagentType: record.type }, record, { activity: record.activity })));
         };
         const resumedResult = (record: AgentRecord) => {
           const details = buildDetails({
@@ -299,6 +318,10 @@ Terse command-style prompts produce shallow, generic work.
             restored.outputFile = createOutputFilePath(ctx.cwd, resumeId, ctx.sessionManager.getSessionId());
           }
           if (background && restored) trackBackground(restored);
+          if (!background && restored) {
+            const checkIn = await manager.waitForSettlementOrCheckIn(resumeId, undefined, true);
+            if (checkIn !== undefined && manager.hasPendingExecution(resumeId)) return convertToBackground(restored, checkIn);
+          }
           try {
             return resumedResult(await pending);
           } catch (err) {
@@ -315,6 +338,10 @@ Terse command-style prompts produce shallow, generic work.
           onTextDelta: (_delta, text) => streamForeground(existing, text),
         });
         if (background && existing.executionId !== executionId) trackBackground(existing);
+        if (!background && existing.executionId !== executionId) {
+          const checkIn = await manager.waitForSettlementOrCheckIn(resumeId, undefined, true);
+          if (checkIn !== undefined && manager.hasPendingExecution(resumeId)) return convertToBackground(existing, checkIn);
+        }
         const record = await pending;
         if (!record) return textResult(`Failed to resume agent "${resumeId}".`);
         return resumedResult(record);
@@ -348,12 +375,10 @@ Terse command-style prompts produce shallow, generic work.
         rec.outputFile = createOutputFilePath(ctx.cwd, agentId, ctx.sessionManager.getSessionId());
         writeInitialEntry(rec.outputFile, agentId, params.prompt, ctx.cwd);
       };
-      const effectiveMaxTurns = normalizeMaxTurns(resolvedConfig.maxTurns ?? getDefaultMaxTurns());
       const requestedThinking = thinking;
       const agentInvocation: AgentInvocation = {
         requestedThinking: THINKING_LEVELS.some((level) => level === requestedThinking) ? requestedThinking : undefined,
         thinkingDefault: thinking === undefined,
-        maxTurns: normalizeMaxTurns(resolvedConfig.maxTurns),
         isolated,
         inheritContext,
         runInBackground,
@@ -379,7 +404,6 @@ Terse command-style prompts produce shallow, generic work.
             description: params.description,
             model,
             selectedModel: selected,
-            maxTurns: effectiveMaxTurns,
             isolated,
             inheritContext,
             thinkingLevel: thinking,
@@ -418,9 +442,7 @@ Terse command-style prompts produce shallow, generic work.
           `Description: ${params.description}\n` +
           (record?.outputFile ? `Output file: ${record.outputFile}\n` : "") +
           (isQueued ? `Position: queued (max ${manager.getMaxConcurrent()} concurrent)\n` : "") +
-          `\nDo not end your turn while this agent runs: continue non-overlapping work, then call get_agent_result with run_id and wait: true.\n` +
-          `Use get_agent_result to retrieve full results, or steer_subagent to send it messages.\n` +
-          `Do not duplicate this agent's work.`,
+          `\n${BACKGROUND_GUIDANCE}`,
           record ? buildDetails(detailBase, record, { activity: record.activity, overrides: { status: isQueued ? "queued" : "background" } }) : undefined,
         );
       }
@@ -429,6 +451,7 @@ Terse command-style prompts produce shallow, generic work.
       const startedAt = Date.now();
       let fgId: string | undefined;
       const streamUpdate = () => {
+        if (converted) return;
         const liveRecord = fgId ? manager.getRecord(fgId) : undefined;
         const fgState = liveRecord?.activity;
         if (!fgState) return;
@@ -471,12 +494,12 @@ Terse command-style prompts produce shallow, generic work.
       }, 80);
       streamUpdate();
       let record: AgentRecord;
+      let checkIn: number | undefined;
       try {
         const fgResult = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
           description: params.description,
           model,
           selectedModel: selected,
-          maxTurns: effectiveMaxTurns,
           isolated,
           inheritContext,
           thinkingLevel: thinking,
@@ -488,13 +511,15 @@ Terse command-style prompts produce shallow, generic work.
           fgId = fgAgentId;
           const fgRec = manager.getRecord(fgAgentId);
           attachTranscript(fgRec, fgAgentId);
-        });
+        }, true);
         record = fgResult.record;
+        checkIn = fgResult.checkIn;
       } catch (err) {
         clearInterval(spinnerInterval);
         return textResult(err instanceof Error ? err.message : String(err));
       }
       clearInterval(spinnerInterval);
+      if (checkIn !== undefined && manager.hasPendingExecution(record.id)) return convertToBackground(record, checkIn, detailBase);
       if (fgId) {
         widget.markFinished(fgId);
         fleet.onAgentFinished(fgId);
@@ -512,7 +537,7 @@ Terse command-style prompts produce shallow, generic work.
       const statsParts = [`${record.toolUses} tool uses`];
       if (tokenText) statsParts.push(tokenText);
       return textResult(
-        `${fallbackNote}${foregroundAgentId}Agent ${record.status === "completed" || record.status === "steered" ? "completed" : "interrupted"} in ${formatMs(durationMs)} (${statsParts.join(", ")}).\n\n` +
+        `${fallbackNote}${foregroundAgentId}Agent ${record.status === "completed" || record.status === "force_steered" ? "completed" : "interrupted"} in ${formatMs(durationMs)} (${statsParts.join(", ")}).\n\n` +
         (record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause),
         details,
       );

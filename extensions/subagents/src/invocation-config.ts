@@ -5,7 +5,6 @@ import { normalizeThinkingLevel } from "./thinking-level.js";
 import type { AgentConfig, JoinMode, ThinkingLevel } from "./types.js";
 
 interface AgentInvocationParams {
-  max_turns?: number;
   run_in_background?: boolean;
   inherit_context?: boolean;
   isolated?: boolean;
@@ -18,7 +17,6 @@ export function resolveAgentInvocationConfig(
 ): {
   modelInput?: string;
   thinking?: ThinkingLevel;
-  maxTurns?: number;
   inheritContext: boolean;
   runInBackground: boolean;
   isolated: boolean;
@@ -26,7 +24,6 @@ export function resolveAgentInvocationConfig(
   return {
     modelInput: agentConfig?.model,
     thinking: normalizeThinkingLevel(agentConfig?.thinking ?? selectedThinking),
-    maxTurns: agentConfig?.maxTurns ?? params.max_turns,
     inheritContext: agentConfig?.inheritContext ?? params.inherit_context ?? false,
     runInBackground: agentConfig?.runInBackground ?? params.run_in_background ?? false,
     isolated: agentConfig?.isolated ?? params.isolated ?? false,

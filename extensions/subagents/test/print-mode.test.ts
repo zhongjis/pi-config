@@ -75,7 +75,7 @@ describe("print mode background notifications", () => {
       responseText: "done",
       session: { dispose: vi.fn() } as any,
       aborted: false,
-      steered: false,
+      forceSteered: false,
     });
 
     const { pi, tools, handlers } = makePi();

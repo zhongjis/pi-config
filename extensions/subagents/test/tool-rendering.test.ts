@@ -154,9 +154,9 @@ describe("subagent tool rendering migration", () => {
       const rows = tool.renderResult(result, { expanded: false }, theme).render(120);
       expect(rows.slice(0, 2)).toEqual([`├─ completed · ${preview}`, "├─ openai-codex/gpt-5.6-luna · thinking: medium"]);
       expect(rows[2]).toContain("to expand full result");
-      expect(rows.join("\n")).not.toMatch(/status:|result:|model:|turns:|soft limit:|tools:|tokens:|duration:/);
+      expect(rows.join("\n")).not.toMatch(/status:|result:|model:|turns:|turn ceiling:|tools:|tokens:|duration:/);
       const full = renderText(tool.renderResult(result, { expanded: true }, theme));
-      for (const text of [preview, "model: openai-codex/gpt-5.6-luna", "thinking: medium", "turns: 2", "soft limit: 1", "tools: 7", "tokens: 488.9k", "duration: 12.0s"]) expect(full).toContain(text);
+      for (const text of [preview, "model: openai-codex/gpt-5.6-luna", "thinking: medium", "turns: 2", "turn ceiling: 1", "tools: 7", "tokens: 488.9k", "duration: 12.0s"]) expect(full).toContain(text);
       expect(result.content).toEqual([{ type: "text", text: "unchanged" }]);
       expect(result.isError).toBe(false);
     }
@@ -234,7 +234,7 @@ describe("subagent tool rendering migration", () => {
     const text = renderText(compact, 240);
     expect(text).toContain("├─ queued · waiting for a slot · id: actual-id · next: get_agent_result");
     expect(text).toContain("├─ thinking: default (pending)");
-    expect(text).not.toMatch(/model:|provider\/model|status:|turns:|soft limit:|tools:|tokens:|duration:/);
+    expect(text).not.toMatch(/model:|provider\/model|status:|turns:|turn ceiling:|tools:|tokens:|duration:/);
     for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
       const rows = compact.render(width);
       expect(rows.length).toBeLessThanOrEqual(3);
@@ -250,12 +250,12 @@ describe("subagent tool rendering migration", () => {
     });
     const compact = renderText(tool.renderResult(result, { expanded: false }, theme), 240);
     expect(compact).toContain("├─ failed · Decisive failure");
-    expect(compact).not.toMatch(/status:|error:|model:|turns:|soft limit:|tools:|tokens:|duration:/);
+    expect(compact).not.toMatch(/status:|error:|model:|turns:|turn ceiling:|tools:|tokens:|duration:/);
     const full = renderText(tool.renderResult(result, { expanded: true }, theme));
     expect(full.indexOf("Decisive failure")).toBeLessThan(full.indexOf("Partial output before the failure"));
     expect(full.indexOf("Decisive answer")).toBeLessThan(full.indexOf("Run"));
     expect(full.match(/Complete retained line\./g)).toHaveLength(60);
-    for (const text of ["status: failed", "model: provider/model", "thinking: off", "turns: 2", "soft limit: 1", "tools: 7", "tokens: 488.9k", "duration: 12.0s", "Diagnostics", '"foo" matches no extension', "Artifacts", "/tmp/完整路径/agent.output", "Agent Conversation", "[User]: full verbose conversation"]) expect(full).toContain(text);
+    for (const text of ["status: failed", "model: provider/model", "thinking: off", "turns: 2", "turn ceiling: 1", "tools: 7", "tokens: 488.9k", "duration: 12.0s", "Diagnostics", '"foo" matches no extension', "Artifacts", "/tmp/完整路径/agent.output", "Agent Conversation", "[User]: full verbose conversation"]) expect(full).toContain(text);
     expect(result.content).toEqual([{ type: "text", text: "original error envelope" }]);
     expect(result.isError).toBe(true);
   });
@@ -294,7 +294,7 @@ describe("subagent tool rendering migration", () => {
     expect(compact).toContain("Decisive answer");
     expect(compact).not.toContain("result: Agent ID");
     expect(compact).toContain("provider/model · thinking: off");
-    expect(compact).not.toMatch(/model:|turns:|soft limit:|tokens:|duration:/);
+    expect(compact).not.toMatch(/model:|turns:|turn ceiling:|tokens:|duration:/);
     expect(compact).not.toContain("context:");
     expect(compact).not.toContain("tools: 0");
     expect(compact).toContain("to expand full result");
@@ -318,7 +318,7 @@ describe("subagent tool rendering migration", () => {
     expect(result.isError).toBe(false);
   });
 
-  it.each(["queued", "running", "steered", "stopped", "aborted", "error"] as const)("B02 truthful %s transition", (status) => {
+  it.each(["queued", "running", "force_steered", "stopped", "aborted", "error"] as const)("B02 truthful %s transition", (status) => {
     const result = { content: [{ type: "text" as const, text: "envelope" }], details: {
       ...base, status, activity: "reading 界面", error: status === "error" ? "Decisive failure" : undefined,
     } };

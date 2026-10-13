@@ -122,7 +122,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
       responseText: "done",
       session: { dispose: vi.fn() } as any,
       aborted: false,
-      steered: false,
+      forceSteered: false,
     });
 
     const { pi, tools, lifecycle } = makePi();

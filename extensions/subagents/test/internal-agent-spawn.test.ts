@@ -74,7 +74,7 @@ function writeAgent(name: string, frontmatter: string, body = "Fixture classifie
   return path;
 }
 
-const validFrontmatter = "prompt_mode: replace\nisolated: true\ndiscover_skills: false\nmax_turns: 2";
+const validFrontmatter = "prompt_mode: replace\nisolated: true\ndiscover_skills: false";
 
 function userAgent(name: string, overrides: Partial<AgentConfig> = {}): AgentConfig {
   return {

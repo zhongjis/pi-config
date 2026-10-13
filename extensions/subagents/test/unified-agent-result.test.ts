@@ -28,7 +28,7 @@ describe("registered result retrieval", () => {
     const parked = new Promise<void>(resolve => { release = resolve; });
     mockRunAgent(async () => {
       await parked;
-      return { responseText: "graph-result", session, aborted: false, steered: false };
+      return { responseText: "graph-result", session, aborted: false, forceSteered: false };
     });
     const launched = await required(host.tools.get("agent_graph")).execute("launch", {
       graph: { nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [], outputs: { answer: { node: "a", path: "$" } } },
@@ -71,7 +71,7 @@ describe("registered result retrieval", () => {
       const responseText = prompt.startsWith("EVAL")
         ? JSON.stringify({ decision: "sufficient", gaps: [], tasks: [] })
         : JSON.stringify({ blob: round });
-      return { responseText, session, aborted: false, steered: false };
+      return { responseText, session, aborted: false, forceSteered: false };
     });
     const launched = await required(host.tools.get("agent_graph")).execute("launch", {
       graph: {
@@ -178,7 +178,7 @@ describe("turn-boundary completion notifications", () => {
     const parked = new Promise<void>((resolve) => { release = resolve; });
     mockRunAgent(async () => {
       await parked;
-      return { responseText: "graph-result", session, aborted: false, steered: false };
+      return { responseText: "graph-result", session, aborted: false, forceSteered: false };
     });
     const launched = await required(host.tools.get("agent_graph")).execute("launch", {
       graph: { nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [], outputs: { answer: { node: "a", path: "$" } } },

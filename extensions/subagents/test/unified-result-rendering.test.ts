@@ -40,7 +40,7 @@ it("renders canonical calls and graph escalations with bounded rows and complete
 it("preserves a graph's declared outcome independently of successful execution", async () => {
   const host = boot();
   await host.lifecycle("session_start");
-  mockRunAgent(async () => ({ responseText: '{"status":"partial","reason":"Missing source"}', session, aborted: false, steered: false }));
+  mockRunAgent(async () => ({ responseText: '{"status":"partial","reason":"Missing source"}', session, aborted: false, forceSteered: false }));
   const id = await launch(host, { nodes: { result: { type: "agent", agent: "fixture", prompt: "work", outputSchema: { type: "object" } } }, edges: [], outputs: { $agentGraphOutcome: { node: "result", path: "$" } } });
   const result = await retrieve(host, id);
   expect(result.details).toMatchObject({ status: "completed", outcome: { status: "partial", reason: "Missing source" }, output: {} });

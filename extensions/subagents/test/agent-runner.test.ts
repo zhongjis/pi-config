@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TURN_CEILING_REMINDER } from "../src/turn-ceiling.js";
 
 const {
   createAgentSession,
@@ -262,6 +263,10 @@ beforeEach(() => {
   lastSession = undefined;
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("agent-runner final output capture", () => {
   it.each(["spawn", "resume"] as const)("%s heartbeats only non-empty thinking/toolcall deltas without exposing their payloads", async (kind) => {
     const { session, listeners } = createSession("unused");
@@ -364,36 +369,104 @@ describe("agent-runner final output capture", () => {
     expect(result.responseText).toBe("LOCKED");
   });
 
-  it.each([false, true])("A04 does not steer a final answer or terminating tool completion (%s)", async (terminatingTool) => {
+  it.each([false, true])("A04 does not steer finished turns or terminating tool completions past the ceiling (%s)", async (terminatingTool) => {
+    vi.stubEnv("SUBAGENT_TURN_CEILING", "1");
     const { session, listeners } = createSession("DONE");
     session.prompt.mockImplementation(async () => {
-      if (terminatingTool) for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: { terminate: true } });
-      for (const listener of listeners) listener({ type: "turn_end", message: {
-        role: "assistant", stopReason: terminatingTool ? "toolUse" : "stop",
-        content: terminatingTool ? [{ type: "toolCall", name: "read" }] : [{ type: "text", text: "DONE" }],
-      }, toolResults: [] });
-    });
-    createAgentSession.mockResolvedValue({ session });
-    const result = await runAgent(ctx, "Explore", "go", { pi, maxTurns: 1 });
-    expect(session.steer).not.toHaveBeenCalled();
-    expect(session.abort).not.toHaveBeenCalled();
-    expect(result.steered).toBe(false);
-  });
-
-  it("A04 unfinished tool turns retain the soft warning and hard abort", async () => {
-    const { session, listeners } = createSession("DONE");
-    session.prompt.mockImplementation(async () => {
-      for (let turn = 0; turn < 10; turn++) {
-        for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
-        for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
-        if (session.abort.mock.calls.length) break;
+      for (let turn = 0; turn < 8; turn++) {
+        if (terminatingTool) for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: { terminate: true } });
+        for (const listener of listeners) listener({ type: "turn_end", message: {
+          role: "assistant", stopReason: terminatingTool ? "toolUse" : "stop",
+          content: terminatingTool ? [{ type: "toolCall", name: "read" }] : [{ type: "text", text: "DONE" }],
+        }, toolResults: [] });
       }
     });
     createAgentSession.mockResolvedValue({ session });
-    const result = await runAgent(ctx, "Explore", "go", { pi, maxTurns: 1 });
-    expect(session.steer).toHaveBeenCalledTimes(1);
+    const result = await runAgent(ctx, "Explore", "go", { pi });
+    expect(session.steer).not.toHaveBeenCalled();
+    expect(session.abort).not.toHaveBeenCalled();
+    expect(result.forceSteered).toBe(false);
+  });
+
+  it.each(["spawn", "resume"] as const)("A04 %s steers unfinished tool turns at the ceiling and aborts after the grace turns", async (kind) => {
+    vi.stubEnv("SUBAGENT_TURN_CEILING", "2");
+    const { session, listeners } = createSession("DONE");
+    session.subscribe.mockImplementation(listener => {
+      listeners.push(listener);
+      return () => { listeners.splice(listeners.indexOf(listener), 1); };
+    });
+    createAgentSession.mockResolvedValue({ session });
+    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
+    const turnsAt: Record<string, number> = {};
+    let turns = 0;
+    session.steer.mockImplementation(() => { turnsAt.steer = turns; });
+    session.abort.mockImplementation(() => { turnsAt.abort = turns; });
+    session.prompt.mockImplementation(async () => {
+      for (let turn = 0; turn < 20 && turnsAt.abort === undefined; turn++) {
+        turns++;
+        for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
+        for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
+      }
+    });
+    const onTurnEnd = vi.fn();
+    const result = kind === "spawn"
+      ? await runAgent(ctx, "Explore", "go", { pi, onTurnEnd })
+      : await resumeAgent(sdkSession, "go", { onTurnEnd });
+    expect(session.steer.mock.calls).toEqual([[TURN_CEILING_REMINDER]]);
+    expect(turnsAt).toEqual({ steer: 2, abort: 7 });
     expect(session.abort).toHaveBeenCalledTimes(1);
-    expect(result.aborted).toBe(true);
+    expect(onTurnEnd).toHaveBeenLastCalledWith(7);
+    expect(result).toMatchObject({ interruptionCause: "turn-limit", forceSteered: true });
+  });
+
+  it.each(["spawn", "resume"] as const)("%s passes the orchestrator check-in to the turn watch", async (kind) => {
+    vi.stubEnv("SUBAGENT_TURN_CHECK_IN", "2");
+    const { session, listeners } = createSession("DONE");
+    session.subscribe.mockImplementation(listener => {
+      listeners.push(listener);
+      return () => { listeners.splice(listeners.indexOf(listener), 1); };
+    });
+    createAgentSession.mockResolvedValue({ session });
+    const { session: sdkSession } = await runAgent(ctx, "Explore", "prior", { pi });
+    session.prompt.mockImplementation(async () => {
+      for (let turn = 0; turn < 4; turn++) {
+        for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
+      }
+    });
+    const onCheckIn = vi.fn();
+    if (kind === "spawn") await runAgent(ctx, "Explore", "go", { pi, onCheckIn });
+    else await resumeAgent(sdkSession, "go", { onCheckIn });
+    expect(onCheckIn).toHaveBeenCalledExactlyOnceWith(2);
+    expect(session.steer).not.toHaveBeenCalled();
+  });
+
+  it("A04 resume counts turns per Execution and reports a forced wrap-up", async () => {
+    vi.stubEnv("SUBAGENT_TURN_CEILING", "2");
+    const { session, listeners } = createSession("DONE");
+    session.subscribe.mockImplementation(listener => {
+      listeners.push(listener);
+      return () => { listeners.splice(listeners.indexOf(listener), 1); };
+    });
+    const toolTurn = () => {
+      for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
+      for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "toolUse", content: [{ type: "toolCall", name: "read" }] }, toolResults: [] });
+    };
+    session.prompt.mockImplementation(async () => { toolTurn(); });
+    createAgentSession.mockResolvedValue({ session });
+    const first = await runAgent(ctx, "Explore", "prior", { pi });
+    expect(first.forceSteered).toBe(false);
+    const resumed = await resumeAgent(first.session, "go");
+    expect(session.steer).not.toHaveBeenCalled();
+    expect(resumed.forceSteered).toBe(false);
+    session.prompt.mockImplementation(async () => {
+      toolTurn();
+      toolTurn();
+      for (const listener of listeners) listener({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "DONE" }] }, toolResults: [] });
+    });
+    const wrapped = await resumeAgent(first.session, "go");
+    expect(session.steer).toHaveBeenCalledTimes(1);
+    expect(session.abort).not.toHaveBeenCalled();
+    expect(wrapped).toMatchObject({ forceSteered: true, interruptionCause: undefined });
   });
 
   it("A05 reports warnings separately from real tool completions", async () => {
@@ -1191,7 +1264,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", isolated: true, skills: ["call-skill"], maxTurns: 7 });
+    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", isolated: true, skills: ["call-skill"] });
 
     expect(sessionManagerAppendCustomEntry).toHaveBeenCalledWith(SUBAGENT_LAUNCH_ENTRY, {
       version: 1, agentId: "agent-1", type: "explore", isolated: true, skills: ["call-skill"],
@@ -1282,9 +1355,9 @@ describe("agent-runner session reopen", () => {
     expect(_preloadSkills).toHaveBeenLastCalledWith(["launch-skill"], "/tmp");
   });
 
-  it("reopen enforces no turn limit even when frontmatter max_turns is set", async () => {
+  it("reopen gets the turn ceiling", async () => {
+    vi.stubEnv("SUBAGENT_TURN_CEILING", "1");
     reopenWith();
-    vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ maxTurns: 1 }));
     const { session, listeners } = createSession("DONE");
     session.prompt.mockImplementation(async () => {
       for (const listener of listeners) listener({ type: "tool_execution_end", toolName: "read", result: {} });
@@ -1292,9 +1365,10 @@ describe("agent-runner session reopen", () => {
     });
     createAgentSession.mockResolvedValue({ session });
 
-    await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
+    const result = await runAgent(ctx, "Explore", "go", { pi, agentId: "agent-1", resumeSessionFile: file });
 
-    expect(session.steer).not.toHaveBeenCalled();
+    expect(session.steer).toHaveBeenCalledWith(TURN_CEILING_REMINDER);
+    expect(result.forceSteered).toBe(true);
   });
 
   it("S10 reopen re-seeds the parent's Agent-tree scope", async () => {
@@ -2484,7 +2558,8 @@ describe("graph run structured output", () => {
         }
       }
     });
-    const result = await runAgent(ctx, "Explore", "answer", { pi, structuredOutput: schema, signal: controller.signal, maxTurns: kind === "turn-limit" ? 1 : undefined });
+    if (kind === "turn-limit") vi.stubEnv("SUBAGENT_TURN_CEILING", "1");
+    const result = await runAgent(ctx, "Explore", "answer", { pi, structuredOutput: schema, signal: controller.signal });
     expect(result.aborted).toBe(true);
     expect(result.interruptionCause).toBe(kind === "turn-limit" ? "turn-limit" : "unknown");
     expect(result.structuredRetried).toBe(false);

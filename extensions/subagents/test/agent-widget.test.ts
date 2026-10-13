@@ -7,6 +7,7 @@ import {
   type AgentActivity,
   AgentWidget,
   buildInvocationTags,
+  ERROR_STATUSES,
   fgPreservingNestedStyles,
   formatSessionTokens,
   type Theme,
@@ -142,7 +143,6 @@ describe("AgentWidget", () => {
           isolated: true,
           inheritContext: true,
           runInBackground: true,
-          maxTurns: 20,
         },
       });
       const activity = makeActivity({
@@ -174,7 +174,7 @@ describe("AgentWidget", () => {
 
   it.each([
     ["completed", "✓ Agent (twin) terminal · 1 tool · 1k · 1m5s"],
-    ["steered", "✓ Agent (twin) terminal · 1 tool · 1k · 1m5s · turn limit"],
+    ["force_steered", "✓ Agent (twin) terminal · 1 tool · 1k · 1m5s · turn ceiling"],
     ["stopped", "■ Agent (twin) terminal · 1 tool · 1k · 1m5s · stopped"],
     ["aborted", "✗ Agent (twin) terminal · 1 tool · 1k · 1m5s · aborted"],
     ["error", "✗ Agent (twin) terminal · 1 tool · 1k · 1m5s · error: process exited 1"],
@@ -195,6 +195,16 @@ describe("AgentWidget", () => {
     expect(h.render()).toEqual(["○ Agents", `└─ ${expected}`]);
   });
 
+  it("renders turn-ceiling completion with a warning-colored success glyph", () => {
+    const h = harness([makeRecord({ status: "force_steered", completedAt: Date.now() })]);
+    h.widget.update();
+    const fg = vi.fn((_color: string, text: string) => text);
+
+    expect(h.render(120, { fg, bold: text => text }).join("\n")).toContain("✓");
+    expect(fg).toHaveBeenCalledWith("warning", "✓");
+    expect(ERROR_STATUSES.has("force_steered")).toBe(false);
+  });
+
   it.each([
     ["running", "low", true, "background"],
     ["running", "off", false, "all"],
@@ -209,7 +219,7 @@ describe("AgentWidget", () => {
       invocation: {
         modelName: "cliproxyapi/gpt-6-luna", thinking, fast, thinkingDefault: true,
         requestedModel: "requested/model:high:fast", requestedThinking: "high",
-        isolated: true, inheritContext: true, runInBackground: true, maxTurns: 20,
+        isolated: true, inheritContext: true, runInBackground: true,
       },
     });
     const activity = makeActivity({ turnCount: 8, maxTurns: 20 });
@@ -226,7 +236,6 @@ describe("AgentWidget", () => {
     expect(output.includes(" · background")).toBe(mode === "all");
     expect(buildInvocationTags(record.invocation).tags).toContain(`thinking: ${thinking}`);
     expect(buildInvocationTags(record.invocation).tags).toContain("background");
-    expect(buildInvocationTags(record.invocation).tags).toContain("max turns: 20");
   });
 
   it("preserves pending default thinking without fabricating a model or Fast recipe", () => {
@@ -235,21 +244,6 @@ describe("AgentWidget", () => {
     const output = h.render().join("\n");
     expect(output).toContain("thinking: default (pending)");
     expect(output).not.toContain(":fast");
-  });
-
-  it.each(["running", "completed"] as const)("preserves %s limits without a displayed turn counter", (status) => {
-    const record = makeRecord({
-      status, completedAt: status === "completed" ? Date.now() : undefined,
-      invocation: { maxTurns: 25 },
-    });
-    for (const activity of [undefined, makeActivity({ turnCount: 0, maxTurns: 25 }), makeActivity({ turnCount: 8 })]) {
-      const activities = activity ? new Map([[record.id, activity]]) : new Map<string, AgentActivity>();
-      const h = harness([record], activities);
-      h.widget.update();
-      const output = h.render().join("\n");
-      expect(output).toContain("max turns: 25");
-      expect(output).not.toContain("≤25");
-    }
   });
 
   it("keeps queued count ahead of finished rows and caps overflow at 12 lines", () => {

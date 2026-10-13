@@ -2,7 +2,7 @@ import { type ExtensionCommandContext, getSettingsListTheme } from "@earendil-wo
 import { Container, Key, matchesKey, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
 import type { SubagentsSettings } from "../settings.js";
 
-const NUMERIC_IDS = new Set(["maxConcurrent", "maxConcurrentForeground", "defaultMaxTurns", "graceTurns"]);
+const NUMERIC_IDS = new Set(["maxConcurrent", "maxConcurrentForeground"]);
 
 /** Settings presentation and typed input; mutation and persistence stay with activation. */
 export function createSettingsMenu(
@@ -12,8 +12,6 @@ export function createSettingsMenu(
   function buildItems(): SettingItem[] {
     const settings = snapshot();
     const mc = settings.maxConcurrent;
-    const dmt = settings.defaultMaxTurns;
-    const gt = settings.graceTurns;
     return [
       {
         id: "graphRuntimeTrace", label: "Graph runtime trace",
@@ -47,20 +45,6 @@ export function createSettingsMenu(
         description: "Show per-agent cost only in expanded tool reports",
         currentValue: settings.showCost ? "on" : "off",
         values: ["on", "off"],
-      },
-      {
-        id: "defaultMaxTurns",
-        label: "Default max turns",
-        description: "Default max turns before wrap-up (0 = unlimited, Enter to type)",
-        currentValue: String(dmt),
-        values: [String(dmt)],
-      },
-      {
-        id: "graceTurns",
-        label: "Grace turns",
-        description: "Grace turns after wrap-up steer (Enter to type)",
-        currentValue: String(gt),
-        values: [String(gt)],
       },
       {
         id: "joinMode",
@@ -154,18 +138,10 @@ export function createSettingsMenu(
       const settings = snapshot();
       const current = result === "maxConcurrentForeground"
         ? String(settings.maxConcurrentForeground)
-        : result === "maxConcurrent"
-        ? String(settings.maxConcurrent)
-        : result === "defaultMaxTurns"
-          ? String(settings.defaultMaxTurns)
-          : String(settings.graceTurns);
+        : String(settings.maxConcurrent);
       const label = result === "maxConcurrentForeground"
         ? "Foreground concurrency (0 = unlimited, up to 1024)"
-        : result === "maxConcurrent"
-        ? "Max concurrency (1+)"
-        : result === "defaultMaxTurns"
-          ? "Default max turns (0 = unlimited)"
-          : "Grace turns (1+)";
+        : "Max concurrency (1+)";
       let input: string | undefined = await ctx.ui.input(label, current);
       while (input != null) {
         const trimmed = input.trim();

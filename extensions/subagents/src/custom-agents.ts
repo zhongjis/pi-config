@@ -102,7 +102,6 @@ export function toAgentConfig(name: string, parsed: ParsedAgentFrontmatter, sour
     preloadSkills: parsed.preloadSkills,
     model: parsed.model,
     thinking: normalizeThinkingLevel(str(fm.thinking)),
-    maxTurns: parsed.maxTurns,
     outputTranscript: fm.output_transcript != null ? fm.output_transcript !== false : undefined,
     sessionDir: str(fm.session_dir),
     systemPrompt: parsed.body.trim(),

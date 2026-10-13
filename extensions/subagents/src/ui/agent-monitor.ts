@@ -94,7 +94,7 @@ export function agentStatusWord(status: AgentRecord["status"]): string {
     case "queued": return "queued";
     case "running": return "running";
     case "completed": return "done";
-    case "steered": return "steered";
+    case "force_steered": return "completed after turn-ceiling reminder";
     case "aborted": return "aborted";
     case "stopped": return "stopped";
     case "error": return "failed";
@@ -121,8 +121,8 @@ export function statusMark(entry: FleetGraphRun | AgentRecord): { glyph: string;
   switch (entry.status) {
     case "queued": return { glyph: "○", color: "dim" };
     case "running": return { glyph: "●", color: "accent" };
-    case "completed":
-    case "steered": return { glyph: "✓", color: "success" };
+    case "completed": return { glyph: "✓", color: "success" };
+    case "force_steered": return { glyph: "✓", color: "warning" };
     case "aborted":
     case "stopped": return { glyph: "■", color: "dim" };
     case "error": return { glyph: "×", color: "error" };

@@ -26,13 +26,11 @@ describe("resolveAgentInvocationConfig", () => {
       makeConfig({
         model: "provider/config-model",
         thinking: "high",
-        maxTurns: 42,
         inheritContext: false,
         runInBackground: false,
         isolated: false,
       }),
       {
-        max_turns: 1,
         inherit_context: true,
         run_in_background: true,
         isolated: true,
@@ -41,7 +39,6 @@ describe("resolveAgentInvocationConfig", () => {
 
     expect(resolved.modelInput).toBe("provider/config-model");
     expect(resolved.thinking).toBe("high");
-    expect(resolved.maxTurns).toBe(42);
     expect(resolved.inheritContext).toBe(false);
     expect(resolved.runInBackground).toBe(false);
     expect(resolved.isolated).toBe(false);
@@ -54,13 +51,11 @@ describe("resolveAgentInvocationConfig", () => {
 
   it("uses tool-call params when no agent config is available", () => {
     const resolved = resolveAgentInvocationConfig(undefined, {
-      max_turns: 3,
       inherit_context: true,
       run_in_background: true,
       isolated: true,
     });
 
-    expect(resolved.maxTurns).toBe(3);
     expect(resolved.inheritContext).toBe(true);
     expect(resolved.runInBackground).toBe(true);
     expect(resolved.isolated).toBe(true);

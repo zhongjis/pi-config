@@ -22,7 +22,7 @@ const MAX_WIDGET_LINES = 12;
 export const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /** Statuses that indicate an error/non-success outcome (used for linger behavior and icon rendering). */
-export const ERROR_STATUSES = new Set(["error", "aborted", "steered", "stopped"]);
+export const ERROR_STATUSES = new Set(["error", "aborted", "stopped"]);
 
 /** Tool name → human-readable action for activity descriptions. */
 const TOOL_DISPLAY: Record<string, string> = {
@@ -62,7 +62,7 @@ export interface AgentDetails {
   toolUses: number;
   tokens: string;
   durationMs: number;
-  status: "queued" | "running" | "completed" | "steered" | "aborted" | "stopped" | "error" | "background";
+  status: "queued" | "running" | "completed" | "force_steered" | "aborted" | "stopped" | "error" | "background";
   /** Human-readable description of what the agent is currently doing. */
   activity?: string;
   /** Current spinner frame index (for animated running indicator). */
@@ -76,7 +76,7 @@ export interface AgentDetails {
   tags?: string[];
   /** Current turn count. */
   turnCount?: number;
-  /** Effective max turns (undefined = unlimited). */
+  /** Hidden turn ceiling for display. */
   maxTurns?: number;
   agentId?: string;
   thinking?: string;
@@ -181,7 +181,6 @@ export function buildInvocationTags(
   if (invocation.isolated) tags.push("isolated");
   if (invocation.inheritContext) tags.push("inherit context");
   if (invocation.runInBackground) tags.push("background");
-  if (invocation.maxTurns != null) tags.push(`max turns: ${invocation.maxTurns}`);
   return { modelName: invocation.modelName, tags };
 }
 
@@ -350,15 +349,11 @@ export class AgentWidget {
     const { modelName, tags } = buildInvocationTags(effective);
     if (record.parentAgentId) tags.push("nested");
     const hasThinking = !!modelName && effective?.thinking !== undefined;
-    const activity = this.agentActivity.get(record.id);
-    const hasTurnLimit = Number.isFinite(activity?.turnCount) && (activity?.turnCount ?? 0) > 0
-      && activity?.maxTurns != null;
     return {
       modelName: modelName
         ? `${modelName}${hasThinking ? `:${effective.thinking}` : ""}${effective?.fast === true ? ":fast" : ""}`
         : undefined,
       tags: tags.filter(tag => !(hasThinking && tag.startsWith("thinking:"))
-        && !(hasTurnLimit && tag.startsWith("max turns:"))
         && !(this.mode() === "background" && tag === "background")),
     };
   }
@@ -368,7 +363,7 @@ export class AgentWidget {
     const activity = this.agentActivity.get(a.id);
     const invocation = this.widgetInvocation(a);
     const tokenFields = this.summaryTokens(a, activity, theme);
-    return renderSubagentSummary({
+    const line = renderSubagentSummary({
       displayName: this.summaryDisplayName(a.type),
       description: a.description,
       status: a.status,
@@ -382,6 +377,7 @@ export class AgentWidget {
       error: a.error,
       ...tokenFields,
     })[0] ?? "";
+    return a.status === "force_steered" ? line.replace(/^✓/, theme.fg("warning", "✓")) : line;
   }
 
   /**

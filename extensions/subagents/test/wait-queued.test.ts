@@ -71,7 +71,7 @@ function deferredRuns() {
             responseText: "THE-RESULT-PAYLOAD",
             session: { dispose: vi.fn() } as any,
             aborted: false,
-            steered: false,
+            forceSteered: false,
           }),
         );
       }) as any,
@@ -193,7 +193,7 @@ describe("get_agent_result wait:true on a queued agent", () => {
             responseText: "THE-RESULT-PAYLOAD",
             session: { dispose: vi.fn() } as any,
             aborted: false,
-            steered: false,
+            forceSteered: false,
           });
         }),
     );

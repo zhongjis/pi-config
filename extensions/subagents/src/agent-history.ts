@@ -19,7 +19,7 @@ export interface AgentHistoryRun {
   id: string;
   type: string;
   description: string;
-  status: "running" | "completed" | "steered" | "aborted" | "stopped" | "error";
+  status: "running" | "completed" | "force_steered" | "aborted" | "stopped" | "error";
   startedAt: number;
   completedAt?: number;
   toolUses: number;
@@ -32,7 +32,7 @@ const MAX_RUNS = 50;
 const MAX_SESSION_FILE = 4096;
 export const AGENT_HISTORY_FILE_BYTES = 1024 * 1024;
 const WARNING = "Agent history is unavailable; execution is unaffected.";
-const STATUSES = ["running", "queued", "completed", "steered", "aborted", "stopped", "error"] as const;
+const STATUSES = ["running", "queued", "completed", "force_steered", "aborted", "stopped", "error"] as const;
 type PersistedStatus = (typeof STATUSES)[number];
 type DecodedRun = Omit<AgentHistoryRun, "status"> & { status: PersistedStatus };
 
@@ -86,7 +86,7 @@ function decodeHistory(text: string): { runs: DecodedRun[]; writable: boolean } 
 function snapshot(recordValue: AgentRecord): AgentHistoryRun | undefined {
   if (recordValue.graphRunId !== undefined || recordValue.sessionFile === undefined) return;
   const status = recordValue.status;
-  if (status !== "running" && status !== "completed" && status !== "steered" && status !== "aborted" && status !== "stopped" && status !== "error") return;
+  if (status !== "running" && status !== "completed" && status !== "force_steered" && status !== "aborted" && status !== "stopped" && status !== "error") return;
   const usage = recordValue.lifetimeUsage;
   if (!usage || !finite(usage.input) || !finite(usage.output) || !finite(usage.cacheWrite)) return;
   if (!finite(recordValue.startedAt) || !finite(recordValue.toolUses) || !validSessionFile(recordValue.sessionFile)) return;

@@ -63,7 +63,7 @@ export function createAgentsMenu(
     const agents = manager.listAgents().filter(agent => agent.graphRunId === undefined);
     if (agents.length > 0) {
       const running = agents.filter(a => a.status === "running" || a.status === "queued").length;
-      const done = agents.filter(a => a.status === "completed" || a.status === "steered").length;
+      const done = agents.filter(a => a.status === "completed" || a.status === "force_steered").length;
       options.push(`Running agents (${agents.length}) — ${running} running, ${done} done`);
     }
     if (allNames.length > 0) options.push(`Agent types (${allNames.length})`);
@@ -261,7 +261,6 @@ export function createAgentsMenu(
     if (cfg.toolRules.length > 0) fmFields.push(`tools: ${formatAccessRules(cfg.toolRules)}`);
     if (cfg.model) fmFields.push(`model: ${cfg.model}`);
     if (cfg.thinking) fmFields.push(`thinking: ${cfg.thinking}`);
-    if (cfg.maxTurns) fmFields.push(`max_turns: ${cfg.maxTurns}`);
     fmFields.push(`prompt_mode: ${cfg.promptMode}`);
     if (!cfg.discoverSkills) fmFields.push("discover_skills: false");
     if (cfg.preloadSkills?.length) fmFields.push(`preload_skills: ${cfg.preloadSkills.join(", ")}`);
@@ -363,7 +362,6 @@ extensions: <signed rules choosing which extensions load, e.g. "+@all" or "+@all
 tools: <signed rules choosing which tools the agent may use, e.g. "+read, +bash" or "+@all, -edit". Omit for no tools>
 model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5". Omit to inherit parent model>
 thinking: <optional thinking level: ${THINKING_LEVELS.join(", ")}. Omit for model default>
-max_turns: <optional max agentic turns. 0 or omit for unlimited (default)>
 prompt_mode: <"replace" (body IS the full system prompt) or "append" (body is appended to default prompt). Default: replace>
 discover_skills: <false to disable the on-demand skill catalog. Default: true>
 preload_skills: <comma-separated skill names to eagerly inject into the prompt. Omit for none>
@@ -398,7 +396,6 @@ Guidelines for choosing settings:
 Write the file using the write tool. Only write the file, nothing else.`;
     const { record } = await manager.spawnAndWait(pi, ctx, "general-purpose", generatePrompt, {
       description: `Generate ${name} agent`,
-      maxTurns: 5,
     });
     if (record.status === "error") {
       ctx.ui.notify(`Generation failed: ${record.error}`, "warning");

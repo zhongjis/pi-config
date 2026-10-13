@@ -70,7 +70,7 @@ describe("Packet B actual SDK metadata", () => {
     try {
       mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
       const config = join(cwd, ".pi", "agents", "metadata.md");
-      writeFileSync(config, "---\ndescription: Metadata\nthinking: high\nprompt_mode: append\nextensions: +unused-extension\nmax_turns: 1\n---\nReport.\n");
+      writeFileSync(config, "---\ndescription: Metadata\nthinking: high\nprompt_mode: append\nextensions: +unused-extension\n---\nReport.\n");
       let phase = 0;
       run = await runPrintMode({ cwd, prompt: "Delegate.", respond: routeBySession({
         parentInitial: agentCall({ subagent_type: "metadata", prompt: "Report.", description: "metadata", run_in_background: background }),
@@ -99,7 +99,6 @@ describe("Packet B actual SDK metadata", () => {
       expect(record.invocation?.modelName).toBe("faux/faux-1");
       expect(record.invocation?.thinking).toBe("off");
       expect(record.turnCount).toBe(2);
-      expect(record.maxTurns).toBe(1);
       for (const result of results.slice(background ? 1 : 0)) {
         const details = result.details as Record<string, unknown>;
         expect(details.modelName).toBe("faux/faux-1");

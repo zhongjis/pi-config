@@ -79,7 +79,6 @@ Each implementation todo contains:
   Acceptance criteria: <agent-executable commands/assertions>
   QA scenarios: happy + failure, exact tool/invocation, evidence path for each
   Commit: <Y/N> | <type>(<scope>): <summary>
-  Recommended Max Turns: <positive integer>
 ```
 
 Scope gives every Must-have a stable ID (`M1`, `M2`, ...). Must-NOT-Haves are explicit guardrails, never reduced requested scope. Dependency matrix lists Todo, Depends on, Blocks, and parallel peers.
@@ -93,7 +92,7 @@ Every item must pass:
 - Every Must-have has a stable ID and maps to at least one todo.
 - Every todo maps to at least one Must-have and none maps to a Must-NOT-Have.
 - Dependency matrix contains every implementation todo exactly once, no unknown IDs, and matches each todo's dependency fields.
-- Every todo has Objective, Artifacts, advisory Worker fit, Escalation triggers, exhaustive references, executable acceptance, happy + failure QA with exact invocation/evidence, Commit, and Recommended Max Turns.
+- Every todo has Objective, Artifacts, advisory Worker fit, Escalation triggers, exhaustive references, executable acceptance, happy + failure QA with exact invocation/evidence, and Commit.
 - F1-F4 each appear exactly once after all implementation todos:
   - `- [ ] F1. Plan compliance audit` — `taishang`.
   - `- [ ] F2. Code quality review` — Hou Tu runs the `orchestrator-owned code-quality gate`.

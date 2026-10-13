@@ -87,7 +87,7 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
         }
       }
       if (scenario === "failure") throw new Error("provider failed after assistant");
-      return { session: child, responseText: "done", aborted: false, steered: false };
+      return { session: child, responseText: "done", aborted: false, forceSteered: false };
     });
     const result = await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "general-purpose", prompt: "task", correlation: identity, onResolved: info => reporter.setResolved("a", info, identity) }, new AbortController().signal);
     expect(result.ok).toBe(scenario !== "failure");

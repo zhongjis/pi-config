@@ -29,6 +29,7 @@ type ActivitySnapshot = {
 type RecordSnapshot = {
   status: string;
   isBackground?: boolean;
+  convertedAtCheckIn?: boolean;
   lastSupervisionSteerAt?: number;
   lastSupervisionAbortAt?: number;
   waitingConsumers?: number;
@@ -85,7 +86,7 @@ export function getBackgroundSupervisionAction(args: {
 }): { action: BackgroundSupervisionAction; idleMs: number; reasonClass?: BackgroundSupervisionReasonClass; markNonStreaming?: boolean } {
   const { record, activity, now, mode = "v2", ceilingMs = DEFAULT_SUBAGENT_SUPERVISION_CEILING_MS, ignoreWaiters = false } = args;
 
-  if (!record.isBackground || record.status !== "running") {
+  if (!record.isBackground || record.convertedAtCheckIn || record.status !== "running") {
     return { action: "none", idleMs: 0 };
   }
 

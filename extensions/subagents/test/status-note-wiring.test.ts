@@ -13,6 +13,7 @@ vi.mock("../src/agent-runner.js", async () => {
 
 import { runAgent } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
+import { getForegroundOutcomeNote, getStatusNote } from "../src/status-note.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
@@ -61,6 +62,10 @@ function ctx() {
 
 const textOf = (r: any): string => r.content[0].text;
 
+it("uses the approved warning for both turn-ceiling result paths", () => {
+  expect(getForegroundOutcomeNote("force_steered")).toBe(getStatusNote("force_steered"));
+});
+
 describe("status note reaches the parent through the real handlers", () => {
   let priorManager: unknown;
 
@@ -81,7 +86,7 @@ describe("status note reaches the parent through the real handlers", () => {
       session: { dispose: vi.fn() } as any,
       aborted: true, // hard turn-limit abort
       interruptionCause: "turn-limit",
-      steered: false,
+      forceSteered: false,
     });
     const { pi, tools } = makePi();
     subagentsExtension(pi);
@@ -93,9 +98,9 @@ describe("status note reaches the parent through the real handlers", () => {
     );
 
     const out = textOf(res);
-    // Exact lead clause, not just "turn limit": a steered/aborted mix-up would
+    // Exact lead clause, not just "turn limit": a force_steered/aborted mix-up would
     // otherwise slip through, and they are different outcomes.
-    expect(out).toContain("aborted at the turn limit");
+    expect(out).toContain("aborted at the turn ceiling");
     expect(out).toContain("partial work so far");     // partial result still delivered
     expect(out).not.toContain("STOPPED BY THE USER"); // not mislabelled as a user stop
 
@@ -124,7 +129,7 @@ describe("status note reaches the parent through the real handlers", () => {
 
     await new Promise((r) => setImmediate(r));
     parent.abort("user"); // arbitrary caller reason is not evidence of human action
-    finish({ responseText: "partial work so far", session: { dispose: vi.fn() }, aborted: false, steered: false });
+    finish({ responseText: "partial work so far", session: { dispose: vi.fn() }, aborted: false, forceSteered: false });
 
     const out = textOf(await call);
     expect(out).not.toContain("STOPPED BY THE USER");

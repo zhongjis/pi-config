@@ -8,7 +8,8 @@ import { defineTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { getAgentConfig, getAllTypes } from "./agent-types.js";
 import { resolveNestedTargets } from "./delegation-policy.js";
-import type { AgentConfig } from "./types.js";
+import { getStatusNote } from "./status-note.js";
+import type { AgentConfig, InterruptionCause } from "./types.js";
 
 export const DELEGATE_RESEARCH_TOOL_NAME = "delegate_research";
 
@@ -27,6 +28,7 @@ export interface NestedResearchResult {
   status: string;
   text: string;
   error?: string;
+  interruptionCause?: InterruptionCause;
 }
 
 /** Root-manager bridge supplied by `AgentManager`; it never throws. */
@@ -41,7 +43,7 @@ function currentTargets(parentType: string, isGuardedBash: (type: string) => boo
 }
 
 function resultText(result: NestedResearchResult) {
-  const header = [`agentId: ${result.agentId ?? "none"}`, `type: ${result.type}`, `status: ${result.status}`];
+  const header = [`agentId: ${result.agentId ?? "none"}`, `type: ${result.type}`, `status: ${result.status}${getStatusNote(result.status, result.interruptionCause)}`];
   if (result.error) header.push(`error: ${result.error}`);
   const { text: _text, ...details } = result;
   return { content: [{ type: "text" as const, text: `${header.join("\n")}\n\n${result.text || "(no output)"}` }], details };

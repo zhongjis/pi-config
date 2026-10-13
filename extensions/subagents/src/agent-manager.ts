@@ -17,6 +17,7 @@ import type { CompiledSchema } from "./graph/json-schema.js";
 import type { SelectedAgentModel } from "./model-resolution.js";
 import type { NestedSpawn } from "./research-delegation.js";
 import { getSessionFast } from "./session-fast.js";
+import { parseTurnCeiling } from "./turn-ceiling.js";
 import type { AgentActivity, AgentConfig, AgentInvocation, AgentRecord, EvictedAgent, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
 import { addUsage, type LifetimeUsage } from "./usage.js";
 
@@ -92,7 +93,6 @@ export interface SpawnOptions {
   description: string;
   model?: Model<any>;
   selectedModel?: SelectedAgentModel;
-  maxTurns?: number;
   isolated?: boolean;
   inheritContext?: boolean;
   thinkingLevel?: ThinkingLevel;
@@ -174,6 +174,7 @@ export class AgentManager {
   private usageListener?: (usage: LifetimeUsage) => void;
   private sessionListener?: (record: AgentRecord) => void;
   private activityListener?: (record: AgentRecord) => void;
+  private checkInListener?: (record: AgentRecord, threshold: number) => void;
   private disposed = false;
   /** Independent FIFO pools share a queue; detached spawns have no foreground slot. */
   private queue: { id: string; foreground: boolean; background?: boolean; start: () => void }[] = [];
@@ -182,6 +183,8 @@ export class AgentManager {
     detach: () => void;
     pool: "foreground" | "background" | undefined;
     active: boolean;
+    /** Waiters this Execution's check-in wakes. */
+    checkInWaiters: Set<(threshold: number) => void>;
   }>();
   /** Number of currently running background agents. */
   private runningBackground = 0;
@@ -233,6 +236,11 @@ export class AgentManager {
 
   setSessionListener(listener: ((record: AgentRecord) => void) | undefined): void {
     this.sessionListener = listener;
+  }
+
+  /** Receives an orchestrator check-in that no waiter observed. */
+  setCheckInListener(listener: ((record: AgentRecord, threshold: number) => void) | undefined): void {
+    this.checkInListener = listener;
   }
 
   /**
@@ -343,11 +351,10 @@ export class AgentManager {
       // have no inline surface — stay visible instead of vanishing.
       isBackground: options.isBackground,
       invocation: { ...options.invocation, modelName: undefined, thinking: undefined, fast: undefined },
-      maxTurns: options.maxTurns,
     };
     record.promise = new Promise<string>(resolve => {
       this.runs.set(id, {
-        resolve, detach: () => {}, active: false,
+        resolve, detach: () => {}, active: false, checkInWaiters: new Set(),
         pool: options.graphRunId !== undefined ? undefined : options.isBackground ? "background" : foreground ? "foreground" : undefined,
       });
     });
@@ -389,7 +396,7 @@ export class AgentManager {
       activeTools: new Map(),
       responseText: "",
       lastProgressAt: record.startedAt,
-      maxTurns: record.maxTurns,
+      maxTurns: parseTurnCeiling(),
       get toolUses() { return record.toolUses; },
       get turnCount() { return record.turnCount ?? 1; },
       get session() { return record.session; },
@@ -427,6 +434,10 @@ export class AgentManager {
         state.lastProgressAt = Date.now();
         options.onTurnEnd?.(turnCount);
       },
+      // Graph-owned and nested owners cannot act on a check-in.
+      onCheckIn: record.graphRunId === undefined && record.parentAgentId === undefined
+        ? (threshold: number) => this.checkIn(record, threshold)
+        : undefined,
       onAssistantUsage: (usage: LifetimeUsage) => {
         addUsage(record.lifetimeUsage, usage);
         record.lifetimeCost = (record.lifetimeCost ?? 0) + (usage.cost ?? 0);
@@ -469,7 +480,6 @@ export class AgentManager {
       structuredOutput: options.structuredOutput,
       model: options.model,
       selectedModel: options.selectedModel,
-      maxTurns: options.maxTurns,
       isolated: options.isolated,
       inheritContext: options.inheritContext,
       thinkingLevel: options.thinkingLevel,
@@ -513,7 +523,7 @@ export class AgentManager {
       },
     });
     void (disposal ? disposal.then(execute) : execute())
-      .then(({ responseText, session, aborted, steered, failure, interruptionCause, structuredJson, structuredRetried }) => {
+      .then(({ responseText, session, aborted, forceSteered, failure, interruptionCause, structuredJson, structuredRetried }) => {
         record.interruptionCause ??= interruptionCause ?? (aborted ? "unknown" : undefined);
         record.structuredJson = structuredJson;
         record.structuredRetried = structuredRetried;
@@ -528,7 +538,7 @@ export class AgentManager {
           } else if (failure) {
             record.status = "error";
           } else {
-            record.status = steered ? "steered" : "completed";
+            record.status = forceSteered ? "force_steered" : "completed";
           }
         }
         record.result = responseText;
@@ -574,7 +584,7 @@ export class AgentManager {
         const child = this.agents.get(id);
         if (!child) throw new Error(`Agent record disappeared: ${id}`);
         await child.promise;
-        return { agentId: id, type, status: child.status, text: child.result ?? "", error: child.error };
+        return { agentId: id, type, status: child.status, text: child.result ?? "", error: child.error, interruptionCause: child.interruptionCause };
       } catch (error) {
         return { type, status: "error", text: "", error: error instanceof Error ? error.message : String(error) };
       } finally {
@@ -586,6 +596,46 @@ export class AgentManager {
   private poolHasRoom(foreground: boolean, background?: boolean): boolean {
     if (background) return this.runningBackground < this.maxConcurrent;
     return !foreground || this.maxConcurrentForeground === 0 || this.runningForeground < this.maxConcurrentForeground;
+  }
+
+  /** Wake this Execution's active waiters; with none, hand the check-in to the listener. */
+  private checkIn(record: AgentRecord, threshold: number): void {
+    if (record.status !== "running") return;
+    const waiters = this.runs.get(record.id)?.checkInWaiters;
+    if (waiters?.size) for (const wake of [...waiters]) wake(threshold);
+    else this.checkInListener?.(record, threshold);
+  }
+
+  /**
+   * Wait for the current Execution's Settlement or its check-in, whichever comes
+   * first. Edge-triggered: only waiters active at the check-in wake. Aborting
+   * `signal` ends only this wait. `detachCaller` also detaches the caller's abort
+   * signal at the check-in, for a foreground call that converts to background.
+   * Resolves the check-in threshold, or undefined at Settlement.
+   */
+  waitForSettlementOrCheckIn(id: string, signal?: AbortSignal, detachCaller = false): Promise<number | undefined> {
+    if (signal?.aborted) return Promise.reject(signal.reason);
+    const settled = this.agents.get(id)?.promise;
+    const run = this.runs.get(id);
+    const waiters = run?.checkInWaiters;
+    return new Promise((resolve, reject) => {
+      let open = true;
+      const finish = (settle: () => void) => {
+        if (!open) return;
+        open = false;
+        waiters?.delete(wake);
+        signal?.removeEventListener("abort", onAbort);
+        settle();
+      };
+      const wake = (threshold: number) => finish(() => {
+        if (detachCaller) run?.detach();
+        resolve(threshold);
+      });
+      const onAbort = () => finish(() => reject(signal?.reason));
+      waiters?.add(wake);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      void Promise.resolve(settled).then(() => finish(() => resolve(undefined)));
+    });
   }
 
   private completeRun(record: AgentRecord): void {
@@ -649,6 +699,8 @@ export class AgentManager {
    *
    * @param onSpawned - Called synchronously after spawn(), before onSessionCreated fires.
    *   Use this to set record.outputFile so streamToOutputFile can pick it up.
+   * @param untilCheckIn - Also return at this Execution's check-in, detaching the
+   *   caller's signal; the run keeps its foreground slot until Settlement.
    */
   async spawnAndWait(
     pi: ExtensionAPI,
@@ -657,12 +709,17 @@ export class AgentManager {
     prompt: string,
     options: Omit<SpawnOptions, "isBackground">,
     onSpawned?: (id: string) => void,
-  ): Promise<{ id: string; record: AgentRecord }> {
+    untilCheckIn = false,
+  ): Promise<{ id: string; record: AgentRecord; checkIn?: number }> {
     const id = this.spawnRecord({ pi, ctx, type, prompt, options: { ...options, isBackground: false } }, true, onSpawned);
     const record = this.agents.get(id);
     if (!record) throw new Error(`Agent record disappeared: ${id}`);
-    await record.promise;
-    return { id, record };
+    if (!untilCheckIn) {
+      await record.promise;
+      return { id, record };
+    }
+    const checkIn = await this.waitForSettlementOrCheckIn(id, undefined, true);
+    return { id, record, checkIn };
   }
 
   /**
@@ -713,6 +770,7 @@ export class AgentManager {
     const controller = new AbortController();
     record.executionId = randomUUID();
     record.interruptionCause = undefined;
+    record.convertedAtCheckIn = undefined;
     record.resultConsumed = false;
     record.isBackground = options.isBackground === true;
     record.invocation = { ...record.invocation, runInBackground: record.isBackground };
@@ -722,7 +780,7 @@ export class AgentManager {
     record.error = undefined;
     const onAbort = () => this.abort(id, "caller");
     record.promise = new Promise<string>(resolve => {
-      this.runs.set(id, { resolve, active: false,
+      this.runs.set(id, { resolve, active: false, checkInWaiters: new Set(),
         pool: record.isBackground && record.graphRunId === undefined ? "background" : undefined,
         detach: () => signal?.removeEventListener("abort", onAbort) });
     });
@@ -768,7 +826,7 @@ export class AgentManager {
       const activityCallbacks = this.trackExecution(record, options);
       if (record.graphRunId === undefined) this.onStart?.(record);
       options.onSessionCreated?.(session);
-      const { text, failure, interruptionCause, structuredJson, structuredRetried } = await resumeAgent(session, prompt, {
+      const { text, failure, interruptionCause, forceSteered, structuredJson, structuredRetried } = await resumeAgent(session, prompt, {
         ...activityCallbacks,
         onCompaction: (info) => {
           record.compactionCount++;
@@ -781,7 +839,7 @@ export class AgentManager {
       record.interruptionCause ??= interruptionCause;
       record.structuredJson = structuredJson;
       record.structuredRetried = structuredRetried;
-      record.status = signal?.aborted ? "stopped" : record.interruptionCause ? "aborted" : failure ? "error" : "completed";
+      record.status = signal?.aborted ? "stopped" : record.interruptionCause ? "aborted" : failure ? "error" : forceSteered ? "force_steered" : "completed";
       if (failure) record.error = failure;
       record.result = text;
       record.completedAt = Date.now();

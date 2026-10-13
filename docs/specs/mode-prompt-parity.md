@@ -90,7 +90,7 @@ Evidence:
 Local invariants before edits:
 
 - Houtu executes approved `PLAN.md` paths by coordinating workers and independently verifying evidence; it never implements product changes directly.
-- Every delegation remains one domain plus one deliverable; `Recommended Max Turns` sizes foreground runs and may be raised when justified.
+- Every delegation remains one domain plus one deliverable.
 - Independent implementation launches as multiple foreground `agent` calls in one assistant response when no named dependency or write conflict exists; they execute concurrently while the parent blocks until all return.
 - Background `agent` runs are reserved for non-blocking exploration/research, not implementation parallelism.
 - Parent initializes and curates `local://{plan-name}/notepads/` with `learnings.md`, `decisions.md`, `issues.md`, and `blockers.md`.

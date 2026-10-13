@@ -88,7 +88,6 @@ Use `agent()` with the selected worker:
 agent(
   subagent_type="[selected-worker]",
   description="[3-5 word task label]",
-  max_turns=[Recommended Max Turns],
   run_in_background=false,
   skills=["skill-1", "skill-2"],  // Smallest non-redundant applicable set; [] when none
   prompt="[complete six-section prompt]"
@@ -301,7 +300,6 @@ Parent MUST reread relevant entries under `local://{plan-name}/notepads/`, inclu
 agent(
   subagent_type="[selected-worker]",
   description="[3-5 word task label]",
-  max_turns=[Recommended Max Turns],
   run_in_background=false,
   skills=["skill-1", "skill-2"],  // Smallest non-redundant applicable set; [] when none
   prompt="[complete six-section prompt]"

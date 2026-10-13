@@ -28,7 +28,7 @@ const AGENT_STATUSES = new Set<AgentDetails["status"]>([
   "queued",
   "running",
   "completed",
-  "steered",
+  "force_steered",
   "aborted",
   "stopped",
   "error",
@@ -60,7 +60,7 @@ function formatSkillsSummary(skills: string[] | undefined): string | undefined {
 
 function getStatusSummary(status: AgentDetails["status"]): string {
   if (status === "background") return "started in background";
-  if (status === "steered") return "completed at turn limit";
+  if (status === "force_steered") return "completed after turn-ceiling reminder";
   if (status === "aborted") return "aborted at hard limit";
   if (status === "error") return "failed";
   return status;
@@ -78,7 +78,7 @@ function getRunMetadata(details: AgentDetails, expanded: boolean): string[] {
     lines.push(`cost: ~$${details.cost < 0.001 ? details.cost.toPrecision(3) : details.cost.toFixed(3)}`);
   }
   if (details.turnCount) lines.push(`turns: ${details.turnCount}`);
-  if (details.maxTurns) lines.push(`soft limit: ${details.maxTurns}`);
+  if (details.maxTurns) lines.push(`turn ceiling: ${details.maxTurns}`);
   if (details.toolUses > 0) lines.push(`tools: ${details.toolUses}`);
   const tokens = details.tokens.trim().replace(/\s+tokens?$/i, "");
   if (tokens && !/^0(?:\.0)?$/.test(tokens)) lines.push(`tokens: ${tokens}`);
@@ -133,7 +133,7 @@ export function renderAgentToolResult(
   if (details.toolUses === 0) run.push("tools: 0");
   if (details.agentId) run.push(`id: ${details.agentId}`);
   if (details.delivery) run.push(`delivery: ${details.delivery}`);
-  const tags = details.tags?.filter((tag) => !/^(thinking:|max turns:|background$)/.test(tag));
+  const tags = details.tags?.filter((tag) => !/^(thinking:|background$)/.test(tag));
   if (tags?.length) run.push(`configuration: ${tags.join(" · ")}`);
   report.addChild(renderToolExpanded(`\nRun\n${run.join("\n")}`));
   if (details.diagnostics?.length) {

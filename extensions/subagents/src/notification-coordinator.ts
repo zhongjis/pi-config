@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { GroupJoinManager } from "./group-join.js";
 import { getStatusNote } from "./status-note.js";
+import { turnCheckInNotice } from "./turn-ceiling.js";
 import { type AgentRecord, agentExecutionKey, type JoinMode, type NotificationDetails } from "./types.js";
 import type { AgentActivity, AgentWidget } from "./ui/agent-widget.js";
 import type { FleetList } from "./ui/fleet-list.js";
@@ -11,7 +12,7 @@ function getStatusLabel(status: string, error?: string): string {
   switch (status) {
     case "error": return `Error: ${error ?? "unknown"}`;
     case "aborted": return "Interrupted";
-    case "steered": return "Wrapped up (turn limit)";
+    case "force_steered": return "Completed after turn-ceiling reminder";
     case "stopped": return "Stopped";
     default: return "Done";
   }
@@ -101,6 +102,8 @@ export function createNotificationCoordinator(
   let parking = false;
   const parked = new Map<string, () => void>();
   const completions = new Map<string, Completion>();
+  /** Executions launched through `track`; only they receive check-in follow-ups. */
+  const tracked = new Set<string>();
   let currentBatchAgents: { id: string; executionId?: string; joinMode: JoinMode }[] = [];
   let batchFinalizeTimer: ReturnType<typeof setTimeout> | undefined;
   let batchCounter = 0;
@@ -215,6 +218,7 @@ export function createNotificationCoordinator(
   );
 
   function onComplete(record: AgentRecord) {
+    tracked.delete(agentExecutionKey(record));
     const completion = capture(record);
     if (isConsumed(completion)) {
       markFinished(completion);
@@ -254,11 +258,28 @@ export function createNotificationCoordinator(
   }
 
   function track(id: string, joinMode: JoinMode | undefined) {
+    const executionId = getRecord(id)?.executionId;
+    tracked.add(agentExecutionKey({ id, executionId }));
     if (joinMode == null || joinMode === 'async') return;
-    currentBatchAgents.push({ id, executionId: getRecord(id)?.executionId, joinMode });
+    currentBatchAgents.push({ id, executionId, joinMode });
     // Parallel tool calls dispatched across multiple ticks join the same batch.
     if (batchFinalizeTimer) clearTimeout(batchFinalizeTimer);
     batchFinalizeTimer = setTimeout(finalizeBatch, 100);
+  }
+
+  /** One held follow-up for a check-in no waiter observed; dropped once the Execution stops running. */
+  function checkIn(record: AgentRecord, threshold: number) {
+    const key = agentExecutionKey(record);
+    if (!tracked.has(key)) return;
+    schedule(`${key}:check-in`, () => {
+      const current = getRecord(record.id);
+      if (!current || agentExecutionKey(current) !== key || current.status !== "running") return;
+      const notice = turnCheckInNotice(current, threshold);
+      pi.sendMessage<NotificationDetails>({
+        customType: "subagent-notification", content: notice, display: true,
+        details: { ...buildNotificationDetails(current, 0, current.activity), durationMs: Date.now() - current.startedAt, resultPreview: notice },
+      }, { deliverAs: "followUp", triggerTurn: true });
+    });
   }
 
   function clearPending() {
@@ -273,5 +294,5 @@ export function createNotificationCoordinator(
     parking = false;
   }
 
-  return { schedule, cancel, consume, onComplete, track, clearPending, hold, release };
+  return { schedule, cancel, consume, onComplete, track, checkIn, clearPending, hold, release };
 }
