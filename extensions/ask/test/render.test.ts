@@ -69,6 +69,21 @@ const questions = Object.freeze([
 ]);
 
 describe("ask tool rendering", () => {
+	it("prefixes title, retains first prompt and adds preview/required flags", () => {
+		const tool = registerAskTool();
+		const call = tool.renderCall!({ title: "Decisions", questions: [{ id: "q", prompt: "Compare", required: true, options: [{ value: "a", label: "A", preview: "code" }] }] }, plainTheme);
+		expect(renderText(call)).toContain("Decisions · 1 question · other, preview, required · first: Compare");
+		expectWidthSafe(call);
+	});
+	it("summarizes invalid and elaborate before cancelled or no-answer branches", () => {
+		const tool = registerAskTool();
+		const invalid = tool.renderResult!({ content: [{ type: "text", text: "Invalid ask payload" }], details: { cancelled: true, error: { issues: [{ path: "questions", message: "empty" }] } } }, {}, plainTheme);
+		expect(renderText(invalid)).toContain("status: invalid payload · 1 issues");
+		expectWidthSafe(invalid);
+		const elaborate = tool.renderResult!({ content: [{ type: "text", text: "clarification" }], details: { mode: "elaborate", cancelled: false, answers: [], notes: [{ questionId: "q", text: "why?" }] } }, {}, plainTheme);
+		expect(renderText(elaborate)).toContain("status: elaborate · 1 notes");
+		expectWidthSafe(elaborate);
+	});
 	it("renders call count, flags, and first prompt only", () => {
 		const tool = registerAskTool();
 		const call = tool.renderCall!({ questions }, plainTheme);
