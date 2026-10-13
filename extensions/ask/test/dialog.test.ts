@@ -18,7 +18,7 @@ function setup(input = [question()], options: { signal?: AbortSignal; keybinding
 	return { dialog, done, tui, text, feed };
 }
 const remapped: AskKeybindings = {
-	matches: (data, id) => data === ({ "tui.select.up": "k", "tui.select.down": "j", "tui.select.confirm": "y", "tui.select.cancel": "q" })[id],
+	matches: (data, id) => data === ({ "tui.select.up": "k", "tui.select.down": "j", "tui.select.confirm": "y", "tui.select.cancel": "q", "tui.input.submit": "y" })[id],
 	getKeys: (id) => id === "tui.select.up" ? ["k"] : id === "tui.select.cancel" ? ["q"] : id === "tui.select.confirm" ? ["y"] : ["j"],
 };
 
@@ -150,7 +150,7 @@ describe("ask dialog input and lifecycle", () => {
 });
 
 describe("ask dialog preview and widths", () => {
-	it("uses wide columns, narrow box, cursor previews, missing preview and line cap", () => {
+	it("uses wide columns, a narrow preview rule, cursor previews, missing preview and line cap", () => {
 		const preview = Array.from({ length: 20 }, (_, i) => `code ${i}`).join("\n");
 		const { text, feed, dialog } = setup([question({ options: [{ value: "a", label: "Alpha", preview }, { value: "b", label: "Beta" }] })]);
 		expect(text(120)).toContain(" │ Preview · Alpha");
@@ -192,21 +192,54 @@ describe("ask dialog preview and widths", () => {
 		expect(text()).toContain("Alpha");
 		dialog.dispose();
 	});
-	it("frames the dialog with the title and progress, dropping chrome below the box width", () => {
-		const { text } = setup([question(), question({ id: "next" })], { title: "Plan" });
+	it("frames questions and Review between full-width rules: header, gap, tab row, gap, body, gap, hints", () => {
+		const { text, feed } = setup([question(), question({ id: "next" })], { title: "Plan" });
+		const rule = "─".repeat(60);
+		const frame = (lines: string[]) => {
+			expect(lines[0]).toBe(rule);
+			expect(lines[1]).toMatch(/^ Plan +0\/2 answered$/);
+			expect(visibleWidth(lines[1])).toBe(59);
+			expect(lines[2]).toBe("");
+			expect(lines[3]).toMatch(/^ □ Scope {3}□ Scope {6}Review $/);
+			expect(lines[4]).toBe("");
+			expect(lines.at(-3)).toBe("");
+			expect(lines.at(-1)).toBe(rule);
+		};
 		const lines = text(60).split("\n");
-		expect(lines[0]).toMatch(/^╭─ Plan ─+ 0\/2 answered ─╮$/);
-		expect(lines[1]).toMatch(/^│ □ Scope {3}□ Scope {6}Review +│$/);
-		expect(lines[2]).toMatch(/^│ +│$/);
-		expect(lines.at(-1)).toMatch(/^╰─ ↑↓ move · .* Esc cancel ─+╯$/);
-		expect(text(23)).not.toMatch(/[╭╰│]/);
-		expect(text(23).split("\n")[0]).toBe("Plan");
-		for (const line of text(320).split("\n")) expect(visibleWidth(line)).toBe(140);
+		frame(lines);
+		expect(lines[5]).toBe(" Choose an approach");
+		expect(lines.at(-2)).toMatch(/^ ↑↓ move · .* Esc cancel$/);
+		expect(text(60)).not.toMatch(/[│╭╮╰╯]/);
+		feed("\t", "\t");
+		const review = text(60).split("\n");
+		frame(review);
+		expect(review[5]).toMatch(/^ Scope +— no answer$/);
+		expect(review.at(-2)).toMatch(/^ ↑↓ move · 1–3 action · .* Esc cancel$/);
 	});
-	it("keeps a gap between the header and the prompt in quick-pick", () => {
-		const lines = setup().text(60).split("\n");
-		expect(lines[1]).toMatch(/^│ +│$/);
-		expect(lines[2]).toContain("Choose an approach");
+	it("drops progress before truncating the title", () => {
+		const { text } = setup([question(), question({ id: "next" })], { title: "A long planning title" });
+		expect(text(40).split("\n")[1]).toMatch(/^ A long planning title +0\/2 answered$/);
+		expect(text(30).split("\n")[1]).toBe(" A long planning title");
+		expect(text(12).split("\n")[1]).not.toContain("answered");
+		expect(setup([question(), question({ id: "next" })]).text(40).split("\n")[1]).toMatch(/^ ask +0\/2 answered$/);
+	});
+	it("quick-pick without a title starts the prompt right under the rule; with a title it shows title and gap", () => {
+		const bare = setup().text(60).split("\n");
+		expect(bare[0]).toBe("─".repeat(60));
+		expect(bare[1]).toBe(" Choose an approach");
+		expect(bare[2]).toBe("");
+		expect(bare[3]).toMatch(/^ › 1 {2}Alpha$/);
+		expect(bare.at(-2)).toBe(" ↑↓ move · 1–2 pick · Enter submit · n/N note · Esc cancel");
+		const titled = setup(undefined, { title: "Plan" }).text(60).split("\n");
+		expect(titled.slice(0, 4)).toEqual(["─".repeat(60), " Plan", "", " Choose an approach"]);
+	});
+	it("caps the content area at 140 columns while the rules span the full width", () => {
+		const lines = setup([question(), question({ id: "next" })], { title: "Plan" }).text(320).split("\n");
+		expect(lines[0]).toBe("─".repeat(320));
+		expect(lines.at(-1)).toBe("─".repeat(320));
+		expect(lines[1]).toMatch(/answered$/);
+		expect(visibleWidth(lines[1])).toBe(139);
+		for (const line of lines.slice(1, -1)) expect(visibleWidth(line)).toBeLessThanOrEqual(139);
 	});
 	it("wraps preview text to its column rather than dropping long text", () => {
 		const { text, dialog } = setup([question({ options: [{ value: "a", label: "A", preview: "start " + "word ".repeat(25) + "end" }] })]);
@@ -214,14 +247,14 @@ describe("ask dialog preview and widths", () => {
 		expect(text(120)).toContain("end");
 		dialog.dispose();
 	});
-	it("every line fits widths 0..8 and 20..200 across title, notes, multi, preview, review, editor and dismiss", () => {
+	it("every line fits widths 0..8, 20..200 and 320 across title, notes, multi, preview, review, editor and dismiss", () => {
 		const input = [question({ multi: true, required: true, prompt: "中文🙂 é " + "prompt ".repeat(30), options: [
 			{ value: "a", label: "中文🙂".repeat(30), description: "description ".repeat(30), preview: "中文🙂 code\n".repeat(20) },
 			{ value: "b", label: "Beta" },
 		] }), question({ id: "next", required: true })];
 		const { dialog, feed } = setup(input, { title: "中文🙂 title ".repeat(20) });
 		const check = () => {
-			for (const width of [0, 1, 2, 8, ...Array.from({ length: 181 }, (_, i) => i + 20)]) for (const line of dialog.render(width)) {
+			for (const width of [0, 1, 2, 8, ...Array.from({ length: 181 }, (_, i) => i + 20), 320]) for (const line of dialog.render(width)) {
 				expect(visibleWidth(line), `${JSON.stringify(line)} at ${width}`).toBeLessThanOrEqual(width);
 			}
 		};

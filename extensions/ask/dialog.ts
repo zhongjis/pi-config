@@ -30,11 +30,9 @@ export interface AskDialogOptions {
 
 /** Preview rows per question, including the overflow line. */
 const PREVIEW_CAP = 12;
-/** Narrower terminals drop the box chrome. */
-const BOX_MIN_WIDTH = 24;
 /** Inner width at which the preview moves beside the options. */
 const WIDE_PREVIEW_WIDTH = 96;
-/** Ultra-wide terminals keep a readable card instead of stretching options and preview apart. */
+/** Ultra-wide terminals keep a readable content area; only the two rules span the full width. */
 const MAX_WIDTH = 140;
 const ACTION_NAMES = { submit: "Submit", elaborate: "Elaborate", cancel: "Cancel" } as const;
 
@@ -217,31 +215,26 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 			...(state.quickPick ? [] : [seg("Tab", "next")]),
 		], esc);
 	}
-	function header(width: number, boxed: boolean): string {
+	/** Title left, progress right-aligned; progress drops before the title truncates. */
+	function header(width: number): string {
 		const name = title === undefined ? muted("ask") : plain(theme.bold(title.replace(/\s+/g, " ")));
-		if (!boxed) return truncateToWidth(name, width);
 		const progress = muted(`${questions.filter((q) => state.isAnswered(q)).length}/${questions.length} answered`);
-		const fits = visibleWidth(name) + visibleWidth(progress) + 9 <= width;
-		const right = fits ? `${border(" ")}${progress}${border(" ─╮")}` : border("╮");
-		const label = truncateToWidth(name, width - 6);
-		return `${border("╭─ ")}${label}${border(` ${"─".repeat(Math.max(1, width - 4 - visibleWidth(label) - visibleWidth(right)))}`)}${right}`;
-	}
-	function footer(width: number, boxed: boolean): string {
-		if (!boxed) return truncateToWidth(hints(width), width);
-		const text = truncateToWidth(hints(width - 6), width - 6);
-		return `${border("╰─ ")}${text}${border(` ${"─".repeat(Math.max(1, width - 5 - visibleWidth(text)))}╯`)}`;
+		const gap = width - visibleWidth(name) - visibleWidth(progress);
+		return questions.length > 1 && gap >= 2 ? `${name}${" ".repeat(gap)}${progress}` : truncateToWidth(name, width);
 	}
 	function render(width: number): string[] {
-		width = Math.min(MAX_WIDTH, Math.max(0, Math.floor(width)));
-		const boxed = width >= BOX_MIN_WIDTH;
-		const inner = boxed ? width - 4 : width;
+		width = Math.max(0, Math.floor(width));
+		const area = Math.min(MAX_WIDTH, width);
+		const inner = Math.max(0, area - 2);
+		// 1-column left indent and right margin inside the content area.
+		const row = (line: string) => line ? truncateToWidth(` ${line}`, Math.max(0, area - 1)) : "";
+		const rule = border("─".repeat(width));
 		const q = state.getCurrentQuestion();
-		const side = border("│");
-		const rows = (q ? questionLines(q, inner) : reviewLines(inner)).map((line) => boxed ? `${side} ${pad(line, inner)} ${side}` : truncateToWidth(line, width));
+		const lines = [rule];
+		if (title !== undefined || questions.length > 1) lines.push(row(header(inner)), "");
 		// Tab cells carry their own padding, so the row starts in the gutter and glyphs share the body's left edge.
-		if (state.hasTabBar) rows.unshift(...(boxed ? [`${side}${pad(tabRow(), inner + 2)}${side}`, `${side}${" ".repeat(inner + 2)}${side}`] : [truncateToWidth(tabRow(), width), ""]));
-		else rows.unshift(boxed ? `${side}${" ".repeat(inner + 2)}${side}` : "");
-		return [header(width, boxed), ...rows, footer(width, boxed)];
+		if (state.hasTabBar) lines.push(truncateToWidth(tabRow(), Math.max(0, area - 1)), "");
+		return [...lines, ...(q ? questionLines(q, inner) : reviewLines(inner)).map(row), "", row(hints(inner)), rule];
 	}
 	signal?.addEventListener("abort", onAbort);
 	if (signal?.aborted) onAbort();
