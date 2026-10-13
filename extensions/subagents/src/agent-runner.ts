@@ -10,7 +10,6 @@ import type { Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext, LoadExtensionsResult } from "@earendil-works/pi-coding-agent";
 import {
   type AgentSession,
-  type AgentSessionEvent,
   CONFIG_DIR_NAME,
   createAgentSession,
   createCodemodeExtension,
@@ -46,16 +45,15 @@ import { getAgentConfig, getConfig, resolveType } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
 import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
+import { type ExecutionHooks, execute, type OpenedSession, type ToolActivity } from "./execution.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import { resolveAgentModel, type SelectedAgentModel } from "./model-resolution.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { createDelegateResearchTool, DELEGATE_RESEARCH_TOOL_NAME, type NestedSpawn } from "./research-delegation.js";
 import { sessionFastPolicies } from "./session-fast.js";
 import { preloadSkills } from "./skill-loader.js";
-import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, repairStructuredOutput, resetStructuredCapture, STRUCTURED_OUTPUT_TOOL_NAME, structuredFailure, takeStructuredCapture } from "./structured-output.js";
-import { watchTurns } from "./turn-ceiling.js";
+import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, STRUCTURED_OUTPUT_TOOL_NAME } from "./structured-output.js";
 import type { AgentConfig, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
-import type { LifetimeUsage } from "./usage.js";
 
 const TRUSTED_FALLBACK_EXTENSION_PATH = "<inline:subagent-model-fallback>";
 const TRUSTED_FAST_EXTENSION_PATH = "<inline:subagent-fast>";
@@ -189,13 +187,8 @@ interface SubagentLaunch {
   skills?: string[];
 }
 
-/** Info about a tool event in the subagent. */
-export interface ToolActivity {
-  type: "start" | "end" | "diagnostic";
-  toolName: string;
-}
-
-export interface RunOptions {
+/** Setup for one opened session; never carries Execution hooks other than setup diagnostics. */
+export interface OpenSessionOptions {
   graphRun?: boolean;
   structuredOutput?: CompiledSchema;
   /** ExtensionAPI instance — used for pi.exec() instead of execSync. */
@@ -206,7 +199,6 @@ export interface RunOptions {
   agentConfig?: AgentConfig;
   model?: Model<any>;
   selectedModel?: SelectedAgentModel;
-  signal?: AbortSignal;
   isolated?: boolean;
   inheritContext?: boolean;
   thinkingLevel?: ThinkingLevel;
@@ -224,28 +216,6 @@ export interface RunOptions {
    * omitting it makes the target's `.pi` extensions execute in this process.
    */
   configCwd?: string;
-  /** Called on tool start/end with activity info. */
-  onToolActivity?: (activity: ToolActivity) => void;
-  /** Called on streaming text deltas from the assistant response. */
-  onTextDelta?: (delta: string, fullText: string) => void;
-  /** Internal idle heartbeat for non-empty thinking/tool-call argument deltas; carries no payload. */
-  onProgress?: () => void;
-  onSessionCreated?: (session: AgentSession) => void;
-  /** Called at the end of each agentic turn with the cumulative count. */
-  onTurnEnd?: (turnCount: number) => void;
-  /** Orchestrator check-in; the manager supplies it only for orchestrator-owned runs. */
-  onCheckIn?: (threshold: number) => void;
-  /**
-   * Called once per assistant message_end with that message's usage delta.
-   * Lets callers accumulate observed billing deltas independently of history.
-   * SDK session stats also retain pre-compaction usage via session entries.
-   */
-  onAssistantUsage?: (usage: LifetimeUsage) => void;
-  /**
-   * Called when the session successfully compacts. `tokensBefore` is upstream's
-   * pre-compaction context size estimate. Aborted compactions don't fire.
-   */
-  onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
   /** Skill names to inject (preload) for this call only. Union with frontmatter preload_skills (deduped). Ignored when isolated: true. */
   skills?: string[];
   /**
@@ -262,7 +232,11 @@ export interface RunOptions {
   resumeSessionFile?: string;
   /** Root-manager `delegate_research` bridge; the manager supplies it only for root-level, non-graph runs. */
   nestedSpawn?: NestedSpawn;
+  /** Receives setup diagnostics (extension warnings and errors, tool-scope diagnostics). */
+  onToolActivity?: (activity: ToolActivity) => void;
 }
+
+export interface RunOptions extends OpenSessionOptions, ExecutionHooks {}
 
 export interface RunResult {
   interruptionCause?: InterruptionCause;
@@ -276,107 +250,6 @@ export interface RunResult {
   forceSteered: boolean;
   /** Final provider/runtime failure; partial output remains available separately. */
   failure?: string;
-}
-
-/**
- * Subscribe to a session and collect the last assistant message text.
- * Returns an object with a `getText()` getter and an `unsubscribe` function.
- */
-function collectResponseText(session: AgentSession, onTextDelta?: RunOptions["onTextDelta"], onProgress?: RunOptions["onProgress"]) {
-  let text = "";
-  let lastText = "";
-  const unsubscribe = session.subscribe((event: AgentSessionEvent) => {
-    // message_start also fires for user and toolResult messages — resetting on
-    // those would wipe assistant text already collected. Reset only when a new
-    // ASSISTANT message begins, so getText() is the last assistant message's text.
-    if (event.type === "message_start" && event.message.role === "assistant") {
-      if (text.trim()) lastText = text;
-      text = "";
-    }
-    if (event.type === "message_update") {
-      const update = event.assistantMessageEvent;
-      if ((update.type === "thinking_delta" || update.type === "toolcall_delta") && update.delta.length > 0) {
-        onProgress?.();
-      }
-    }
-    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-      text += event.assistantMessageEvent.delta;
-      onTextDelta?.(event.assistantMessageEvent.delta, text);
-    }
-    if (event.type === "message_end" && event.message.role === "assistant") {
-      const completedText = extractText(event.message.content ?? []);
-      if (completedText.trim()) lastText = completedText;
-    }
-  });
-  return { getText: () => text.trim() ? text : lastText, unsubscribe };
-}
-
-/**
- * Get the last non-empty assistant text produced during THIS invocation.
- * `startIndex` is the message count captured before the prompt, so the walk-back
- * never crosses into a previous turn: on a resume whose new turn failed empty,
- * this returns "" instead of the prior turn's answer (#144). Defaults to 0 (a
- * fresh spawn, where the whole history belongs to this run).
- */
-function getLastAssistantText(session: AgentSession, startIndex = 0): string {
-  for (let i = session.messages.length - 1; i >= startIndex; i--) {
-    const msg = session.messages[i];
-    if (msg.role !== "assistant") continue;
-    const text = extractText(msg.content).trim();
-    if (text) return text;
-  }
-  return "";
-}
-
-/**
- * Error message of THIS invocation's final assistant message, when that turn
- * failed. Two failure shapes, both keyed off how the final turn STOPPED:
- *   - stopReason "error": a provider failure pi resolved instead of rejecting
- *     (any text; partial output is surfaced separately).
- *   - stopReason "length" with NO text: a silent max-token death — the run hit
- *     the output-token ceiling before writing anything, which would otherwise
- *     land as a "completed" run with an empty result (the #144 symptom).
- * Everything else completes: a clean "stop"/"toolUse" final, and — crucially — a
- * "length" stop that DID produce text (a legitimate truncated-but-useful answer).
- * "aborted" is handled by the manager's abort flag / "stopped" guard, not here.
- * Bounded by `startIndex` (like the text fallback) so a resume that produced no
- * assistant message of its own never inherits a PRIOR turn's stop reason.
- */
-function finalTurnError(session: AgentSession, startIndex = 0): string | undefined {
-  for (let i = session.messages.length - 1; i >= startIndex; i--) {
-    const msg = session.messages[i];
-    if (msg.role !== "assistant") continue;
-    if (msg.stopReason === "error") {
-      return (msg as { errorMessage?: string }).errorMessage?.trim() || "provider error with no output";
-    }
-    if (msg.stopReason === "length" && !extractText(msg.content).trim()) {
-      return "run hit the output token limit before producing any text";
-    }
-    return undefined;
-  }
-  return undefined;
-}
-
-/** SDK cancellation alone proves no human action; bound detection to this execution. */
-function finalInterruption(session: AgentSession, startIndex: number): InterruptionCause | undefined {
-  for (let i = session.messages.length - 1; i >= startIndex; i--) {
-    const message = session.messages[i];
-    if (message.role !== "assistant") continue;
-    if (message.stopReason === "aborted") return "unknown";
-    return undefined;
-  }
-  return undefined;
-}
-
-/**
- * Wire an AbortSignal to abort a session.
- * Returns a cleanup function to remove the listener.
- */
-function forwardAbortSignal(session: AgentSession, signal?: AbortSignal): () => void {
-  if (!signal) return () => {};
-  const onAbort = () => session.abort();
-  signal.addEventListener("abort", onAbort, { once: true });
-  return () => signal.removeEventListener("abort", onAbort);
 }
 
 export function resolveConfiguredSessionDir(sessionDir: string | undefined, cwd: string): string | undefined {
@@ -452,12 +325,16 @@ function reopenSubagentSession(
   return { sessionManager, launch: launch.data as SubagentLaunch };
 }
 
-export async function runAgent(
+/**
+ * Open a subagent session: create a new one, or reopen `resumeSessionFile`
+ * through the same build under current config and policy. Create mode also
+ * returns the parent-context prompt prefix (`inheritContext`).
+ */
+export async function openSession(
   ctx: ExtensionContext,
   type: SubagentType,
-  prompt: string,
-  options: RunOptions,
-): Promise<RunResult> {
+  options: OpenSessionOptions,
+): Promise<OpenedSession> {
   // An internal definition replaces registry lookup, including the general-purpose fallback.
   const override = options.agentConfig;
   const canonicalType = override?.name ?? resolveType(type) ?? type;
@@ -878,87 +755,22 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     });
   }
 
-  options.onSessionCreated?.(session);
+  // Parent context prefixes the prompt of fresh spawns only.
+  const promptPrefix = options.inheritContext && !reopened ? buildParentContext(ctx) || undefined : undefined;
+  return { session, promptPrefix };
+}
 
-  // Every Execution, including a reopened run, gets the hidden turn ceiling.
-  const turns = watchTurns(session, { onTurnEnd: options.onTurnEnd, onCheckIn: options.onCheckIn });
-  let interruptionCause: InterruptionCause | undefined;
-
-  let currentMessageText = "";
-  const unsubTurns = session.subscribe((event: AgentSessionEvent) => {
-    if (event.type === "message_start") {
-      currentMessageText = "";
-    }
-    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-      currentMessageText += event.assistantMessageEvent.delta;
-      options.onTextDelta?.(event.assistantMessageEvent.delta, currentMessageText);
-    }
-    if (event.type === "tool_execution_start") {
-      options.onToolActivity?.({ type: "start", toolName: event.toolName });
-    }
-    if (event.type === "tool_execution_end") {
-      options.onToolActivity?.({ type: "end", toolName: event.toolName });
-    }
-    if (event.type === "message_end" && event.message.role === "assistant") {
-      const u = event.message.usage;
-      if (u) options.onAssistantUsage?.({
-        input: u.input ?? 0,
-        output: u.output ?? 0,
-        cacheWrite: u.cacheWrite ?? 0,
-        cacheRead: u.cacheRead ?? 0,
-        cost: u.cost?.total ?? 0,
-      });
-    }
-    if (event.type === "compaction_end" && !event.aborted && event.result) {
-      options.onCompaction?.({ reason: event.reason, tokensBefore: event.result.tokensBefore });
-    }
-  });
-
-  const collector = collectResponseText(session, undefined, options.onProgress);
-  const cleanupAbort = forwardAbortSignal(session, options.signal);
-
-  // Build the effective prompt: optionally prepend parent context (fresh spawns only)
-  let effectivePrompt = prompt;
-  if (options.inheritContext && !reopened) {
-    const parentContext = buildParentContext(ctx);
-    if (parentContext) {
-      effectivePrompt = parentContext + prompt;
-    }
-  }
-
-  // Boundary for the history fallback: only assistant text produced from here
-  // on counts as this run's output (0 for a fresh session).
-  const startLen = session.messages.length;
-  let structuredRetried = false;
-  let failure: string | undefined;
-  try {
-    if (options.signal?.aborted) interruptionCause = "unknown";
-    else {
-      await session.prompt(effectivePrompt);
-      await session.waitForIdle();
-      if (structuredCapture && !turns.interruptionCause && !options.signal?.aborted && !finalTurnError(session, startLen) && !finalInterruption(session, startLen)) {
-        structuredRetried = await repairStructuredOutput(session, structuredCapture);
-      }
-    }
-  } catch (error) {
-    failure = error instanceof Error ? error.message : String(error);
-  } finally {
-    // A rejected prompt or an abort request does not prove SDK settlement.
-    try {
-      await session.waitForIdle();
-    } finally {
-      turns.unsubscribe();
-      unsubTurns();
-      collector.unsubscribe();
-      cleanupAbort();
-    }
-  }
-
-  const responseText = collector.getText().trim() || getLastAssistantText(session, startLen);
-  interruptionCause ??= turns.interruptionCause ?? (options.signal?.aborted ? "unknown" : finalInterruption(session, startLen));
-  return { responseText, session, aborted: interruptionCause !== undefined, interruptionCause, forceSteered: turns.forceSteered,
-    structuredJson: structuredCapture?.json, structuredRetried,
-    failure: failure ?? finalTurnError(session, startLen) ?? structuredFailure(structuredCapture),
+/** Open a session and run one Execution on it. */
+export async function runAgent(
+  ctx: ExtensionContext,
+  type: SubagentType,
+  prompt: string,
+  options: RunOptions,
+): Promise<RunResult> {
+  const { session, promptPrefix } = await openSession(ctx, type, options);
+  const { text, interruptionCause, forceSteered, failure, structuredJson, structuredRetried } = await execute(session, (promptPrefix ?? "") + prompt, options);
+  return { responseText: text, session, aborted: interruptionCause !== undefined, interruptionCause, forceSteered,
+    structuredJson, structuredRetried, failure,
   };
 }
 
@@ -968,77 +780,9 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
 export async function resumeAgent(
   session: AgentSession,
   prompt: string,
-  options: {
-    onToolActivity?: (activity: ToolActivity) => void;
-    onTextDelta?: RunOptions["onTextDelta"];
-    onProgress?: RunOptions["onProgress"];
-    onTurnEnd?: (turnCount: number) => void;
-    onCheckIn?: RunOptions["onCheckIn"];
-    onAssistantUsage?: (usage: LifetimeUsage) => void;
-    onCompaction?: (info: { reason: "manual" | "threshold" | "overflow"; tokensBefore: number }) => void;
-    signal?: AbortSignal;
-  } = {},
+  options: Omit<ExecutionHooks, "onSessionCreated"> = {},
 ): Promise<{ text: string; failure?: string; interruptionCause?: InterruptionCause; forceSteered?: boolean; structuredJson?: string; structuredRetried?: boolean }> {
-  // Boundary for the history fallback: the session already holds prior turns,
-  // so only assistant text produced by THIS resume prompt counts as its output
-  // — a failed resume must not surface the previous turn's answer (#144).
-  const startLen = session.messages.length;
-  const collector = collectResponseText(session, options.onTextDelta, options.onProgress);
-  const cleanupAbort = forwardAbortSignal(session, options.signal);
-
-  const turns = watchTurns(session, { onTurnEnd: options.onTurnEnd, onCheckIn: options.onCheckIn });
-  const unsubEvents = (options.onToolActivity || options.onAssistantUsage || options.onCompaction)
-    ? session.subscribe((event: AgentSessionEvent) => {
-        if (event.type === "tool_execution_start") options.onToolActivity?.({ type: "start", toolName: event.toolName });
-        if (event.type === "tool_execution_end") options.onToolActivity?.({ type: "end", toolName: event.toolName });
-        if (event.type === "message_end" && event.message.role === "assistant") {
-          const u = event.message.usage;
-          if (u) options.onAssistantUsage?.({
-            input: u.input ?? 0,
-            output: u.output ?? 0,
-            cacheWrite: u.cacheWrite ?? 0,
-            cacheRead: u.cacheRead ?? 0,
-            cost: u.cost?.total ?? 0,
-          });
-        }
-        if (event.type === "compaction_end" && !event.aborted && event.result) {
-          options.onCompaction?.({ reason: event.reason, tokensBefore: event.result.tokensBefore });
-        }
-      })
-    : () => {};
-
-  const capture = takeStructuredCapture(session);
-  if (capture) resetStructuredCapture(capture);
-  let structuredRetried = false;
-  let failure: string | undefined;
-  try {
-    if (!options.signal?.aborted) {
-      await session.prompt(prompt);
-      await session.waitForIdle();
-      if (capture && !turns.interruptionCause && !options.signal?.aborted && !finalTurnError(session, startLen) && !finalInterruption(session, startLen)) {
-        structuredRetried = await repairStructuredOutput(session, capture);
-      }
-    }
-  } catch (error) {
-    failure = error instanceof Error ? error.message : String(error);
-  } finally {
-    try {
-      await session.waitForIdle();
-    } finally {
-      turns.unsubscribe();
-      collector.unsubscribe();
-      unsubEvents();
-      cleanupAbort();
-    }
-  }
-
-  return {
-    text: collector.getText().trim() || getLastAssistantText(session, startLen),
-    interruptionCause: turns.interruptionCause ?? (options.signal?.aborted ? "unknown" : finalInterruption(session, startLen)),
-    forceSteered: turns.forceSteered,
-    failure: failure ?? finalTurnError(session, startLen) ?? structuredFailure(capture),
-    structuredJson: capture?.json, structuredRetried,
-  };
+  return execute(session, prompt, options);
 }
 
 /**

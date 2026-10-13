@@ -6,14 +6,13 @@
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { AssistantMessage } from "@earendil-works/pi-ai";
-import type { AgentSession, AgentSessionEvent, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
-import type { RunOptions } from "../src/agent-runner.js";
 import { DEFAULT_SUBAGENT_SUPERVISION_CEILING_MS, getBackgroundSupervisionAction } from "../src/background-supervision.js";
 import { turnCheckInNotice } from "../src/turn-ceiling.js";
 import type { AgentRecord } from "../src/types.js";
-import { boot, dir, mockRunAgent, session } from "./graph-run-registration.fixture.js";
+import { boot, dir, mockSessions } from "./graph-run-registration.fixture.js";
+import { deferred } from "./helpers/session-seam.js";
 
 type Host = ReturnType<typeof boot>;
 interface Registry {
@@ -21,30 +20,38 @@ interface Registry {
   spawn(pi: unknown, ctx: ExtensionContext, type: string, prompt: string, options: Record<string, unknown>): string;
 }
 
+/** The stubbed check-in threshold; a run's unfinished turns reach it. */
+const CHECK_IN = 2;
 const textOf = (result: { content: Array<{ type: string; text?: string }> }) => result.content[0]?.text ?? "";
 const registry = () => (globalThis as Record<symbol, unknown>)[Symbol.for("pi-subagents:manager")] as Registry;
-const messages: AgentSession["messages"] = [{ role: "user", content: "inspect the repo", timestamp: 0 }];
-const liveFixture: Partial<AgentSession> = { ...session, messages };
-const live = liveFixture as AgentSession;
 const settle = () => new Promise(resolve => setTimeout(resolve, 350));
 
-/** Every run parks until released; the test triggers its check-in. */
-function parkRuns(childSession = live) {
-  const runs: { options: RunOptions; release: () => void }[] = [];
-  mockRunAgent(async (_ctx, _type, prompt, options) => {
-    let release = () => {};
-    const drain = new Promise<void>(resolve => { release = resolve; });
-    runs.push({ options, release: () => release() });
-    options.onSessionCreated?.(childSession);
-    await drain;
-    return { responseText: `${prompt} answer`, session: childSession, aborted: false, forceSteered: false };
-  });
+interface ParkedRun {
+  release(): void;
+  /** Run unfinished turns up to the check-in threshold. */
+  checkIn(): void;
+}
+
+/** Every prompt parks until released; the test fires its check-in. */
+function parkRuns() {
+  vi.stubEnv("SUBAGENT_TURN_CHECK_IN", String(CHECK_IN));
+  const runs: ParkedRun[] = [];
+  mockSessions(async (prompt, session) => {
+    const drain = deferred();
+    runs.push({
+      release: () => drain.resolve(),
+      checkIn: () => { for (let turn = 0; turn < CHECK_IN; turn++) session.turn(true); },
+    });
+    await drain.promise;
+    return `${prompt} answer`;
+  }, { messages: [{ role: "user", content: "inspect the repo", timestamp: 0 }] });
   return runs;
 }
 
-function checkIn(run: { options: RunOptions } | undefined, threshold = 150) {
-  if (!run?.options.onCheckIn) throw new Error("No check-in callback");
-  run.options.onCheckIn(threshold);
+/** Fire run `index`'s check-in once its prompt is running. */
+async function checkIn(runs: ParkedRun[], index: number) {
+  await vi.waitFor(() => expect(runs[index]).toBeDefined());
+  runs[index]?.checkIn();
 }
 
 async function launchBackground(host: Host, toolCallId = "tc-bg") {
@@ -52,36 +59,6 @@ async function launchBackground(host: Host, toolCallId = "tc-bg") {
   const id = /Agent ID: (\S+)/.exec(textOf(result ?? { content: [] }))?.[1];
   if (!id) throw new Error("No background agent id");
   return id;
-}
-
-/** A live session whose next prompt runs one unfinished tool turn, then parks until released. */
-function scriptedSession() {
-  const listeners: Array<(event: AgentSessionEvent) => void> = [];
-  let release = () => {};
-  const drain = new Promise<void>(resolve => { release = resolve; });
-  const assistant = (content: AssistantMessage["content"], stopReason: AssistantMessage["stopReason"]): AssistantMessage => ({
-    role: "assistant", content, stopReason, api: "anthropic-messages", provider: "test", model: "chosen", timestamp: 0,
-    usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
-  });
-  const messages: AgentSession["messages"] = [];
-  const fixture: Partial<AgentSession> = {
-    ...session,
-    messages,
-    subscribe: (listener) => {
-      listeners.push(listener);
-      return () => { listeners.splice(listeners.indexOf(listener), 1); };
-    },
-    waitForIdle: async () => {},
-    prompt: async (text) => {
-      // A real first turn is asynchronous; the foreground caller is waiting by then.
-      await new Promise(resolve => setTimeout(resolve, 10));
-      const turn: AgentSessionEvent = { type: "turn_end", message: assistant([{ type: "toolCall", id: "call-1", name: "read", arguments: {} }], "toolUse"), toolResults: [] };
-      for (const listener of [...listeners]) listener(turn);
-      await drain;
-      messages.push(assistant([{ type: "text", text: `${text} answer` }], "stop"));
-    },
-  };
-  return { session: fixture as AgentSession, release: () => release() };
 }
 
 /** Index one evicted run in the owning activation's agent history, then start it. */
@@ -119,9 +96,9 @@ describe("orchestrator turn check-in", () => {
     try {
       const retrieve = host.tools.get("get_agent_result");
       const waiting = retrieve?.execute("tc-wait", { run_id: id, wait: true }, undefined, undefined, host.ctx);
-      checkIn(runs[0]);
+      await checkIn(runs, 0);
       const text = textOf(await waiting ?? { content: [] });
-      expect(text.startsWith(`${turnCheckInNotice({ id, description: "inspect repo" }, 150)}\n\nAgent: ${id}\n`)).toBe(true);
+      expect(text.startsWith(`${turnCheckInNotice({ id, description: "inspect repo" }, CHECK_IN)}\n\nAgent: ${id}\n`)).toBe(true);
       expect(text).toContain("Agent execution is still pending.");
       expect(registry().getRecord(id)?.resultConsumed).toBe(false);
 
@@ -144,12 +121,12 @@ describe("orchestrator turn check-in", () => {
     const id = await launchBackground(host);
     const rpcId = registry().spawn({}, host.ctx, "fixture", "rpc", { description: "rpc run", isBackground: true });
     try {
-      checkIn(runs[0]);
-      checkIn(runs[1]);
+      await checkIn(runs, 0);
+      await checkIn(runs, 1);
       await settle();
       expect(checkInMessages(host)).toHaveLength(1);
       const [message, options] = checkInMessages(host)[0] ?? [];
-      expect(message).toMatchObject({ customType: "subagent-notification", content: turnCheckInNotice({ id, description: "inspect repo" }, 150), display: true, details: { id, status: "running" } });
+      expect(message).toMatchObject({ customType: "subagent-notification", content: turnCheckInNotice({ id, description: "inspect repo" }, CHECK_IN), display: true, details: { id, status: "running" } });
       expect(options).toEqual({ deliverAs: "followUp", triggerTurn: true });
       expect(JSON.stringify(host.api.sendMessage.mock.calls)).not.toContain(rpcId);
     } finally { for (const run of runs) run.release(); }
@@ -162,12 +139,11 @@ describe("orchestrator turn check-in", () => {
     const foreground = agent?.execute("tc-fg", { prompt: "audit", description: "audit repo", subagent_type: "fixture" }, undefined, undefined, host.ctx);
     let next: ReturnType<NonNullable<typeof agent>["execute"]> | undefined;
     try {
-      await expect.poll(() => runs.length).toBe(1);
-      checkIn(runs[0]);
+      await checkIn(runs, 0);
       const result = await foreground;
       const id = /Agent ID: (\S+)/.exec(textOf(result ?? { content: [] }))?.[1] ?? "";
       const text = textOf(result ?? { content: [] });
-      expect(text.startsWith(turnCheckInNotice({ id, description: "audit repo" }, 150, true))).toBe(true);
+      expect(text.startsWith(turnCheckInNotice({ id, description: "audit repo" }, CHECK_IN, true))).toBe(true);
       expect(text).toContain(`Agent ID: ${id}`);
       expect(text).toContain("call get_agent_result with run_id and wait: true");
       expect(text).toContain("steer_subagent");
@@ -189,15 +165,13 @@ describe("orchestrator turn check-in", () => {
   });
 
   it("keeps a converted Execution unsupervised past the ceiling, but supervises its next background resume", async () => {
-    const scripted = scriptedSession();
-    const runs = parkRuns(scripted.session);
+    const runs = parkRuns();
     const host = boot();
     const agent = host.tools.get("agent");
     let convertedRecord: AgentRecord | undefined;
     const foreground = agent?.execute("tc-convert", { prompt: "audit", description: "audit repo", subagent_type: "fixture" }, undefined, undefined, host.ctx);
     try {
-      await expect.poll(() => runs.length).toBe(1);
-      checkIn(runs[0]);
+      await checkIn(runs, 0);
       const id = /Agent ID: (\S+)/.exec(textOf(await foreground ?? { content: [] }))?.[1] ?? "";
       const record = registry().getRecord(id);
       if (!record) throw new Error("No converted record");
@@ -216,15 +190,20 @@ describe("orchestrator turn check-in", () => {
       expect(record.convertedAtCheckIn).toBeUndefined();
       expect(getBackgroundSupervisionAction({ record, now: record.startedAt + DEFAULT_SUBAGENT_SUPERVISION_CEILING_MS }))
         .toMatchObject({ action: "abort", reasonClass: "ceiling" });
-    } finally { for (const run of runs) run.release(); scripted.release(); await convertedRecord?.promise; }
+    } finally { for (const run of runs) run.release(); await convertedRecord?.promise; }
   });
 
   it("converts a foreground live resume at the check-in; its completion arrives as a background notification", async () => {
     vi.stubEnv("SUBAGENT_TURN_CHECK_IN", "1");
-    const scripted = scriptedSession();
-    mockRunAgent(async (_ctx, _type, prompt, options) => {
-      options.onSessionCreated?.(scripted.session);
-      return { responseText: `${prompt} answer`, session: scripted.session, aborted: false, forceSteered: false };
+    const drain = deferred();
+    // The spawn answers at once; the resume runs one unfinished tool turn, then parks.
+    mockSessions(async (prompt, session) => {
+      if (prompt === "audit") return `${prompt} answer`;
+      // A real first turn is asynchronous; the foreground caller is waiting by then.
+      await new Promise(resolve => setTimeout(resolve, 10));
+      session.turn(true);
+      await drain.promise;
+      return `${prompt} answer`;
     });
     const host = boot();
     const agent = host.tools.get("agent");
@@ -233,11 +212,11 @@ describe("orchestrator turn check-in", () => {
     try {
       const resumed = await agent?.execute("tc-resume", { prompt: "continue", description: "continue audit", subagent_type: "fixture", resume: id }, undefined, undefined, host.ctx);
       expectConverted(resumed, { id, description: "audit repo" }, 1, "tc-resume");
-      scripted.release();
+      drain.resolve();
       const completion = await host.notification(id);
       expect(completion.content).toContain("continue answer");
       expect(completion.content).toContain("<tool-use-id>tc-resume</tool-use-id>");
-    } finally { scripted.release(); }
+    } finally { drain.resolve(); }
   });
 
   it("converts a foreground evicted resume at the check-in; its completion arrives as a background notification", async () => {
@@ -245,9 +224,8 @@ describe("orchestrator turn check-in", () => {
     const host = await bootIndexed();
     const resuming = host.tools.get("agent")?.execute("tc-restore", { prompt: "again", description: "resume", subagent_type: "fixture", resume: "evicted-1" }, undefined, undefined, host.ctx);
     try {
-      await expect.poll(() => runs.length).toBe(1);
-      checkIn(runs[0]);
-      expectConverted(await resuming, { id: "evicted-1", description: "evicted review" }, 150, "tc-restore");
+      await checkIn(runs, 0);
+      expectConverted(await resuming, { id: "evicted-1", description: "evicted review" }, CHECK_IN, "tc-restore");
       runs[0]?.release();
       const completion = await host.notification("evicted-1");
       expect(completion.content).toContain("again answer");

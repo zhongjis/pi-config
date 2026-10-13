@@ -61,13 +61,13 @@ it("resumes a durable escalation without repeating its decision", async () => {
   const id = await launch(first);
   await pendingGate(first, id);
   await first.lifecycle("session_shutdown");
-  const { runAgent } = await import("../src/agent-runner.js");
-  const decisions = vi.mocked(runAgent).mock.calls.length;
+  const { openSession } = await import("../src/agent-runner.js");
+  const decisions = vi.mocked(openSession).mock.calls.length;
   const second = boot();
   await second.lifecycle("session_start");
   await resolveGate(second, await pendingGate(second, id));
   await retrieve(second, id);
-  expect(vi.mocked(runAgent).mock.calls.length).toBe(decisions);
+  expect(vi.mocked(openSession).mock.calls.length).toBe(decisions);
 });
 
 it("re-publishes a resumed escalation with its original reason", async () => {

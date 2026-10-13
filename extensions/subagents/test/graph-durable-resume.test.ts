@@ -142,8 +142,8 @@ it.each(["foreign live", "foreign dead", "ownerless v2", "same-session live", "c
     const lease = vi.spyOn(persistence, "ownGraphRun");
     const write = vi.spyOn(persistence, "writeGraphSnapshot");
     const remove = vi.spyOn(persistence, "deleteGraphSnapshot");
-    const { runAgent } = await import("../src/agent-runner.js");
-    vi.mocked(runAgent).mockClear();
+    const { openSession } = await import("../src/agent-runner.js");
+    vi.mocked(openSession).mockClear();
     try {
       await next.lifecycle("session_start");
       expect(create).not.toHaveBeenCalled();
@@ -151,7 +151,7 @@ it.each(["foreign live", "foreign dead", "ownerless v2", "same-session live", "c
       expect(next.api.sendMessage).not.toHaveBeenCalled();
       if (kind === "corrupt") expect(next.ui.notify).toHaveBeenCalled();
       else expect(next.ui.notify).not.toHaveBeenCalled();
-      expect(runAgent).not.toHaveBeenCalled();
+      expect(openSession).not.toHaveBeenCalled();
       expect(next.ui.select).not.toHaveBeenCalled();
       expect(write).not.toHaveBeenCalled();
       expect(remove).not.toHaveBeenCalled();

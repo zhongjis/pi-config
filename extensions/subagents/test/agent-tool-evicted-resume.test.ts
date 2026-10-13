@@ -5,10 +5,10 @@
  */
 import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { describe, expect, it, vi } from "vitest";
 import { outputFilePath } from "../src/output-file.js";
-import { artifactDirs, boot, dir, mockRunAgent, session } from "./graph-run-registration.fixture.js";
+import { artifactDirs, boot, dir, mockSessions, openSessionMock } from "./graph-run-registration.fixture.js";
+import { fakeSession, opened, type Script } from "./helpers/session-seam.js";
 
 const textOf = (result: { content: Array<{ type: string; text?: string }> }) => result.content[0]?.text ?? "";
 const historyPath = () => join(dir, "global", "local", "parent", "agent-history.json");
@@ -31,13 +31,12 @@ async function bootIndexed(sessionFile = childFile()) {
   return host;
 }
 
-/** Record each runner call's reopen pointer while completing like the fixture's default run. */
-function recordRuns(): Array<string | undefined> {
+/** Record each opened session's reopen pointer; every session answers with `script`. */
+function recordRuns(script?: Script): Array<string | undefined> {
   const runs: Array<string | undefined> = [];
-  mockRunAgent(async (_ctx, _type, prompt, options) => {
+  openSessionMock.mockImplementation(async (_ctx, _type, options) => {
     runs.push(options.resumeSessionFile);
-    options.onSessionCreated?.(session);
-    return { responseText: prompt, session, aborted: false, forceSteered: false };
+    return opened(fakeSession(script));
   });
   return runs;
 }
@@ -61,10 +60,10 @@ describe("agent resume of an evicted, indexed run", () => {
 
   it("background resume returns the resumed message while the restored run is still executing", async () => {
     const host = await bootIndexed();
-    let release!: () => void;
-    mockRunAgent(async (_ctx, _type, prompt) => {
+    let release = () => {};
+    mockSessions(async (prompt) => {
       await new Promise<void>((resolve) => { release = resolve; });
-      return { responseText: prompt, session, aborted: false, forceSteered: false };
+      return prompt;
     });
 
     try {
@@ -100,13 +99,7 @@ describe("agent resume of an evicted, indexed run", () => {
 
   it("a live resume still continues the live session", async () => {
     const host = await bootIndexed();
-    const runs = recordRuns();
-    const live = session as AgentSession & { messages: unknown[] };
-    Object.assign(live, {
-      messages: [],
-      waitForIdle: vi.fn(async () => {}),
-      prompt: vi.fn(async () => { live.messages.push({ role: "assistant", stopReason: "stop", content: [{ type: "text", text: "LIVE" }] }); }),
-    });
+    const runs = recordRuns((prompt) => (prompt === "first" ? prompt : "LIVE"));
     const spawned = await host.tools.get("agent")!.execute("spawn", { prompt: "first", description: "live", subagent_type: "fixture" }, undefined, undefined, host.ctx);
     const id = (spawned.details as { agentId?: string } | undefined)?.agentId ?? "";
 
@@ -118,12 +111,7 @@ describe("agent resume of an evicted, indexed run", () => {
   it("a restored run re-enters agent history with continued accounting", async () => {
     const file = childFile();
     const host = await bootIndexed(file);
-    mockRunAgent(async (_ctx, _type, prompt, options) => {
-      const persisted = { ...session, sessionManager: { isPersisted: () => true, getSessionFile: () => realpathSync(file) } } as unknown as AgentSession;
-      options.onSessionCreated?.(persisted);
-      options.onAssistantUsage?.({ input: 10, output: 2, cacheWrite: 3 });
-      return { responseText: prompt, session: persisted, aborted: false, forceSteered: false };
-    });
+    mockSessions((prompt) => ({ text: prompt, usage: { input: 10, output: 2, cacheWrite: 3 } }), { sessionFile: realpathSync(file) });
 
     await resume(host);
 
@@ -148,16 +136,12 @@ describe("agent resume of an evicted, indexed run", () => {
       artifactDirs.add(dirname(dirname(dirname(path))));
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, "ORIGINAL\n");
-      const listeners: Array<(event: { type: string }) => void> = [];
-      const messages: unknown[] = [{ role: "user", content: "earlier" }];
-      const live = { ...session, messages, subscribe: (fn: (event: { type: string }) => void) => { listeners.push(fn); return () => {}; } } as unknown as AgentSession;
-      mockRunAgent(async (_ctx, _type, prompt, options) => {
-        await Promise.resolve(); // the real runner awaits before creating its session
-        options.onSessionCreated?.(live);
-        messages.push({ role: "user", content: prompt }, { role: "assistant", content: [{ type: "text", text: "NEW" }] });
-        for (const fn of listeners) fn({ type: "turn_end" });
-        return { responseText: "NEW", session: live, aborted: false, forceSteered: false };
-      });
+      mockSessions((prompt, session) => {
+        session.messages.push({ role: "user", content: prompt });
+        session.reply({ text: "NEW" });
+        session.turn();
+        return undefined;
+      }, { messages: [{ role: "user", content: "earlier" }] });
       const result = await resume(host);
       return { path, result };
     }

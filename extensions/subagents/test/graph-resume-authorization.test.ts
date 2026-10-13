@@ -12,7 +12,7 @@ import { boot, required } from "./graph-run-registration.fixture.js";
 
 it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s without creating a task, checkpoint or child", async kind => {
   const session = boot();
-  const { runAgent } = await import("../src/agent-runner.js");
+  const { openSession } = await import("../src/agent-runner.js");
   const child: AgentGraph = { nodes: { a: { type: "agent", agent: "forbidden", prompt: "work" } }, edges: [] };
   const graph: AgentGraph = kind === "denied nested graph" ? { nodes: { sub: { type: "graph", graph: "saved-child" } }, edges: [] } : child;
   const runId = "agr_abcdef123456";
@@ -26,20 +26,20 @@ it.each(["invalid graph", "denied graph", "denied nested graph"])("preserves %s 
   vi.spyOn(delegation, "checkGraphDelegation").mockImplementation(current => Object.values(current.nodes).some(node => node.type === "agent" && node.agent === "forbidden") ? { ok: false, error: "delegation_policy_denied: forbidden" } : { ok: true });
   const create = vi.spyOn(tasks, "createGraphRunTask"); const write = vi.spyOn(persistence, "writeGraphSnapshot"); const lease = vi.spyOn(persistence, "ownGraphRun");
   await session.lifecycle("session_start");
-  expect(create).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled(); expect(lease).not.toHaveBeenCalled(); expect(runAgent).not.toHaveBeenCalled();
+  expect(create).not.toHaveBeenCalled(); expect(write).not.toHaveBeenCalled(); expect(lease).not.toHaveBeenCalled(); expect(openSession).not.toHaveBeenCalled();
   expect(session.ui.notify).toHaveBeenCalled(); expect(readFileSync(path, "utf8")).toBe(original);
 });
 
 it("removes explicit terminal cancellation rather than resuming it each restart", async () => {
   const session = boot();
-  const { runAgent } = await import("../src/agent-runner.js");
+  const { openSession } = await import("../src/agent-runner.js");
   const graph: AgentGraph = { nodes: { a: { type: "agent", agent: "fixture", prompt: "work" } }, edges: [] };
   const runId = "agr_abcdef123456"; const controller = new AbortController(); controller.abort();
   await runGraph(graph, {}, { runId, signal: controller.signal, onCheckpoint: (state, effective) => persistence.writeGraphSnapshot(session.ctx.cwd, { version: 2, runId, ownerSessionId: session.ctx.sessionManager.getSessionId(), graph: effective, state, input: {}, waitingGate: "", savedAt: 0 }), host: { spawnAgent: vi.fn() } });
   const create = vi.spyOn(tasks, "createGraphRunTask");
   await session.lifecycle("session_start");
   await vi.waitFor(() => expect(required(create.mock.results[0]?.value).status).toBe("killed"));
-  expect(runAgent).not.toHaveBeenCalled();
+  expect(openSession).not.toHaveBeenCalled();
   expect(persistence.readGraphSnapshots(session.ctx.cwd)).toEqual([]);
   expect(readdirSync(persistence.graphRunsDir(session.ctx.cwd))).toEqual([]);
 });

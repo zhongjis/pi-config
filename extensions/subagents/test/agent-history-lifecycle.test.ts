@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { boot, dir, mockRunAgent } from "./graph-run-registration.fixture.js";
+import { boot, dir, mockSessions } from "./graph-run-registration.fixture.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
@@ -13,20 +13,11 @@ describe("independent agent history lifecycle", () => {
     const { writeFile } = await import("node:fs/promises");
     await writeFile(sessionFile, "");
     let settled = false;
-    mockRunAgent(async (_ctx, _type, _prompt, options) => {
-      const session = {
-        dispose: vi.fn(),
-        subscribe: vi.fn(() => vi.fn()),
-        sessionManager: { isPersisted: () => true, getSessionFile: () => sessionFile },
-      };
-      options?.onSessionCreated?.(session as never);
-      await new Promise<void>(resolve => {
-        if (options?.signal?.aborted) resolve();
-        else options?.signal?.addEventListener("abort", () => resolve(), { once: true });
-      });
+    mockSessions(async (_prompt, session) => {
+      await session.aborted;
       settled = true;
-      return { responseText: "SECRET_RESULT", session, aborted: true, forceSteered: false };
-    });
+      return { text: "SECRET_RESULT", aborted: true };
+    }, { sessionFile });
     await host.tools.get("agent")!.execute("call", {
       prompt: "SECRET_PROMPT",
       description: "history review",

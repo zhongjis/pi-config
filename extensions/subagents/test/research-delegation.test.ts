@@ -227,6 +227,45 @@ describe("delegate_research bridge", () => {
     expect(record.result).toMatch(/status: completed\n\nleaf answer$/);
   });
 
+  it("starts the nested run while its background parent holds the only background slot", async () => {
+    await manager.dispose();
+    manager = new AgentManager(undefined, 1);
+    setAgents(PARENT, agent("leaf"));
+    let leafStatus: AgentRecord["status"] | undefined;
+    scriptRuns({
+      parent: (options) => {
+        const pending = delegate(options);
+        leafStatus = manager.listAgents().find((candidate) => candidate.type === "leaf")?.status;
+        return pending;
+      },
+    });
+
+    const id = manager.spawn(pi, ctx, "parent", "go", { description: "parent", isBackground: true });
+    await manager.getRecord(id)?.promise;
+
+    expect(leafStatus).toBe("running");
+    expect(manager.getRecord(id)?.result).toMatch(/status: completed\n\nleaf answer$/);
+  });
+
+  it("stops only the nested run, as a caller cancellation, when the tool's signal aborts", async () => {
+    setAgents(PARENT, agent("leaf"));
+    const toolSignal = new AbortController();
+    scriptRuns({
+      parent: (options) => delegate({ ...options, signal: toolSignal.signal }),
+      leaf: (options) => new Promise((resolve) => {
+        options.signal?.addEventListener("abort", () => resolve("partial"), { once: true });
+        toolSignal.abort();
+      }),
+    });
+
+    const { record } = await manager.spawnAndWait(pi, ctx, "parent", "go", { description: "parent" });
+
+    const child = manager.listAgents().find((candidate) => candidate.type === "leaf");
+    expect(child).toMatchObject({ status: "stopped", interruptionCause: "caller", result: "partial" });
+    expect(record.status).toBe("completed");
+    expect(record.result).toContain(`status: stopped${getStatusNote("stopped", "caller")}\n\npartial`);
+  });
+
   it("aborts the nested run when the parent aborts", async () => {
     setAgents(PARENT, agent("leaf"));
     let parentId = "";

@@ -3,14 +3,14 @@ import { join } from "node:path";
 import { expect, it, vi } from "vitest";
 import * as persistence from "../src/graph/graph-persist.js";
 import { deferred } from "./graph-drain.fixture.js";
-import { boot, mockRunAgent, session } from "./graph-run-registration.fixture.js";
+import { boot, mockSessions } from "./graph-run-registration.fixture.js";
 import { approve, gateGraph, gateNode, launch, pendingGate, reject, resolveGate, retrieve } from "./gate-tools.fixture.js";
 
 it("cancels one parked retrieval without affecting another waiter or a later escalation", async () => {
   const host = boot();
   await host.lifecycle("session_start");
   const work = deferred<void>();
-  mockRunAgent(async () => { await work.promise; return { responseText: "done", session, aborted: false, forceSteered: false }; });
+  mockSessions(async () => { await work.promise; return "done"; });
   const id = await launch(host, { ...gateGraph, nodes: { before: { type: "agent", agent: "fixture", prompt: "work" }, gate: gateNode }, edges: [{ from: "before", to: "gate" }] });
   const controller = new AbortController();
   const cancelled = retrieve(host, id, true, controller.signal);
