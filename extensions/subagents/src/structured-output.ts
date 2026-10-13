@@ -15,11 +15,11 @@
  *      the schema at sampling time;
  *   2. the tool's description, snippet and guideline, which say the answer must
  *      come through this call;
- *   3. validation here, throwing a model-visible tool error for a bad payload so the model
- *      sees what was wrong and calls again inside the same run.
+ *   3. validation here, throwing model-visible errors for the first two bad
+ *      payloads and terminating after the third failure in an Execution.
  *
- * — and, when all three fail, one more prompt from `runAgent`. See
- * {@link structuredRetryPrompt}.
+ * — and, when no valid output was captured and retries remain, one more
+ * prompt from `runAgent`. See {@link structuredRetryPrompt}.
  *
  * The name matches Claude Code's exactly, so a ported prompt that mentions
  * `StructuredOutput` is still telling the truth.
@@ -44,10 +44,25 @@ export interface StructuredCapture {
   lastError?: string;
   /** Whether the tool was called at all — "never tried" reads differently. */
   called: boolean;
+  failedCalls: number;
+  exhausted: boolean;
+  /** Diagnostic only: never promoted to validated output. */
+  lastInvalidOutput?: string;
 }
 
+const MAX_STRUCTURED_FAILURES = 3;
+
 export function createStructuredCapture(): StructuredCapture {
-  return { called: false };
+  return { called: false, failedCalls: 0, exhausted: false };
+}
+
+export function resetStructuredCapture(capture: StructuredCapture): void {
+  capture.json = undefined;
+  capture.called = false;
+  capture.lastError = undefined;
+  capture.failedCalls = 0;
+  capture.exhausted = false;
+  capture.lastInvalidOutput = undefined;
 }
 
 /**
@@ -92,11 +107,34 @@ export function createStructuredOutputTool(
     },
     execute: async (_toolCallId, params) => {
       capture.called = true;
-      const verdict = compiled.check(params);
-      if (verdict !== true) {
-        capture.lastError = verdict;
-        // Pi turns thrown tool errors into model-visible error results.
-        throw new Error(`StructuredOutput did not match the required schema:\n${verdict}\nCall it again with a corrected value.`);
+      if (!capture.exhausted) {
+        const verdict = compiled.check(params);
+        if (verdict !== true) {
+          capture.lastError = verdict;
+          capture.failedCalls++;
+          if (capture.failedCalls < MAX_STRUCTURED_FAILURES) {
+            // Pi turns thrown tool errors into model-visible error results.
+            throw new Error(`StructuredOutput did not match the required schema:\n${verdict}\nCall it again with a corrected value.`);
+          }
+          capture.exhausted = true;
+          let payload: string;
+          try {
+            payload = JSON.stringify(params) ?? String(params);
+          } catch {
+            payload = "[payload could not be JSON-stringified]";
+          }
+          const marker = "...[truncated]";
+          capture.lastInvalidOutput = payload.length > 2000
+            ? payload.slice(0, 2000 - marker.length) + marker
+            : payload;
+        }
+      }
+      if (capture.exhausted) {
+        return {
+          content: [{ type: "text", text: "Your output was recorded as invalid and was not used. Stop now; do not call StructuredOutput again." }],
+          details: {},
+          terminate: true,
+        };
       }
       // Last valid call wins: a model that calls twice meant the second one.
       capture.json = JSON.stringify(params);
@@ -131,13 +169,14 @@ export function takeStructuredCapture(session: AgentSession): StructuredCapture 
 }
 
 export function structuredFailure(capture?: StructuredCapture): string | undefined {
-  return capture && capture.json === undefined
-    ? `StructuredOutput was not produced: ${capture.lastError ?? "the tool was not called with a valid payload"}.`
-    : undefined;
+  if (!capture || capture.json !== undefined) return undefined;
+  return capture.exhausted
+    ? `StructuredOutput failed schema validation ${MAX_STRUCTURED_FAILURES} times; the output below is unverified and was not used. Last error: ${capture.lastError}. Last invalid output: ${capture.lastInvalidOutput}`
+    : `StructuredOutput was not produced: ${capture.lastError ?? "the tool was not called with a valid payload"}.`;
 }
 
 export async function repairStructuredOutput(session: AgentSession, capture: StructuredCapture): Promise<boolean> {
-  if (capture.json !== undefined) return false;
+  if (capture.json !== undefined || capture.exhausted) return false;
   await session.prompt(structuredRetryPrompt(capture));
   await session.waitForIdle();
   return true;

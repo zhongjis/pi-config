@@ -52,7 +52,7 @@ import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
 import { createDelegateResearchTool, DELEGATE_RESEARCH_TOOL_NAME, type NestedSpawn } from "./research-delegation.js";
 import { sessionFastPolicies } from "./session-fast.js";
 import { preloadSkills } from "./skill-loader.js";
-import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, repairStructuredOutput, STRUCTURED_OUTPUT_TOOL_NAME, structuredFailure, takeStructuredCapture } from "./structured-output.js";
+import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, repairStructuredOutput, resetStructuredCapture, STRUCTURED_OUTPUT_TOOL_NAME, structuredFailure, takeStructuredCapture } from "./structured-output.js";
 import type { AgentConfig, InterruptionCause, SubagentType, ThinkingLevel } from "./types.js";
 import type { LifetimeUsage } from "./usage.js";
 
@@ -1055,7 +1055,7 @@ export async function resumeAgent(
     : () => {};
 
   const capture = takeStructuredCapture(session);
-  if (capture) { capture.json = undefined; capture.called = false; capture.lastError = undefined; }
+  if (capture) resetStructuredCapture(capture);
   let structuredRetried = false;
   let failure: string | undefined;
   try {
