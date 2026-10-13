@@ -54,6 +54,7 @@ Evidence:
 - `sisyphus/default.ts` defines senior-engineer orchestrator identity, intent gate, task/todo tracking, delegation, exploration, verification, failure recovery, and concise communication.
 - `sisyphus/gpt-5-5.ts` is a complete GPT-native orchestration prompt, not a reminder fragment.
 - `sisyphus/gemini.ts` is corrective Gemini guidance for tool use, delegation, intent gate, and verification.
+- `sisyphus/claude-opus-5.ts` gates delegation by domain and size, yet keeps explore agents reachable through Phase 0 key triggers (`explore.ts`, `librarian.ts` `keyTrigger`) and the explore use/avoid lists in `dynamic-agent-core-sections.ts` (verified at commit `5275771d`). Kua Fu's key triggers, explore rules, and Delegation Trust Rule copy that wording.
 
 Local invariants before edits:
 

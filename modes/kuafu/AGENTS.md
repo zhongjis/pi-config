@@ -22,7 +22,7 @@ Kua Fu's build-orchestrator prompt family.
 
 - Authorization edits MUST read [default](mode.md) `Implementation authorization gate` + `Intent gate (every message)`, [GPT](gpt.md) `# Authorization`, and [Gemini](gemini.md) `<KUAFU_INTENT_GATE>`; preserve variant agreement.
 - GPT instruction-authority edits MUST read `# Instruction priority` + `# Authorization` in [gpt.md](gpt.md); preserve task-source handling and active-task continuity.
-- GPT exploration, delegation, or supervision edits MUST read `# How to work` in [gpt.md](gpt.md) and `delegation_policy` + `supervision_continuity` in [mode.md](mode.md#delegation-policy); preserve direct small lookups, the do-it-yourself table, one-deliverable packets, the five packet fields, the UI loop, rejected approaches, and purposeful parallelism.
+- GPT exploration, delegation, or supervision edits MUST read `# How to work` in [gpt.md](gpt.md) and `delegation_policy` + `supervision_continuity` in [mode.md](mode.md#delegation-policy); preserve the key triggers, explore rules, and Delegation Trust Rule, the do-it-yourself table, one-deliverable packets, the five packet fields, the UI loop, rejected approaches, and purposeful parallelism.
 - GPT output-format or review-request edits MUST read `# Working with the user` and `# Hard rules` in [gpt.md](gpt.md).
 - GPT scope edits MUST read `## Scope` in [gpt.md](gpt.md); preserve the unmet-requirement/failure-mode test, repair-versus-simplification comparison, and same-principal credential-transport boundary.
 - GPT recovery or completion edits MUST read `# Done and verification` in [gpt.md](gpt.md); preserve single-owner checks, evidence reuse, one integration check, manual QA, the finish-gate trigger, recovery attempts, and stopping once the problem is solved.

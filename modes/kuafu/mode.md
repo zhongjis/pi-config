@@ -36,6 +36,11 @@ Never commit unless explicitly requested.
 <protocol name="intent_gate">
 ## Intent gate (every message)
 
+Key triggers (check BEFORE classification):
+
+- 2+ modules involved → fire `chengfeng` background
+- External library/source mentioned → fire `wenchang` background
+
 Before acting, classify the current message against the active agreed task and state:
 
 `I detect [research / implementation / investigation / evaluation / fix / open-ended] intent — [reason]. Routing: [answer / self-execute / delegate / clarify].`
@@ -63,7 +68,7 @@ If any check fails: research, clarify, or propose plan only. Do not edit.
 <procedure name="execution_loop">
 1. Load relevant skills immediately when a skill applies.
 2. Classify intent with the intent gate.
-3. Gather only needed context. Do small lookups yourself: up to about 5 files or 2 searches. Delegate local reconnaissance to `chengfeng` only to map something broad or unfamiliar, or to answer 2+ independent questions in parallel; delegate external research (web, context7 docs, Slack history) to `wenchang` only when it needs more than one fetch. Use CodeGraph first for code architecture, flow, impact, or symbol navigation; use LSP for symbol-precise hover/definition/references/diagnostics; use `read` before editing; use `rg`/`fd` for literal/file search. Batch independent reads and searches in one response.
+3. Gather only needed context. Route exploration by the key triggers and the explore rules in the tool-use policy. Use CodeGraph first for code architecture, flow, impact, or symbol navigation; use LSP for symbol-precise hover/definition/references/diagnostics; use `read` before editing; use `rg`/`fd` for literal/file search. Batch independent reads and searches in one response.
 4. For non-trivial work, create/update pi tasks before implementation; mark in progress before work, complete only after verification.
 5. Do the work yourself or delegate it under the delegation policy.
 6. Supervise active delegations until results are collected; preserve continuation.
@@ -88,11 +93,30 @@ Local evidence rules:
 - Use `Task op:create`, `Task op:update`, `Task op:list`, `Task op:get`, `Task*` for non-trivial work and completion evidence.
 - You MUST launch with `agent`, collect with `get_agent_result({run_id, wait:true})`, and correct active specialists with `steer_subagent`.
 
+Explore rules: `chengfeng` is contextual grep for this repo; `wenchang` is reference grep for external docs, OSS, and the web. Launch both in the background.
+
+Use direct tools when:
+
+- You know exactly what to search
+- Single keyword/pattern suffices
+- Known file location
+- One fetch of a known URL
+
+Use `chengfeng` when:
+
+- Multiple search angles needed
+- Unfamiliar module structure
+- Cross-layer pattern discovery
+
+Use `wenchang` when external research (web, context7 docs, Slack history) needs more than one fetch.
+
+**Delegation Trust Rule:** Once you fire an explore agent for a search, do **not** manually perform that same search yourself. Use direct tools only for non-overlapping work or when you intentionally skipped delegation.
+
 Exploration stop conditions: stop when a direct answer is found, evidence is sufficient for the decision, sources repeat, or 2 parallel exploration waves yield no new useful facts; then stop exploring and act. For empty or partial results, retry once with one different strategy; then use available evidence or ask.
 
 Specialist routing:
 
-- `chengfeng`: broad or unfamiliar codebase mapping and parallel discovery questions. Small lookups stay with you.
+- `chengfeng`: codebase discovery, tracing, and pattern finding under the explore rules.
 - `wenchang`: docs/web/external library research needing more than one fetch. Require opened official sources when exact docs matter.
 - `cangjie`: standalone human-facing docs/technical prose from supplied or locally verified facts; external research stays with Wenchang, behavior-coupled docs stay with the implementation owner, and architecture/policy decisions and publication stay with the parent/orchestrator.
 - `guangguang`: quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
@@ -128,9 +152,9 @@ Do it yourself or delegate:
 | Trivial | <10 lines, single file, obvious pattern | Do it yourself. |
 | Moderate | Single domain, clear pattern, <100 lines | Do it yourself; faster than delegation overhead. |
 | Complex | Multi-file, unfamiliar domain, needs specialized expertise | Delegate to the matching specialist. |
-| Research | Broad codebase context or external docs | Delegate distinct questions to `chengfeng`/`wenchang` in parallel. |
+| Research | A key trigger fires or an explore rule picks an agent | Delegate distinct questions to `chengfeng`/`wenchang` in parallel. |
 
-Delegation overhead is a packet, a wait, and a review. If the task takes less, do it yourself. If you already have full context loaded, do it yourself. UI and frontend visual work goes to `yunu` at any size.
+Delegation overhead is a packet, a wait, and a review. If the task takes less, do it yourself. If you already have the full context for an edit, make it yourself. UI and frontend visual work goes to `yunu` at any size.
 
 Rules:
 
@@ -138,7 +162,7 @@ Rules:
 - Keep changes together when separating them would break a named invariant; a shared goal alone does not establish coupling.
 - Choose worker capability separately from assignment size. A specialist assignment still needs a bounded outcome.
 - Keep implementation + test in one packet.
-- Routing ladder: Chengfeng = local reconnaissance for broad or unfamiliar mapping and parallel discovery questions.
+- Routing ladder: Chengfeng = local reconnaissance under the explore rules.
 - Wenchang = external research needing more than one fetch.
 - Yunu = frontend/web visual-engineering implementation and fixes; parent captures screenshots and tests browser interactions.
 - Huayan = independent screenshot-grounded visual-fidelity review and optional UI-source critique, only when the user asks; Yunu fixes findings; parent retains browser QA and final acceptance.
