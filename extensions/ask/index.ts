@@ -85,8 +85,9 @@ export default function ask(pi: ExtensionAPI) {
 			const d = result.details as AskDetails | undefined;
 			const summary = (lines: string[], expandLabel = "full result") => renderToolSummary(lines, theme, { expandable: raw.length > 0, expandLabel });
 			if (!d) return summary([raw ? `result: ${raw}` : "result: no answer details"]);
-			if (d.error) return summary([`status: invalid payload · ${d.error.issues.length} issues`]);
-			if (d.mode === "elaborate") return summary([`status: elaborate · ${d.notes.length} notes`]);
+			const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? "" : "s"}`;
+			if (d.error) return summary([`status: invalid payload · ${count(d.error.issues.length, "issue")}`]);
+			if (d.mode === "elaborate") return summary([`status: elaborate · ${count(d.notes.length, "note")}`]);
 			if (d.cancelled) return summary(["status: cancelled", "answer: user cancelled"]);
 			if (!d.answers?.length) {
 				const count = Array.isArray(d.questions) ? d.questions.length : 0;
