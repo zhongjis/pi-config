@@ -24,6 +24,10 @@ export type AskEffect =
 	| { kind: "openEditor"; target: EditorTarget; initialText: string }
 	| { kind: "finalize"; result: FinalizeResult };
 
+/** Review tab actions in display order; digits 1-3 and the action cursor index this list. */
+export const REVIEW_ACTIONS = ["submit", "elaborate", "cancel"] as const;
+export type ReviewAction = (typeof REVIEW_ACTIONS)[number];
+
 export class AskState {
 	readonly questions: NormalizedQuestion[];
 	readonly quickPick: boolean;
@@ -33,7 +37,6 @@ export class AskState {
 	reviewActionIndex = 0;
 	dismissPending = false;
 	editorTarget: EditorTarget | undefined;
-	editorInitialText = "";
 	private finalized = false;
 	private readonly singleAnswers = new Map<string, number>();
 	private readonly multiSets = new Map<string, Set<number>>();
@@ -65,10 +68,6 @@ export class AskState {
 		return this.customInputs.has(q.id) || (q.multi
 			? (this.multiSets.get(q.id)?.size ?? 0) > 0
 			: this.singleAnswers.has(q.id));
-	}
-
-	allAnswered(): boolean {
-		return this.questions.every((q) => this.isAnswered(q));
 	}
 
 	totalRows(q: NormalizedQuestion): number {
@@ -215,9 +214,9 @@ export class AskState {
 
 	private openEditor(target: EditorTarget): AskEffect {
 		this.editorTarget = target;
-		this.editorInitialText = this.getDraft(target) ?? (target.kind === "custom"
+		const initialText = this.getDraft(target) ?? (target.kind === "custom"
 			? this.getCustomInput(target.questionId) : this.getNote(target.questionId, target.optionIndex)) ?? "";
-		return { kind: "openEditor", target, initialText: this.editorInitialText };
+		return { kind: "openEditor", target, initialText };
 	}
 
 	submitEditor(text: string): AskEffect | undefined {
@@ -256,10 +255,10 @@ export class AskState {
 		return { kind: "finalize", result };
 	}
 
-	private runReviewAction(index: number): AskEffect | undefined {
-		if (index === 0) return this.finalize({ mode: "submit" });
-		if (index === 1 && this.elaborateEnabled) return this.finalize({ mode: "elaborate" });
-		if (index === 2) return this.finalize({ cancelled: true });
+	private runReviewAction(action: ReviewAction | undefined): AskEffect | undefined {
+		if (action === "submit") return this.finalize({ mode: "submit" });
+		if (action === "elaborate" && this.elaborateEnabled) return this.finalize({ mode: "elaborate" });
+		if (action === "cancel") return this.finalize({ cancelled: true });
 	}
 
 	dispatch(key: KeyEvent | undefined): AskEffect | undefined {
@@ -277,9 +276,10 @@ export class AskState {
 		}
 		const q = this.getCurrentQuestion();
 		if (!q) {
-			if (key.kind === "up" || key.kind === "down") this.reviewActionIndex = (this.reviewActionIndex + (key.kind === "up" ? 2 : 1)) % 3;
-			if (key.kind === "confirm") return this.runReviewAction(this.reviewActionIndex);
-			if (key.kind === "digit" && key.n >= 1 && key.n <= 3 && Number.isInteger(key.n)) return this.runReviewAction(key.n - 1);
+			const n = REVIEW_ACTIONS.length;
+			if (key.kind === "up" || key.kind === "down") this.reviewActionIndex = (this.reviewActionIndex + (key.kind === "up" ? n - 1 : 1)) % n;
+			if (key.kind === "confirm") return this.runReviewAction(REVIEW_ACTIONS[this.reviewActionIndex]);
+			if (key.kind === "digit" && Number.isInteger(key.n)) return this.runReviewAction(REVIEW_ACTIONS[key.n - 1]);
 			return;
 		}
 		if (key.kind === "up" || key.kind === "down") return void this.moveOption(key.kind === "up" ? -1 : 1);

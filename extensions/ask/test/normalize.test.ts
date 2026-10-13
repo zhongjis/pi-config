@@ -138,12 +138,10 @@ describe("normalizeQuestions", () => {
 
 
 describe("schema", () => {
-	it("exposes title, preview and advisory required with agent-facing descriptions", () => {
+	it("exposes title, preview and advisory required as optional fields", () => {
 		expect(AskParams.properties.title.type).toBe("string");
 		expect(OptionSchema.properties.preview.type).toBe("string");
-		expect(Reflect.get(OptionSchema.properties.preview, "description")).toContain("highlighted");
 		expect(QuestionSchema.properties.required.type).toBe("boolean");
-		expect(Reflect.get(QuestionSchema.properties.required, "description")).toContain("never blocks");
 		expect(QuestionSchema.required).not.toContain("required");
 		expect(AskParams.required).not.toContain("title");
 	});

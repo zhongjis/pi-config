@@ -73,10 +73,10 @@ describe("selection and digits", () => {
 		expect(s.dispatch({ kind: "confirm" })).toBeUndefined();
 		expect(s.getSingleAnswer("q1")).toBe(1);
 		expect(s.currentTab).toBe(1);
-		expect(s.allAnswered()).toBe(false);
+		expect(s.isAnswered(s.questions[1])).toBe(false);
 		s.dispatch({ kind: "confirm" });
 		expect(s.currentTab).toBe(2);
-		expect(s.allAnswered()).toBe(true);
+		expect(s.isAnswered(s.questions[1])).toBe(true);
 	});
 	it("single digit selects the indexed option and quickPick finalizes", () => {
 		const s = make();

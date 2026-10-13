@@ -8,7 +8,7 @@
 import { type KeyId, matchesKey } from "@earendil-works/pi-tui";
 import type { KeyEvent } from "./state.js";
 
-export type AskKeybinding = "tui.select.up" | "tui.select.down" | "tui.select.confirm" | "tui.select.cancel";
+export type AskKeybinding = "tui.select.up" | "tui.select.down" | "tui.select.confirm" | "tui.select.cancel" | "tui.input.submit";
 
 /** Structural subset of Pi's KeybindingsManager. */
 export interface AskKeybindings {
@@ -21,6 +21,7 @@ const defaults: Record<AskKeybinding, KeyId[]> = {
 	"tui.select.down": ["down"],
 	"tui.select.confirm": ["enter"],
 	"tui.select.cancel": ["escape", "ctrl+c"],
+	"tui.input.submit": ["enter"],
 };
 
 export function keyLabel(key: string): string {

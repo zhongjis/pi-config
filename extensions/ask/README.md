@@ -12,14 +12,14 @@ The tool's lineage includes [`questionnaire.ts` and `question.ts` from badlogic/
 - The [dialog](dialog.ts) shows option previews beside the choices on wide terminals and below them on narrow terminals. Question and option notes stay visible while navigating.
 - Review offers Submit, Elaborate, and Cancel. Submit accepts partial answers; unanswered required questions are flagged rather than blocking submission. Elaborate returns the user's notes for clarification while retaining their decisions.
 - A single single-select question submits on selection when there are no notes; with notes, it opens Review. Navigation and digit shortcuts use the [key resolver](keys.ts), including configured Pi selection bindings and matching hints.
-- Cancelling an editor preserves non-blank text as a draft. Dismissing a dirty dialog requires confirmation; explicit Review cancellation is immediate. Aborts close the dialog once and release its listener.
+- Cancelling an editor preserves non-blank text as a draft. Dismissing a dirty dialog requires confirmation; explicit Review cancellation is immediate. An abort closes the dialog once.
 - Invalid input returns all [validation issues](normalize.ts) without opening a dialog. Outside interactive TUI mode, the tool returns a question list for asking the user directly.
 
 ## Entry Points
 
 Use the `ask` tool when a decision depends on a user preference. [Registration and execution](index.ts) own the tool's agent guidance and integration; the [schema and result types](types.ts) define its input and structured output.
 
-[Result formatting](format.ts) produces answer lines, notes, clarification instructions, and non-TUI question lists. The [state machine](state.ts) owns selection, drafts, Review actions, and guarded completion. [Tests](test/) cover the pure layer, real editor component, execution, and tool presentation.
+[Result formatting](format.ts) produces answer lines, notes, clarification instructions, and non-TUI question lists.
 
 ## Integration
 

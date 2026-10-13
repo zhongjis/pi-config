@@ -61,12 +61,13 @@ describe("result text", () => {
 		] }));
 		expect(text).toBe("Scope: user selected: 1. a\nNext: (no answer) [required]\nNotes:\n- Scope: scope?\n- Scope › 1. a: why?\n- Next: later?");
 	});
-	it("elaborate prefixes instructions and retains answers, notes and title", () => {
-		expect(formatResultText(qs, details({ mode: "elaborate", title: "Decisions", notes: [{ questionId: "q1", text: "explain" }] }))).toBe([
-			"The user wants clarification before finalizing (mode: elaborate).",
-			"Respond to each note first. Then call ask again only for questions that still need a decision; keep the answers below.",
+	it("elaborate marks the mode and retains answers, notes and title", () => {
+		const text = formatResultText(qs, details({ mode: "elaborate", title: "Decisions", notes: [{ questionId: "q1", text: "explain" }] }));
+		expect(text).toContain("(mode: elaborate)");
+		expect(text.endsWith([
 			"Decisions", "Scope: user selected: 1. a", "Next: (no answer) [required]", "Notes:", "- Scope: explain",
-		].join("\n"));
+		].join("\n"))).toBe(true);
+		expect(formatResultText(qs, details({ title: "Decisions" }))).not.toContain("(mode: elaborate)");
 	});
 	it("cancelled and aborted have distinct messages", () => {
 		expect(formatResultText(qs, details({ cancelled: true }))).toBe("User cancelled the questions.");

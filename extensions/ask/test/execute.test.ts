@@ -66,7 +66,7 @@ describe("ask execution", () => {
 		const { execute, emit, status, custom } = setup(["N", "explain scope", "\r", "1", "2"]);
 		const result = await execute(undefined, undefined, "Decisions");
 		expect(custom).toHaveBeenCalledTimes(1);
-		expect(result.content[0].text).toContain("The user wants clarification before finalizing (mode: elaborate).");
+		expect(result.content[0].text).toContain("(mode: elaborate)");
 		expect(result.content[0].text).toContain("Decisions\nScope: user selected: 1. src\nNotes:\n- Scope: explain scope");
 		expect(result.details).toMatchObject({ title: "Decisions", cancelled: false, mode: "elaborate", answers: [{ values: ["src"] }], notes: [{ questionId: "q", text: "explain scope" }] });
 		expect(emit.mock.calls).toEqual([

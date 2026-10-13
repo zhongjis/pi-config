@@ -84,6 +84,14 @@ describe("ask tool rendering", () => {
 		expect(renderText(elaborate)).toContain("status: elaborate · 1 note");
 		expectWidthSafe(elaborate);
 	});
+	it("summarizes answers from fields, including saved custom answers without indices", () => {
+		const tool = registerAskTool();
+		const legacy = tool.renderResult!({ content: [{ type: "text", text: "Scope: user wrote: hand-typed" }], details: { questions, cancelled: false, answers: [{ id: "scope", multi: true, wasCustom: true, values: [], labels: [], customInput: "hand-typed" }] } }, {}, plainTheme);
+		expect(renderText(legacy)).toContain("answer: Scope · wrote: hand-typed");
+		const mixed = tool.renderResult!({ content: [{ type: "text", text: "raw" }], details: { questions, cancelled: false, mode: "submit", notes: [], answers: [{ id: "scope", multi: true, wasCustom: true, values: ["src"], labels: ["Source"], indices: [1], customInput: "docs" }] } }, {}, plainTheme);
+		expect(renderText(mixed)).toContain("answer: Scope · 1. src; wrote: docs");
+		expectWidthSafe(mixed);
+	});
 	it("renders call count, flags, and first prompt only", () => {
 		const tool = registerAskTool();
 		const call = tool.renderCall!({ questions }, plainTheme);

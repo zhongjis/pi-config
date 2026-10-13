@@ -26,7 +26,7 @@ export function formatAnswerLine(q: NormalizedQuestion, answer: Answer | undefin
 export function formatNoteLine(q: NormalizedQuestion, note: AskNote): string {
 	const idx = note.optionValue === undefined ? -1 : q.options.findIndex((o) => o.value === note.optionValue);
 	const option = idx < 0 ? "" : ` › ${idx + 1}. ${displayValue(q.options[idx].value, q.options[idx].label)}`;
-	return `- ${q.rawLabel}${option}: ${note.text}`;
+	return `${q.rawLabel}${option}: ${note.text}`;
 }
 
 export function formatInvalidPayload(issues: AskIssue[]): string {
@@ -49,7 +49,7 @@ export function formatResultText(questions: NormalizedQuestion[], details: AskDe
 	if (details.notes.length) {
 		lines.push("Notes:");
 		for (const q of questions) {
-			for (const note of details.notes.filter((n) => n.questionId === q.id)) lines.push(formatNoteLine(q, note));
+			for (const note of details.notes.filter((n) => n.questionId === q.id)) lines.push(`- ${formatNoteLine(q, note)}`);
 		}
 	}
 	return lines.join("\n");

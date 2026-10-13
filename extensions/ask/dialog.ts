@@ -9,7 +9,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { Editor, type EditorTheme, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { formatAnswerLine, formatNoteLine } from "./format.js";
 import { createAskKeys, type AskKeybindings } from "./keys.js";
-import { AskState, type AskEffect } from "./state.js";
+import { AskState, type AskEffect, REVIEW_ACTIONS, type ReviewAction } from "./state.js";
 import { type AskDetails, type IncomingQuestion, type NormalizedQuestion, OTHER_LABEL, RECOMMENDED_SUFFIX } from "./types.js";
 
 export interface AskDialogResult {
@@ -136,12 +136,13 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 		for (const q of questions) {
 			const answer = state.buildAnswer(q);
 			lines.push(...wrapped(theme.fg(answer ? "text" : q.required ? "warning" : "dim", formatAnswerLine(q, answer)), width));
-			for (const note of state.getNotes().filter((n) => n.questionId === q.id)) lines.push(...wrapped(theme.fg("muted", `✎ ${formatNoteLine(q, note).slice(2)}`), width, "  "));
+			for (const note of state.getNotes().filter((n) => n.questionId === q.id)) lines.push(...wrapped(theme.fg("muted", `✎ ${formatNoteLine(q, note)}`), width, "  "));
 		}
 		lines.push("");
-		["1 Submit", `2 Elaborate${state.elaborateEnabled ? "" : " (add a note first: n / N)"}`, "3 Cancel"].forEach((action, i) => {
-			const color = i === 1 && !state.elaborateEnabled ? "dim" : i === state.reviewActionIndex ? "accent" : "text";
-			lines.push(...wrapped(theme.fg(color, `${i === state.reviewActionIndex ? "> " : "  "}${action}`), width));
+		const labels: Record<ReviewAction, string> = { submit: "Submit", elaborate: `Elaborate${state.elaborateEnabled ? "" : " (add a note first: n / N)"}`, cancel: "Cancel" };
+		REVIEW_ACTIONS.forEach((action, i) => {
+			const color = action === "elaborate" && !state.elaborateEnabled ? "dim" : i === state.reviewActionIndex ? "accent" : "text";
+			lines.push(...wrapped(theme.fg(color, `${i === state.reviewActionIndex ? "> " : "  "}${i + 1} ${labels[action]}`), width));
 		});
 		return lines;
 	}
@@ -149,7 +150,7 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 		const confirm = keys.label("tui.select.confirm");
 		const cancel = keys.label("tui.select.cancel");
 		if (state.dismissPending) return `Press ${cancel} again to discard your answers`;
-		if (state.editorTarget) return `${confirm} submit • ${cancel} cancel input`;
+		if (state.editorTarget) return `${keys.label("tui.input.submit")} submit • ${cancel} cancel input`;
 		const navigate = `${keys.label("tui.select.up")}/${keys.label("tui.select.down")} navigate`;
 		const q = state.getCurrentQuestion();
 		if (!q) return `${navigate} • 1–3 action • ${confirm} action • Tab/←→ tabs • ${cancel} dismiss`;

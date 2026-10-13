@@ -10,7 +10,7 @@ import type { TUI } from "@earendil-works/pi-tui";
 import { isTui } from "../lib/mode.js";
 import { extractToolText, renderToolCall, renderToolExpanded, renderToolSummary } from "../lib/tool-output.js";
 import { createAskDialog, type AskDialogResult } from "./dialog.js";
-import { formatAnswerLine, formatInvalidPayload, formatNonTuiQuestions, formatResultText } from "./format.js";
+import { displayValue, formatInvalidPayload, formatNonTuiQuestions, formatResultText } from "./format.js";
 import { buildInvalidDetails, normalizeQuestions, validateInput } from "./normalize.js";
 import { AskParams, type AskDetails, type IncomingQuestion } from "./types.js";
 
@@ -89,14 +89,13 @@ export default function ask(pi: ExtensionAPI) {
 			if (d.error) return summary([`status: invalid payload · ${count(d.error.issues.length, "issue")}`]);
 			if (d.mode === "elaborate") return summary([`status: elaborate · ${count(d.notes.length, "note")}`]);
 			if (d.cancelled) return summary(["status: cancelled", "answer: user cancelled"]);
-			if (!d.answers?.length) {
-				const count = Array.isArray(d.questions) ? d.questions.length : 0;
-				return summary([`status: no answer · ${count} question${count !== 1 ? "s" : ""}`]);
-			}
+			const questions = Array.isArray(d.questions) ? d.questions : [];
+			if (!d.answers?.length) return summary([`status: no answer · ${count(questions.length, "question")}`]);
 			const first = d.answers[0];
-			const q = normalizeQuestions(d.questions).find((q) => q.id === first.id);
-			const answer = q ? formatAnswerLine(q, first).replace(`${q.rawLabel}: `, `${q.rawLabel} · `).replace("user selected: ", "").replace("user wrote: ", "wrote: ") : first.id;
-			return summary([`status: answered · ${d.answers.length}/${d.questions.length}`, `answer: ${answer}`], "all answers");
+			const label = questions.find((q) => q.id === first.id)?.label || first.id;
+			const selected = (first.indices ?? []).map((idx, i) => `${idx}. ${displayValue(first.values[i], first.labels[i])}`).join(", ");
+			const answer = [selected, first.customInput === undefined ? "" : `wrote: ${first.customInput}`].filter(Boolean).join("; ");
+			return summary([`status: answered · ${d.answers.length}/${questions.length || d.answers.length}`, `answer: ${label} · ${answer || "(empty)"}`], "all answers");
 		},
 	});
 }
