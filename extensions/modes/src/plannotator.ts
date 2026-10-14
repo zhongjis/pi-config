@@ -241,7 +241,7 @@ export async function startPlanReview(pi: ExtensionAPI, state: ModeStateManager,
 
 // ── Recover pending review on session restart ───────────────────────────────
 
-export async function recoverPlanReview(pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
+export async function recoverPlanReview(_pi: ExtensionAPI, state: ModeStateManager, ctx: ExtensionContext): Promise<void> {
 	if (!state.pendingPlanReviewId) return;
 
 	// On session restart, any pending browser review is lost (server stopped).
