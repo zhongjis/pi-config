@@ -87,14 +87,6 @@ function renderThinkingInlineSegment(theme: ThinkingThemeLike, segment: InlineSe
 	return theme.fg("thinkingText", segment.text);
 }
 
-function stepHeader(theme: ThinkingThemeLike, step: DerivedThinkingStep, active: boolean, connector: string): string {
-	const connectorColor = active ? "accent" : "muted";
-	const icon = theme.fg(roleColor(step.role), step.icon);
-	const renderedSummary = renderThinkingInlineMarkup(theme, step.summary);
-	const summaryText = active ? theme.bold(renderedSummary) : renderedSummary;
-	return `${theme.fg(connectorColor, connector)} ${icon} ${summaryText}`;
-}
-
 function wrapStepHeader(theme: ThinkingThemeLike, width: number, step: DerivedThinkingStep, active: boolean, connector: string): string[] {
 	const connectorColor = active ? "accent" : "muted";
 	const icon = theme.fg(roleColor(step.role), step.icon);
@@ -190,14 +182,6 @@ function wrapCollapsedSummaryText(theme: ThinkingThemeLike, text: string, firstW
 
 	if (current) lines.push(current);
 	return lines;
-}
-
-function stripInlineFormattingMarkers(text: string): string {
-	return text
-		.replace(/(\*\*|__)(?=\S)([\s\S]*?\S)\1/g, "$2")
-		.replace(/`([^`]+)`/g, "$1")
-		.replace(/(?<![\w/.-])\*(?!\*)(?=\S)([\s\S]*?\S)(?<!\*)\*(?![\w/.-])/g, "$1")
-		.replace(/(?<![\w/.-])_(?!_)(?=\S)([\s\S]*?\S)(?<!_)_(?![\w/.-])/g, "$1");
 }
 
 function renderCollapsed(theme: ThinkingThemeLike, width: number, steps: DerivedThinkingStep[], activeStepId?: string, isActive = false, nowMs = Date.now()): string[] {

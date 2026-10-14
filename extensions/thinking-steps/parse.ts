@@ -53,21 +53,6 @@ function ensureCompleteVisibleSummary(summary: string): string {
 	return cleaned ? `${cleaned}.` : `${withoutEllipsis.replace(/[.!?;:,]+$/g, "").trimEnd()}.`;
 }
 
-function firstMeaningfulLine(text: string): string {
-	const lines = normalizeNewlines(text)
-		.split("\n")
-		.map((line) => line.trim())
-		.filter(Boolean);
-	return lines[0] ?? "";
-}
-
-function firstSentence(text: string): string {
-	const normalized = collapseWhitespace(text);
-	if (!normalized) return "";
-	const match = normalized.match(/^(.{1,120}?)(?:[.!?](?:\s|$)|$)/);
-	return match?.[1]?.trim() ?? normalized;
-}
-
 function splitListChunk(chunk: string): string[] {
 	const lines = normalizeNewlines(chunk).split("\n");
 	let contentStartIndex = 0;
@@ -261,7 +246,6 @@ const PATH_TOKEN_RE = /\b(?:[a-z0-9_-]+[/.])+[a-z0-9_-]+\b/gi;
 const SYMBOL_TOKEN_RE = /\b[a-z_][a-z0-9_]*\([^)]*\)/gi;
 const ARTIFACT_RE = /(?:\b[a-z0-9_-]+\.(?:ts|tsx|js|jsx|json|md|txt|yml|yaml|lock)\b|\b[a-z_][a-z0-9_]*\([^)]*\)|`[^`]+`|\b(?:npm|node|git|pi|larra|mcp|tsx|tsc)\b|\b(?:ts\d{3,5}|err_[a-z0-9_]+)\b)/i;
 const FAILURE_CUE_RE = /\b(failed|failure|error|errors|blocked|abort(?:ed)?|cannot|unable|did not complete|not completed|reverted|rollback|locked)\b/i;
-const SUCCESS_CUE_RE = /\b(pass(?:ed)?|succeed(?:ed)?)\b/i;
 const DECISION_CUE_RE = /\b(decided|decision|chose|switched|replaced|confirmed|fixed|resolved|discovered|found|preserve|keeping|keep)\b/i;
 const PLAN_CHANGE_CUE_RE = /\b(instead of|rather than|safer (?:plan|path|route|approach|option)|(?:less|lower)-?risk(?:y)? (?:plan|path|route|approach|option)|plan changed|keep the current summarizer as the baseline|only choose the challenger|limit the algorithmic changes)\b/i;
 const ACTION_CUE_RE = /\b(retry|rerun|inspect|check|verify|compare|search|find|read|patch|update|implement|remove|rename|write|run|fix|switch|revert|gather|retrieve|list|flag|review|plan|map|archive|explore|wait|look\s+into)\b/i;
