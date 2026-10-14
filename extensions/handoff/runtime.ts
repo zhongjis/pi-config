@@ -183,17 +183,6 @@ export function consumeHandoffStartupPrompt(): string | null {
   return raw;
 }
 
-function setHandoffStartupPrompt(prompt: string): void {
-  (globalThis as Record<PropertyKey, unknown>)[HANDOFF_STARTUP_PROMPT_KEY] =
-    prompt;
-}
-
-function clearHandoffStartupPrompt(): void {
-  delete (globalThis as Record<PropertyKey, unknown>)[
-    HANDOFF_STARTUP_PROMPT_KEY
-  ];
-}
-
 export async function requestDirectHandoffBridge(
   pi: ExtensionAPI,
   request: DirectHandoffBridgeRequest,
@@ -301,7 +290,7 @@ export function parseHandoffArgs(
 }
 
 export async function runHandoffCommand(
-  pi: ExtensionAPI,
+  _pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: ParsedHandoffArgs,
 ): Promise<string | undefined> {
