@@ -88,21 +88,21 @@ export function formatTokens(count: number): string {
   return `${count} token`;
 }
 
+/** Theme color for a context-window fill percent: <70% dim, 70–85% warning, ≥85% error. */
+export function contextPercentColor(percent: number): string {
+  return percent >= 85 ? "error" : percent >= 70 ? "warning" : "dim";
+}
+
 /**
  * Token count with optional context-fill % and compaction-count annotations.
- * Thresholds for percent: <70% dim, 70–85% warning, ≥85% error.
- * Compaction count rendered as `⇊N` in dim.
+ * Compaction count rendered as `⇊N` in dim; the percent color follows
+ * `contextPercentColor`.
  *
  *   "12.3k token"               — no annotations
  *   "12.3k token (45%)"         — percent only
  *   "12.3k token (⇊2)"          — compactions only (e.g. right after compact)
  *   "12.3k token (45% · ⇊2)"    — both
  */
-/** Theme color for a context-window fill percent: <70% dim, 70–85% warning, ≥85% error. */
-export function contextPercentColor(percent: number): string {
-  return percent >= 85 ? "error" : percent >= 70 ? "warning" : "dim";
-}
-
 export function formatSessionTokens(
   tokens: number,
   percent: number | null,
