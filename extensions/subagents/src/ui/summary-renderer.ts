@@ -150,7 +150,7 @@ function getTokenText(agent: SubagentSummaryAgent): string | undefined {
   return isPositive(agent.totalTokens) ? formatSummaryTokens(agent.totalTokens) : undefined;
 }
 
-function getStatusSuffix(agent: SubagentSummaryAgent): string | undefined {
+export function getStatusSuffix(agent: Pick<SubagentSummaryAgent, "status" | "error">): string | undefined {
   if (agent.status === "force_steered") return "turn ceiling";
   if (agent.status === "stopped") return "stopped";
   if (agent.status === "aborted") return "aborted";

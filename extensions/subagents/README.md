@@ -125,16 +125,19 @@ Compact rows omit redundant status/result/activity/error labels and the model pr
 
 Model metadata is the actual SDK `provider/id`, even when identical to the parent. Thinking is the SDK's effective level, including clamping or `off`; queued/pre-session reports do not claim requested settings as actual. Expanded Run metadata discloses requested model/thinking when they differ from actual execution, with equivalent fuzzy model names kept quiet. Resume retains the original request rather than presenting resume-call overrides as applied. Optional estimated cost is also expanded-only; compact rows and model-visible result text remain unchanged. A live resume uses the retained session; resuming an evicted agent rebuilds it from the current agent configuration. Turns and turn ceiling have separate labels; accumulated lifetime usage is labeled `tokens`, not context.
 
-By default, foreground and background agents each stream their full conversation to a per-subagent transcript — a JSON-lines file at `<os-tmpdir>/pi-subagents-<uid>/<cwd>/<session>/tasks/<agent-id>.output` (owner-only `0700`, cleared on reboot). Set `output_transcript: false` on a custom agent to write no transcript path or file for it, or set `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (frontmatter overrides the project default). This governs **only** the transcript: it is independent of the persisted pi session (always written) and `memory:` (durable files). Background agent completion notifications render as styled boxes:
+By default, foreground and background agents each stream their full conversation to a per-subagent transcript — a JSON-lines file at `<os-tmpdir>/pi-subagents-<uid>/<cwd>/<session>/tasks/<agent-id>.output` (owner-only `0700`, cleared on reboot). Set `output_transcript: false` on a custom agent to write no transcript path or file for it, or set `outputTranscript: false` in `subagents.json` to make transcripts opt-in for the whole project (frontmatter overrides the project default). This governs **only** the transcript: it is independent of the persisted pi session (always written) and `memory:` (durable files). Background agent completion notifications render as styled boxes, with aligned stats and a one-line result preview:
 
 ```
-✓ Find auth files completed
-  ↻3 · 3 tool uses · 12.4k token · 4.1s
-  ⎿  Found 5 files related to authentication...
-  transcript: .pi/output/agent-abc123.jsonl
+[notification]
+
+2 agents finished
+✓ Find auth files   ↻3  3 tools  12.4k  4.1s
+  Summary: Found 5 files related to authentication…
+✓ Audit login flow  ↻5  8 tools  31.2k  9.8s
+  No issues found in the login handler.
 ```
 
-Group completions render each agent as a separate block. The LLM receives structured `<task-notification>` XML for parsing, while the user sees the themed visual.
+Expanding a notification shows each agent's full retained result and its transcript path. The LLM receives structured `<task-notification>` XML for parsing, while the user sees the themed visual.
 
 ## Default Agent Types
 

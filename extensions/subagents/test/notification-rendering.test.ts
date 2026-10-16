@@ -173,11 +173,12 @@ afterAll(async () => {
 
 describe("subagent notification rendering migration", () => {
   it("renders a completed individual summary with stats, result, and transcript", () => {
-    expect(render(notification())).toEqual([
-      "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s",
-      "Found the gap. Additional detail.",
-      "  transcript: /tmp/subagents/agent-1.output",
+    const lines = render(notification());
+    expect(lines.slice(0, 2)).toEqual([
+      "✓ Renderer migration  ↻4  3 tools  12.3k  1m5s",
+      "  Found the gap. Additional detail.",
     ]);
+    expect(lines).toHaveLength(2);
   });
 
   it("uses the custom-message card shell and theme tokens", () => {
@@ -185,13 +186,12 @@ describe("subagent notification rendering migration", () => {
       "",
       "[notification]",
       "",
-      "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s",
+      "✓ Renderer migration  ↻4  3 tools  12.3k  1m5s",
       "Found the gap. Additional detail.",
-      "transcript: /tmp/subagents/agent-1.output",
       "",
     ]);
     expect(theme.fg).toHaveBeenCalledWith("customMessageLabel", "[notification]");
-    expect(theme.fg).toHaveBeenCalledWith("customMessageText", "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s");
+    expect(theme.fg).toHaveBeenCalledWith("customMessageText", "✓ Renderer migration  ↻4  3 tools  12.3k  1m5s");
     expect(theme.bg).toHaveBeenCalledWith("customMessageBg", expect.any(String));
   });
 
@@ -205,9 +205,9 @@ describe("subagent notification rendering migration", () => {
     const expanded = notificationContent(renderCard({ details }, true)).map(stripTerminalSequences);
 
     expect(collapsedCard.map(line => stripTerminalSequences(line).trim())).toContain("[notification]");
-    expect(collapsed).toContain("First finding. Second finding.");
+    expect(collapsed).toContain("  First finding. Second finding.");
     expect(expanded).toEqual([
-      "✓ Renderer migration · ↻4≤12 · 3 tools · 12.3k · 1m5s",
+      "✓ Renderer migration  ↻4  3 tools  12.3k  1m5s",
       "  First finding.",
       "  Second finding.",
       "  transcript: /tmp/subagents/complete-output.txt",
@@ -233,15 +233,28 @@ describe("subagent notification rendering migration", () => {
     expect(JSON.stringify(message)).toBe(before);
   });
 
+  it("flattens markdown headings and bullets in the collapsed preview", () => {
+    const resultPreview = "### Summary\n- Ran `sleep 110`.\n### Files Changed:\n* none";
+    expect(render(notification({ resultPreview, outputFile: undefined }))[1]).toBe("  Summary: Ran `sleep 110`. Files Changed: none");
+    expect(render(notification({ resultPreview, outputFile: undefined }), true).slice(1)).toEqual(resultPreview.split("\n").map(line => `  ${line}`));
+  });
+
+  it("aligns wrapped expanded rows under the indent", () => {
+    const lines = render(notification({ resultPreview: "word ".repeat(30).trim(), outputFile: undefined }), true, 42);
+    const resultRows = lines.filter(line => line.includes("word"));
+    expect(resultRows.length).toBeGreaterThan(1);
+    for (const line of resultRows) expect(line).toMatch(/^ {2}\S/);
+  });
+
   it("normalizes surrounding whitespace and CRLF without inventing blank output", () => {
-    expect(render(notification({ resultPreview: "\n  First.\r\n\tSecond.  " }))[1]).toBe("First. Second.");
+    expect(render(notification({ resultPreview: "\n  First.\r\n\tSecond.  " }))[1]).toBe("  First. Second.");
     expect(render(notification({ resultPreview: " \n\t\r\n ", outputFile: undefined }))).toHaveLength(1);
   });
 
   it("marks only clipped previews with an ellipsis and retains expanded text", () => {
     const resultPreview = `${"x".repeat(100)}\nretained ending`;
     const details = notification({ resultPreview, outputFile: undefined });
-    expect(stripTerminalSequences(render(details)[1]).trim()).toMatch(/^x+…$/);
+    expect(stripTerminalSequences(render(details, false, 60)[1]).trim()).toMatch(/^x+…$/);
     expect(render(details, true).slice(1)).toEqual([`  ${"x".repeat(100)}`, "  retained ending"]);
     expect(stripTerminalSequences(render(notification({ resultPreview: "x".repeat(80) }))[1]).trim()).toMatch(/^x+$/);
   });
@@ -257,12 +270,16 @@ describe("subagent notification rendering migration", () => {
     });
 
     const lines = render(details);
-    expect(lines.filter((line) => /^[✓■✗] /.test(line))).toHaveLength(3);
-    expect(lines.indexOf("✓ First · ↻4≤12 · 3 tools · 12.3k · 1m5s")).toBeLessThan(lines.indexOf("✓ Second · ↻4≤12 · 3 tools · 12.3k · 1m5s"));
-    expect(lines.indexOf("✓ Second · ↻4≤12 · 3 tools · 12.3k · 1m5s")).toBeLessThan(lines.indexOf("✓ Third · ↻4≤12 · 3 tools · 12.3k · 1m5s"));
-    expect(lines).toContain("one");
-    expect(lines).toContain("two");
-    expect(lines).toContain("three");
+    expect(lines.slice(0, 7)).toEqual([
+      "3 agents finished",
+      "✓ First   ↻4  3 tools  12.3k  1m5s",
+      "  one",
+      "✓ Second  ↻4  3 tools  12.3k  1m5s",
+      "  two",
+      "✓ Third   ↻4  3 tools  12.3k  1m5s",
+      "  three",
+    ]);
+    expect(lines).toHaveLength(7);
     expect(lines.join("\n")).not.toMatch(/^[├└]─/m);
   });
 
@@ -281,10 +298,10 @@ describe("subagent notification rendering migration", () => {
   });
 
   it.each([
-    ["force_steered", "✓ Steered · turn ceiling"],
-    ["stopped", "■ Stopped · stopped"],
-    ["aborted", "✗ Aborted · aborted"],
-    ["error", "✗ Error · error: process exited 1"],
+    ["force_steered", "✓ Steered  turn ceiling"],
+    ["stopped", "■ Stopped  stopped"],
+    ["aborted", "✗ Aborted  aborted"],
+    ["error", "✗ Error  error: process exited 1"],
     ["future-status", "✓ Future"],
   ])("renders %s readably", (status, expected) => {
     const description = expected.split(" ")[1] ?? "Status";
