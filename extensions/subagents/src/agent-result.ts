@@ -1,5 +1,5 @@
 import type { AgentRecord } from "./types.js";
-import { type AgentActivity, type AgentDetails, buildInvocationTags, describeActivity, formatTokens, getPromptModeLabel } from "./ui/agent-widget.js";
+import { type AgentActivity, type AgentDetails, buildInvocationTags, describeActivity, formatTokens, getPromptModeLabel } from "./ui/agent-format.js";
 import { getLifetimeTotal, type LifetimeUsage } from "./usage.js";
 
 /** Tool execute return value for a text response. */

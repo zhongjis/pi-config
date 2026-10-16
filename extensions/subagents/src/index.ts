@@ -44,7 +44,7 @@ import {
   type AgentActivity,
   getDisplayName,
   type Theme,
-} from "./ui/agent-widget.js";
+} from "./ui/agent-format.js";
 import { FleetList, type FleetUICtx } from "./ui/fleet-list.js";
 import { type GraphRunMenuDeps, openGraphRunFromFleet, showGraphRunDialog } from "./ui/graph-run-menu.js";
 import { getLifetimeTotal, type LifetimeUsage, PendingUsagePool } from "./usage.js";

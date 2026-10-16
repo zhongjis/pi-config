@@ -5,7 +5,7 @@ import * as agentTypes from "../src/agent-types.js";
 import { sessionFastPolicies } from "../src/session-fast.js";
 import type { AgentManager } from "../src/agent-manager.js";
 import type { AgentActivity, AgentRecord } from "../src/types.js";
-import { getDisplayName } from "../src/ui/agent-widget.js";
+import { getDisplayName } from "../src/ui/agent-format.js";
 import { FleetList, type FleetUICtx, formatFleetElapsed, formatFleetTokens } from "../src/ui/fleet-list.js";
 
 // ---- Key sequences (see node_modules/@earendil-works/pi-tui/dist/keys.js) ----

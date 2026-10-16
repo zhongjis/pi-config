@@ -11,7 +11,7 @@ import {
   spinnerGlyph,
   TREE,
 } from "../../../lib/widget-style.js";
-import type { AgentDetails } from "./agent-widget.js";
+import type { AgentDetails } from "./agent-format.js";
 
 export type SubagentSummaryStatus = AgentDetails["status"];
 

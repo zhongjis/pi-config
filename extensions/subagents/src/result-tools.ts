@@ -11,7 +11,7 @@ import { getStatusNote } from "./status-note.js";
 import { renderGetAgentResult, renderGetAgentResultCall, renderSteerSubagentCall, renderSteerSubagentResult } from "./tool-rendering.js";
 import { turnCheckInNotice } from "./turn-ceiling.js";
 import type { AgentRecord, EvictedAgent } from "./types.js";
-import { type AgentDetails, formatDuration, getDisplayName } from "./ui/agent-widget.js";
+import { type AgentDetails, formatDuration, getDisplayName } from "./ui/agent-format.js";
 import { getSessionContextPercent } from "./usage.js";
 
 /** Retrieval reads live report state and suppresses held completion delivery. */

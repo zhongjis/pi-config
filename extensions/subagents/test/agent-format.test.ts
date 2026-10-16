@@ -4,7 +4,7 @@ import {
   buildInvocationTags,
   fgPreservingNestedStyles,
   formatSessionTokens,
-} from "../src/ui/agent-widget.js";
+} from "../src/ui/agent-format.js";
 
 it("thinking_default_intent_is_pending_only_without_actual_metadata", () => {
   expect(buildInvocationTags(undefined).tags).toEqual([]);

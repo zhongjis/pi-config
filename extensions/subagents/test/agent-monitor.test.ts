@@ -15,7 +15,7 @@ import {
   showAgentMonitor,
   statusMark,
 } from "../src/ui/agent-monitor.js";
-import type { AgentActivity } from "../src/ui/agent-widget.js";
+import type { AgentActivity } from "../src/ui/agent-format.js";
 import type { FleetGraphRun } from "../src/ui/fleet-list.js";
 import type { GraphRunUIContext } from "../src/ui/graph-run-menu.js";
 

@@ -21,7 +21,7 @@ import {
 } from "./background-supervision.js";
 import type { SteerResult } from "./execution.js";
 import type { AgentRecord } from "./types.js";
-import type { AgentActivity } from "./ui/agent-widget.js";
+import type { AgentActivity } from "./ui/agent-format.js";
 
 /** Steering text delivered when an idle background agent is auto-steered. */
 export const AUTO_STEER_MESSAGE =

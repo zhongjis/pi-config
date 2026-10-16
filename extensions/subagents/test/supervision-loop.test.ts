@@ -7,7 +7,7 @@ import {
   startBackgroundSupervision,
 } from "../src/supervision-loop.js";
 import type { AgentRecord } from "../src/types.js";
-import type { AgentActivity } from "../src/ui/agent-widget.js";
+import type { AgentActivity } from "../src/ui/agent-format.js";
 
 const mockPi = {} as unknown as ExtensionAPI;
 

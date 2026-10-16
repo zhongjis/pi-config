@@ -5,7 +5,7 @@ import { firstMeaningfulLine, renderToolExpanded, renderToolSummary } from "../.
 import { isGraphRunEntryData } from "../graph/entry-validation.js";
 import { outcomeLabel } from "../graph/outcome.js";
 import { buildPhaseGroups, collapse, displayState, elapsedMs, formatDuration, type GraphRunAgentEntry, sizeWarning, stats } from "../graph/progress.js";
-import type { Theme } from "./agent-widget.js";
+import type { Theme } from "./agent-format.js";
 import { formatModel, formatThinking, type GraphRunCardInput, REPLAYED_ANNOTATION } from "./graph-run-card.js";
 
 function resultSummary(value: unknown): string {

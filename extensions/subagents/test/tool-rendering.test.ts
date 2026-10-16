@@ -3,7 +3,7 @@ import { type ExtensionAPI, initTheme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import subagentsExtension from "../src/index.js";
-import type { AgentDetails } from "../src/ui/agent-widget.js";
+import type { AgentDetails } from "../src/ui/agent-format.js";
 
 type ToolResult = {
   content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>;

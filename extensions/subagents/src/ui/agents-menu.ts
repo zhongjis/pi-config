@@ -7,7 +7,7 @@ import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../.
 import { type AgentToolHost, THINKING_LEVELS } from "../agent-tool.js";
 import { getAgentConfig, getAllTypes } from "../agent-types.js";
 import type { AgentConfig, AgentRecord } from "../types.js";
-import { type AgentActivity, formatDuration, getDisplayName } from "./agent-widget.js";
+import { type AgentActivity, formatDuration, getDisplayName } from "./agent-format.js";
 import { type GraphRunMenuDeps, type GraphRunUIContext, showGraphRunsMenu } from "./graph-run-menu.js";
 
 interface AgentMenuNavigation {

@@ -8,7 +8,7 @@ import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import { type HistoryConversation, readHistoryConversation } from "../agent-history.js";
 import type { SteerResult } from "../execution.js";
 import type { AgentRecord } from "../types.js";
-import type { AgentActivity } from "./agent-widget.js";
+import type { AgentActivity } from "./agent-format.js";
 import { ConversationViewer, VIEWPORT_HEIGHT_PCT } from "./conversation-viewer.js";
 import type { FleetUICtx } from "./fleet-list.js";
 import type { GraphRunUIContext } from "./graph-run-menu.js";

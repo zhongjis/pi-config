@@ -2,8 +2,8 @@ import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-codin
 import { Container } from "@earendil-works/pi-tui";
 import { extractToolText, firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "../../lib/tool-output.js";
 import { isGraphRunId } from "./graph/graph-snapshot-path.js";
-import type { AgentDetails } from "./ui/agent-widget.js";
-import { formatMs, getDisplayName } from "./ui/agent-widget.js";
+import type { AgentDetails } from "./ui/agent-format.js";
+import { formatMs, getDisplayName } from "./ui/agent-format.js";
 
 type ToolTheme = Pick<ExtensionContext["ui"]["theme"], "bold" | "fg">;
 type TextToolResult = AgentToolResult<unknown>;

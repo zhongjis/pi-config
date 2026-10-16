@@ -19,7 +19,7 @@ import {
   header,
   type PhaseGroup,
 } from "../graph/progress.js";
-import { SPINNER } from "./agent-widget.js";
+import { SPINNER } from "./agent-format.js";
 import {
   ASCII_GLYPHS,
   clampLine,

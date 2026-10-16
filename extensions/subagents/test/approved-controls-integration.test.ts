@@ -12,7 +12,7 @@ import { AgentManager } from "../src/agent-manager.js";
 import { openSession } from "../src/agent-runner.js";
 import extension from "../src/index.js";
 import * as settingsModule from "../src/settings.js";
-import type { AgentDetails } from "../src/ui/agent-widget.js";
+import type { AgentDetails } from "../src/ui/agent-format.js";
 import { type FakeSession, fakeSession, flush, opened } from "./helpers/session-seam.js";
 
 interface Result { content: unknown[]; details?: AgentDetails; usage?: Usage }

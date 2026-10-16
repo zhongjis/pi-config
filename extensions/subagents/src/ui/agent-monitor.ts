@@ -9,7 +9,7 @@
 import { type Component, matchesKey, stripTerminalSequences, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal } from "../usage.js";
-import { type AgentActivity, type Theme } from "./agent-widget.js";
+import { type AgentActivity, type Theme } from "./agent-format.js";
 import { type FleetGraphRun, formatFleetAgentRow, formatFleetGraphRunRow } from "./fleet-list.js";
 import { frameOverlay, type OverlayTheme } from "./graph-run-card.js";
 import type { GraphRunUIContext } from "./graph-run-menu.js";

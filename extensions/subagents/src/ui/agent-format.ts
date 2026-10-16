@@ -1,5 +1,5 @@
 /**
- * agent-widget.ts — Shared agent presentation helpers and types.
+ * agent-format.ts — Shared agent presentation helpers and types.
  */
 
 import { getConfig } from "../agent-types.js";

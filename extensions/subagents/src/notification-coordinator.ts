@@ -3,7 +3,7 @@ import { GroupJoinManager } from "./group-join.js";
 import { getStatusNote } from "./status-note.js";
 import { turnCheckInNotice } from "./turn-ceiling.js";
 import { type AgentRecord, agentExecutionKey, type JoinMode, type NotificationDetails } from "./types.js";
-import type { AgentActivity } from "./ui/agent-widget.js";
+import type { AgentActivity } from "./ui/agent-format.js";
 import type { FleetList } from "./ui/fleet-list.js";
 import { getLifetimeTotal, getSessionContextPercent } from "./usage.js";
 

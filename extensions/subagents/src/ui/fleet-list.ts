@@ -17,7 +17,7 @@ import { getSessionFast } from "../session-fast.js";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal, getSessionContextPercent } from "../usage.js";
 import { agentStatusWord, statusMark } from "./agent-monitor.js";
-import { type AgentActivity, formatTurns, getDisplayName, SPINNER, type Theme } from "./agent-widget.js";
+import { type AgentActivity, formatTurns, getDisplayName, SPINNER, type Theme } from "./agent-format.js";
 import { openConversationOverlay } from "./conversation-overlay.js";
 
 /** Widget key for the below-editor fleet list. */

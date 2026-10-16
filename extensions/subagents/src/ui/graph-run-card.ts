@@ -9,7 +9,7 @@ import {
   type GraphRunEntry,
   type GraphRunStatus,
 } from "../graph/progress.js";
-import type { Theme } from "./agent-widget.js";
+import type { Theme } from "./agent-format.js";
 
 
 export interface GraphRunGlyphs {

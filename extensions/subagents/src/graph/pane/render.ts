@@ -9,7 +9,7 @@
  * process and hand finished strings to the viewer.
  */
 
-import type { Theme } from "../../ui/agent-widget.js";
+import type { Theme } from "../../ui/agent-format.js";
 import type { GraphRunCardColor } from "../../ui/graph-run-card.js";
 import { styleGraphRunCardLines } from "../../ui/graph-run-card.js";
 import {

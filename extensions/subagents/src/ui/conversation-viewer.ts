@@ -11,7 +11,7 @@ import { extractText } from "../context.js";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal, getSessionContextPercent } from "../usage.js";
 import { agentStatusWord, statusMark } from "./agent-monitor.js";
-import { type AgentActivity, buildInvocationTags, describeActivity, fgPreservingNestedStyles, formatMs, formatSessionTokens, formatTokens, getDisplayName, getPromptModeLabel } from "./agent-widget.js";
+import { type AgentActivity, buildInvocationTags, describeActivity, fgPreservingNestedStyles, formatMs, formatSessionTokens, formatTokens, getDisplayName, getPromptModeLabel } from "./agent-format.js";
 import { frameOverlay, type OverlayTheme } from "./graph-run-card.js";
 import { createViewerKeys, type ViewerKeybindings, type ViewerKeys } from "./viewer-keys.js";
 
