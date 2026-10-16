@@ -12,12 +12,13 @@
  */
 
 import { Editor, isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { formatTools } from "../../../lib/widget-style.js";
 import type { AgentManager } from "../agent-manager.js";
 import { getSessionFast } from "../session-fast.js";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal, getSessionContextPercent } from "../usage.js";
-import { agentStatusWord, statusMark } from "./agent-monitor.js";
 import { type AgentActivity, formatTurns, getDisplayName, SPINNER, type Theme } from "./agent-format.js";
+import { agentStatusWord, statusMark } from "./agent-monitor.js";
 import { openConversationOverlay } from "./conversation-overlay.js";
 
 /** Widget key for the below-editor fleet list. */
@@ -582,7 +583,7 @@ export class FleetList {
       if (activity && activity.turnCount > 0) stats.push(dim(formatTurns(activity.turnCount, activity.maxTurns)));
       if (record.compactionCount > 0) stats.push(dim(`⇲${record.compactionCount}`));
     }
-    if (level < 1) stats.push(dim(`${activity?.toolUses ?? record.toolUses} tools`));
+    if (level < 1) stats.push(dim(formatTools(activity?.toolUses ?? record.toolUses)));
     const tokens = getLifetimeTotal(activity?.lifetimeUsage ?? record.lifetimeUsage);
     const percent = level < 4 ? getSessionContextPercent(activity?.session) : null;
     const context = percent === null ? "" : theme.fg(percent >= 85 ? "error" : percent >= 70 ? "warning" : "dim", ` (${Math.round(percent)}%)`);

@@ -467,6 +467,14 @@ describe("FleetList detailed rows", () => {
     expect(next.slice(0, 6)).not.toBe(row.slice(0, 6)); // spinner advances per render
   });
 
+  it("uses the singular tool label for a single tool use", () => {
+    const record = makeRecord();
+    const h = harness([record], new Map([[record.id, makeActivity({ toolUses: 1 })]]));
+    const row = h.render(240).at(-1)!;
+    expect(row).toContain("1 tool ·");
+    expect(row).not.toContain("1 tools");
+  });
+
   it("omits zero turns without hiding positive compactions or other statistics", () => {
     const record = makeRecord({ compactionCount: 1 });
     const activity = makeActivity({ turnCount: 0 });
