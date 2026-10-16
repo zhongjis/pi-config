@@ -8,6 +8,7 @@ import {
   visibleWidth,
   wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
+import { SPINNER } from "../../../lib/widget-style.js";
 import type { GraphRunMeta } from "../graph/graph-run-types.js";
 import {
   buildPhaseGroups,
@@ -19,7 +20,6 @@ import {
   header,
   type PhaseGroup,
 } from "../graph/progress.js";
-import { SPINNER } from "./agent-format.js";
 import {
   ASCII_GLYPHS,
   clampLine,

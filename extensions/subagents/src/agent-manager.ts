@@ -360,9 +360,8 @@ export class AgentManager {
       compactionCount: 0,
       // Raw tri-state (not coerced to a boolean): true = background, false =
       // foreground (has an inline tool-result surface), undefined = caller never
-      // declared it (e.g. a cross-extension RPC spawn). The widget's background-
-      // only filter excludes only explicit `false`, so undefined agents — which
-      // have no inline surface — stay visible instead of vanishing.
+      // declared it (e.g. a cross-extension RPC spawn). The fleet row's `bg` tag
+      // shows only for explicit `true`.
       isBackground: options.isBackground,
       invocation: { ...options.invocation, modelName: undefined, thinking: undefined, fast: undefined },
     };

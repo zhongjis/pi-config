@@ -148,10 +148,9 @@ export interface AgentRecord {
    * spawn from `SpawnOptions.isBackground`: `true` = background, `false` =
    * foreground (has an inline `agent` tool-result surface), `undefined` = the
    * caller never declared it (e.g. a cross-extension RPC spawn, which is detached
-   * and has no inline surface). The widget's background-only filter keys off this
-   * — and excludes only explicit `false`, so `undefined` agents stay visible.
-   * Reliable across ALL spawn paths, unlike the UI-only `invocation` snapshot,
-   * which only the `agent` tool path populates.
+   * and has no inline surface). The fleet row's `bg` tag shows only for explicit
+   * `true`. Reliable across ALL spawn paths, unlike the UI-only `invocation`
+   * snapshot, which only the `agent` tool path populates.
    */
   isBackground?: boolean;
   /** Converted foreground Execution retains its unsupervised behavior until the next admission. */

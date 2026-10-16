@@ -7,12 +7,6 @@ import type { AgentInvocation, AgentRecord, SubagentType } from "../types.js";
 
 // ---- Constants ----
 
-/** Braille spinner frames for animated running indicator. */
-export const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-
-/** Statuses that indicate an error/non-success outcome (used for linger behavior and icon rendering). */
-export const ERROR_STATUSES = new Set(["error", "aborted", "stopped"]);
-
 /** Tool name → human-readable action for activity descriptions. */
 const TOOL_DISPLAY: Record<string, string> = {
   read: "reading",
@@ -29,15 +23,6 @@ const TOOL_DISPLAY: Record<string, string> = {
 export type Theme = {
   fg(color: string, text: string): string;
   bold(text: string): string;
-};
-
-export type UICtx = {
-  setStatus(key: string, text: string | undefined): void;
-  setWidget(
-    key: string,
-    content: undefined | ((tui: any, theme: Theme) => { render(): string[]; invalidate(): void }),
-    options?: { placement?: "aboveEditor" | "belowEditor" },
-  ): void;
 };
 
 export type { AgentActivity } from "../types.js";
@@ -113,6 +98,11 @@ export function formatTokens(count: number): string {
  *   "12.3k token (⇊2)"          — compactions only (e.g. right after compact)
  *   "12.3k token (45% · ⇊2)"    — both
  */
+/** Theme color for a context-window fill percent: <70% dim, 70–85% warning, ≥85% error. */
+export function contextPercentColor(percent: number): string {
+  return percent >= 85 ? "error" : percent >= 70 ? "warning" : "dim";
+}
+
 export function formatSessionTokens(
   tokens: number,
   percent: number | null,
@@ -122,19 +112,13 @@ export function formatSessionTokens(
   const tokenStr = formatTokens(tokens);
   const annot: string[] = [];
   if (percent !== null) {
-    const color = percent >= 85 ? "error" : percent >= 70 ? "warning" : "dim";
-    annot.push(theme.fg(color, `${Math.round(percent)}%`));
+    annot.push(theme.fg(contextPercentColor(percent), `${Math.round(percent)}%`));
   }
   if (compactions > 0) {
     annot.push(theme.fg("dim", `⇊${compactions}`));
   }
   if (annot.length === 0) return tokenStr;
   return `${tokenStr} (${annot.join(" · ")})`;
-}
-
-/** Format turn count with optional max limit: "↻5≤30" or "↻5". */
-export function formatTurns(turnCount: number, maxTurns?: number | null): string {
-  return maxTurns != null ? `↻${turnCount}≤${maxTurns}` : `↻${turnCount}`;
 }
 
 /** Format milliseconds as human-readable duration. */

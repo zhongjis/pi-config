@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { type AgentSession, defineTool, type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { formatAccessRules } from "../../lib/active-tools.js";
+import { SPINNER } from "../../lib/widget-style.js";
 import type { AgentManager } from "./agent-manager.js";
 import { createAgentResultBuilder, formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
 import { SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
@@ -17,7 +18,7 @@ import { getForegroundOutcomeNote } from "./status-note.js";
 import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js";
 import { turnCheckInNotice } from "./turn-ceiling.js";
 import type { AgentConfig, AgentInvocation, AgentRecord, SubagentType } from "./types.js";
-import { type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel, SPINNER } from "./ui/agent-format.js";
+import { type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel } from "./ui/agent-format.js";
 
 /** Shared by the tool description and agent-authoring menus. */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;

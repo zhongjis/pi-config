@@ -12,12 +12,12 @@
  */
 
 import { Editor, isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { formatTools } from "../../../lib/widget-style.js";
+import { formatCompactions, formatTools, formatTurns, SPINNER } from "../../../lib/widget-style.js";
 import type { AgentManager } from "../agent-manager.js";
 import { getSessionFast } from "../session-fast.js";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal, getSessionContextPercent } from "../usage.js";
-import { type AgentActivity, formatTurns, getDisplayName, SPINNER, type Theme } from "./agent-format.js";
+import { type AgentActivity, contextPercentColor, getDisplayName, type Theme } from "./agent-format.js";
 import { agentStatusWord, statusMark } from "./agent-monitor.js";
 import { openConversationOverlay } from "./conversation-overlay.js";
 
@@ -227,12 +227,17 @@ export class FleetList {
     this.ui = undefined;
   }
 
+  /** Non-graph-owned agents waiting on a pool slot; rendered as one aggregate row. */
+  private queuedCount(): number {
+    return this.manager.listAgents().filter(a => !a.graphRunId && a.status === "queued").length;
+  }
+
   /** Re-register/refresh the below-editor widget; clears it when nothing remains. */
   update(): void {
     if (!this.ui) return;
     const agents = this.manager.listAgents().filter(a => !a.graphRunId);
     const running = agents.filter(a => a.status === "running").length;
-    const queued = agents.filter(a => a.status === "queued").length;
+    const queued = this.queuedCount();
     const total = running + queued;
     const parts = [running > 0 ? `${running} running` : "", queued > 0 ? `${queued} queued` : ""].filter(Boolean);
     const statusText = total > 0
@@ -397,7 +402,7 @@ export class FleetList {
       // Gated on the roster, not the agents: a session whose only row is a
       // graph run still has somewhere to go, and requiring an agent would
       // render the row but refuse to move into it.
-      const hasRows = this.roster().length > 1 || this.manager.listAgents().some(a => !a.graphRunId && a.status === "queued");
+      const hasRows = this.roster().length > 1 || this.queuedCount() > 0;
       if (isActivator && hasRows && this.ui.getEditorText() === "") {
         this.active = true;
         this.selectedIndex = 0;
@@ -501,7 +506,7 @@ export class FleetList {
 
   private renderBar(width: number, theme: Theme): string[] {
     const rows = this.roster().slice(1) as (GraphRunEntry | AgentEntry)[];
-    const queued = this.manager.listAgents().filter(a => !a.graphRunId && a.status === "queued").length;
+    const queued = this.queuedCount();
     if (rows.length === 0 && queued === 0) return [];
     this.frame = (this.frame + 1) % SPINNER.length;
     // Clamp locally so a render between a roster shrink and the next update()
@@ -528,7 +533,9 @@ export class FleetList {
       const siblings = rows.filter(sibling => sibling.kind === "agent" && sibling.record.parentAgentId === row.record.parentAgentId);
       branches.set(row.record.id, siblings.at(-1) === row ? "  └ " : "  ├ ");
     }
-    // Pick one tier for the whole visible window, reserving sixteen description cells.
+    // Pick one tier for the whole visible window. Each row reserves its own
+    // description width, capped at sixteen cells, so short descriptions never
+    // push the list into a deeper tier than it needs.
     let level = 0;
     while (level < 4 && rows.slice(start, start + visible).some(row => {
       const prefix = row.kind === "agent"
@@ -537,7 +544,8 @@ export class FleetList {
       const stats = row.kind === "agent"
         ? this.agentRowStats(row.record, level, theme)
         : graphRunStats(row.graphRun);
-      return width - 4 - visibleWidth(prefix) - visibleWidth(stats) - 1 < 16;
+      const descWidth = row.kind === "agent" ? Math.min(16, visibleWidth(row.record.description)) : 16;
+      return width - 4 - visibleWidth(prefix) - visibleWidth(stats) - 1 < descWidth;
     })) level++;
 
     if (start > 0) lines.push(rightAlign("", theme.fg("dim", `↑ ${start} more`), width));
@@ -581,12 +589,12 @@ export class FleetList {
     }
     if (level < 2) {
       if (activity && activity.turnCount > 0) stats.push(dim(formatTurns(activity.turnCount, activity.maxTurns)));
-      if (record.compactionCount > 0) stats.push(dim(`⇲${record.compactionCount}`));
+      if (record.compactionCount > 0) stats.push(dim(formatCompactions(record.compactionCount)));
     }
     if (level < 1) stats.push(dim(formatTools(activity?.toolUses ?? record.toolUses)));
     const tokens = getLifetimeTotal(activity?.lifetimeUsage ?? record.lifetimeUsage);
     const percent = level < 4 ? getSessionContextPercent(activity?.session) : null;
-    const context = percent === null ? "" : theme.fg(percent >= 85 ? "error" : percent >= 70 ? "warning" : "dim", ` (${Math.round(percent)}%)`);
+    const context = percent === null ? "" : theme.fg(contextPercentColor(percent), ` (${Math.round(percent)}%)`);
     stats.push(dim(formatFleetTokens(tokens)) + context);
     stats.push(dim(formatFleetElapsed((record.completedAt ?? Date.now()) - record.startedAt)));
     return stats.join(dim(" · "));
