@@ -463,7 +463,9 @@ describe("FleetList detailed rows", () => {
         invocation: { modelName: "stale/model", thinking: "low", fast: false } });
       const h = harness([record], new Map([[record.id, makeActivity()]]));
       const row = h.render(240).at(-1)!;
-      expect(row).toContain("bg · gpt-5.6:high:fast · ↻5≤30 · ⇲2 · 5 tools · ↓ 33.8k tokens (62%) · 0s");
+      expect(row).toContain("Sleep then report 1  [bg]");
+      expect(row).toContain("gpt-5.6:high:fast · ↻5≤30 · ⇲2 · 5 tools · ↓ 33.8k tokens (62%) · 0s");
+      expect(row).not.toContain("bg ·");
       expect(row).not.toMatch(/live-provider|stale|ACTIVITY|bash|thinking…/);
       const sameTick = h.render(240).at(-1)!;
       expect(sameTick.slice(0, 6)).toBe(row.slice(0, 6)); // no advance per render
@@ -502,7 +504,7 @@ describe("FleetList detailed rows", () => {
     expect(h.render(240).at(-1)).toContain("thinking: default (pending)");
     expect(h.render(240).at(-1)).not.toContain("undefined");
     record.isBackground = false;
-    expect(h.render(240).at(-1)).not.toContain("bg ·");
+    expect(h.render(240).at(-1)).not.toContain("[bg]");
   });
 
   it.each([
@@ -513,7 +515,8 @@ describe("FleetList detailed rows", () => {
       error: "SECRET ERROR DETAIL", isBackground: true });
     const row = harness([record]).render(240).at(-1)!;
     expect(row).toContain(`○ ${glyph} `);
-    expect(row).toContain(`${word} · bg ·`);
+    expect(row).toContain("[bg]");
+    expect(row).toContain(`${word} ·`);
     expect(row).toMatch(/· 72s$/);
     expect(row).not.toContain("SECRET ERROR DETAIL");
   });
@@ -539,7 +542,7 @@ describe("FleetList detailed rows", () => {
       invocation: record.invocation });
     const h = harness([record, second], new Map([[record.id, makeActivity()], [second.id, makeActivity()]]));
     const wide = h.render(300)[3];
-    const fullStats = wide.slice(wide.indexOf("bg ·"));
+    const fullStats = wide.slice(wide.indexOf("gpt-5.6:high"));
     const tierStats = [fullStats];
     tierStats.push(tierStats[0].replace("5 tools · ", ""));
     tierStats.push(tierStats[1].replace("↻5≤30 · ⇲2 · ", ""));
@@ -548,7 +551,7 @@ describe("FleetList detailed rows", () => {
     const prefixWidth = visibleWidth("  ○ ⠹ Jintong 金童  ");
     expect(visibleWidth("金童")).toBe(4);
     for (let level = 0; level < tierStats.length; level++) {
-      const width = prefixWidth + 16 + 1 + visibleWidth(tierStats[level]);
+      const width = prefixWidth + visibleWidth("  [bg]") + 16 + 1 + visibleWidth(tierStats[level]);
       const lines = h.render(width);
       for (const row of lines.slice(3)) {
         expect(visibleWidth(row)).toBeLessThanOrEqual(width);

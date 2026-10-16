@@ -96,7 +96,7 @@ Restrictions:
   ○ ⠹ Jintong 金童  Fix auth expiry        gpt-5.6:high · ↻5≤30 · 5 tools · ↓ 33.8k tokens (62%) · 12s
   ○   ├ ⠹ Cheng Feng 乘风  Map callers      claude-haiku-4.5:low · ↻4 · 9 tools · ↓ 12.4k tokens (8%) · 9s
   ○   └ ✓ Wen Chang 文昌  Redis TTL docs       done · claude-haiku-4.5:low · ↻6 · 11 tools · ↓ 20.1k tokens · 24s
-  ○ × Yunu 玉女  Fix header            failed · bg · gpt-5.6:medium · ↻9 · 14 tools · ↓ 51.3k tokens · 72s
+  ○ × Yunu 玉女  Fix header  [bg]       failed · gpt-5.6:medium · ↻9 · 14 tools · ↓ 51.3k tokens · 72s
     ◦ 2 queued
 ```
 
@@ -106,7 +106,7 @@ At an **empty prompt**, press `↓` or `←` to enter the list. The selected row
 
 Completed agent rows linger for 4 seconds. Failed, stopped, aborted, and turn-ceiling-steered (`force_steered`) rows linger for 30 seconds. A parent stays visible while any child is visible; a child whose parent is absent renders at the top level. The currently viewed agent stays listed, and its viewer stays open through completion. Finished elapsed time freezes at completion.
 
-Rows show the monitor status vocabulary, a `bg` tag for background runs, the effective `model:thinking` recipe, positive turns (`↻N`, with `≤N` for the ceiling), compactions (`⇲N`), tools, lifetime tokens, and elapsed time. Provider prefixes and activity text are omitted; full errors belong in the conversation viewer. Captured enabled Fast policy appends `:fast`. Context utilization appears as a color-coded `(NN%)` when available. Unresolved default thinking stays pending until effective metadata is available.
+Rows show the monitor status vocabulary, a `[bg]` tag beside the description of background runs, the effective `model:thinking` recipe, positive turns (`↻N`, with `≤N` for the ceiling), compactions (`⇲N`), tools, lifetime tokens, and elapsed time. Provider prefixes and activity text are omitted; full errors belong in the conversation viewer. Captured enabled Fast policy appends `:fast`. Context utilization appears as a color-coded `(NN%)` when available. Unresolved default thinking stays pending until effective metadata is available.
 
 Width tiers apply uniformly across visible rows: drop tools, then turns and compactions, then the model recipe, then context percentage and the graph-run agent count; descriptions and then names truncate last. The exact thresholds and row contracts live in [MAINTENANCE.md](MAINTENANCE.md#presentation-and-notifications).
 

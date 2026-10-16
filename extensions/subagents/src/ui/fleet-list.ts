@@ -30,6 +30,8 @@ const TICK_MS = 200;
 /** How long a finished agent lingers in the list before it drops out. */
 const FINISHED_LINGER_MS = 4000;
 const FAILED_LINGER_MS = 30_000;
+/** Background marker beside the description; also the width it adds to a row. */
+const BG_TAG = "  [bg]";
 
 /** Minimal UI surface the FleetView needs from `ctx.ui` (structural subset). */
 export type FleetUICtx = {
@@ -549,8 +551,9 @@ export class FleetList {
       const stats = row.kind === "agent"
         ? this.agentRowStats(row.record, level, theme)
         : graphRunStats(row.graphRun);
+      const tagWidth = row.kind === "agent" && row.record.isBackground === true ? visibleWidth(BG_TAG) : 0;
       const descWidth = row.kind === "agent" ? Math.min(16, visibleWidth(row.record.description)) : 16;
-      return width - 4 - visibleWidth(prefix) - visibleWidth(stats) - 1 < descWidth;
+      return width - 4 - visibleWidth(prefix) - tagWidth - visibleWidth(stats) - 1 < descWidth;
     })) level++;
 
     if (start > 0) lines.push(rightAlign("", theme.fg("dim", `↑ ${start} more`), width));
@@ -559,7 +562,7 @@ export class FleetList {
       const bullet = this.bullet(a + 1, sel, theme);
       lines.push(row.kind === "graphRun"
         ? formatFleetGraphRunRow(bullet, a + 1 === sel, row.graphRun, width, theme, undefined, level < 4)
-        : rightAlign(`  ${bullet} ${this.agentRowPrefix(row.record, branches.get(row.record.id) ?? "", theme)}${row.record.description}`,
+        : rightAlign(this.agentRowLeft(bullet, row.record, branches.get(row.record.id) ?? "", theme),
           this.agentRowStats(row.record, level, theme), width));
     }
     if (hiddenBelow > 0) lines.push(rightAlign("", theme.fg("dim", `↓ ${hiddenBelow} more`), width));
@@ -578,12 +581,16 @@ export class FleetList {
     return branch + theme.fg(mark.color, glyph) + " " + theme.fg("muted", getDisplayName(record.type)) + "  ";
   }
 
+  private agentRowLeft(bullet: string, record: AgentRecord, branch: string, theme: Theme): string {
+    const tag = record.isBackground === true ? theme.fg("dim", BG_TAG) : "";
+    return `  ${bullet} ${this.agentRowPrefix(record, branch, theme)}${record.description}${tag}`;
+  }
+
   private agentRowStats(record: AgentRecord, level: number, theme: Theme): string {
     const activity = this.agentActivity.get(record.id);
     const stats: string[] = [];
     const dim = (text: string) => theme.fg("dim", text);
     if (record.status !== "running") stats.push(theme.fg(statusMark(record).color, agentStatusWord(record.status, true)));
-    if (record.isBackground === true) stats.push(dim("bg"));
     if (level < 3) {
       const session = record.session;
       const model = session?.model?.id ?? record.invocation?.modelName?.replace(/^[^/]+\//, "");
