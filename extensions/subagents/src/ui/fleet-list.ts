@@ -197,7 +197,13 @@ export class FleetList {
 
   /** Ensure the re-render timer is running (called when an agent spawns). */
   ensureTimer(): void {
-    if (!this.timer) this.timer = setInterval(() => this.update(), TICK_MS);
+    // The spinner frame advances on this tick alone: update() runs far more
+    // often — every activity event and text delta — and advancing per render
+    // would make the spinner race the event stream.
+    if (!this.timer) this.timer = setInterval(() => {
+      this.frame = (this.frame + 1) % SPINNER.length;
+      this.update();
+    }, TICK_MS);
   }
 
   /**
@@ -508,7 +514,6 @@ export class FleetList {
     const rows = this.roster().slice(1) as (GraphRunEntry | AgentEntry)[];
     const queued = this.queuedCount();
     if (rows.length === 0 && queued === 0) return [];
-    this.frame = (this.frame + 1) % SPINNER.length;
     // Clamp locally so a render between a roster shrink and the next update()
     // (e.g. on terminal resize) never loses the selection marker.
     const sel = Math.min(this.selectedIndex, rows.length);

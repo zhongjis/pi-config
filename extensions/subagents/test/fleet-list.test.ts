@@ -463,8 +463,16 @@ describe("FleetList detailed rows", () => {
     const row = h.render(240).at(-1)!;
     expect(row).toContain("bg · gpt-5.6:high:fast · ↻5≤30 · ⇲2 · 5 tools · ↓ 33.8k tokens (62%) · 0s");
     expect(row).not.toMatch(/live-provider|stale|ACTIVITY|bash|thinking…/);
-    const next = h.render(240).at(-1)!;
-    expect(next.slice(0, 6)).not.toBe(row.slice(0, 6)); // spinner advances per render
+    vi.useFakeTimers();
+    try {
+      const sameTick = h.render(240).at(-1)!;
+      expect(sameTick.slice(0, 6)).toBe(row.slice(0, 6)); // no advance per render
+      vi.advanceTimersByTime(200);
+      const next = h.render(240).at(-1)!;
+      expect(next.slice(0, 6)).not.toBe(row.slice(0, 6)); // spinner advances per tick
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("uses the singular tool label for a single tool use", () => {
