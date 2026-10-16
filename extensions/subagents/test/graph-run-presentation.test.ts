@@ -134,7 +134,7 @@ it("hides owned children only from ordinary UI and allows a graph-run-only fleet
   expect(widgetSetWidget).toHaveBeenCalledWith("agents", expect.any(Function), { placement: "aboveEditor" });
   const fleet = new FleetList(manager, new Map());
   const fleetSetWidget = vi.fn();
-  fleet.setUICtx({ setWidget: fleetSetWidget, getEditorText: () => "", onTerminalInput: () => () => {}, notify() {}, custom: vi.fn() });
+  fleet.setUICtx({ setStatus: vi.fn(), setWidget: fleetSetWidget, getEditorText: () => "", onTerminalInput: () => () => {}, notify() {}, custom: vi.fn() });
   fleet.setEnabled(true);
   fleet.update();
   expect(fleetSetWidget).toHaveBeenCalledWith("fleet", expect.any(Function), { placement: "belowEditor" });

@@ -346,7 +346,7 @@ describe("AgentWidget", () => {
     expect(failedHarness.render()).toEqual([]);
   });
 
-  it("registers once, bounds status churn, owns its 80ms timer, and fully disposes", () => {
+  it("registers once, leaves footer ownership to the fleet, owns its 80ms timer, and fully disposes", () => {
     vi.useFakeTimers();
     try {
       const record = makeRecord();
@@ -359,8 +359,7 @@ describe("AgentWidget", () => {
       h.widget.update();
 
       expect(h.setWidget.mock.calls.filter((call) => typeof call[1] === "function")).toHaveLength(1);
-      expect(h.setStatus).toHaveBeenCalledTimes(1);
-      expect(h.setStatus).toHaveBeenLastCalledWith("subagents", "1 running agent");
+      expect(h.setStatus).not.toHaveBeenCalled();
 
       const readsBeforeTick = h.listAgents.mock.calls.length;
       vi.advanceTimersByTime(79);
@@ -373,7 +372,7 @@ describe("AgentWidget", () => {
       h.widget.dispose();
 
       expect(h.setWidget).toHaveBeenLastCalledWith("agents", undefined);
-      expect(h.setStatus).toHaveBeenLastCalledWith("subagents", undefined);
+      expect(h.setStatus).not.toHaveBeenCalled();
       expect(vi.getTimerCount()).toBe(0);
 
       vi.advanceTimersByTime(240);

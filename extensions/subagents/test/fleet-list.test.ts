@@ -1,7 +1,10 @@
+vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 import { Editor, visibleWidth } from "@earendil-works/pi-tui";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as agentTypes from "../src/agent-types.js";
+import { sessionFastPolicies } from "../src/session-fast.js";
 import type { AgentManager } from "../src/agent-manager.js";
-import type { AgentRecord } from "../src/types.js";
+import type { AgentActivity, AgentRecord } from "../src/types.js";
 import { getDisplayName } from "../src/ui/agent-widget.js";
 import { FleetList, type FleetUICtx, formatFleetElapsed, formatFleetTokens } from "../src/ui/fleet-list.js";
 
@@ -15,7 +18,12 @@ const ENTER = "\r";
 // Kitty-protocol key-RELEASE for ↓ (event type 3) — listeners receive these too.
 const DOWN_RELEASE = "\x1b[1;1:3B";
 
-const theme = { fg: (c: string, s: string) => `<${c}>${s}</${c}>`, bold: (s: string) => `*${s}*` };
+const theme = { fg: (_c: string, s: string) => s, bold: (s: string) => s };
+const fleets: FleetList[] = [];
+afterEach(() => {
+  for (const fleet of fleets.splice(0)) fleet.dispose();
+  vi.restoreAllMocks();
+});
 
 /** A no-op session so a record is "openable" by default (the list hides session-less agents). */
 const FAKE_SESSION = { subscribe: () => () => {}, messages: [] };
@@ -53,7 +61,8 @@ interface Harness {
   /** Feed a key to the registered input handler; returns the consume result. */
   press: (data: string) => { consume?: boolean } | undefined;
   /** Render the currently-registered below-editor widget at the given width. */
-  render: (width?: number) => string[];
+  render: (width?: number, renderTheme?: typeof theme) => string[];
+  setStatus: ReturnType<typeof vi.fn<FleetUICtx["setStatus"]>>;
   setEditorText: (t: string) => void;
   /** Whether an overlay has been opened. */
   overlayOpened: () => boolean;
@@ -65,7 +74,7 @@ interface Harness {
   widgetTui: { requestRender(): void; focusedComponent?: unknown };
 }
 
-function harness(agents: AgentRecord[]): Harness {
+function harness(agents: AgentRecord[], activities = new Map<string, AgentActivity>()): Harness {
   let inputHandler: ((data: string) => { consume?: boolean } | undefined) | undefined;
   let widgetFactory: ((tui: any, theme: any) => { render(w: number): string[] }) | undefined;
   let editorText = "";
@@ -75,7 +84,9 @@ function harness(agents: AgentRecord[]): Harness {
   let overlayComponent: { handleInput(data: string): void } | undefined;
   const fakeTui = { requestRender: () => {}, terminal: { columns: 120, rows: 40 } };
 
+  const setStatus = vi.fn<FleetUICtx["setStatus"]>();
   const ui: FleetUICtx = {
+    setStatus,
     setWidget: (_key, content) => { widgetFactory = content as any; },
     onTerminalInput: (h) => { inputHandler = h; return () => { inputHandler = undefined; }; },
     getEditorText: () => editorText,
@@ -93,7 +104,8 @@ function harness(agents: AgentRecord[]): Harness {
   };
 
   const manager = fakeManager(agents);
-  const fleet = new FleetList(manager, new Map());
+  const fleet = new FleetList(manager, activities);
+  fleets.push(fleet);
   fleet.setUICtx(ui);
   fleet.update();
 
@@ -101,9 +113,10 @@ function harness(agents: AgentRecord[]): Harness {
     fleet,
     ui,
     manager,
+    setStatus,
     overlayComponent: () => overlayComponent,
     press: (data) => inputHandler?.(data),
-    render: (width = 120) => (widgetFactory ? widgetFactory(fakeTui, theme).render(width) : []),
+    render: (width = 120, renderTheme = theme) => (widgetFactory ? widgetFactory(fakeTui, renderTheme).render(width) : []),
     setEditorText: (t) => { editorText = t; },
     overlayOpened: () => opened,
     overlayClosed: () => closed,
@@ -223,7 +236,7 @@ describe("FleetList navigation", () => {
       const manager = { listAgents, abort: () => true } as unknown as AgentManager;
       const fleet = new FleetList(manager, new Map());
       fleet.setUICtx({
-        setWidget: () => {}, onTerminalInput: () => () => {}, getEditorText: () => "",
+        setStatus: vi.fn(), setWidget: () => {}, onTerminalInput: () => () => {}, getEditorText: () => "",
         notify: () => {}, custom: (() => new Promise<undefined>(() => {})) as FleetUICtx["custom"],
       });
       fleet.update();          // shows list, arms the timer
@@ -302,7 +315,7 @@ describe("FleetList rendering", () => {
     expect(agentLine).toContain("○");
     expect(agentLine).toContain(getDisplayName("general-purpose"));
     expect(agentLine).toContain("↓ 13.1k tokens");
-    expect(agentLine).toMatch(/\d+s · ↓/); // "<seconds>s · ↓ ..." (timing-agnostic)
+    expect(agentLine).toMatch(/↓ 13\.1k tokens · \d+s/);
   });
 
   it("orders agents earliest-launched first (top)", () => {
@@ -328,19 +341,19 @@ describe("FleetList rendering", () => {
   });
 
   it("collapses overflow into a '↓ N more' indicator", () => {
-    const agents = Array.from({ length: 8 }, (_, i) =>
+    const agents = Array.from({ length: 11 }, (_, i) =>
       makeRecord({ id: `a${i}`, description: `report ${i}` }));
     const h = harness(agents);
     const lines = h.render(120);
-    // 8 agents, cap 5 visible → "↓ 3 more"
+    // 11 agents, cap 8 visible → "↓ 3 more"
     expect(lines.some(l => l.includes("↓ 3 more"))).toBe(true);
   });
 
   it("never emits a line wider than the terminal (guards wrap-induced flicker)", () => {
-    const agents = Array.from({ length: 8 }, (_, i) =>
+    const agents = Array.from({ length: 11 }, (_, i) =>
       makeRecord({ id: `a${i}`, description: `a very long agent description number ${i} that keeps going` }));
     const h = harness(agents);
-    for (const w of [4, 8, 12, 20, 40, 80, 200]) {
+    for (const w of [0, 1, 2, 4, 8, 12, 20, 40, 80, 200]) {
       for (const line of h.render(w)) {
         expect(visibleWidth(line)).toBeLessThanOrEqual(w);
       }
@@ -348,14 +361,14 @@ describe("FleetList rendering", () => {
   });
 
   it("windows the visible agents so the selection stays on screen", () => {
-    const agents = Array.from({ length: 8 }, (_, i) =>
+    const agents = Array.from({ length: 11 }, (_, i) =>
       makeRecord({ id: `a${i}`, description: `report ${i}` }));
     const h = harness(agents);
     h.press(DOWN); // activate (main)
-    // step down to the last agent (8 agents → roster index 8)
-    for (let i = 0; i < 8; i++) h.press(DOWN);
+    // step down to the last agent (11 agents → roster index 11)
+    for (let i = 0; i < 11; i++) h.press(DOWN);
     const lines = h.render(120);
-    expect(lines.find(l => l.includes("report 7"))).toContain("●");
+    expect(lines.find(l => l.includes("report 10"))).toContain("●");
     expect(lines.some(l => l.includes("↑"))).toBe(true); // hidden-above indicator
   });
 });
@@ -424,5 +437,206 @@ describe("FleetList overlay lifecycle", () => {
     expect(harness([recent]).render().some(l => l.includes("recent done"))).toBe(true);
     const old = makeRecord({ id: "o", description: "old done", status: "completed", completedAt: Date.now() - 60_000 });
     expect(harness([old]).render().some(l => l.includes("old done"))).toBe(false);
+  });
+});
+
+function makeActivity(overrides: Partial<AgentActivity> = {}): AgentActivity {
+  return {
+    activeTools: new Map([["t", "bash"]]), responseText: "ACTIVITY MUST NOT APPEAR",
+    turnCount: 5, maxTurns: 30, toolUses: 5,
+    lifetimeUsage: { input: 33800, output: 0, cacheWrite: 0 },
+    session: { getSessionStats: () => ({ tokens: { input: 0, output: 0, cacheWrite: 0 }, contextUsage: { percent: 62 } }) },
+    ...overrides,
+  };
+}
+
+function cjkNames(): void {
+  const config = agentTypes.getConfig("general-purpose");
+  vi.spyOn(agentTypes, "getConfig").mockImplementation(type => ({
+    ...config, displayName: type === "jintong" ? "Jintong 金童" : "Wen Chang 文昌",
+  }));
+}
+
+describe("FleetList detailed rows", () => {
+  it("uses live model/thinking/Fast and activity totals, without provider or activity text", () => {
+    const session = { ...FAKE_SESSION, model: { provider: "live-provider", id: "gpt-5.6" }, thinkingLevel: "high" } as unknown as NonNullable<AgentRecord["session"]>;
+    sessionFastPolicies.set(session, { enabled: true, usingOAuth: false });
+    const record = makeRecord({ session, isBackground: true, compactionCount: 2,
+      invocation: { modelName: "stale/model", thinking: "low", fast: false } });
+    const h = harness([record], new Map([[record.id, makeActivity()]]));
+    const row = h.render(240).at(-1)!;
+    expect(row).toContain("bg · gpt-5.6:high:fast · ↻5≤30 · ⇲2 · 5 tools · ↓ 33.8k tokens (62%) · 0s");
+    expect(row).not.toMatch(/live-provider|stale|ACTIVITY|bash|thinking…/);
+    const next = h.render(240).at(-1)!;
+    expect(next.slice(0, 6)).not.toBe(row.slice(0, 6)); // spinner advances per render
+  });
+
+  it("falls back to the invocation model and preserves unresolved default thinking", () => {
+    const record = makeRecord({ invocation: { modelName: "provider/fallback", thinking: "off" } });
+    const h = harness([record]);
+    expect(h.render(240).at(-1)).toContain("fallback:off");
+    record.invocation = { thinkingDefault: true };
+    expect(h.render(240).at(-1)).toContain("thinking: default (pending)");
+    expect(h.render(240).at(-1)).not.toContain("undefined");
+    record.isBackground = false;
+    expect(h.render(240).at(-1)).not.toContain("bg ·");
+  });
+
+  it.each([
+    ["completed", "✓", "done"], ["force_steered", "✓", "steered"],
+    ["stopped", "■", "stopped"], ["aborted", "■", "aborted"], ["error", "×", "failed"],
+  ] as const)("shows %s vocabulary and freezes elapsed time, without errors", (status, glyph, word) => {
+    const record = makeRecord({ status, startedAt: Date.now() - 72000, completedAt: Date.now(),
+      error: "SECRET ERROR DETAIL", isBackground: true });
+    const row = harness([record]).render(240).at(-1)!;
+    expect(row).toContain(`○ ${glyph} `);
+    expect(row).toContain(`${word} · bg ·`);
+    expect(row).toMatch(/· 72s$/);
+    expect(row).not.toContain("SECRET ERROR DETAIL");
+  });
+
+  it.each([[69, "dim"], [70, "warning"], [84, "warning"], [85, "error"]] as const)(
+    "colors %i%% context as %s", (percent, color) => {
+      const record = makeRecord();
+      const activity = makeActivity({ session: { getSessionStats: () => ({
+        tokens: { input: 0, output: 0, cacheWrite: 0 }, contextUsage: { percent },
+      }) } });
+      const fg = vi.fn((_color: string, text: string) => text);
+      harness([record], new Map([[record.id, activity]])).render(240, { ...theme, fg });
+      expect(fg).toHaveBeenCalledWith(color, ` (${percent}%)`);
+    },
+  );
+
+  it("degrades all rows at one tier and measures CJK names in terminal cells", () => {
+    cjkNames();
+    const description = "0123456789abcdef";
+    const record = makeRecord({ type: "jintong", description, isBackground: true, compactionCount: 2,
+      invocation: { modelName: "provider/gpt-5.6", thinking: "high" } });
+    const second = makeRecord({ id: "second", type: "wenchang", description, compactionCount: 2,
+      invocation: record.invocation });
+    const h = harness([record, second], new Map([[record.id, makeActivity()], [second.id, makeActivity()]]));
+    const wide = h.render(300)[3];
+    const fullStats = wide.slice(wide.indexOf("bg ·"));
+    const tierStats = [fullStats];
+    tierStats.push(tierStats[0].replace("5 tools · ", ""));
+    tierStats.push(tierStats[1].replace("↻5≤30 · ⇲2 · ", ""));
+    tierStats.push(tierStats[2].replace("gpt-5.6:high · ", ""));
+    tierStats.push(tierStats[3].replace(" (62%)", ""));
+    const prefixWidth = visibleWidth("  ○ ⠹ Jintong 金童  ");
+    expect(visibleWidth("金童")).toBe(4);
+    for (let level = 0; level < tierStats.length; level++) {
+      const width = prefixWidth + 16 + 1 + visibleWidth(tierStats[level]);
+      const lines = h.render(width);
+      for (const row of lines.slice(3)) {
+        expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+        expect(row).toContain(description);
+        expect(row.includes("5 tools")).toBe(level === 0);
+        expect(row.includes("↻5≤30")).toBe(level < 2);
+        expect(row.includes("⇲2")).toBe(level < 2);
+        expect(row.includes("gpt-5.6:high")).toBe(level < 3);
+        expect(row.includes("(62%)")).toBe(level < 4);
+      }
+      if (level === 3) console.log(`NARROW FLEET ROW (${width} columns):\n${lines[3]}`);
+    }
+    for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
+      for (const row of h.render(width)) expect(visibleWidth(row)).toBeLessThanOrEqual(width);
+    }
+  });
+
+  it("drops only the graph agent count at tier four and keeps graph runs above agents", () => {
+    const h = harness([makeRecord()]);
+    h.fleet.setGraphRunSource(() => [{ id: "graph", name: "deep-research", status: "running",
+      doneCount: 3, totalCount: 7, startedAt: Date.now(), tokens: 88200 }], vi.fn());
+    h.fleet.update();
+    const wide = h.render(240);
+    expect(wide[3]).toContain("graph run  deep-research");
+    expect(wide[3]).toContain("3/7 agents · 0s · ↓ 88.2k tokens");
+    const narrow = h.render(60);
+    expect(narrow[3]).not.toContain("3/7 agents");
+    expect(narrow[3]).toContain("0s · ↓ 88.2k tokens");
+  });
+});
+
+describe("FleetList hierarchy, retention and queue", () => {
+  it("orders siblings under their parent and keeps nested selection openable", async () => {
+    const agents = [
+      makeRecord({ id: "later", description: "later root", startedAt: 2 }),
+      makeRecord({ id: "last", description: "last child", parentAgentId: "parent", startedAt: 4 }),
+      makeRecord({ id: "parent", description: "parent root", startedAt: 1 }),
+      makeRecord({ id: "first", description: "first child", parentAgentId: "parent", startedAt: 3 }),
+    ];
+    const h = harness(agents);
+    const rows = h.render(240).slice(3);
+    expect(rows.map(row => agents.find(a => row.includes(a.description))?.id)).toEqual(["parent", "first", "last", "later"]);
+    expect(rows[1]).toMatch(/^  ○   ├ ⠙ /);
+    expect(rows[2]).toMatch(/^  ○   └ ⠙ /);
+    h.press(DOWN); h.press(DOWN); h.press(DOWN); h.press(ENTER);
+    expect(h.overlayOpened()).toBe(true);
+    await h.closeOverlay();
+    expect(h.render(240).find(row => row.includes("first child"))).toMatch(/^  ●   ├ /);
+    agents.splice(agents.findIndex(a => a.id === "parent"), 1);
+    expect(h.render(240).find(row => row.includes("first child"))).toMatch(/^  ● ⠸ /);
+  });
+
+  it.each(["completed", "error", "stopped", "aborted", "force_steered"] as const)(
+    "retains %s for its full window, and retains a parent while its child is visible", status => {
+      const now = Date.now();
+      vi.spyOn(Date, "now").mockReturnValue(now);
+      const linger = status === "completed" ? 4000 : 30000;
+      const parent = makeRecord({ id: "parent", status, description: "parent row", completedAt: now - linger + 1 });
+      const agents = [parent];
+      const h = harness(agents);
+      expect(h.render(240).some(row => row.includes("parent row"))).toBe(true);
+      parent.completedAt = now - linger;
+      expect(h.render(240)).toEqual([]);
+      agents.push(makeRecord({ id: "child", parentAgentId: "parent", description: "child row" }));
+      expect(h.render(240).some(row => row.includes("parent row"))).toBe(true);
+    },
+  );
+
+  it("shows one non-selectable queued row even without any sessions", () => {
+    const agents = [makeRecord({ status: "queued", session: undefined }),
+      makeRecord({ id: "q2", status: "queued" }),
+      makeRecord({ id: "owned", graphRunId: "graph", status: "queued", session: undefined })];
+    const h = harness(agents);
+    const lines = h.render();
+    expect(lines.at(-1)).toBe("    ◦ 2 queued");
+    expect(lines).toHaveLength(4); // hint, blank, main, aggregate queue
+    expect(h.setStatus).toHaveBeenLastCalledWith("subagents", "0 running, 2 queued agents");
+    expect(h.press(DOWN)).toEqual({ consume: true });
+    h.press(DOWN); // queued line cannot take selection from main
+    expect(h.render().find(row => row.includes("main"))).toMatch(/^  ● /);
+    h.press(ENTER);
+    expect(h.overlayOpened()).toBe(false);
+    agents.unshift(makeRecord({ id: "live" }));
+    h.fleet.update();
+    h.press(DOWN); h.press(DOWN); h.press(DOWN);
+    expect(h.render()[3]).toMatch(/^  ● /);
+    expect(h.render().at(-1)).toBe("    ◦ 2 queued");
+  });
+
+  it("owns the always-on footer, guards churn, and clears UI, timer and input on dispose", () => {
+    vi.useFakeTimers();
+    try {
+      const agents = [makeRecord({ id: "fg", isBackground: false }), makeRecord({ id: "bg", isBackground: true }),
+        makeRecord({ id: "nested", parentAgentId: "fg" }),
+        makeRecord({ id: "owned", graphRunId: "graph" }),
+        makeRecord({ id: "q", status: "queued", session: undefined })];
+      const h = harness(agents);
+      expect(h.setStatus).toHaveBeenLastCalledWith("subagents", "3 running, 1 queued agents");
+      h.fleet.setEnabled(false);
+      h.fleet.update();
+      expect(h.setStatus).toHaveBeenCalledTimes(1);
+      agents.splice(1);
+      vi.advanceTimersByTime(200);
+      expect(h.setStatus).toHaveBeenLastCalledWith("subagents", "1 running agent");
+      agents.splice(0);
+      h.fleet.update();
+      expect(h.setStatus).toHaveBeenLastCalledWith("subagents", undefined);
+      h.fleet.dispose();
+      expect(h.render()).toEqual([]);
+      expect(h.press(DOWN)).toBeUndefined();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally { vi.useRealTimers(); }
   });
 });

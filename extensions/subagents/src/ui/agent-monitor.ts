@@ -89,12 +89,12 @@ function graphStatusWord(status: FleetGraphRun["status"]): string {
   }
 }
 
-export function agentStatusWord(status: AgentRecord["status"]): string {
+export function agentStatusWord(status: AgentRecord["status"], compact = false): string {
   switch (status) {
     case "queued": return "queued";
     case "running": return "running";
     case "completed": return "done";
-    case "force_steered": return "completed after turn-ceiling reminder";
+    case "force_steered": return compact ? "steered" : "completed after turn-ceiling reminder";
     case "aborted": return "aborted";
     case "stopped": return "stopped";
     case "error": return "failed";

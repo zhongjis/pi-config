@@ -1,8 +1,8 @@
 /**
  * fleet-list.ts — Claude Code-style "FleetView" list rendered below the editor.
  *
- * Shows `main` + each running/queued subagent as a navigable list. Pressing ↓ (or
- * ←) at an empty prompt activates the list; ↑/↓ move the selection (filled ● marker),
+ * Shows `main` + openable subagents as a navigable list, plus an aggregate queue.
+ * Pressing ↓ or ← at an empty prompt activates it; ↑/↓ move the selection (filled ● marker),
  * Enter opens the selected agent's live conversation overlay, Esc returns to the prompt.
  * A viewer stays open when its agent finishes; finished agents linger briefly in the list.
  *
@@ -13,22 +13,26 @@
 
 import { Editor, isKeyRelease, Key, matchesKey, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { AgentManager } from "../agent-manager.js";
+import { getSessionFast } from "../session-fast.js";
 import type { AgentRecord } from "../types.js";
-import { getLifetimeTotal } from "../usage.js";
-import { type AgentActivity, getDisplayName, type Theme } from "./agent-widget.js";
+import { getLifetimeTotal, getSessionContextPercent } from "../usage.js";
+import { agentStatusWord, statusMark } from "./agent-monitor.js";
+import { type AgentActivity, formatTurns, getDisplayName, SPINNER, type Theme } from "./agent-widget.js";
 import { openConversationOverlay } from "./conversation-overlay.js";
 
 /** Widget key for the below-editor fleet list. */
 const FLEET_KEY = "fleet";
 /** Max agent rows shown at once; extras collapse into a "↓ N more" indicator. */
-const MAX_AGENT_ROWS = 5;
+const MAX_AGENT_ROWS = 8;
 /** Re-render cadence so elapsed/token stats tick while agents run. */
 const TICK_MS = 200;
 /** How long a finished agent lingers in the list before it drops out. */
 const FINISHED_LINGER_MS = 4000;
+const FAILED_LINGER_MS = 30_000;
 
 /** Minimal UI surface the FleetView needs from `ctx.ui` (structural subset). */
 export type FleetUICtx = {
+  setStatus(key: string, text: string | undefined): void;
   setWidget(
     key: string,
     content: undefined | ((tui: any, theme: Theme) => { render(width: number): string[]; invalidate(): void; dispose?(): void }),
@@ -95,6 +99,12 @@ function rightAlign(left: string, right: string, width: number): string {
   return truncateToWidth(leftClamped + " ".repeat(gap) + right, width);
 }
 
+function graphRunStats(graphRun: FleetGraphRun, showAgentCount = true): string {
+  const elapsed = (graphRun.completedAt ?? Date.now()) - graphRun.startedAt;
+  const agents = `${graphRun.doneCount}/${graphRun.totalCount} agent${graphRun.totalCount === 1 ? "" : "s"}`;
+  return `${showAgentCount ? `${agents} · ` : ""}${formatFleetElapsed(elapsed)} · ${formatFleetTokens(graphRun.tokens)}`;
+}
+
 /**
  * A run's row. Shaped like an agent's — bullet, kind, name, stats flush right
  * — so the two read as one list, with the agent count where an agent has its
@@ -109,14 +119,12 @@ export function formatFleetGraphRunRow(
   width: number,
   theme: Theme,
   statusWord?: string,
+  showAgentCount = true,
 ): string {
   const kind = theme.fg(selected ? "text" : "muted", "graph run");
   const name = selected ? theme.fg("text", graphRun.name) : graphRun.name;
   const left = `  ${bullet} ${kind}  ${name}`;
-  // Frozen once the run settles, exactly as an agent's clock is.
-  const elapsed = (graphRun.completedAt ?? Date.now()) - graphRun.startedAt;
-  const agents = `${graphRun.doneCount}/${graphRun.totalCount} agent${graphRun.totalCount === 1 ? "" : "s"}`;
-  const stats = `${agents} · ${formatFleetElapsed(elapsed)} · ${formatFleetTokens(graphRun.tokens)}`;
+  const stats = graphRunStats(graphRun, showAgentCount);
   if (statusWord === undefined) {
     return rightAlign(left, selected ? theme.fg("text", stats) : theme.fg("dim", stats), width);
   }
@@ -145,6 +153,9 @@ export class FleetList {
   private inputUnsub: (() => void) | undefined;
   private widgetRegistered = false;
   private timer: ReturnType<typeof setInterval> | undefined;
+
+  private frame = 0;
+  private lastStatusText: string | undefined;
 
   private enabled = true;
   /** Whether arrow keys currently navigate the list (vs. flow to the editor). */
@@ -185,6 +196,7 @@ export class FleetList {
     if (ui === this.ui) return;
     this.inputUnsub?.();
     this.ui = ui;
+    this.lastStatusText = undefined;
     this.widgetRegistered = false;
     this.tui = undefined;
     this.inputUnsub = ui.onTerminalInput(data => this.handleKey(data));
@@ -213,6 +225,8 @@ export class FleetList {
     // away — leaving the id set would keep it swallowing input forever.
     this.viewingGraphRunId = undefined;
     if (this.ui && this.widgetRegistered) this.ui.setWidget(FLEET_KEY, undefined);
+    this.ui?.setStatus("subagents", undefined);
+    this.lastStatusText = undefined;
     this.widgetRegistered = false;
     this.tui = undefined;
     this.active = false;
@@ -223,11 +237,22 @@ export class FleetList {
   /** Re-register/refresh the below-editor widget; clears it when nothing remains. */
   update(): void {
     if (!this.ui) return;
+    const agents = this.manager.listAgents().filter(a => !a.graphRunId);
+    const running = agents.filter(a => a.status === "running").length;
+    const queued = agents.filter(a => a.status === "queued").length;
+    const total = running + queued;
+    const statusText = total > 0
+      ? `${running} running${queued > 0 ? `, ${queued} queued` : ""} agent${total === 1 ? "" : "s"}`
+      : undefined;
+    if (statusText !== this.lastStatusText) {
+      this.ui.setStatus("subagents", statusText);
+      this.lastStatusText = statusText;
+    }
     // A run with no agents of its own left in the list is still worth a row —
     // it is the thing the user opens to see what its children did. Read off the
     // roster for the same reason activation does: two counts of "is there
     // anything here" drifted apart once before.
-    const hasRows = this.enabled && this.roster().length > 1;
+    const hasRows = this.enabled && (this.roster().length > 1 || queued > 0);
 
     if (!hasRows) {
       if (this.widgetRegistered) {
@@ -235,7 +260,8 @@ export class FleetList {
         this.widgetRegistered = false;
         this.tui = undefined;
       }
-      if (this.timer) { clearInterval(this.timer); this.timer = undefined; }
+      if (total > 0) this.ensureTimer();
+      else if (this.timer) { clearInterval(this.timer); this.timer = undefined; }
       this.active = false;
       this.selectedIndex = 0;
       return;
@@ -263,20 +289,42 @@ export class FleetList {
   /**
    * Agents shown in the list, ordered earliest-launched first so the ones you
    * started sooner sit at the top. Every row is openable (has a session), so Enter
-   * never dead-ends. Included: running/queued, plus the agent currently being
+   * never dead-ends. Included: running, plus the agent currently being
    * viewed, plus recently-finished ones (they linger briefly before dropping out).
-   * Pending agents with no session yet are hidden until they start.
+   * Queued agents are summarized separately rather than selectable.
    * (`listAgents()` is newest-first, so we re-sort.)
    */
   private agentRecords(): AgentRecord[] {
     const now = Date.now();
-    return this.manager.listAgents()
-      .filter(a => !a.graphRunId && a.session && (
-        a.status === "running" || a.status === "queued"
-        || a.id === this.viewingAgentId
-        || (a.completedAt != null && now - a.completedAt < FINISHED_LINGER_MS)
-      ))
+    const candidates = this.manager.listAgents()
+      .filter(a => !a.graphRunId && a.session && a.status !== "queued")
       .sort((a, b) => a.startedAt - b.startedAt);
+    const byId = new Map(candidates.map(a => [a.id, a]));
+    const retained = new Set(candidates.filter(a =>
+      a.status === "running" || a.id === this.viewingAgentId
+      || (a.completedAt != null && now - a.completedAt < (
+        a.status === "completed" ? FINISHED_LINGER_MS : FAILED_LINGER_MS
+      )),
+    ).map(a => a.id));
+    // Retain ancestors until their last visible child has gone, too.
+    for (const agent of candidates) {
+      if (!retained.has(agent.id)) continue;
+      let parent = agent.parentAgentId ? byId.get(agent.parentAgentId) : undefined;
+      while (parent && !retained.has(parent.id)) {
+        retained.add(parent.id);
+        parent = parent.parentAgentId ? byId.get(parent.parentAgentId) : undefined;
+      }
+    }
+    const visible = candidates.filter(a => retained.has(a.id));
+    const ordered: AgentRecord[] = [];
+    const append = (agent: AgentRecord) => {
+      ordered.push(agent);
+      for (const child of visible.filter(a => a.parentAgentId === agent.id)) append(child);
+    };
+    for (const agent of visible) {
+      if (!agent.parentAgentId || !retained.has(agent.parentAgentId)) append(agent);
+    }
+    return ordered;
   }
 
   /**
@@ -355,7 +403,8 @@ export class FleetList {
       // Gated on the roster, not the agents: a session whose only row is a
       // graph run still has somewhere to go, and requiring an agent would
       // render the row but refuse to move into it.
-      if (isActivator && this.roster().length > 1 && this.ui.getEditorText() === "") {
+      const hasRows = this.roster().length > 1 || this.manager.listAgents().some(a => !a.graphRunId && a.status === "queued");
+      if (isActivator && hasRows && this.ui.getEditorText() === "") {
         this.active = true;
         this.selectedIndex = 0;
         this.update();
@@ -458,7 +507,9 @@ export class FleetList {
 
   private renderBar(width: number, theme: Theme): string[] {
     const rows = this.roster().slice(1) as (GraphRunEntry | AgentEntry)[];
-    if (rows.length === 0) return [];
+    const queued = this.manager.listAgents().filter(a => !a.graphRunId && a.status === "queued").length;
+    if (rows.length === 0 && queued === 0) return [];
+    this.frame = (this.frame + 1) % SPINNER.length;
     // Clamp locally so a render between a roster shrink and the next update()
     // (e.g. on terminal resize) never loses the selection marker.
     const sel = Math.min(this.selectedIndex, rows.length);
@@ -474,19 +525,38 @@ export class FleetList {
     // Window the rows so the selected one stays visible.
     const visible = Math.min(MAX_AGENT_ROWS, rows.length);
     const selRow = Math.max(0, sel - 1);
-    const start = selRow < visible ? 0 : selRow - visible + 1;
+    const start = visible === 0 || selRow < visible ? 0 : selRow - visible + 1;
     const hiddenBelow = rows.length - (start + visible);
+
+    const branches = new Map<string, string>();
+    for (const row of rows) {
+      if (row.kind !== "agent" || !rows.some(parent => parent.kind === "agent" && parent.record.id === row.record.parentAgentId)) continue;
+      const siblings = rows.filter(sibling => sibling.kind === "agent" && sibling.record.parentAgentId === row.record.parentAgentId);
+      branches.set(row.record.id, siblings.at(-1) === row ? "  └ " : "  ├ ");
+    }
+    // Pick one tier for the whole visible window, reserving sixteen description cells.
+    let level = 0;
+    while (level < 4 && rows.slice(start, start + visible).some(row => {
+      const prefix = row.kind === "agent"
+        ? this.agentRowPrefix(row.record, branches.get(row.record.id) ?? "", theme)
+        : "graph run  ";
+      const stats = row.kind === "agent"
+        ? this.agentRowStats(row.record, level, theme)
+        : graphRunStats(row.graphRun);
+      return width - 4 - visibleWidth(prefix) - visibleWidth(stats) - 1 < 16;
+    })) level++;
 
     if (start > 0) lines.push(rightAlign("", theme.fg("dim", `↑ ${start} more`), width));
     for (let a = start; a < start + visible; a++) {
       const row = rows[a];
-      lines.push(
-        row.kind === "graphRun" ?
-          this.renderGraphRunRow(a + 1, sel, row.graphRun, width, theme)
-        : this.renderAgentRow(a + 1, sel, row.record, width, theme),
-      );
+      const bullet = this.bullet(a + 1, sel, theme);
+      lines.push(row.kind === "graphRun"
+        ? formatFleetGraphRunRow(bullet, a + 1 === sel, row.graphRun, width, theme, undefined, level < 4)
+        : rightAlign(`  ${bullet} ${this.agentRowPrefix(row.record, branches.get(row.record.id) ?? "", theme)}${row.record.description}`,
+          this.agentRowStats(row.record, level, theme), width));
     }
     if (hiddenBelow > 0) lines.push(rightAlign("", theme.fg("dim", `↓ ${hiddenBelow} more`), width));
+    if (queued > 0) lines.push(truncateToWidth(theme.fg("dim", `    ◦ ${queued} queued`), width));
 
     return lines;
   }
@@ -495,18 +565,36 @@ export class FleetList {
     return rosterIndex === sel ? theme.fg("accent", "●") : theme.fg("dim", "○");
   }
 
-  private renderGraphRunRow(
-    rosterIndex: number,
-    sel: number,
-    graphRun: FleetGraphRun,
-    width: number,
-    theme: Theme,
-  ): string {
-    return formatFleetGraphRunRow(this.bullet(rosterIndex, sel, theme), rosterIndex === sel, graphRun, width, theme);
+  private agentRowPrefix(record: AgentRecord, branch: string, theme: Theme): string {
+    const mark = statusMark(record);
+    const glyph = record.status === "running" ? SPINNER[this.frame] : mark.glyph;
+    return branch + theme.fg(mark.color, glyph) + " " + theme.fg("muted", getDisplayName(record.type)) + "  ";
   }
 
-  private renderAgentRow(rosterIndex: number, sel: number, record: AgentRecord, width: number, theme: Theme): string {
-    const tokens = getLifetimeTotal(this.agentActivity.get(record.id)?.lifetimeUsage ?? record.lifetimeUsage);
-    return formatFleetAgentRow(this.bullet(rosterIndex, sel, theme), record, tokens, width, theme);
+  private agentRowStats(record: AgentRecord, level: number, theme: Theme): string {
+    const activity = this.agentActivity.get(record.id);
+    const stats: string[] = [];
+    const dim = (text: string) => theme.fg("dim", text);
+    if (record.status !== "running") stats.push(theme.fg(statusMark(record).color, agentStatusWord(record.status, true)));
+    if (record.isBackground === true) stats.push(dim("bg"));
+    if (level < 3) {
+      const session = record.session;
+      const model = session?.model?.id ?? record.invocation?.modelName?.replace(/^[^/]+\//, "");
+      const thinking = session?.thinkingLevel ?? record.invocation?.thinking;
+      const fast = session ? getSessionFast(session) : record.invocation?.fast;
+      if (model) stats.push(dim(`${model}${thinking !== undefined ? `:${thinking}` : ""}${fast === true ? ":fast" : ""}`));
+      if (thinking === undefined && record.invocation?.thinkingDefault) stats.push(dim("thinking: default (pending)"));
+    }
+    if (level < 2) {
+      if (activity) stats.push(dim(formatTurns(activity.turnCount, activity.maxTurns)));
+      if (record.compactionCount > 0) stats.push(dim(`⇲${record.compactionCount}`));
+    }
+    if (level < 1) stats.push(dim(`${activity?.toolUses ?? record.toolUses} tools`));
+    const tokens = getLifetimeTotal(activity?.lifetimeUsage ?? record.lifetimeUsage);
+    const percent = level < 4 ? getSessionContextPercent(activity?.session) : null;
+    const context = percent === null ? "" : theme.fg(percent >= 85 ? "error" : percent >= 70 ? "warning" : "dim", ` (${Math.round(percent)}%)`);
+    stats.push(dim(formatFleetTokens(tokens)) + context);
+    stats.push(dim(formatFleetElapsed((record.completedAt ?? Date.now()) - record.startedAt)));
+    return stats.join(dim(" · "));
   }
 }
