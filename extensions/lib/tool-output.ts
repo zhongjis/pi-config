@@ -75,14 +75,28 @@ class WidthSafeMarkdown extends Markdown {
   }
 }
 
+/** The escape sequence a theme wrapper emits before its text, sampled with a sentinel. */
+function openingSequence(sample: string): string {
+  return sample.split("\u0000")[0] ?? "";
+}
+
+function reopenAfterResets(line: string, resets: RegExp, opening: string): string {
+  return opening ? line.replace(resets, reset => `${reset}${opening}`) : line;
+}
+
 class ThemedCustomMessageContent implements Component {
+  private readonly fgOn: string;
+
   constructor(
     private readonly content: Component,
     private readonly theme: CustomMessageTheme,
-  ) {}
+  ) {
+    this.fgOn = openingSequence(theme.fg("customMessageText", "\u0000"));
+  }
 
   render(width: number): string[] {
-    return this.content.render(width).map(line => this.theme.fg("customMessageText", line));
+    return this.content.render(width).map(line =>
+      this.theme.fg("customMessageText", reopenAfterResets(line, /\u001b\[(?:0?|39)m/g, this.fgOn)));
   }
 
   invalidate(): void {
@@ -94,7 +108,11 @@ class CustomMessageCard implements Component {
   private readonly box: Box;
 
   constructor(label: string, content: Component, theme: CustomMessageTheme) {
-    this.box = new Box(1, 1, line => theme.bg("customMessageBg", line));
+    // Child resets (e.g. truncateToWidth's `\x1b[0m` before an ellipsis) would clear the
+    // card background for the rest of the line, so re-open it after each one.
+    const bgOn = openingSequence(theme.bg("customMessageBg", "\u0000"));
+    this.box = new Box(1, 1, line =>
+      theme.bg("customMessageBg", reopenAfterResets(line, /\u001b\[(?:0?|49)m/g, bgOn)));
     this.box.addChild(new Text(`${theme.fg("customMessageLabel", theme.bold(`[${label}]`))}\n`, 0, 0));
     this.box.addChild(new ThemedCustomMessageContent(content, theme));
   }

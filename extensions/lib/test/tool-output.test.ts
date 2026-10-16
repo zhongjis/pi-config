@@ -118,6 +118,21 @@ describe("shared tool-output primitives", () => {
     }
   });
 
+  it("keeps the custom-message background and text color after child ANSI resets", () => {
+    const bgOn = "\u001b[48;5;236m";
+    const fgOn = "\u001b[38;5;250m";
+    const theme = {
+      fg: (_color: string, text: string) => `${fgOn}${text}\u001b[39m`,
+      bg: (_color: string, text: string) => `${bgOn}${text}\u001b[49m`,
+      bold: (text: string) => text,
+    };
+    const content = { render: (_width: number) => ["a\u001b[0m…\u001b[0m", "b\u001b[m c\u001b[49m d\u001b[39m e"], invalidate() {} };
+    const [, , , first, second] = createCustomMessageCard("notification", content, theme).render(40);
+
+    expect(first).toContain(`a\u001b[0m${bgOn}${fgOn}…\u001b[0m${bgOn}${fgOn}`);
+    expect(second).toContain(`b\u001b[m${bgOn}${fgOn} c\u001b[49m${bgOn} d\u001b[39m${fgOn} e`);
+  });
+
   it("renders expanded plain text with Text and markdown with Markdown", () => {
     const plain = renderToolExpanded("plain \u001b[35m你好\u001b[0m output");
     const markdown = renderToolExpanded("- 项目\n\n```ts\nconst value = 'long-unbroken-value';\n```", {
