@@ -22,281 +22,79 @@ if (!fsModule || !osModule) {
 const { readFileSync } = fsModule;
 const { homedir } = osModule;
 
-const GLOBAL_PROMPT_SOURCE_PATH = `${resolveHomeDirectory()}/.pi/agent/skills/caveman/SKILL.md`;
-const REQUIRED_SECTION_TITLES = ["Rules", "Intensity", "Auto-Clarity", "Boundaries"] as const;
+const SKILLS_DIRECTORY = `${resolveHomeDirectory()}/.pi/agent/skills`;
+const SKILL_BY_LEVEL: Record<CavemanLevel, string> = {
+  full: "caveman",
+  ultra: "ultracave",
+  wenyan: "megacave",
+};
+const REQUIRED_SECTION_TITLES = ["Rules", "When to break the rules"] as const;
+// Pi owns mode persistence, status, and `/caveman` aliases; the skill's text for them is host-specific.
+const DROPPED_SECTION_TITLES = new Set(["Persistence"]);
 
-type RequiredSectionTitle = (typeof REQUIRED_SECTION_TITLES)[number];
+const promptCache = new Map<CavemanLevel, string>();
 
-interface CavemanPromptSections {
-  Rules: string;
-  Intensity: string;
-  "Auto-Clarity": string;
-  Boundaries: string;
+export function getPromptSourcePath(level: CavemanLevel): string {
+  return `${SKILLS_DIRECTORY}/${SKILL_BY_LEVEL[level]}/SKILL.md`;
 }
 
-export interface CavemanPromptSourceDocument {
-  raw: string;
-  prelude: string;
-  sections: CavemanPromptSections;
-}
-
-export interface CavemanRuntimePromptFragments {
-  prelude: string;
-  rules: string;
-  intensity: string;
-  autoClarity: string;
-  boundaries: string;
-}
-
-export interface CavemanRuntimePrompt {
-  source: CavemanPromptSourceDocument;
-  fragments: CavemanRuntimePromptFragments;
-}
-
-interface ParsedHeading {
-  title: string;
-  start: number;
-  bodyStart: number;
-  end: number;
-}
-
-let promptSourceCache: CavemanPromptSourceDocument | undefined;
-let runtimePromptCache: CavemanRuntimePrompt | undefined;
-
-export function getPromptSourcePath(): string {
-  return GLOBAL_PROMPT_SOURCE_PATH;
-}
-
-export function loadPromptSource(): CavemanPromptSourceDocument {
-  if (promptSourceCache) {
-    return promptSourceCache;
+export function buildInjectedPrompt(level: CavemanLevel): string {
+  const cached = promptCache.get(level);
+  if (cached) {
+    return cached;
   }
 
-  const raw = readPromptSource();
-  const withoutFrontmatter = stripYamlFrontmatter(raw);
-  const parsed = parsePromptSource(withoutFrontmatter);
-
-  promptSourceCache = {
-    raw,
-    prelude: parsed.prelude,
-    sections: parsed.sections,
-  };
-
-  return promptSourceCache;
+  const path = getPromptSourcePath(level);
+  const prompt = parsePromptSource(stripYamlFrontmatter(readPromptSource(path), path), path);
+  promptCache.set(level, prompt);
+  return prompt;
 }
 
-export function loadRuntimePrompt(): CavemanRuntimePrompt {
-  if (runtimePromptCache) {
-    return runtimePromptCache;
-  }
-
-  const source = loadPromptSource();
-  runtimePromptCache = {
-    source,
-    fragments: normalizeRuntimeFragments(source),
-  };
-
-  return runtimePromptCache;
-}
-
-function readPromptSource(): string {
+function readPromptSource(path: string): string {
   let raw: string;
   try {
-    raw = readFileSync(GLOBAL_PROMPT_SOURCE_PATH, "utf-8");
+    raw = readFileSync(path, "utf-8");
   } catch {
-    throw new Error(`Caveman prompt source not found: ${getPromptSourcePath()}`);
+    throw new Error(`Caveman prompt source not found: ${path}`);
   }
 
   const source = raw.replace(/\r\n/g, "\n").trim();
-
   if (!source) {
-    throw new Error(`Caveman prompt source is empty: ${getPromptSourcePath()}`);
+    throw new Error(`Caveman prompt source is empty: ${path}`);
   }
 
   return source;
 }
 
-function stripYamlFrontmatter(source: string): string {
-  const trimmedStart = source.trimStart();
-  if (!trimmedStart.startsWith("---\n")) {
+function stripYamlFrontmatter(source: string, path: string): string {
+  if (!source.startsWith("---\n")) {
     return source;
   }
 
-  const match = trimmedStart.match(/^---\n[\s\S]*?\n---(?:\n|$)/u);
+  const match = source.match(/^---\n[\s\S]*?\n---(?:\n|$)/u);
   if (!match) {
-    throw new Error(`Caveman prompt source has unterminated YAML frontmatter: ${getPromptSourcePath()}`);
+    throw new Error(`Caveman prompt source has unterminated YAML frontmatter: ${path}`);
   }
 
-  return trimmedStart.slice(match[0].length).trim();
+  return source.slice(match[0].length).trim();
 }
 
-function parsePromptSource(source: string): Omit<CavemanPromptSourceDocument, "raw"> {
-  const headings = findHeadings(source);
-  const rulesHeading = headings.find((heading) => heading.title === "Rules");
+function parsePromptSource(source: string, path: string): string {
+  // Split before each `## ` heading; the first chunk is the prelude (title line removed).
+  const [prelude = "", ...sections] = source.split(/^(?=## )/mu);
+  const titles = sections.map((section) => section.match(/^## +(.+?)\s*$/mu)?.[1] ?? "");
 
-  if (!rulesHeading) {
-    throw new Error(`Caveman prompt source missing required section "Rules": ${getPromptSourcePath()}`);
-  }
-
-  const sections = {} as CavemanPromptSections;
   for (const title of REQUIRED_SECTION_TITLES) {
-    sections[title] = extractRequiredSection(source, headings, title);
-  }
-
-  return {
-    prelude: source.slice(0, rulesHeading.start).trim(),
-    sections,
-  };
-}
-
-function findHeadings(source: string): ParsedHeading[] {
-  const headingPattern = /^##\s+(.+?)\s*$/gm;
-  const matches = Array.from(source.matchAll(headingPattern));
-
-  return matches.map((match, index) => {
-    const title = match[1]?.trim();
-    const start = match.index;
-
-    if (!title || start === undefined) {
-      throw new Error(`Failed to parse caveman prompt headings: ${getPromptSourcePath()}`);
-    }
-
-    const nextStart = matches[index + 1]?.index ?? source.length;
-
-    return {
-      title,
-      start,
-      bodyStart: start + match[0].length,
-      end: nextStart,
-    };
-  });
-}
-
-function extractRequiredSection(source: string, headings: ParsedHeading[], title: RequiredSectionTitle): string {
-  const heading = headings.find((entry) => entry.title === title);
-
-  if (!heading) {
-    throw new Error(`Caveman prompt source missing required section "${title}": ${getPromptSourcePath()}`);
-  }
-
-  const body = source.slice(heading.bodyStart, heading.end).trim();
-
-  if (!body) {
-    throw new Error(`Caveman prompt source section "${title}" is empty: ${getPromptSourcePath()}`);
-  }
-
-  return body;
-}
-
-function normalizeRuntimeFragments(source: CavemanPromptSourceDocument): CavemanRuntimePromptFragments {
-  return {
-    prelude: cleanNormalizedText(source.prelude),
-    rules: source.sections.Rules,
-    intensity: source.sections.Intensity,
-    autoClarity: source.sections["Auto-Clarity"],
-    boundaries: normalizeBoundaries(source.sections.Boundaries),
-  };
-}
-
-function normalizeBoundaries(boundaries: string): string {
-  return cleanNormalizedText(
-    boundaries.replace(' "stop caveman" or "normal mode": revert.', ""),
-  );
-}
-
-function cleanNormalizedText(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
-export function buildInjectedPrompt(level: CavemanLevel): string {
-  const { fragments } = loadRuntimePrompt();
-  const levelInstruction = getLevelInstruction(fragments.intensity, level);
-  const examples = getLevelExamples(fragments.intensity, level);
-  const lines = [
-    firstParagraph(fragments.prelude),
-    `Active level: ${level}. ${levelInstruction}`,
-    "Active level overrides Rules where they conflict.",
-    `Rules: ${collapseInline(fragments.rules)}`,
-  ];
-
-  if (examples.length > 0) {
-    lines.push(`Examples (${level}): ${examples.join(" ")}`);
-  }
-
-  lines.push(
-    `Auto-Clarity: ${collapseInline(beforeExampleBlock(fragments.autoClarity))}`,
-    `Boundaries: ${collapseInline(fragments.boundaries)}`,
-  );
-
-  return cleanNormalizedText(lines.join("\n"));
-}
-
-function getLevelInstruction(
-  intensitySection: string,
-  level: CavemanLevel,
-): string {
-  const levels = parseIntensityLevels(intensitySection);
-  const instruction = levels[level];
-
-  if (!instruction) {
-    throw new Error(`Caveman intensity section missing level "${level}": ${getPromptSourcePath()}`);
-  }
-
-  return instruction;
-}
-
-function getLevelExamples(intensitySection: string, level: CavemanLevel): string[] {
-  const examples: string[] = [];
-
-  for (const line of intensitySection.split("\n")) {
-    const match = line.match(/^- (lite|full|ultra):\s+(.+)$/i);
-    if (!match || match[1]?.toLowerCase() !== level) {
-      continue;
-    }
-
-    const example = collapseInline(match[2] ?? "");
-    if (example) {
-      examples.push(example);
+    if (!titles.includes(title)) {
+      throw new Error(`Caveman prompt source missing required section "${title}": ${path}`);
     }
   }
 
-  return examples;
-}
-
-function parseIntensityLevels(
-  intensitySection: string,
-): Partial<Record<CavemanLevel, string>> {
-  const levels: Partial<Record<CavemanLevel, string>> = {};
-
-  for (const line of intensitySection.split("\n")) {
-    const match = line.match(/^\|\s*\*\*(lite|full|ultra)\*\*\s*\|\s*(.+?)\s*\|\s*$/i);
-    if (!match) {
-      continue;
-    }
-
-    const [, level, description] = match;
-    levels[level.toLowerCase() as CavemanLevel] = collapseInline(description);
-  }
-
-  return levels;
-}
-
-function firstParagraph(text: string): string {
-  return text.split(/\n\s*\n/u)[0]?.trim() ?? "";
-}
-
-export function beforeExampleBlock(text: string): string {
-  const match = text.match(/(?:^|\n)\s*Example\b/u);
-  if (!match || match.index === undefined) {
-    return text.trim();
-  }
-
-  return text.slice(0, match.index).trim();
+  const kept = sections.filter((_, index) => !DROPPED_SECTION_TITLES.has(titles[index] ?? ""));
+  return [prelude.replace(/^# .*\n?/u, ""), ...kept]
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function resolveHomeDirectory(): string {
@@ -308,8 +106,4 @@ function resolveHomeDirectory(): string {
   }
 
   return resolvedHome.replace(/\/+$/, "");
-}
-
-function collapseInline(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
 }

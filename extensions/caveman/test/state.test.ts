@@ -32,13 +32,13 @@ describe("caveman state", () => {
 			sessionManager: {
 				getBranch: () => [
 					{ type: "custom", customType: "caveman-level", data: { level: "ultra" } },
-					{ type: "custom", customType: "caveman-level", data: { level: "lite" } },
+					{ type: "custom", customType: "caveman-level", data: { level: "wenyan" } },
 				],
 			},
 		});
 
-		expect(restored.sessionLevel).toBe("lite");
-		expect(state.getCavemanEffectiveLevel()).toBe("lite");
+		expect(restored.sessionLevel).toBe("wenyan");
+		expect(state.getCavemanEffectiveLevel()).toBe("wenyan");
 	});
 
 	it("persists session override entries and reports unchanged repeats", async () => {

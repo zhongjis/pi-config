@@ -4,7 +4,7 @@ import {
   type CavemanConfigDefaultLevel,
   type CavemanStatusVisibility,
 } from "./config.js";
-import { buildInjectedPrompt, loadRuntimePrompt } from "./prompt.js";
+import { buildInjectedPrompt } from "./prompt.js";
 import {
   clearCavemanState,
   getCavemanConfig,
@@ -79,7 +79,7 @@ interface CavemanExtensionApi {
 }
 
 const ACCEPTED_LEVELS_TEXT = `${CAVEMAN_LEVELS.join(" | ")} | off`;
-const COMMAND_USAGE = "Usage: /caveman | /caveman <lite|full|ultra|off> | /caveman config";
+const COMMAND_USAGE = `Usage: /caveman | /caveman <${CAVEMAN_LEVELS.join("|")}|off> | /caveman config`;
 const COMMAND_ARGUMENTS: CommandArgumentCompletion[] = [
   ...CAVEMAN_LEVELS.map((level) => ({
     value: level,
@@ -93,10 +93,13 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
   pi.on("session_start", async (_event: unknown, ctx: CavemanSessionContext) => {
     try {
       const restoredState = restoreCavemanState(ctx);
+      const restoredLevel = getCavemanEffectiveLevel();
       let promptReady = true;
 
       try {
-        loadRuntimePrompt();
+        if (restoredLevel) {
+          buildInjectedPrompt(restoredLevel);
+        }
       } catch (error) {
         promptReady = false;
         if (ctx.hasUI) {
@@ -132,7 +135,7 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
   });
 
   pi.registerCommand("caveman", {
-    description: "Show caveman status, set the current session level, or open config (/caveman | /caveman <lite|full|ultra|off> | /caveman config)",
+    description: `Show caveman status, set the current session level, or open config (${COMMAND_USAGE.replace("Usage: ", "")})`,
     getArgumentCompletions: (prefix: string): CommandArgumentCompletion[] | null => {
       const normalizedPrefix = prefix.trim().toLowerCase();
       const filtered = COMMAND_ARGUMENTS.filter((item) => item.value.startsWith(normalizedPrefix));
@@ -152,6 +155,14 @@ export default function cavemanExtension(pi: CavemanExtensionApi): void {
       }
 
       if (isCavemanLevel(normalizedArgs)) {
+        try {
+          buildInjectedPrompt(normalizedArgs);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          ctx.ui.notify(`Caveman ${normalizedArgs} unavailable: ${reason}`, "error");
+          return;
+        }
+
         const result = setCavemanSessionLevel(pi, normalizedArgs);
         syncStatus(ctx);
         ctx.ui.notify(

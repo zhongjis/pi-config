@@ -18,19 +18,9 @@ const SKILL_FIXTURE = `Prelude.
 
 rules
 
-## Intensity
-
-| **lite** | lite |
-| **full** | full |
-| **ultra** | ultra |
-
-## Auto-Clarity
+## When to break the rules
 
 clarity
-
-## Boundaries
-
-boundaries
 `;
 
 async function writeSkillFixture(): Promise<void> {
@@ -182,7 +172,7 @@ describe("caveman extension", () => {
 			"info",
 		);
 		expect(ctx.ui.notify).toHaveBeenCalledWith(
-			expect.stringContaining("Accepted levels: lite | full | ultra | off"),
+			expect.stringContaining("Accepted levels: full | ultra | wenyan | off"),
 			"info",
 		);
 	});
@@ -192,15 +182,31 @@ describe("caveman extension", () => {
 		const command = getCavemanCommand(mock);
 
 		expect(command.getArgumentCompletions("")?.map((item) => item.value)).toEqual([
-			"lite",
 			"full",
 			"ultra",
+			"wenyan",
 			"off",
 			"config",
 		]);
 		expect(command.getArgumentCompletions("off")).toEqual([
 			{ value: "off", label: "off — disable caveman for this session" },
 		]);
-		expect(command.getArgumentCompletions("w")).toBeNull();
+		expect(command.getArgumentCompletions("l")).toBeNull();
+	});
+
+	it("rejects a level whose skill is not installed", async () => {
+		const mock = await registerFreshExtension();
+		const appendEntry = vi.spyOn(mock.pi, "appendEntry");
+		const ctx = createPersistedContext();
+		await mock.fireLifecycle("session_start", {}, ctx);
+		const skillPath = join(tempHome, ".pi", "agent", "skills", "ultracave", "SKILL.md");
+
+		await getCavemanCommand(mock).handler("ultra", ctx);
+
+		expect(appendEntry).not.toHaveBeenCalled();
+		expect(ctx.ui.notify).toHaveBeenCalledWith(
+			`Caveman ultra unavailable: Caveman prompt source not found: ${skillPath}`,
+			"error",
+		);
 	});
 });

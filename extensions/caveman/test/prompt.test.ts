@@ -6,51 +6,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 let originalHome: string | undefined;
 let tempHome = "";
 
-const TEST_SKILL_BODY = `Runtime prelude.
+const TEST_SKILL_BODY = `# caveman
+
+PRELUDE_ALPHA
+
+## Persistence
+
+PERSISTENCE_BRAVO
+
+## Why
+
+WHY_CHARLIE
 
 ## Rules
 
-rules
+### 1. Answer first
 
-## Intensity
+RULES_DELTA
 
-| Level | What change |
-|-------|-------------|
-| **lite** | LITE_ROW_ALPHA |
-| **full** | FULL_ROW_BRAVO |
-| **ultra** | ULTRA_ROW_CHARLIE |
+## When to break the rules
 
-Example one
-- lite: LITE_EX_DELTA
-- wenyan-lite: WENYAN_EX_GOLF
-- LITE: LITE_EX_CASE
-- full: FULL_EX_ECHO
-- ultra: ULTRA_EX_FOXTROT
+BREAK_ECHO
 
-Example two
-- lite: LITE_EX_HOTEL
-- full: FULL_EX_INDIA
-- ultra: ULTRA_EX_JULIET
-- wenyan-full: WENYAN_EX_KILO
+## Pre-send check
 
-## Auto-Clarity
-
-clarity
-
-## Boundaries
-
-boundaries`;
+CHECK_FOXTROT`;
 
 async function importFreshPrompt() {
 	vi.resetModules();
 	return import("../prompt.js");
 }
 
-async function writeSkill(body: string): Promise<string> {
-	const globalPath = join(tempHome, ".pi", "agent", "skills", "caveman", "SKILL.md");
-	await mkdir(dirname(globalPath), { recursive: true });
-	await writeFile(globalPath, body);
-	return globalPath;
+async function writeSkill(name: string, body: string): Promise<string> {
+	const path = join(tempHome, ".pi", "agent", "skills", name, "SKILL.md");
+	await mkdir(dirname(path), { recursive: true });
+	await writeFile(path, body);
+	return path;
 }
 
 describe("caveman prompt", () => {
@@ -65,70 +56,46 @@ describe("caveman prompt", () => {
 		await rm(tempHome, { force: true, recursive: true });
 	});
 
-	it("prefers the global skill and strips its YAML frontmatter before parsing", async () => {
-		const globalPath = await writeSkill(`---\nname: caveman\ndescription: test\n---\n\n${TEST_SKILL_BODY}\n`);
-
-		const prompt = await importFreshPrompt();
-		const source = prompt.loadPromptSource();
-		const runtime = prompt.loadRuntimePrompt();
-
-		expect(prompt.getPromptSourcePath()).toBe(globalPath);
-		expect(source.raw.startsWith("---\n")).toBe(true);
-		expect(source.prelude.startsWith("---")).toBe(false);
-		expect(runtime.fragments.prelude.startsWith("---")).toBe(false);
-		expect(Object.keys(source.sections)).toEqual(["Rules", "Intensity", "Auto-Clarity", "Boundaries"]);
-	});
-
-	it("throws when the global skill is missing", async () => {
-		const prompt = await importFreshPrompt();
-		const expectedPath = join(tempHome, ".pi", "agent", "skills", "caveman", "SKILL.md");
-
-		expect(prompt.getPromptSourcePath()).toBe(expectedPath);
-		expect(() => prompt.loadPromptSource()).toThrow(`Caveman prompt source not found: ${expectedPath}`);
-		expect(() => prompt.loadRuntimePrompt()).toThrow(`Caveman prompt source not found: ${expectedPath}`);
-	});
-
 	it.each([
-		{
-			level: "lite",
-			present: ["Active level: lite. LITE_ROW_ALPHA", "Examples (lite): LITE_EX_DELTA LITE_EX_CASE LITE_EX_HOTEL"],
-			absent: [
-				"FULL_ROW_BRAVO", "ULTRA_ROW_CHARLIE", "FULL_EX_ECHO", "ULTRA_EX_FOXTROT",
-				"FULL_EX_INDIA", "ULTRA_EX_JULIET", "WENYAN_EX_GOLF", "WENYAN_EX_KILO", "wenyan",
-			],
-		},
-		{
-			level: "full",
-			present: ["FULL_ROW_BRAVO", "Examples (full): FULL_EX_ECHO FULL_EX_INDIA"],
-			absent: ["LITE_EX_DELTA", "WENYAN_EX_GOLF"],
-		},
-	] as const)("injects only the $level level row and examples", async ({ level, present, absent }) => {
-		await writeSkill(TEST_SKILL_BODY);
+		{ level: "full", skill: "caveman" },
+		{ level: "ultra", skill: "ultracave" },
+		{ level: "wenyan", skill: "megacave" },
+	] as const)("reads the $skill skill for level $level", async ({ level, skill }) => {
+		const path = await writeSkill(skill, `---\nname: ${skill}\ndescription: test\n---\n\n${TEST_SKILL_BODY}\n`);
 		const prompt = await importFreshPrompt();
 
-		const injected = prompt.buildInjectedPrompt(level);
-
-		for (const token of present) expect(injected).toContain(token);
-		for (const token of absent) expect(injected).not.toContain(token);
-		expect(injected.indexOf("Rules:")).toBeLessThan(injected.indexOf(`Examples (${level}):`));
+		expect(prompt.getPromptSourcePath(level)).toBe(path);
+		expect(prompt.buildInjectedPrompt(level)).toContain("RULES_DELTA");
 	});
 
-	it("omits the examples line when the active level has none", async () => {
-		await writeSkill(TEST_SKILL_BODY.replace(/^- lite:.*\n/gim, ""));
+	it("injects the skill body without frontmatter, title, or Persistence", async () => {
+		await writeSkill("caveman", `---\nname: caveman\ndescription: FRONTMATTER_GOLF\n---\n\n${TEST_SKILL_BODY}\n`);
 		const prompt = await importFreshPrompt();
 
-		const injected = prompt.buildInjectedPrompt("lite");
+		const injected = prompt.buildInjectedPrompt("full");
 
-		expect(injected).toContain("LITE_ROW_ALPHA");
-		expect(injected).not.toContain("Examples (");
-		expect(injected).not.toContain("LITE_EX_DELTA");
-		expect(injected).not.toContain("LITE_EX_CASE");
+		expect(injected.startsWith("PRELUDE_ALPHA")).toBe(true);
+		for (const token of ["WHY_CHARLIE", "### 1. Answer first", "RULES_DELTA", "## When to break the rules", "BREAK_ECHO", "CHECK_FOXTROT"]) {
+			expect(injected).toContain(token);
+		}
+		for (const token of ["FRONTMATTER_GOLF", "# caveman", "Persistence", "PERSISTENCE_BRAVO"]) {
+			expect(injected).not.toContain(token);
+		}
 	});
 
-	it("trims text before an Example block even when Example starts the section", async () => {
-		const { beforeExampleBlock } = await importFreshPrompt();
+	it("throws when the level's skill is missing", async () => {
+		const prompt = await importFreshPrompt();
+		const expectedPath = join(tempHome, ".pi", "agent", "skills", "ultracave", "SKILL.md");
 
-		expect(beforeExampleBlock("Example: keep out\n\nUseful detail")).toBe("");
-		expect(beforeExampleBlock("Keep this\n\nExample: keep out")).toBe("Keep this");
+		expect(() => prompt.buildInjectedPrompt("ultra")).toThrow(`Caveman prompt source not found: ${expectedPath}`);
+	});
+
+	it("throws when a required section is missing", async () => {
+		const path = await writeSkill("caveman", TEST_SKILL_BODY.replace("## When to break the rules", "## Auto-Clarity"));
+		const prompt = await importFreshPrompt();
+
+		expect(() => prompt.buildInjectedPrompt("full")).toThrow(
+			`Caveman prompt source missing required section "When to break the rules": ${path}`,
+		);
 	});
 });

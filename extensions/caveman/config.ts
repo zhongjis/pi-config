@@ -23,7 +23,7 @@ if (!fsModule || !osModule) {
 const { mkdirSync, readFileSync, writeFileSync } = fsModule;
 const { homedir } = osModule;
 
-export const CAVEMAN_LEVELS = ["lite", "full", "ultra"] as const;
+export const CAVEMAN_LEVELS = ["full", "ultra", "wenyan"] as const;
 export type CavemanLevel = (typeof CAVEMAN_LEVELS)[number];
 export type CavemanConfigDefaultLevel = CavemanLevel | "off";
 export type CavemanStatusVisibility = "active" | "hidden";
@@ -34,7 +34,7 @@ export interface CavemanConfig {
 }
 
 export const DEFAULT_CAVEMAN_CONFIG: CavemanConfig = {
-  defaultLevel: "ultra",
+  defaultLevel: "full",
   statusVisibility: "active",
 };
 
