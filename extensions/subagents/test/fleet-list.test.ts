@@ -455,16 +455,16 @@ function cjkNames(): void {
 
 describe("FleetList detailed rows", () => {
   it("uses live model/thinking/Fast and activity totals, without provider or activity text", () => {
-    const session = { ...FAKE_SESSION, model: { provider: "live-provider", id: "gpt-5.6" }, thinkingLevel: "high" } as unknown as NonNullable<AgentRecord["session"]>;
-    sessionFastPolicies.set(session, { enabled: true, usingOAuth: false });
-    const record = makeRecord({ session, isBackground: true, compactionCount: 2,
-      invocation: { modelName: "stale/model", thinking: "low", fast: false } });
-    const h = harness([record], new Map([[record.id, makeActivity()]]));
-    const row = h.render(240).at(-1)!;
-    expect(row).toContain("bg · gpt-5.6:high:fast · ↻5≤30 · ⇲2 · 5 tools · ↓ 33.8k tokens (62%) · 0s");
-    expect(row).not.toMatch(/live-provider|stale|ACTIVITY|bash|thinking…/);
     vi.useFakeTimers();
     try {
+      const session = { ...FAKE_SESSION, model: { provider: "live-provider", id: "gpt-5.6" }, thinkingLevel: "high" } as unknown as NonNullable<AgentRecord["session"]>;
+      sessionFastPolicies.set(session, { enabled: true, usingOAuth: false });
+      const record = makeRecord({ session, isBackground: true, compactionCount: 2,
+        invocation: { modelName: "stale/model", thinking: "low", fast: false } });
+      const h = harness([record], new Map([[record.id, makeActivity()]]));
+      const row = h.render(240).at(-1)!;
+      expect(row).toContain("bg · gpt-5.6:high:fast · ↻5≤30 · ⇲2 · 5 tools · ↓ 33.8k tokens (62%) · 0s");
+      expect(row).not.toMatch(/live-provider|stale|ACTIVITY|bash|thinking…/);
       const sameTick = h.render(240).at(-1)!;
       expect(sameTick.slice(0, 6)).toBe(row.slice(0, 6)); // no advance per render
       vi.advanceTimersByTime(200);
@@ -591,14 +591,14 @@ describe("FleetList hierarchy, retention and queue", () => {
     const h = harness(agents);
     const rows = h.render(240).slice(3);
     expect(rows.map(row => agents.find(a => row.includes(a.description))?.id)).toEqual(["parent", "first", "last", "later"]);
-    expect(rows[1]).toMatch(/^  ○   ├ ⠙ /);
-    expect(rows[2]).toMatch(/^  ○   └ ⠙ /);
+    expect(rows[1]).toMatch(/^  ○   ├ ⠋ /);
+    expect(rows[2]).toMatch(/^  ○   └ ⠋ /);
     h.press(DOWN); h.press(DOWN); h.press(DOWN); h.press(ENTER);
     expect(h.overlayOpened()).toBe(true);
     await h.closeOverlay();
     expect(h.render(240).find(row => row.includes("first child"))).toMatch(/^  ●   ├ /);
     agents.splice(agents.findIndex(a => a.id === "parent"), 1);
-    expect(h.render(240).find(row => row.includes("first child"))).toMatch(/^  ● ⠸ /);
+    expect(h.render(240).find(row => row.includes("first child"))).toMatch(/^  ● ⠋ /);
   });
 
   it.each(["completed", "error", "stopped", "aborted", "force_steered"] as const)(
