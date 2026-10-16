@@ -17,7 +17,7 @@ import { getForegroundOutcomeNote } from "./status-note.js";
 import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js";
 import { turnCheckInNotice } from "./turn-ceiling.js";
 import type { AgentConfig, AgentInvocation, AgentRecord, SubagentType } from "./types.js";
-import { type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel, SPINNER, type UICtx } from "./ui/agent-widget.js";
+import { type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel, SPINNER } from "./ui/agent-widget.js";
 
 /** Shared by the tool description and agent-authoring menus. */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -84,7 +84,7 @@ export function createAgentTool(
   notifications: Pick<ReturnType<typeof createNotificationCoordinator>, "track">,
 ) {
   const { pi, manager, settings, reloadCustomAgents, resolveDelegation } = host;
-  const { widget, fleet } = presentation;
+  const { fleet } = presentation;
   const buildDetails = createAgentResultBuilder(() => settings.showCost);
 
   const compactAgentToolDescription = `Launch an autonomous agent for complex, multi-step tasks. Configured agent types (current mode may permit only a subset):
@@ -233,7 +233,6 @@ Terse command-style prompts produce shallow, generic work.
       return renderAgentToolResult(result, options, theme);
     },
     execute: async (toolCallId, params, signal, onUpdate, ctx) => {
-      widget.setUICtx(ctx.ui as UICtx);
       reloadCustomAgents();
       const rawType = params.subagent_type as SubagentType;
       const resolved = resolveType(rawType);
@@ -251,8 +250,6 @@ Terse command-style prompts produce shallow, generic work.
         record.joinMode = resolveJoinMode(settings.defaultJoinMode, true);
         record.toolCallId = toolCallId;
         notifications.track(record.id, record.joinMode);
-        widget.ensureTimer();
-        widget.update();
         fleet.ensureTimer();
         fleet.update();
       };
@@ -424,8 +421,6 @@ Terse command-style prompts produce shallow, generic work.
           attachTranscript(record, id);
         }
         notifications.track(id, joinMode);
-        widget.ensureTimer();
-        widget.update();
         fleet.ensureTimer();
         fleet.update();
         pi.events.emit("subagents:created", {
@@ -479,7 +474,6 @@ Terse command-style prompts produce shallow, generic work.
         onTurnEnd: streamUpdate,
         onAssistantUsage: streamUpdate,
         onSessionCreated: (session: AgentSession) => {
-          widget.ensureTimer();
           fleet.ensureTimer();
           fleet.update();
           if (fgId) {
@@ -521,7 +515,6 @@ Terse command-style prompts produce shallow, generic work.
       clearInterval(spinnerInterval);
       if (checkIn !== undefined && manager.hasPendingExecution(record.id)) return convertToBackground(record, checkIn, detailBase);
       if (fgId) {
-        widget.markFinished(fgId);
         fleet.onAgentFinished(fgId);
       }
       const tokenText = formatLifetimeTokens(record);

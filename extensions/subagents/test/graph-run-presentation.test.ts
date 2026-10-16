@@ -10,7 +10,6 @@ import { graphRunEntryData } from "../src/graph/entry.js";
 import { elapsedMs, type GraphRunAgentEntry, stats } from "../src/graph/progress.js";
 import { createGraphRunTask, pauseGraphRunTask, resolveResumeTarget, resumeGraphRunTask, updateGraphRunProgressBatch } from "../src/graph/task.js";
 import type { AgentRecord } from "../src/types.js";
-import { AgentWidget } from "../src/ui/agent-widget.js";
 import { type FleetGraphRun, FleetList } from "../src/ui/fleet-list.js";
 import { renderGraphRunCard, renderGraphRunEntryCard } from "../src/ui/graph-run-report.js";
 
@@ -127,22 +126,14 @@ it("hides owned children only from ordinary UI and allows a graph-run-only fleet
   ] as AgentRecord[];
   const manager = new AgentManager();
   vi.spyOn(manager, "listAgents").mockReturnValue(records);
-  const widget = new AgentWidget(manager, new Map());
-  const widgetSetWidget = vi.fn();
-  widget.setUICtx({ setWidget: widgetSetWidget, setStatus: vi.fn() });
-  widget.update();
-  expect(widgetSetWidget).toHaveBeenCalledWith("agents", expect.any(Function), { placement: "aboveEditor" });
   const fleet = new FleetList(manager, new Map());
   const fleetSetWidget = vi.fn();
   fleet.setUICtx({ setStatus: vi.fn(), setWidget: fleetSetWidget, getEditorText: () => "", onTerminalInput: () => () => {}, notify() {}, custom: vi.fn() });
-  fleet.setEnabled(true);
   fleet.update();
   expect(fleetSetWidget).toHaveBeenCalledWith("fleet", expect.any(Function), { placement: "belowEditor" });
   expect(manager.listAgents()).toHaveLength(2);
   records.splice(0, 1);
-  widget.update();
   fleet.update();
-  expect(widgetSetWidget).toHaveBeenLastCalledWith("agents", undefined);
   expect(fleetSetWidget).toHaveBeenLastCalledWith("fleet", undefined);
   const run: FleetGraphRun = { id: "agr_test", name: "run", status: "running", doneCount: 0, totalCount: 1, startedAt: 1, tokens: 0 };
   const open = vi.fn(async () => {});
@@ -152,7 +143,7 @@ it("hides owned children only from ordinary UI and allows a graph-run-only fleet
   fleet.handleKey("\x1b[B"); fleet.handleKey("\r");
   await Promise.resolve();
   expect(open).toHaveBeenCalledWith("agr_test");
-  fleet.dispose(); widget.dispose();
+  fleet.dispose();
 });
 
 describe("graph run disclosure states", () => {

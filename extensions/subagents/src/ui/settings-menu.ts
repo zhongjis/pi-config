@@ -75,20 +75,6 @@ export function createSettingsMenu(
         values: ["on", "off"],
       },
       {
-        id: "fleetView",
-        label: "Fleet view",
-        description: "Claude Code-style main+subagents list below the editor (↓/← to navigate, Enter to view)",
-        currentValue: settings.fleetView ? "on" : "off",
-        values: ["on", "off"],
-      },
-      {
-        id: "widgetMode",
-        label: "Widget",
-        description: "Above-editor agent widget: all = every agent; background = hide foreground (they already render inline); off = hide the widget.",
-        currentValue: settings.widgetMode,
-        values: ["all", "background", "off"],
-      },
-      {
         id: "toolDescriptionMode",
         label: "Tool description",
         description: "agent tool description sent to the LLM: full (rich, default), compact (~75% fewer tokens, for small/local models), or custom (.pi/agent-tool-description.md with {{placeholders}})",

@@ -4,7 +4,6 @@ import { initTheme } from "@earendil-works/pi-coding-agent";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import * as path from "node:path";
 import { stripVTControlCharacters } from "node:util";
-import { AgentWidget, type AgentActivity, type UICtx } from "../../extensions/subagents/src/ui/agent-widget.js";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const SUBAGENT_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/subagents/src/index.ts");
@@ -78,18 +77,6 @@ function agentResult(status: string, overrides: Record<string, unknown> = {}) {
 	};
 }
 
-function makeActivity(toolName: string): AgentActivity {
-	return {
-		activeTools: new Map([[`${toolName}-1`, toolName]]),
-		toolUses: 1,
-		lifetimeUsage: { input: 42, output: 0, cacheWrite: 0 },
-		responseText: "",
-		turnCount: 1,
-		maxTurns: 3,
-		lastProgressAt: 0,
-	};
-}
-
 describe("subagent TUI rendering — integration", () => {
 	let t: TestSession | undefined;
 
@@ -140,54 +127,6 @@ describe("subagent TUI rendering — integration", () => {
 		expect(completed).toContain("completed · Agent result body");
 	});
 
-	it("keeps widget registration and status churn bounded during a mixed burst", () => {
-		vi.useFakeTimers();
-		vi.setSystemTime(0);
-
-		const records = [
-			{ id: "fg-1", type: "general-purpose", status: "running", description: "foreground probe", toolUses: 1, startedAt: 0, lifetimeUsage: { input: 42, output: 0, cacheWrite: 0 }, compactionCount: 0 },
-			{ id: "bg-1", type: "general-purpose", status: "running", description: "background probe", toolUses: 1, startedAt: 0, lifetimeUsage: { input: 42, output: 0, cacheWrite: 0 }, compactionCount: 0 },
-			{ id: "bg-2", type: "general-purpose", status: "queued", description: "queued probe", toolUses: 0, startedAt: 0, lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, compactionCount: 0 },
-		];
-		const manager = { listAgents: vi.fn(() => records) };
-		const activity = new Map<string, AgentActivity>([
-			["fg-1", makeActivity("read")],
-			["bg-1", makeActivity("bash")],
-		]);
-		const widget = new AgentWidget(manager as never, activity);
-		const uiCtx = {
-			setStatus: vi.fn(),
-			setWidget: vi.fn(),
-		} satisfies UICtx;
-
-		widget.setUICtx(uiCtx);
-		widget.update();
-
-		const widgetFactory = uiCtx.setWidget.mock.calls[0]?.[1];
-		expect(typeof widgetFactory).toBe("function");
-		const tui = { terminal: { columns: 120 }, requestRender: vi.fn() };
-		const rendered = widgetFactory(tui, THEME).render().join("\n");
-		expect(uiCtx.setStatus).toHaveBeenCalledWith("subagents", "2 running, 1 queued agents");
-		expect(rendered).toContain("foreground probe");
-		expect(rendered).toContain("background probe");
-		expect(rendered).toContain("1 queued");
-
-		for (let i = 0; i < 5; i++) widget.update();
-		expect(uiCtx.setWidget.mock.calls.filter((call) => call[0] === "agents" && typeof call[1] === "function")).toHaveLength(1);
-		expect(uiCtx.setStatus).toHaveBeenCalledTimes(1);
-		expect(tui.requestRender).toHaveBeenCalledTimes(5);
-
-		vi.advanceTimersByTime(250);
-		widget.update();
-		expect(tui.requestRender).toHaveBeenCalledTimes(6);
-
-		activity.get("bg-1")!.toolUses = 2;
-		widget.update();
-		expect(tui.requestRender).toHaveBeenCalledTimes(7);
-		expect(uiCtx.setWidget.mock.calls.filter((call) => call[0] === "agents" && typeof call[1] === "function")).toHaveLength(1);
-
-		widget.dispose();
-	});
 
 	it("clips notification previews on native grapheme and terminal-cell boundaries", async () => {
 		t = await createTestSession({ extensions: [SUBAGENT_EXTENSION], propagateErrors: false });

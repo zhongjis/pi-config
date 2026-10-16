@@ -157,7 +157,6 @@ export class FleetList {
   private frame = 0;
   private lastStatusText: string | undefined;
 
-  private enabled = true;
   /** Whether arrow keys currently navigate the list (vs. flow to the editor). */
   private active = false;
   /** 0 = `main`, 1..N = subagents. */
@@ -183,13 +182,6 @@ export class FleetList {
   ) {}
 
   // ---- Lifecycle ----
-
-  setEnabled(enabled: boolean): void {
-    if (enabled === this.enabled) return;
-    this.enabled = enabled;
-    if (!enabled) this.active = false;
-    this.update();
-  }
 
   /** Capture the UI context and (re)register the global input handler. */
   setUICtx(ui: FleetUICtx): void {
@@ -241,8 +233,9 @@ export class FleetList {
     const running = agents.filter(a => a.status === "running").length;
     const queued = agents.filter(a => a.status === "queued").length;
     const total = running + queued;
+    const parts = [running > 0 ? `${running} running` : "", queued > 0 ? `${queued} queued` : ""].filter(Boolean);
     const statusText = total > 0
-      ? `${running} running${queued > 0 ? `, ${queued} queued` : ""} agent${total === 1 ? "" : "s"}`
+      ? `${parts.join(", ")} agent${total === 1 ? "" : "s"}`
       : undefined;
     if (statusText !== this.lastStatusText) {
       this.ui.setStatus("subagents", statusText);
@@ -252,7 +245,7 @@ export class FleetList {
     // it is the thing the user opens to see what its children did. Read off the
     // roster for the same reason activation does: two counts of "is there
     // anything here" drifted apart once before.
-    const hasRows = this.enabled && (this.roster().length > 1 || queued > 0);
+    const hasRows = this.roster().length > 1 || queued > 0;
 
     if (!hasRows) {
       if (this.widgetRegistered) {
@@ -268,7 +261,7 @@ export class FleetList {
     }
 
     this.clampSelection();
-    this.ensureTimer(); // keep stats ticking whenever the list is shown (e.g. after a re-enable)
+    this.ensureTimer(); // keep stats ticking whenever the list is shown
 
     if (!this.widgetRegistered) {
       this.ui.setWidget(FLEET_KEY, (tui, theme) => {
@@ -379,7 +372,7 @@ export class FleetList {
 
   /** Returns `{consume:true}` to swallow a key, or undefined to let it through. */
   handleKey(data: string): { consume?: boolean; data?: string } | undefined {
-    if (!this.enabled || !this.ui) return undefined;
+    if (!this.ui) return undefined;
     // Input listeners receive BOTH key-press and key-release (the kitty protocol
     // emits both, and matchesKey matches either) — act on press only, or every
     // tap would move/fire twice. Repeats still pass through for held-key nav.
@@ -586,7 +579,7 @@ export class FleetList {
       if (thinking === undefined && record.invocation?.thinkingDefault) stats.push(dim("thinking: default (pending)"));
     }
     if (level < 2) {
-      if (activity) stats.push(dim(formatTurns(activity.turnCount, activity.maxTurns)));
+      if (activity && activity.turnCount > 0) stats.push(dim(formatTurns(activity.turnCount, activity.maxTurns)));
       if (record.compactionCount > 0) stats.push(dim(`⇲${record.compactionCount}`));
     }
     if (level < 1) stats.push(dim(`${activity?.toolUses ?? record.toolUses} tools`));

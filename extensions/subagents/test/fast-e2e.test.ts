@@ -7,9 +7,8 @@ import { AgentManager } from "../src/agent-manager.js";
 import { openSession } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
 import { execute } from "../src/execution.js";
-import { getSessionFast, sessionFastPolicies } from "../src/session-fast.js";
-import type { AgentConfig, AgentRecord } from "../src/types.js";
-import { AgentWidget, type UICtx } from "../src/ui/agent-widget.js";
+import { getSessionFast } from "../src/session-fast.js";
+import type { AgentConfig } from "../src/types.js";
 
 const beta = "fast-mode-2026-02-01";
 function config(name: string, model: string): AgentConfig {
@@ -95,31 +94,4 @@ it.each([false, true])("manager captures effective Fast at creation, completion 
 		await manager.resume(id, "again");
 		expect(record.invocation?.fast).toBe(fast);
 	} finally { manager.dispose(); registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }
-});
-
-it("widget reads real session thinking and retained Fast instead of stale invocation metadata", async () => {
-	const t = await createFastSession();
-	const manager = new AgentManager();
-	const widget = new AgentWidget(manager, new Map());
-	try {
-		t.session.setThinkingLevel("off");
-		const policy = { enabled: true, usingOAuth: false };
-		sessionFastPolicies.set(t.session, policy);
-		const record: AgentRecord = {
-			id: "live", type: "general-purpose", description: "live", status: "running",
-			toolUses: 0, startedAt: Date.now(), compactionCount: 0,
-			lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, session: t.session,
-			invocation: { modelName: "stale/model", thinking: "high", fast: false },
-		};
-		vi.spyOn(manager, "listAgents").mockReturnValue([record]);
-		let factory: Exclude<Parameters<UICtx["setWidget"]>[1], undefined> | undefined;
-		widget.setUICtx({ setStatus: () => {}, setWidget: (_key, content) => { factory = content; } });
-		widget.update();
-		if (!factory) throw new Error("Widget was not registered");
-		const component = factory({ terminal: { columns: 240 } }, { fg: (_color, text) => text, bold: text => text });
-		expect(component.render().join("\n")).toContain("anthropic/claude-opus-4-8:off:fast");
-		policy.enabled = false;
-		expect(component.render().join("\n")).toContain("anthropic/claude-opus-4-8:off");
-		expect(component.render().join("\n")).not.toMatch(/:fast|stale\/model|thinking: high/);
-	} finally { widget.dispose(); manager.dispose(); t.dispose(); }
 });

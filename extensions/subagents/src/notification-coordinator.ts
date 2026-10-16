@@ -3,7 +3,7 @@ import { GroupJoinManager } from "./group-join.js";
 import { getStatusNote } from "./status-note.js";
 import { turnCheckInNotice } from "./turn-ceiling.js";
 import { type AgentRecord, agentExecutionKey, type JoinMode, type NotificationDetails } from "./types.js";
-import type { AgentActivity, AgentWidget } from "./ui/agent-widget.js";
+import type { AgentActivity } from "./ui/agent-widget.js";
 import type { FleetList } from "./ui/fleet-list.js";
 import { getLifetimeTotal, getSessionContextPercent } from "./usage.js";
 
@@ -77,7 +77,6 @@ function buildNotificationDetails(record: AgentRecord, resultMaxLen: number, act
 /** The activation's shared live-agent presentation. */
 export interface AgentPresentation {
   readonly activity: Map<string, AgentActivity>;
-  readonly widget: AgentWidget;
   readonly fleet: FleetList;
 }
 
@@ -174,7 +173,6 @@ export function createNotificationCoordinator(
     const current = getRecord(completion.id);
     if (current && agentExecutionKey(current) !== agentExecutionKey(completion)) return;
     presentation.activity.delete(completion.id);
-    presentation.widget.markFinished(completion.id);
     presentation.fleet.onAgentFinished(completion.id);
   }
 
@@ -188,7 +186,6 @@ export function createNotificationCoordinator(
         customType: "subagent-notification", ...completion.individual, display: true,
       }, { deliverAs: "followUp", triggerTurn: true });
     });
-    presentation.widget.update();
   }
 
   const groupJoin = new GroupJoinManager<Completion>(
@@ -198,7 +195,7 @@ export function createNotificationCoordinator(
       schedule(groupKey, () => {
         for (const completion of records) completions.delete(agentExecutionKey(completion));
         const unconsumed = records.filter(completion => !isConsumed(completion));
-        if (unconsumed.length === 0) { presentation.widget.update(); return; }
+        if (unconsumed.length === 0) return;
         const notifications = unconsumed.map(completion => completion.grouped.content).join('\n\n');
         const label = partial
           ? `${unconsumed.length} agent(s) finished (partial — others still running)`
@@ -212,7 +209,6 @@ export function createNotificationCoordinator(
           display: true, details,
         }, { deliverAs: "followUp", triggerTurn: true });
       });
-      presentation.widget.update();
     },
     30_000,
   );
@@ -223,17 +219,14 @@ export function createNotificationCoordinator(
     if (isConsumed(completion)) {
       markFinished(completion);
       completions.delete(agentExecutionKey(completion));
-      presentation.widget.update();
       return;
     }
     // Keep this exact completion through debounce, never re-read a resumed record.
     if (currentBatchAgents.some(agent => agentExecutionKey(agent) === agentExecutionKey(completion))) {
-      presentation.widget.update();
       return;
     }
     const result = groupJoin.onAgentComplete(completion);
     if (result === 'pass') sendIndividualNudge(completion);
-    presentation.widget.update();
   }
 
   /** Finalize the current batch: if 2+ smart-mode agents, register as a group. */

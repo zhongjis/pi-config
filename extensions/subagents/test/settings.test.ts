@@ -91,24 +91,6 @@ describe("settings persistence", () => {
   });
 
 
-  it("round-trips fleetView (true and false); keeps boolean, drops non-boolean", () => {
-    saveSettings({ fleetView: false }, projectDir);
-    expect(loadSettings(projectDir)).toEqual({ fleetView: false });
-    saveSettings({ fleetView: true }, projectDir);
-    expect(loadSettings(projectDir)).toEqual({ fleetView: true });
-    writeProject({ fleetView: "on" } as any);
-    expect(loadSettings(projectDir)).toEqual({}); // non-boolean dropped
-  });
-
-  it("round-trips widgetMode; keeps valid values, drops invalid", () => {
-    saveSettings({ widgetMode: "off" }, projectDir);
-    expect(loadSettings(projectDir)).toEqual({ widgetMode: "off" });
-    saveSettings({ widgetMode: "background" }, projectDir);
-    expect(loadSettings(projectDir)).toEqual({ widgetMode: "background" });
-    writeProject({ widgetMode: "sideways" } as any);
-    expect(loadSettings(projectDir)).toEqual({}); // invalid value dropped
-  });
-
   it("round-trips outputTranscript; drops non-boolean", () => {
     saveSettings({ outputTranscript: false }, projectDir);
     expect(loadSettings(projectDir)).toEqual({ outputTranscript: false });
@@ -334,8 +316,6 @@ describe("settings persistence", () => {
         setScopeModels: vi.fn(),
         setDisableDefaultAgents: vi.fn(),
         setToolDescriptionMode: vi.fn(),
-        setFleetView: vi.fn(),
-        setWidgetMode: vi.fn(),
         setOutputTranscript: vi.fn(),
       };
     });
@@ -364,8 +344,6 @@ describe("settings persistence", () => {
           scopeModels: true,
           disableDefaultAgents: true,
           toolDescriptionMode: "compact",
-          fleetView: false,
-          widgetMode: "off",
         },
         appliers,
       );
@@ -374,8 +352,6 @@ describe("settings persistence", () => {
       expect(appliers.setScopeModels).toHaveBeenCalledWith(true);
       expect(appliers.setDisableDefaultAgents).toHaveBeenCalledWith(true);
       expect(appliers.setToolDescriptionMode).toHaveBeenCalledWith("compact");
-      expect(appliers.setFleetView).toHaveBeenCalledWith(false);
-      expect(appliers.setWidgetMode).toHaveBeenCalledWith("off");
     });
 
     it("applies decisionGateMinConfidence, including 0; skips it when absent", () => {
@@ -384,20 +360,6 @@ describe("settings persistence", () => {
       applySettings({}, { ...appliers, setDecisionGateMinConfidence });
       expect(setDecisionGateMinConfidence).toHaveBeenCalledOnce();
       expect(setDecisionGateMinConfidence).toHaveBeenCalledWith(0);
-    });
-
-    it("applies widgetMode; skips it when absent", () => {
-      applySettings({ widgetMode: "off" }, appliers);
-      expect(appliers.setWidgetMode).toHaveBeenCalledWith("off");
-      applySettings({}, appliers);
-      expect(appliers.setWidgetMode).toHaveBeenCalledTimes(1); // absence is "use default"
-    });
-
-    it("applies fleetView (true and false); skips it when absent", () => {
-      applySettings({ fleetView: true }, appliers);
-      expect(appliers.setFleetView).toHaveBeenCalledWith(true);
-      applySettings({}, appliers);
-      expect(appliers.setFleetView).toHaveBeenCalledTimes(1); // absence is "use default"
     });
 
     it("applies scopeModels: false", () => {
@@ -450,8 +412,6 @@ describe("settings persistence", () => {
         setScopeModels: vi.fn(),
         setDisableDefaultAgents: vi.fn(),
         setToolDescriptionMode: vi.fn(),
-        setFleetView: vi.fn(),
-        setWidgetMode: vi.fn(),
         setOutputTranscript: vi.fn(),
       };
     });

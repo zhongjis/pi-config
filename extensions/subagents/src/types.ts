@@ -73,15 +73,6 @@ export interface AgentConfig {
 
 export type JoinMode = 'async' | 'group' | 'smart';
 
-/**
- * Display mode for the persistent above-editor agent widget.
- * - `all`: show every agent (foreground + background).
- * - `background`: hide foreground agents (they already render inline as the
- *   `agent` tool result, #118); show background/queued/scheduled/RPC.
- * - `off`: hide the widget entirely.
- */
-export type WidgetMode = 'all' | 'background' | 'off';
-
 /** Per-agent live activity state. */
 export interface AgentActivity {
   activeTools: Map<string, string>;

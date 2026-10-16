@@ -38,7 +38,7 @@ function makePi() {
   return { pi, tools, lifecycle };
 }
 
-/** A UI context with the surfaces the widget + fleet touch; setWidget is spied. */
+/** A UI context with the surfaces the fleet touches; setWidget is spied. */
 function uiCtx() {
   return {
     setStatus: vi.fn(),
@@ -115,7 +115,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     expect(ui.onTerminalInput).toHaveBeenCalled();
   });
 
-  it("registers the AgentWidget and FleetView together, then clears both on shutdown", async () => {
+  it("registers only FleetView after tool_execution_start and clears it on shutdown", async () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "setInterval", "clearInterval"] });
     vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => "done")));
 
@@ -138,12 +138,9 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     const factoryRegistrations = ui.setWidget.mock.calls
       .filter((call) => typeof call[1] === "function")
       .map((call) => ({ key: call[0], placement: call[2]?.placement }));
-    expect(factoryRegistrations).toContainEqual({ key: "agents", placement: "aboveEditor" });
-    expect(factoryRegistrations).toContainEqual({ key: "fleet", placement: "belowEditor" });
+    expect(factoryRegistrations).toEqual([{ key: "fleet", placement: "belowEditor" }]);
 
     await lifecycle.get("session_shutdown")?.({}, ctxWith(ui));
-    await vi.runOnlyPendingTimersAsync(); // AgentWidget timer observes the emptied manager.
-    expect(ui.setWidget).toHaveBeenCalledWith("agents", undefined);
     expect(ui.setWidget).toHaveBeenCalledWith("fleet", undefined);
   });
 });

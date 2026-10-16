@@ -21,7 +21,6 @@ function record(id: string): AgentRecord {
 function presentation(): AgentPresentation {
   return {
     activity: new Map(),
-    widget: { markFinished: vi.fn(), update: vi.fn() },
     fleet: { onAgentFinished: vi.fn() },
   } as unknown as AgentPresentation;
 }
@@ -62,7 +61,7 @@ describe("notification coordinator parking", () => {
     agent.resultConsumed = true;
     const active = { activeTools: new Map([["t", "bash"]]), toolUses: 5, turnCount: 8, responseText: "new output", lifetimeUsage: agent.lifetimeUsage };
     ui.activity.set(agent.id, active);
-    vi.mocked(ui.widget.markFinished).mockClear();
+    vi.mocked(ui.fleet.onAgentFinished).mockClear();
     if (mode === "smart") coordinator.onComplete(peer);
     vi.advanceTimersByTime(300);
     coordinator.release();
@@ -72,7 +71,7 @@ describe("notification coordinator parking", () => {
     expect(content).not.toContain("new output");
     expect(JSON.stringify(messages)).toContain('"turnCount":7');
     expect(ui.activity.get(agent.id)).toBe(active);
-    expect(ui.widget.markFinished).not.toHaveBeenCalledWith(agent.id);
+    expect(ui.fleet.onAgentFinished).not.toHaveBeenCalledWith(agent.id);
   });
 
   it.each(["old", "new"] as const)("consuming %s cancels only that execution's nudge", (consumed) => {

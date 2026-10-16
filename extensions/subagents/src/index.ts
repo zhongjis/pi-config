@@ -38,14 +38,12 @@ import { createNotificationCoordinator } from "./notification-coordinator.js";
 import { registerSubagentNotificationRenderer } from "./notification-rendering.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged, type ToolDescriptionMode } from "./settings.js";
 import { startBackgroundSupervision } from "./supervision-loop.js";
-import { type AgentRecord, type JoinMode, type WidgetMode } from "./types.js";
+import { type AgentRecord, type JoinMode } from "./types.js";
 import { type AgentMonitorDeps, showAgentMonitor } from "./ui/agent-monitor.js";
 import {
   type AgentActivity,
-  AgentWidget,
   getDisplayName,
   type Theme,
-  type UICtx,
 } from "./ui/agent-widget.js";
 import { FleetList, type FleetUICtx } from "./ui/fleet-list.js";
 import { type GraphRunMenuDeps, openGraphRunFromFleet, showGraphRunDialog } from "./ui/graph-run-menu.js";
@@ -138,12 +136,11 @@ export default function (pi: ExtensionAPI) {
   // Initial load
   reloadCustomAgents();
 
-  // ---- Agent activity tracking + widget ----
+  // ---- Agent activity tracking + fleet ----
   const agentActivity = new Map<string, AgentActivity>();
 
   const notifications = createNotificationCoordinator(pi, id => manager.getRecord(id), {
     activity: agentActivity,
-    get widget() { return widget; },
     get fleet() { return fleet; },
   });
   const { schedule: scheduleNudge, cancel: cancelNudge } = notifications;
@@ -235,8 +232,6 @@ export default function (pi: ExtensionAPI) {
 
   manager.setActivityListener(record => {
     if (record.activity) agentActivity.set(record.id, record.activity);
-    widget.ensureTimer();
-    widget.update();
     fleet.ensureTimer();
     fleet.update();
   });
@@ -395,7 +390,6 @@ export default function (pi: ExtensionAPI) {
       pendingUsage = new PendingUsagePool();
       notifications.clearPending();
       fleet.dispose();
-      widget.dispose();
       await manager.dispose();
       return;
     }
@@ -425,21 +419,8 @@ export default function (pi: ExtensionAPI) {
     await manager.dispose();
   });
 
-  // Live widget: show running agents above editor.
-  // widgetMode (default "background") selects what the widget shows: "all" =
-  // every agent; "background" = hide foreground (they already render inline as
-  // the `agent` tool result, so showing them here too is a duplicate, #118), keep
-  // everything else; "off" = hide the widget entirely. Read live at render time.
-  let widgetMode: WidgetMode = "background";
-  function getWidgetMode(): WidgetMode { return widgetMode; }
-  const widget = new AgentWidget(manager, agentActivity, getWidgetMode);
-  function setWidgetMode(m: WidgetMode): void { widgetMode = m; widget.update(); }
-
   // Claude Code-style FleetView: navigable list of main + subagents below the editor.
   const fleet = new FleetList(manager, agentActivity);
-  let fleetViewEnabled = true;
-  function isFleetViewEnabled(): boolean { return fleetViewEnabled; }
-  function setFleetViewEnabled(b: boolean): void { fleetViewEnabled = b; fleet.setEnabled(b); }
 
   // Project/global default for writing the subagent .output transcript. A custom
   // agent's `output_transcript` frontmatter overrides this per spawn; when the
@@ -484,11 +465,9 @@ export default function (pi: ExtensionAPI) {
   function getToolDescriptionMode(): ToolDescriptionMode { return toolDescriptionMode; }
   function setToolDescriptionMode(mode: ToolDescriptionMode): void { toolDescriptionMode = mode; }
 
-  // Grab UI context from first tool execution + clear lingering widget on new turn
+  // Grab the live UI context for fleet navigation from tool execution.
   pi.on("tool_execution_start", async (_event, ctx) => {
-    widget.setUICtx(ctx.ui as UICtx);
     fleet.setUICtx(ctx.ui as unknown as FleetUICtx);
-    widget.onTurnStart();
   });
 
   // Apply persisted settings on startup and emit `subagents:settings_loaded`.
@@ -506,8 +485,6 @@ export default function (pi: ExtensionAPI) {
       setScopeModels: setScopeModelsEnabled,
       setDisableDefaultAgents: setDisableDefaultAgents,
       setToolDescriptionMode: setToolDescriptionMode,
-      setFleetView: setFleetViewEnabled,
-      setWidgetMode: setWidgetMode,
       setOutputTranscript: setOutputTranscript,
     },
     (event, payload) => pi.events.emit(event, payload),
@@ -524,7 +501,7 @@ export default function (pi: ExtensionAPI) {
         get showCost() { return showCost; },
       },
     },
-    { activity: agentActivity, widget, fleet },
+    { activity: agentActivity, fleet },
     notifications,
   ));
 
@@ -533,7 +510,7 @@ export default function (pi: ExtensionAPI) {
       runtimeTrace: () => graphRuntimeTrace, decisionGateMinConfidence: () => decisionGateMinConfidence },
     { schedule: scheduleNudge, cancel: cancelNudge },
     surface => {
-      if (surface !== "pane") { widget.update(); fleet.update(); }
+      if (surface !== "pane") fleet.update();
       if (surface !== "fleet") graphRunPane?.sync();
     },
   );
@@ -583,8 +560,6 @@ export default function (pi: ExtensionAPI) {
       scopeModels: isScopeModelsEnabled(),
       disableDefaultAgents: isDefaultsDisabled(),
       toolDescriptionMode: getToolDescriptionMode(),
-      fleetView: isFleetViewEnabled(),
-      widgetMode: getWidgetMode(),
       outputTranscript: getOutputTranscriptDefault(),
     };
   }
@@ -629,13 +604,6 @@ export default function (pi: ExtensionAPI) {
     } else if (id === "toolDescriptionMode") {
       setToolDescriptionMode(value as ToolDescriptionMode);
       notifyApplied(ctx, `Tool description set to ${value}. Takes effect on next pi session.`);
-    } else if (id === "fleetView") {
-      const enabled = value === "on";
-      setFleetViewEnabled(enabled);
-      notifyApplied(ctx, `Fleet view ${enabled ? "enabled" : "disabled"}`);
-    } else if (id === "widgetMode") {
-      setWidgetMode(value as WidgetMode);
-      notifyApplied(ctx, `Widget set to ${value}`);
     }
   }
 

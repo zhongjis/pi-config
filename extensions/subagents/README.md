@@ -12,8 +12,7 @@ Derived from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)
 
 - **Agent supervision** — launch with `agent`, collect with `get_agent_result({run_id, wait:true})`, and redirect active workers with `steer_subagent`
 - **Parallel background agents** — spawn multiple agents that run concurrently with automatic queuing (configurable concurrency limit, default 4) and smart group join (consolidated notifications)
-- **Live widget UI** — persistent above-editor widget with animated spinners, live tool activity, token counts, and colored status icons. Configurable via `/agents → Settings → Widget`: `all` (every agent), `background` (default — hides foreground runs, which already render inline as the `agent` tool result), or `off`
-- **FleetView** — Claude Code-style navigable list of `main` + every running subagent rendered below the editor (earliest-launched first). Press `↓` (or `←`) at an empty prompt to jump in, `↑`/`↓` to move the selection, `Enter` to open the selected agent's live, auto-updating conversation, `Esc` to return. Finished agents linger briefly before dropping out, and a viewer stays open through completion so you can read the final output. Toggle via `/agents → Settings → Fleet view`
+- **FleetView** — an always-on navigable agent list below the editor with live status and usage, nested research children, and an aggregate queue. Press `↓` or `←` at an empty prompt to enter, select with `↑`/`↓`, open a conversation with `Enter`, and return with `Esc`. See [FleetView](#fleetview).
 - **Agent Monitor** — `/agent-monitor` opens a full-screen roster with two sections, agent graph runs and independent agents, including finished entries from this session. In-memory records last up to 15 minutes; independent runs also remain as read-only history after reload. `Enter` on a graph run opens the graph panel — the Herdr pane layout — inside Pi with `c` conversation, `p` pause/resume, `s` skip, `r` retry, and `x` stop; `Enter` on an agent opens its conversation. `o` detaches a graph run to a read-only Herdr side pane.
 - **Conversation viewer** — select any agent in `/agents` to open a live-scrolling overlay of its full conversation (auto-follows new content, scroll up to pause). Steer a running agent inline by pressing `Enter` to open a composer, typing, then `Enter` to send (`Esc` or an empty submit returns) — the message appears as a user message and redirects the agent after its current tool. Stop a still-running agent by pressing `x` (then `x` again to confirm) — both work for background agents too. Press `/` to search the transcript (`n`/`N` for next/previous match, `Esc` clears), or `[`/`]` to jump between messages. Tool calls show their main argument, long results show their first and last lines with an omitted-line count, and assistant errors appear inline. Reload-surviving history rows in `/agent-monitor` open the same viewer read-only
 - **Custom agent types** — define agents in `.pi/agents/<name>.md` or `.agents/agents/<name>.md` (project) or globally, with YAML frontmatter: custom system prompts, model selection, thinking levels, tool restrictions
@@ -85,37 +84,33 @@ Restrictions:
 
 ## UI
 
-The extension renders a persistent widget above the editor showing active agents. By default it shows background runs only (`widgetMode: background`) — foreground agents already render inline as the `agent` tool result, so the widget would otherwise double-render them. Switch to `all` (every agent) or `off` (hide the widget) via `/agents → Settings → Widget`:
-
-```
-● Agents
-├─ ⠹ Agent  Refactor auth module · ↻5≤30 · 5 tool uses · 33.8k token (62%) · 12.3s
-│    ⎿  editing 2 files…
-├─ ⠹ Explore  Find auth files · ↻3 · 3 tool uses · 12.4k token (8%) · 4.1s
-│    ⎿  searching…
-├─ ⠹ Agent  Long-running task · ↻42 · 38 tool uses · 91.0k token (84% · ⇊2) · 2m17s
-│    ⎿  reading…
-└─ 2 queued
-```
-
-The token field is annotated with two optional signals inside parens:
-- **`NN%`** — context-window utilization (color-coded: <70% dim, 70–85% warning, ≥85% error). Omitted when the model has no declared `contextWindow`, or briefly right after compaction.
-- **`⇊N`** — number of times the session has compacted, when > 0. Stays dim; the percent's color carries urgency.
-
 ### FleetView
 
-While subagents are running, a Claude Code-style navigable list renders **below** the editor:
+[FleetView](src/ui/fleet-list.ts) renders below the editor whenever agents, queued work, or graph runs are visible:
 
 ```
   esc to interrupt · ← for agents · ↓ to manage
 
   ● main
-  ○ general-purpose  Sleep then report 1                                11s · ↓ 13.1k tokens
-  ○ general-purpose  Sleep then report 2                                11s · ↓ 13.1k tokens
-                                                                                   ↓ 3 more
+  ○ graph run  deep-research                                           3/7 agents · 41s · ↓ 88.2k tokens
+  ○ ⠹ Jintong 金童  Fix auth expiry        gpt-5.6:high · ↻5≤30 · 5 tools · ↓ 33.8k tokens (62%) · 12s
+  ○   ├ ⠹ Cheng Feng 乘风  Map callers      claude-haiku-4.5:low · ↻4 · 9 tools · ↓ 12.4k tokens (8%) · 9s
+  ○   └ ✓ Wen Chang 文昌  Redis TTL docs       done · claude-haiku-4.5:low · ↻6 · 11 tools · ↓ 20.1k tokens · 24s
+  ○ × Yunu 玉女  Fix header            failed · bg · gpt-5.6:medium · ↻9 · 14 tools · ↓ 51.3k tokens · 72s
+    ◦ 2 queued
 ```
 
-The list is ordered earliest-launched first, and only shows agents you can actually open (pending/queued agents with no session yet appear once they start). At an **empty prompt**, press `↓` (or `←`) to move focus from the prompt into the list — the selected row is marked `●`, the rest `○`. `↑`/`↓` move the selection, `Enter` opens the selected agent's live conversation overlay (it auto-updates as the agent works), and `Esc` (or `↑` above `main`) returns to the prompt. Selecting `main` returns to the normal view. Inside the overlay, press `Enter` to steer the running agent — type a message and `Enter` to send it (`Esc` or an empty submit returns), and it redirects the agent the same way the `steer_subagent` tool does. A viewer stays open when its agent finishes so you can read the final output, and finished agents linger in the list for a few seconds before dropping out. Typing anything at a non-empty prompt behaves normally — the list only captures arrow keys when the prompt is empty. Disable it entirely via `/agents → Settings → Fleet view`.
+Top-level agents and nested siblings are ordered earliest-launched first; children sit directly under their parent with the selection column aligned. Graph runs sit above agents, one row per run; their owned agents stay inside the graph inspector. Queued agents aggregate into one non-selectable row. The list windows eight entries, with `↑`/`↓ N more` indicators for hidden rows.
+
+At an **empty prompt**, press `↓` or `←` to enter the list. The selected row is marked `●`, the rest `○`. Use `↑`/`↓` to select and `Enter` to open the agent's live conversation or the graph inspector. `Esc`, `↑` above `main`, or selecting `main` returns to the prompt. The conversation overlay auto-updates; `Enter` opens the steer composer, then `Enter` sends (`Esc` or an empty submit returns). Non-empty prompt input remains with the editor.
+
+Completed agent rows linger for 4 seconds. Failed, stopped, aborted, and turn-ceiling-steered (`force_steered`) rows linger for 30 seconds. A parent stays visible while any child is visible; a child whose parent is absent renders at the top level. The currently viewed agent stays listed, and its viewer stays open through completion. Finished elapsed time freezes at completion.
+
+Rows show the monitor status vocabulary, a `bg` tag for background runs, the effective `model:thinking` recipe, positive turns (`↻N`, with `≤N` for the ceiling), compactions (`⇲N`), tools, lifetime tokens, and elapsed time. Provider prefixes and activity text are omitted; full errors belong in the conversation viewer. Captured enabled Fast policy appends `:fast`. Context utilization appears as `(NN%)` when available: below 70% is dim, 70–85% warning, and 85% or above error. Unresolved default thinking stays pending until effective metadata is available.
+
+Width tiers apply uniformly across visible rows: drop tools, then turns and compactions, then the model recipe, then context percentage and the graph-run agent count. The list reserves at least 16 description columns when those tiers permit it, then truncates descriptions before names at narrower widths.
+
+FleetView also owns the footer status, such as `2 running, 2 queued agents`, counting all foreground, background, and nested agents except graph-owned children. Zero parts are omitted, and the footer clears when no running or queued agents remain.
 
 Agent and result-retrieval reports use at most three compact result rows, including the configured `app.tools.expand` hint:
 
@@ -242,7 +237,7 @@ A few rules the examples don't make obvious:
 - `steer_subagent` sends a message to a running agent; it takes effect after the current tool execution.
 - `agent_graph` launches a typed graph.
 
-Subagent sessions never receive these tools. A root-level, non-graph, non-isolated Subagent with `allow_nesting: true` and a non-empty `allow_delegation_to` instead gets `delegate_research` ([src/research-delegation.ts](src/research-delegation.ts), registered by [src/agent-runner.ts](src/agent-runner.ts)). It runs one read-only leaf target ([`resolveNestedTargets`](src/delegation-policy.ts)) through the root manager under the session's mode delegation policy. It blocks until the run settles and returns the final text, agent ID, and status to the calling Subagent only. Nested runs share the root's history and usage, show in the widget tagged `nested`, take no pool slot, send no completion notification, and stop with their parent. Each parent may have at most 3 concurrent nested runs. The tool comes from a trusted inline source, so `tools:` rules cannot grant or remove it ([ADR 0007](../../docs/adr/0007-nested-research-through-a-root-manager-bridge.md)).
+Subagent sessions never receive these tools. A root-level, non-graph, non-isolated Subagent with `allow_nesting: true` and a non-empty `allow_delegation_to` instead gets `delegate_research` ([src/research-delegation.ts](src/research-delegation.ts), registered by [src/agent-runner.ts](src/agent-runner.ts)). It runs one read-only leaf target ([`resolveNestedTargets`](src/delegation-policy.ts)) through the root manager under the session's mode delegation policy. It blocks until the run settles and returns the final text, agent ID, and status to the calling Subagent only. Nested runs share the root's history and usage, render indented beneath their parent in FleetView, take no pool slot, send no completion notification, and stop with their parent. Each parent may have at most 3 concurrent nested runs. The tool comes from a trusted inline source, so `tools:` rules cannot grant or remove it ([ADR 0007](../../docs/adr/0007-nested-research-through-a-root-manager-bridge.md)).
 
 ### Graph gates
 
@@ -307,7 +302,7 @@ Below the ceiling, an Execution the orchestrator owns (not a graph node or a `de
 
 ## Concurrency
 
-Background agents are subject to a configurable concurrency limit (default: 4). Excess agents are automatically queued and start as running agents complete. The widget shows queued agents as a collapsed count.
+Background agents are subject to a configurable concurrency limit (default: 4). Excess agents are automatically queued and start as running agents complete. FleetView shows queued agents as one non-selectable aggregate row.
 
 Foreground calls have an independent FIFO pool controlled by `maxConcurrentForeground` (`0` = unlimited, the default). Set it in `/agents → Settings` to bound new blocking `agent` calls without competing with background capacity. Queued calls still wait for their complete inline result; Esc cancels a queued or running foreground call. A foreground call converted to background at the [turn check-in](#turn-ceiling) keeps its slot until the agent settles. Detached/RPC spawns and resume do not use the foreground pool. Stopping queued work or shutting down releases its waiting caller.
 

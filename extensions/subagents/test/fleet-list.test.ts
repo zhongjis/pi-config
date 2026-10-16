@@ -221,14 +221,7 @@ describe("FleetList navigation", () => {
     expect(h.render().some(l => l.includes("← for agents"))).toBe(true);
   });
 
-  it("ignores all input while disabled and hides the widget", () => {
-    const h = harness([makeRecord()]);
-    h.fleet.setEnabled(false);
-    expect(h.press(DOWN)).toBeUndefined();
-    expect(h.render()).toEqual([]);
-  });
-
-  it("re-arms the refresh timer when the list is re-shown (toggle off→on)", () => {
+  it("re-arms the refresh timer when new agents arrive after the list empties", () => {
     vi.useFakeTimers();
     try {
       const agents = [makeRecord({ id: "a1" })];
@@ -240,8 +233,11 @@ describe("FleetList navigation", () => {
         notify: () => {}, custom: (() => new Promise<undefined>(() => {})) as FleetUICtx["custom"],
       });
       fleet.update();          // shows list, arms the timer
-      fleet.setEnabled(false); // hides, clears the timer
-      fleet.setEnabled(true);  // re-shows — must re-arm the timer
+      agents.splice(0);
+      fleet.update(); // empty list clears its timer
+      expect(vi.getTimerCount()).toBe(0);
+      agents.push(makeRecord({ id: "a2" }));
+      fleet.update(); // new work re-arms it
       const before = listAgents.mock.calls.length;
       vi.advanceTimersByTime(250); // a tick should fire and re-read the roster
       expect(listAgents.mock.calls.length).toBeGreaterThan(before);
@@ -471,6 +467,17 @@ describe("FleetList detailed rows", () => {
     expect(next.slice(0, 6)).not.toBe(row.slice(0, 6)); // spinner advances per render
   });
 
+  it("omits zero turns without hiding positive compactions or other statistics", () => {
+    const record = makeRecord({ compactionCount: 1 });
+    const activity = makeActivity({ turnCount: 0 });
+    const h = harness([record], new Map([[record.id, activity]]));
+    const row = h.render(240).at(-1)!;
+    expect(row).not.toContain("↻0");
+    expect(row).toContain("⇲1 · 5 tools · ↓ 33.8k tokens (62%)");
+    activity.turnCount = 1;
+    expect(h.render(240).at(-1)).toContain("↻1≤30");
+  });
+
   it("falls back to the invocation model and preserves unresolved default thinking", () => {
     const record = makeRecord({ invocation: { modelName: "provider/fallback", thinking: "off" } });
     const h = harness([record]);
@@ -602,7 +609,7 @@ describe("FleetList hierarchy, retention and queue", () => {
     const lines = h.render();
     expect(lines.at(-1)).toBe("    ◦ 2 queued");
     expect(lines).toHaveLength(4); // hint, blank, main, aggregate queue
-    expect(h.setStatus).toHaveBeenLastCalledWith("subagents", "0 running, 2 queued agents");
+    expect(h.setStatus).toHaveBeenLastCalledWith("subagents", "2 queued agents");
     expect(h.press(DOWN)).toEqual({ consume: true });
     h.press(DOWN); // queued line cannot take selection from main
     expect(h.render().find(row => row.includes("main"))).toMatch(/^  ● /);
@@ -624,7 +631,6 @@ describe("FleetList hierarchy, retention and queue", () => {
         makeRecord({ id: "q", status: "queued", session: undefined })];
       const h = harness(agents);
       expect(h.setStatus).toHaveBeenLastCalledWith("subagents", "3 running, 1 queued agents");
-      h.fleet.setEnabled(false);
       h.fleet.update();
       expect(h.setStatus).toHaveBeenCalledTimes(1);
       agents.splice(1);

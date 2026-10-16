@@ -28,7 +28,7 @@ vi.mock("../src/graph/graph-runtime.js", () => ({
 
 import { AgentManager } from "../src/agent-manager.js";
 import subagentsExtension from "../src/index.js";
-import { AgentWidget } from "../src/ui/agent-widget.js";
+import { FleetList } from "../src/ui/fleet-list.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 type LifecycleHandler = (...args: unknown[]) => unknown;
@@ -119,7 +119,7 @@ describe("manager registry lifecycle ownership", () => {
     const clearCompleted = vi.spyOn(AgentManager.prototype, "clearCompleted");
     const abortAll = vi.spyOn(AgentManager.prototype, "abortAll");
     const dispose = vi.spyOn(AgentManager.prototype, "dispose");
-    const widgetDispose = vi.spyOn(AgentWidget.prototype, "dispose");
+    const fleetDispose = vi.spyOn(FleetList.prototype, "dispose");
     const parent = makePi();
     Reflect.apply(subagentsExtension, undefined, [parent.pi]);
     await fire(parent, "session_start", {}, context());
@@ -142,7 +142,7 @@ describe("manager registry lifecycle ownership", () => {
     expect(graphRun.parentNotifications, "child cannot emit the parent graph run notification").toBe(0);
     expect(clearCompleted, "child cannot clear the parent manager").not.toHaveBeenCalled();
     expect(dispose, "child disposes its local manager").toHaveBeenCalledOnce();
-    expect(widgetDispose, "child disposes its local widget").toHaveBeenCalledOnce();
+    expect(fleetDispose, "child disposes its local fleet").toHaveBeenCalledOnce();
     const childManager = dispose.mock.contexts[0];
     expect(abortAll, "child manager aborts only through its local disposal").toHaveBeenCalledOnce();
     expect(abortAll.mock.contexts[0]).toBe(childManager);
