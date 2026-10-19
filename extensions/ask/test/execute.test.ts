@@ -15,7 +15,7 @@ const theme = { fg: (_color: string, text: string) => text, bg: (_color: string,
 function setup(keys: string[] = ["1"], mode = "tui", duringDialog?: (dialog: Dialog) => void) {
 	let tool: Tool | undefined;
 	const emit = vi.fn();
-	ask({ registerTool: (definition: Tool) => { tool = definition; }, events: { emit }, getSessionName: () => "test-session" } as never);
+	ask({ registerTool: (definition: Tool) => { tool = definition; }, events: { emit }, getSessionName: () => "test-session", getCommands: () => [] } as never);
 	const status = vi.fn();
 	const tui = { requestRender: vi.fn(), terminal: { rows: 50, columns: 120, setProgramStatus: status } };
 	const custom = vi.fn((factory: Factory) => new Promise<AskDialogResult>((resolve) => {
@@ -25,7 +25,7 @@ function setup(keys: string[] = ["1"], mode = "tui", duringDialog?: (dialog: Dia
 			for (const key of keys) dialog.handleInput(key);
 		} finally { dialog.dispose(); }
 	}));
-	const execute = (questions = [question], signal?: AbortSignal, title?: string) => tool!.execute("call", { questions, title }, signal, undefined, { mode, ui: { custom } });
+	const execute = (questions = [question], signal?: AbortSignal, title?: string) => tool!.execute("call", { questions, title }, signal, undefined, { mode, cwd: process.cwd(), ui: { custom } });
 	return { execute, custom, emit, status };
 }
 

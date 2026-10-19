@@ -1,5 +1,6 @@
-import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
+import { type AutocompleteProvider, CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
+import { createAskAutocompleteProvider } from "../autocomplete.js";
 import { createAskDialog, type AskDialogResult } from "../dialog.js";
 import type { AskKeybindings } from "../keys.js";
 import { normalizeQuestions } from "../normalize.js";
@@ -9,7 +10,7 @@ vi.mock("@earendil-works/pi-tui", async () => import("../../../node_modules/@ear
 
 const theme = { fg: (_color: string, text: string) => text, bg: (_color: string, text: string) => text, bold: (text: string) => text, italic: (text: string) => text };
 const question = (extra: Partial<IncomingQuestion> = {}): IncomingQuestion => ({ id: "q", label: "Scope", prompt: "Choose an approach", options: [{ value: "a", label: "Alpha" }, { value: "b", label: "Beta" }], ...extra });
-function setup(input = [question()], options: { signal?: AbortSignal; keybindings?: AskKeybindings; title?: string } = {}) {
+function setup(input = [question()], options: { signal?: AbortSignal; keybindings?: AskKeybindings; title?: string; autocompleteProvider?: AutocompleteProvider } = {}) {
 	const done = vi.fn<(result: AskDialogResult) => void>();
 	const tui = { requestRender: vi.fn(), terminal: { rows: 50, columns: 120 } };
 	const dialog = createAskDialog({ questions: normalizeQuestions(input), input, tui: tui as never, theme, done, ...options });
@@ -23,7 +24,7 @@ const remapped: AskKeybindings = {
 };
 
 describe("ask dialog input and lifecycle", () => {
-	it("forwards focus to the inline Input and emits its cursor marker only when focused", () => {
+	it("forwards focus to the Editor and emits its cursor marker only when focused", () => {
 		const { dialog, text, feed } = setup();
 		feed("N");
 		dialog.focused = true;
@@ -32,6 +33,62 @@ describe("ask dialog input and lifecycle", () => {
 		dialog.focused = false;
 		expect(text()).not.toContain(CURSOR_MARKER);
 		dialog.dispose();
+	});
+	it("Escape closes completion before keeping the editor draft", async () => {
+		const autocompleteProvider = createAskAutocompleteProvider(process.cwd(), [{ name: "skill:implement", description: "Build it", source: "skill" }]);
+		const { feed, text, done, dialog } = setup(undefined, { autocompleteProvider });
+		feed("N", "$");
+		await vi.waitFor(() => expect(text()).toContain("Build it"));
+		feed("\u001b");
+		expect(text()).not.toContain("Build it");
+		expect(text()).toContain("Enter save · Esc keep draft");
+		feed("\u001b");
+		expect(text()).not.toContain("keep draft");
+		feed("N");
+		expect(text()).toContain("$");
+		feed("\r", "1", "1");
+		expect(done.mock.calls[0][0].details.notes[0].text).toBe("$");
+		dialog.dispose();
+	});
+	it.each(["\r", "\t"])("%j applies completion after arrow selection without saving the answer", async (accept) => {
+		const autocompleteProvider = createAskAutocompleteProvider(process.cwd(), [
+			{ name: "skill:implement", description: "Build it", source: "skill" },
+			{ name: "skill:inspect", description: "Inspect it", source: "skill" },
+		]);
+		const { feed, text, done } = setup(undefined, { autocompleteProvider });
+		feed("\u001b[A", "\r", "$");
+		await vi.waitFor(() => expect(text()).toContain("Build it"));
+		feed("\u001b[B", "\u001b[A", "\u001b[B", accept);
+		expect(done).not.toHaveBeenCalled();
+		expect(text()).toContain("$skill:inspect ");
+		expect(text()).toContain("Enter save · Esc keep draft");
+		feed("\r");
+		expect(done.mock.calls[0][0].details.answers[0].customInput).toBe("$skill:inspect");
+	});
+	it("cancels pending completion when disposed", async () => {
+		let requestSignal: AbortSignal | undefined;
+		const autocompleteProvider: AutocompleteProvider = {
+			triggerCharacters: ["$"],
+			getSuggestions: (_lines, _line, _col, { signal }) => new Promise((resolve) => {
+				requestSignal = signal;
+				signal.addEventListener("abort", () => resolve(null), { once: true });
+			}),
+			applyCompletion: () => { throw new Error("No completion to apply"); },
+		};
+		const { feed, dialog } = setup(undefined, { autocompleteProvider });
+		feed("N", "$");
+		await vi.waitFor(() => expect(requestSignal).toBeDefined());
+		dialog.dispose();
+		expect(requestSignal!.aborted).toBe(true);
+	});
+	it("keeps multiline notes and custom answers intact through Review and submission", () => {
+		const { feed, text, done } = setup();
+		feed("N", "first", "\n", "second", "\r", "\u001b[A", "\r", "own", "\n", "answer", "\r");
+		expect(text()).toContain("first");
+		expect(text()).toContain("second");
+		expect(text()).toContain("“own\n");
+		feed("1");
+		expect(done.mock.calls[0][0].details).toMatchObject({ answers: [{ customInput: "own\nanswer" }], notes: [{ text: "first\nsecond" }] });
 	});
 	it("abort completes once as aborted and removes the listener", () => {
 		const controller = new AbortController();
@@ -179,16 +236,16 @@ describe("ask dialog preview and widths", () => {
 		}
 		dialog.dispose();
 	});
-	it("edits notes and Other inline while the options stay visible", () => {
+	it("edits notes and Other beneath their rows while the options stay visible", () => {
 		const { dialog, text, feed } = setup([question({ options: [{ value: "a", label: "Alpha", description: "First" }, { value: "b", label: "Beta" }] })]);
 		feed("n", "why");
-		expect(text()).toMatch(/First.*\n.*✎ why/);
+		expect(text()).toMatch(/First\n.*✎\n.*─\n.*why/);
 		expect(text()).toContain("Beta");
 		expect(text()).toContain("Enter save · Esc keep draft");
 		feed("\r", "N", "scope");
-		expect(text()).toMatch(/Choose an approach.*\n.*✎ scope/);
+		expect(text()).toMatch(/Choose an approach\n.*✎\n.*─\n.*scope/);
 		feed("\u001b", "\u001b[A", "\r", "own");
-		expect(text()).toContain("Other  own");
+		expect(text()).toMatch(/Other\n.*─\n.*own/);
 		expect(text()).toContain("Alpha");
 		dialog.dispose();
 	});

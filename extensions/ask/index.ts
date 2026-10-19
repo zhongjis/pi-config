@@ -9,6 +9,7 @@ import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { isTui } from "../lib/mode.js";
 import { extractToolText, renderToolCall, renderToolExpanded, renderToolSummary } from "../lib/tool-output.js";
+import { createAskAutocompleteProvider } from "./autocomplete.js";
 import { createAskDialog, type AskDialogResult } from "./dialog.js";
 import { formatInvalidPayload, formatNonTuiQuestions, formatResultText, humanAnswer, humanNote } from "./format.js";
 import { buildInvalidDetails, normalizeQuestions, validateInput } from "./normalize.js";
@@ -190,7 +191,7 @@ export default function ask(pi: ExtensionAPI) {
 			const outcome = await ctx.ui.custom<AskDialogResult>((tui, theme, kb, done) => {
 				dialogTui = tui;
 				tui.terminal.setProgramStatus({ state: "blocked", kind: "question", message: "Ask", app: "pi" });
-				return createAskDialog({ questions, input, title: params.title, tui, theme, keybindings: kb, signal, done });
+				return createAskDialog({ questions, input, title: params.title, tui, theme, keybindings: kb, autocompleteProvider: createAskAutocompleteProvider(ctx.cwd, pi.getCommands()), signal, done });
 			}).finally(() => {
 				dialogTui?.terminal.setProgramStatus({ state: "working", message: pi.getSessionName(), app: "pi" });
 				pi.events.emit("herdr:blocked", { active: false });

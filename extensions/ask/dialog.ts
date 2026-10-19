@@ -1,12 +1,12 @@
 /**
- * ask — Interactive component: state effects, inline input, previews and rendering.
+ * ask — Interactive component: state effects, editors, previews and rendering.
  *
  * Owns the abort listener for one interaction; completion and disposal remove it.
  * The pure AskState owns all decision semantics.
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Input, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { type AutocompleteProvider, Editor, type TUI, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { humanAnswer, humanNote } from "./format.js";
 import { createAskKeys, type AskKeybindings } from "./keys.js";
 import { AskState, type AskEffect, REVIEW_ACTIONS } from "./state.js";
@@ -24,6 +24,7 @@ export interface AskDialogOptions {
 	tui: TUI;
 	theme: Pick<Theme, "fg" | "bg" | "bold" | "italic">;
 	keybindings?: AskKeybindings;
+	autocompleteProvider?: AutocompleteProvider;
 	signal?: AbortSignal;
 	done(result: AskDialogResult): void;
 }
@@ -36,19 +37,30 @@ const WIDE_PREVIEW_WIDTH = 96;
 const MAX_WIDTH = 140;
 const ACTION_NAMES = { submit: "Submit", elaborate: "Elaborate", cancel: "Cancel" } as const;
 
-export function createAskDialog({ questions, input, title, tui, theme, keybindings, signal, done }: AskDialogOptions) {
+export function createAskDialog({ questions, input, title, tui, theme, keybindings, autocompleteProvider, signal, done }: AskDialogOptions) {
 	const state = new AskState(questions);
 	const keys = createAskKeys(keybindings);
-	const editor = new Input({ prompt: "" });
+	const editor = new Editor(tui, {
+		borderColor: (text) => theme.fg("accent", text),
+		selectList: {
+			description: (text) => theme.fg("muted", text),
+			noMatch: (text) => theme.fg("warning", text),
+			scrollInfo: (text) => theme.fg("dim", text),
+			selectedPrefix: (text) => theme.fg("accent", text),
+			selectedText: (text) => theme.fg("accent", text),
+		},
+	});
+	if (autocompleteProvider) editor.setAutocompleteProvider(autocompleteProvider);
 	let finished = false;
 	function dispose() {
 		finished = true;
 		signal?.removeEventListener("abort", onAbort);
 		editor.focused = false;
+		editor.setText("");
 	}
 	function apply(effect: AskEffect | undefined, aborted = false) {
 		if (!effect || finished) return;
-		if (effect.kind === "openEditor") editor.setValue(effect.initialText);
+		if (effect.kind === "openEditor") editor.setText(effect.initialText);
 		else {
 			dispose();
 			done({ details: state.buildDetails(input, title, effect.result), aborted });
@@ -69,8 +81,10 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 		if (finished) return;
 		const key = keys.resolve(data);
 		if (state.editorTarget) {
-			if (key?.kind === "cancel") state.cancelEditor(editor.getValue());
-			else editor.handleInput(data);
+			if (key?.kind === "cancel" && !editor.isShowingAutocomplete()) {
+				state.cancelEditor(editor.getExpandedText());
+				editor.setText("");
+			} else editor.handleInput(data);
 		} else apply(state.dispatch(key));
 		refresh();
 	}
@@ -88,15 +102,15 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 	function wrap(text: string, width: number, style: (s: string) => string, indent = 0): string[] {
 		return wrapTextWithAnsi(text, Math.max(1, width - indent)).map((line) => `${" ".repeat(indent)}${style(line)}`);
 	}
-	function editRow(width: number): string {
-		return `${theme.fg("accent", "✎ ")}${editor.render(Math.max(1, width - 2))[0] ?? ""}`;
+	function editLines(width: number, indent: number): string[] {
+		return editor.render(Math.max(1, width - indent)).map((line) => `${" ".repeat(indent)}${line}`);
 	}
 	function editingNote(qId: string, optionIndex?: number): boolean {
 		const target = state.editorTarget;
 		return target?.kind === "note" && target.questionId === qId && target.optionIndex === optionIndex;
 	}
 	function noteLines(qId: string, width: number, indent: number, optionIndex?: number): string[] {
-		if (editingNote(qId, optionIndex)) return [`${" ".repeat(indent)}${editRow(width - indent)}`];
+		if (editingNote(qId, optionIndex)) return [`${" ".repeat(indent)}${theme.fg("accent", "✎")}`, ...editLines(width, indent + 2)];
 		const note = state.getNote(qId, optionIndex);
 		return note ? wrap(`✎ ${note}`, width, noteStyle, indent) : [];
 	}
@@ -120,11 +134,12 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 			const word = (s: string) => theme.fg(cursor ? "accent" : "muted", s);
 			const lead = `${cursorMark(cursor)}${box(custom !== undefined)}${" ".repeat(numWidth)}`;
 			const target = state.editorTarget;
-			const value = target?.kind === "custom" && target.questionId === q.id
-				? `${word("Other")}  ${editor.render(Math.max(1, width - labelCol - 7))[0] ?? ""}`
+			const editing = target?.kind === "custom" && target.questionId === q.id;
+			const value = editing ? word("Other")
 				: custom !== undefined ? `${word("Other")}  ${plain(`“${custom}”`)}`
 					: draft !== undefined ? `${word("Other")}  ${muted(`draft “${draft}”`)}` : word("Other…");
-			lines.push(`${lead}${value}`);
+			lines.push(...`${lead}${value}`.split("\n").map((line, i) => i ? `${" ".repeat(labelCol)}${line}` : line));
+			if (editing) lines.push(...editLines(width, labelCol));
 		}
 		return lines;
 	}

@@ -9,6 +9,7 @@ The tool's lineage includes [`questionnaire.ts` and `question.ts` from badlogic/
 ## What It Does
 
 - Questions support recommended choices, advisory required markers, and an optional free-text answer. Multi-select answers can combine options and free text.
+- Answer and note [editors](dialog.ts) offer `@` file-path and `$skill:` skill-name [completion](autocomplete.ts), using skills available in Pi.
 - The [dialog](dialog.ts) shows option previews beside the choices on wide terminals and below them on narrow terminals. Question and option notes stay visible while navigating.
 - Review offers Submit, Elaborate, and Cancel. Submit accepts partial answers; unanswered required questions are flagged rather than blocking submission. Elaborate returns the user's notes for clarification while retaining their decisions.
 - A single single-select question submits on selection when there are no notes; with notes, it opens Review. Navigation and digit shortcuts use the [key resolver](keys.ts), including configured Pi selection bindings and matching hints.
