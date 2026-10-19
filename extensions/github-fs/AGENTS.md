@@ -9,8 +9,10 @@ Expose GitHub issues, PRs, diffs, and repository contents as read-only file view
 
 ## Local Contracts
 
-- Virtual views MUST reject write/edit and preserve native read paging/anchors.
-- Tool results MUST restore the original virtual URI, not the cache filename.
+- Virtual views MUST reject write/edit and page only through native `read` `offset`/`limit`; NEVER add path-suffix selectors.
+- Tool results MUST show the canonical virtual path (also for translated web URLs), not the cache filename.
+- Cache keys MUST include the render version; bump it in [cache.ts](cache.ts) whenever rendered output changes.
+- Optional PR view sections (review threads) MUST degrade to an inline notice on failure, never fail the read.
 - Account selection MUST use per-spawn credentials; NEVER switch global auth or log tokens.
 - Cache keys MUST include resolved account identity; this is consistency, not a trust boundary.
 - Cache directories/files MUST retain owner-only permissions.
@@ -19,7 +21,7 @@ Expose GitHub issues, PRs, diffs, and repository contents as read-only file view
 ## Work Guidance
 
 - [README](README.md) owns URI grammar, host precedence, auth probing, and cache lifetimes.
-- Fully qualified repository paths MUST NOT inherit the cwd repository identity.
+- Fully qualified repository paths MUST NOT inherit the cwd host unless they name the cwd `origin` repository.
 - Search and mutations SHOULD use `gh`, not new virtual-path operations.
 
 ## Verification

@@ -4,85 +4,32 @@ Status: idea
 
 ## Summary
 
-Agents underuse the `github://`, `pr://`, and `issue://` read paths provided by
-`extensions/github-fs/`, with `github://` the most neglected. The extension is
-wired correctly — the path grammar reaches the main agent and every non-isolated
-subagent — so this is a behavioral adoption gap, not a wiring bug. The cause is a
-combination of low prompt salience, competition from more prominently advertised
-tools, `github://`-specific friction, and a routing mismatch where the worker most
-likely to fetch GitHub content is tool-scoped away from these paths.
+Agents still reach for `gh`, `curl`, and `fetch_content` to read GitHub even though
+[`extensions/github-fs/`](../../extensions/github-fs/) serves `gh://`, `gh-pr://`, and
+`gh-issue://` paths through `read`. The remaining causes sit outside the extension:
+competing skills and worker routing.
 
-## Problem
+## Remaining causes
 
-The path grammar reaches the main agent and every non-isolated subagent: github-fs
-is a hook-only extension that appends its `## GitHub virtual paths` guide to the
-system prompt, and `tools:` rules cannot gate it. Agents still reach
-for other tools. See [`extensions/github-fs/`](../../extensions/github-fs/) for the
-hooks and grammar.
-
-## Why the paths are underused
-
-1. **Low salience.** `PROMPT_GUIDE` is appended at the very end of an already large
-   system prompt (mode body + skills catalog + `AGENTS.md` chain). Passive tail
-   guidance loses to trained-in defaults. It is static prompt text, not a triggered
-   skill, so nothing re-surfaces it at the moment of need.
-
-2. **Competing tools win the reflex.**
-   - `fetch_content` explicitly advertises "GitHub repository contents" as a
-     first-class, always-visible tool, directly cannibalizing `github://`.
-   - The `gh` CLI plus the `gh` skill trigger on GitHub verbs ("list issues",
-     "view PR", "GitHub API") and contain **no cross-reference** to the read paths,
-     reinforcing `gh issue view` / `gh pr view` / `gh api` muscle memory.
-   - When a repo is checked out locally, the plain `read` reflex covers file access.
-
-3. **`github://` carries extra friction (why it is the biggest loser).**
-   - It always requires a fully-qualified `owner/repo`. `pr://123` and `issue://123`
-     derive the repo from the cwd remote (zero friction); `github://` never does
-     (`extensions/github-fs/parse.ts` rejects a `github://` path
-     without both segments). The agent must already know owner/repo, so use is not reflexive.
-   - Its unique value — read a repo file without cloning, at any ref, from any repo —
-     overlaps three stronger habits: local `read`, `fetch_content` (which loudly
-     claims GitHub support), and `gh api` / raw URLs. `pr://` and `issue://` have no
-     local-file equivalent, so their unique value is clearer. The prompt gives
-     `github://` a single terse bullet and never sells its "no clone, any ref" niche.
-
-4. **Routing mismatch.** `wenchang` — the external-research worker most likely to
-   fetch GitHub content — is tool-scoped to
-   `web_search,code_search,fetch_content,get_search_content` plus MCP tools (`mcp__<server>__<tool>`), and its prompt
-   pushes commit-pinned GitHub permalinks via `fetch_content` / `code_search`,
-   steering away from `github://`. `chengfeng` is local-only recon
-   (`codegraph_*` plus guarded built-in `bash`) and rarely reaches remote GitHub. Even though the
-   grammar is present in their prompts, their tool identity and instructions route
-   around it.
-
-## Open verification item
-
-github-fs is confirmed to *load* for workers (hooks bind via
-`session.bindExtensions()` in `extensions/subagents/src/agent-runner.ts`), but it is
-not confirmed that pi emits `before_agent_start` for programmatic subagent
-`session.prompt()` runs. If that event does not fire for subagent sessions, workers
-never receive `PROMPT_GUIDE` at all — a stronger, structural cause. Verify by
-asserting a running worker's effective system prompt contains the
-`## GitHub virtual paths` block.
+1. **Competing skills win the reflex.** The `gh` skill, the `code-review` skill's
+   `references/pr-workflow.md`, and the `address-comments` skill (all Nix-managed, in
+   `~/personal/nix-config`) tell agents to read PRs with `gh pr view`, `gh pr diff`, and
+   `gh api …/pulls/N/{reviews,comments}`, with no cross-reference to the paths.
+2. **`fetch_content` advertises GitHub support** as an always-visible tool.
+3. **Routing mismatch.** `wenchang` — the worker most likely to fetch GitHub content —
+   is steered to commit-pinned permalinks via `fetch_content` / `code_search`.
 
 ## Proposed levers (cheapest first)
 
-1. **Cross-reference the paths in the `gh` skill.** Add a note preferring
-   `pr://` / `issue://` / `github://` for viewing and reserving the `gh` CLI for
-   mutations. This hits agents exactly when GitHub intent triggers.
-2. **Re-point `wenchang`** at `github://` / `pr://` for GitHub reads before, or
-   instead of, `fetch_content`.
-3. **Sell `github://`'s unique value in `PROMPT_GUIDE`** ("read any repo file at any
-   ref without cloning; prefer over fetch_content / gh api for GitHub file reads")
-   and move the block higher, e.g. into a mode preamble.
-4. **Close the open verification item** on subagent `before_agent_start` firing.
+1. Point the read steps of the `gh`, `code-review`, and `address-comments` skills at
+   `gh-pr://` / `gh://`; keep `gh` for search and mutations.
+2. Re-point `wenchang` at `gh://` / `gh-pr://` for GitHub reads before `fetch_content`.
+3. Verify that `before_agent_start` fires for subagent `session.prompt()` runs, so
+   workers receive the `github_fs` prompt section: assert a running worker's effective
+   system prompt contains it.
 
 ## Relevant code
 
-- [`extensions/github-fs/index.ts`](../../extensions/github-fs/index.ts) — hooks, `PROMPT_GUIDE`, read-path rewrite
-- [`extensions/github-fs/parse.ts`](../../extensions/github-fs/parse.ts) — URI grammar; `github://` owner/repo requirement
-- [`extensions/github-fs/README.md`](../../extensions/github-fs/README.md) — path grammar reference
-- [`extensions/lib/agent-frontmatter.ts`](../../extensions/lib/agent-frontmatter.ts) — `extensions:` default resolution
+- [`extensions/github-fs/index.ts`](../../extensions/github-fs/index.ts) — hooks, prompt section, URL translation
 - [`extensions/subagents/src/agent-runner.ts`](../../extensions/subagents/src/agent-runner.ts) — subagent extension loading and binding
-- [`agents/wenchang.md`](../../agents/wenchang.md), [`agents/chengfeng.md`](../../agents/chengfeng.md) — worker tool scoping
-- `~/.pi/agent/skills/gh/SKILL.md` — competing CLI skill (no path cross-reference)
+- [`agents/wenchang.md`](../../agents/wenchang.md) — worker tool scoping

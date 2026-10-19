@@ -1,53 +1,54 @@
 # github-fs
 
-Read GitHub issues, pull requests, diffs, and repo files as `read` paths — GitHub is just another filesystem. No separate GitHub view tool: the model learns one path grammar and `read` handles paging, anchors, and truncation.
+Read GitHub repos, pull requests, issues, and diffs with the `read` tool as if they were local files. No separate GitHub view tool: the agent learns one path grammar, and `read` handles paging with `offset`/`limit`.
 
 ## What It Does
 
-- Intercepts `read` calls whose `path` is a `pr://`, `issue://`, or `github://` URI
-- Fetches the item via the `gh` CLI, renders it to markdown, materializes it to a cache file, and rewrites `input.path` to that file so the built-in `read` tool pages it normally
-- Rewrites the backing cache path back to the original `pr://`/`issue://`/`github://` URI in the tool result
-- Blocks `write`/`edit` on these paths — the views are read-only (use the `gh` CLI to mutate)
+- Intercepts `read` calls whose `path` is a `gh://`, `gh-pr://`, or `gh-issue://` path, or a pasted GitHub web URL
+- Fetches the item via the `gh` CLI, renders it, materializes it to a cache file, and rewrites `input.path` to that file so the built-in `read` tool pages it normally
+- Rewrites the backing cache path back to the canonical virtual path in the tool result
+- Blocks `write`/`edit` on these paths — the views are read-only (use the `gh` CLI to mutate, or clone to edit)
 - Resolves multi-account access dynamically per repo; caches rendered views across sessions
 
 ## Path Grammar
 
 ```
-pr://123                     issue://123                 single item, repo from cwd git remote
-pr://owner/repo/123          issue://owner/repo/123      fully qualified
-pr://                        issue://                    list recent items (current repo)
-pr://owner/repo              issue://owner/repo          list recent items (that repo)
-pr://123/diff                                            changed-file list
-pr://123/diff/all                                        full unified diff
-pr://123/diff/2                                          one file's diff (1-based)
-github://owner/repo/path/to/file.ts   a repo file (real extension, line ranges work)
-github://owner/repo/path/to/dir       one-level directory listing
-github://owner/repo                   repo root listing
+gh://owner/repo/                  repo root listing
+gh://owner/repo/src/              directory listing
+gh://owner/repo/src/a.ts          file contents (real extension, so read pages it like source)
+gh://<host>/owner/repo/...        GitHub Enterprise host prefix
+
+gh-pr://                          PR list, current repo
+gh-pr://owner/repo                PR list, that repo
+gh-pr://123                       PR: description, reviews, review threads, checks, comments
+gh-pr://owner/repo/123            same, that repo
+gh-pr://123/diff                  changed files with +/- counts and status
+gh-pr://123/diff/src/a.ts         one file's diff
+gh-pr://123.diff                  full unified diff
+
+gh-issue://   gh-issue://owner/repo   gh-issue://123   gh-issue://owner/repo/123
 ```
 
-Query flags: `?comments=0` (hide comments), `?state=open|closed|merged|all`, `?limit=<n>`,
-`?author=<login>`, `?label=<name>`, `?host=<ghe-host>`, `?refresh=1` (bypass cache).
-`issue://` does not support `/diff` or `state=merged`.
-
-`github://` adds `?ref=<branch|tag|sha>` to pin a version (default branch otherwise) and reuses `?host=`/`?refresh=1`.
+- A trailing slash never changes the result; GitHub decides whether a path is a file or a directory.
+- Query parameters: `gh://` takes `?ref=<branch|tag|sha>` (default branch otherwise). Lists take `?state=`, `?limit=`, `?author=`, `?label=`. Every form takes `?refresh=1` to bypass the cache. Unknown parameters are rejected.
+- `gh-issue://` is GitHub-only; a tracker key such as `ABC-123` gets a pointer to the Jira skill.
+- Pasted `github.com`, `raw.githubusercontent.com`, and logged-in Enterprise links (`/blob`, `/tree`, `/pull`, `/pull/N/files`, `/issues`, repo root) translate to the canonical path; `#L10-L20` becomes `offset`/`limit`.
+- Listings and views print full copyable paths for the next read.
 
 ## Host & Auth
 
-- Host: `?host=` override → cwd `origin` remote host → `github.com` fallback. Repo defaults to the cwd remote when the path omits `owner/repo`. SSH remotes whose host is a `~/.ssh/config` alias (e.g. `github.com-work`) are canonicalized to the real hostname via `ssh -G`.
-- Multi-account: enumerates `gh auth status` accounts, probes `gh api repos/{owner}/{repo}` per account until one has access, and injects that account's token via per-spawn env (`GH_TOKEN` / `GH_ENTERPRISE_TOKEN`). Never runs `gh auth switch`; never logs tokens.
-- `github://` reuses the same host/account resolution but is fully-qualified (`owner/repo` required), so only the host is derived from the cwd remote. Pass `?host=github.com` to read github.com from inside an enterprise checkout.
+- Host: an explicit `<host>/` prefix wins. Short forms (`gh-pr://123`, `gh-pr://`) use the cwd `origin` remote. A qualified `owner/repo` without a prefix means `github.com`, unless it matches the cwd `origin` repo. SSH host aliases (e.g. `github.com-work`) are canonicalized via `ssh -G`.
+- Multi-account: enumerates `gh auth status` accounts. With one account for the host it is used directly; otherwise each is probed with `gh api repos/{owner}/{repo}` until one has access. The token is injected via per-spawn env (`GH_TOKEN` / `GH_ENTERPRISE_TOKEN`). Never runs `gh auth switch`; never logs tokens.
 
 ## Cache
 
-- Location: `~/.pi/agent/github-fs-cache/` (dir `0700`, files `0600`), cross-session.
-- Key includes resolved account identity (a consistency control, not a trust boundary).
-- Freshness: `?refresh=1` always refetches; terminal items (merged/closed) are served indefinitely; otherwise a 5-minute soft TTL. Entries past a 7-day hard TTL are evicted opportunistically on write.
-- `github://` with a full 40-hex-SHA `?ref=` is treated as immutable (cached indefinitely); branch/tag/short-sha/omitted refs use the soft TTL. Fetched files materialize with their real extension (e.g. `.ts`) so `read` gives language-aware summaries and anchors; directory/PR/issue views stay `.md`.
+- Location: `~/.pi/agent/github-fs-cache/` (dir `0700`, files `0600`), cross-session. Keys include the resolved account and a render version.
+- Freshness: `?refresh=1` always refetches; merged PRs and full-40-hex-SHA `?ref=` reads are immutable; everything else uses a short soft TTL. A PR's raw diff is fetched once and shared by its diff views. See [`cache.ts`](cache.ts) for TTLs.
 
 ## Entry Points
 
-There is no separate tool: `read` a `pr://`, `issue://`, or `github://` path. The read/write interception and prompt-grammar hooks are registered in [`index.ts`](index.ts); the URI grammar is parsed in [`parse.ts`](parse.ts).
+There is no separate tool: `read` a path above. The hooks and the prompt section are registered in [`index.ts`](index.ts); the grammar is parsed in [`parse.ts`](parse.ts).
 
 ## Out Of Scope
 
-Search and mutations (create/checkout/push, Actions) are not paths — use the `gh` CLI/skill.
+Search and mutations (create, comment, review, resolve threads, checkout, push, Actions) are not paths — use the `gh` CLI/skill. Shell tools such as `rg` and `ls` cannot see virtual paths.

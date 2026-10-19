@@ -9,7 +9,7 @@ Install, upgrade, or migrate this project's AGENTS.md docs to the DOX framework.
 - DOX source of truth: https://github.com/agent0ai/dox/tree/main (MIT). Adopt as a documentation/process layer, not a package or programming dependency.
 - Read the repo README first to learn what DOX is and how the hierarchy works: https://github.com/agent0ai/dox/blob/main/README.md
 - Read the DOX contract file — this is the DOX-system text you will install at the project root: https://github.com/agent0ai/dox/blob/main/AGENTS.md
-- Pi shortcut: read \`github://agent0ai/dox/README.md\` and \`github://agent0ai/dox/AGENTS.md\` directly with the read tool.
+- Pi shortcut: read \`gh://agent0ai/dox/README.md\` and \`gh://agent0ai/dox/AGENTS.md\` directly with the read tool.
 - Do not proceed until both files are read. Follow their hierarchy, child-doc shape, style, and closeout rules for every edit below.
 
 ## Step 2 — Fetch upstream and compute the version tag
