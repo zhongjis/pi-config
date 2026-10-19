@@ -13,7 +13,7 @@ Provide Agent-tree-local file storage through `local://` paths.
 - Only read/write/edit resolve these virtual paths; shell commands receive literal strings.
 - Path and scope validation MUST reject traversal and root escape.
 - File-operation results MUST rewrite resolved target paths back to virtual paths.
-- Root listings include the backing path; missing-file reads provide Agent-tree scope guidance.
+- Folder listings (`read` of any `local://` folder, root included) are one level deep, include the backing path, and live in a per-call file outside the Agent-tree root that is removed when the call ends; missing-file reads provide Agent-tree scope guidance. `write` and `edit` reject folder targets.
 - This is same-user convenience scoping, not an OS sandbox.
 
 ## Work Guidance

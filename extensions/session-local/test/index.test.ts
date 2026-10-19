@@ -8,7 +8,7 @@ let mockSessionLocalRoot = "";
 vi.mock("../storage.js", () => ({
   LOCAL_URI_PREFIX: "local://",
   isLocalPathTarget: (target: string) => target.startsWith("local://"),
-  isLocalListingTarget: (target: string) => target === "local://" || /^local:\/\/+$/u.test(target),
+  isLocalRootTarget: (target: string) => target === "local://" || /^local:\/\/+$/u.test(target),
   ensureSessionLocalRootDirectory: async (ctx: { sessionManager: { getSessionId(): string; getBranch(): unknown[] } }) => {
     const sessionRoot = join(mockSessionLocalRoot, ctx.sessionManager.getSessionId());
     await mkdir(sessionRoot, { recursive: true });
@@ -129,29 +129,38 @@ describe("session-local extension composition", () => {
     });
   });
 
-  it("builds local root listing for read local:// and rewrites result details", async () => {
+  it("lists any local:// folder one level deep through a per-call listing file", async () => {
     const mock = createMockPi();
     const ctx = createCtx();
     sessionLocalTools(mock.pi as never);
 
-    const event = {
-      toolCallId: "read-root-1",
-      toolName: "read",
-      input: { path: "local://" },
-    };
+    const sessionRoot = join(mockSessionLocalRoot, "session-1");
+    await mkdir(join(sessionRoot, "notes", "archive"), { recursive: true });
+    await writeFile(join(sessionRoot, "notes", "a.md"), "abc", "utf8");
+    await writeFile(join(sessionRoot, "notes", "archive", "deep.md"), "x", "utf8");
 
+    const rootEvent = { toolCallId: "read-root-1", toolName: "read", input: { path: "local://" } };
+    await mock.fire("tool_call", rootEvent, ctx);
+    const rootListing = await readFile(rootEvent.input.path, "utf8");
+    expect(rootListing).toContain("`local://notes/`");
+    expect(rootListing).not.toContain("a.md");
+    await mock.fire("tool_execution_end", { toolCallId: "read-root-1" }, ctx);
+
+    const event = { toolCallId: "read-dir-1", toolName: "read", input: { path: "local://notes" } };
     await mock.fire("tool_call", event, ctx);
 
-    const listingPath = join(mockSessionLocalRoot, "session-1", ".local-root-listing.md");
-    await access(listingPath);
-    const listingContent = await readFile(listingPath, "utf8");
-    expect(listingContent).toContain("# local://");
-    expect(event.input.path).toBe(listingPath);
+    const listingPath = event.input.path;
+    expect(listingPath.startsWith(sessionRoot)).toBe(false);
+    const listing = await readFile(listingPath, "utf8");
+    expect(listing).toContain(`\`${join(sessionRoot, "notes")}\``);
+    expect(listing).toContain("`local://notes/archive/`");
+    expect(listing).toContain("(3 bytes) · `local://notes/a.md`");
+    expect(listing).not.toContain("deep.md");
 
     const [patch] = await mock.fire(
       "tool_result",
       {
-        toolCallId: "read-root-1",
+        toolCallId: "read-dir-1",
         toolName: "read",
         input: event.input,
         content: [{ type: "text", text: `Read from ${listingPath}` }],
@@ -159,17 +168,26 @@ describe("session-local extension composition", () => {
       },
       ctx,
     );
-
     expect(patch).toMatchObject({
-      content: [{ type: "text", text: "Read from local://" }],
-      details: {
-        path: "local://",
-        localPath: "local://",
-        resolvedPath: listingPath,
-        backingPath: listingPath,
-        targetKind: "root",
-      },
+      content: [{ type: "text", text: "Read from local://notes" }],
+      details: { path: "local://notes", targetKind: "directory", directoryPath: join(sessionRoot, "notes"), entryCount: 2 },
     });
+
+    await mock.fire("tool_execution_end", { toolCallId: "read-dir-1" }, ctx);
+    await expect(access(listingPath)).rejects.toThrow();
+  });
+
+  it("lists a folder when the provider tool-call ID exceeds filename limits", async () => {
+    const mock = createMockPi();
+    const ctx = createCtx();
+    sessionLocalTools(mock.pi as never);
+    await mkdir(join(mockSessionLocalRoot, "session-1", "notes"), { recursive: true });
+
+    const event = { toolCallId: `call_${"x".repeat(600)}`, toolName: "read", input: { path: "local://notes/" } };
+    await mock.fire("tool_call", event, ctx);
+
+    expect(await readFile(event.input.path, "utf8")).toContain("# local://notes/ · 0 entries");
+    await mock.fire("tool_execution_end", { toolCallId: event.toolCallId }, ctx);
   });
 
   it("blocks write/edit root aliases while allowing path rewrite for edit", async () => {
@@ -186,7 +204,7 @@ describe("session-local extension composition", () => {
 
     expect(blockResult).toMatchObject({
       block: true,
-      reason: 'edit does not support local:// root targets. Use read path="local://" to inspect the session-local root.',
+      reason: 'edit does not support local:// folder targets. Use read path="local://" to list the folder.',
     });
 
     const editPathEvent = {

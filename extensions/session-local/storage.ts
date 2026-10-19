@@ -203,10 +203,6 @@ export function isLocalRootTarget(target: string): boolean {
   return remainder === "" || isSlashOnlyPath(remainder);
 }
 
-export function isLocalListingTarget(target: string): boolean {
-  return isLocalRootTarget(target);
-}
-
 export function parseSessionLocalTarget(target: string): SessionLocalTarget {
   if (!isLocalPathTarget(target)) {
     throw new Error(`Expected a ${LOCAL_URI_PREFIX} path.`);

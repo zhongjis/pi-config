@@ -1,7 +1,8 @@
 declare function require(id: string): any;
 
-const { access, readdir, writeFile } = require("fs/promises") as {
+const { access, mkdir, readdir, rm, stat, writeFile } = require("fs/promises") as {
   access: (path: string) => Promise<void>;
+  mkdir: (path: string, options: { recursive?: boolean; mode?: number }) => Promise<void>;
   readdir: (
     path: string,
     options?: { withFileTypes?: boolean },
@@ -10,17 +11,25 @@ const { access, readdir, writeFile } = require("fs/promises") as {
     isDirectory(): boolean;
     isSymbolicLink(): boolean;
   }>>;
+  rm: (path: string, options: { force?: boolean }) => Promise<void>;
+  stat: (path: string) => Promise<{ size: number; isDirectory(): boolean }>;
   writeFile: (path: string, data: string, encoding: string) => Promise<void>;
 };
-const { resolve } = require("path") as {
-  resolve: (...parts: string[]) => string;
+const { dirname, join } = require("path") as {
+  dirname: (path: string) => string;
+  join: (...parts: string[]) => string;
+};
+const { tmpdir } = require("os") as {
+  tmpdir: () => string;
+};
+const { createHash } = require("crypto") as {
+  createHash: (algorithm: string) => { update(data: string): { digest(encoding: "hex"): string } };
 };
 
 import {
   ensureSessionLocalRootDirectory,
-  getSessionLocalPath,
-  isLocalListingTarget,
   isLocalPathTarget,
+  isLocalRootTarget,
   resolveSessionLocalTarget,
   type SessionLocalContext,
   LOCAL_URI_PREFIX,
@@ -77,13 +86,12 @@ interface ExtensionAPI {
 interface LocalResolution {
   localPath: string;
   resolvedPath: string;
-  targetKind: "path" | "root";
-  sessionRoot?: string;
+  targetKind: "path" | "directory";
+  directoryPath?: string;
   entryCount?: number;
 }
 
 const WRAPPER_MODE = "tool_call/tool_result local:// path rewriting with session-local storage";
-const LOCAL_ROOT_LISTING_FILE = ".local-root-listing.md";
 const SESSION_LOCAL_TOOL_NAMES = new Set(["read", "write", "edit"]);
 
 const PROMPT_GUIDE = [
@@ -91,7 +99,7 @@ const PROMPT_GUIDE = [
   "Read and write scratch/working files at `local://` paths with the `read`, `write`, and `edit` tools — no separate tool:",
   "- `write` to a `local://<rel/path>` path creates or overwrites a file; `read` and `edit` take the same `local://` paths.",
   "- Files resolve under one per-Agent-tree root shared by a parent session and its fresh agent descendants; unrelated sessions use separate roots.",
-  "- `read` of bare `local://` lists this tree's local storage and its backing directory.",
+  "- `read` of a `local://` folder, including bare `local://`, lists its entries one level deep with their `local://` paths and its backing directory.",
   "- Only these three tools resolve `local://`; `bash` and MCP tools receive it as a literal string. Results echo `local://` paths, not the backing location, and `..` traversal is rejected.",
   "This is same-user convenience scoping, not an OS sandbox.",
 ].join("\n");
@@ -148,38 +156,19 @@ function rewriteResultDetails(
   return buildLocalDetails(resolution.localPath, resolution.resolvedPath, {
     ...existingDetails,
     targetKind: resolution.targetKind,
-    ...(resolution.sessionRoot ? { sessionRoot: resolution.sessionRoot } : {}),
+    ...(resolution.directoryPath ? { directoryPath: resolution.directoryPath } : {}),
     ...(resolution.entryCount !== undefined ? { entryCount: resolution.entryCount } : {}),
   });
 }
 
-async function buildLocalRootListing(requestedPath: string, sessionRoot: string): Promise<{ text: string; entryCount: number }> {
-  const lines: string[] = [
-    "# local://",
-    "",
-    `Resolved backing path: \`${sessionRoot}\``,
-  ];
-
-  if (requestedPath !== LOCAL_URI_PREFIX) {
-    lines.push(`Requested root alias: \`${requestedPath}\``);
-  }
-
-  const treeLines = await buildLocalRootTreeLines(sessionRoot, 0);
-  lines.push("", "Contents:");
-
-  if (treeLines.length === 0) {
-    lines.push("- _(empty)_");
-  } else {
-    lines.push(...treeLines);
-  }
-
-  return {
-    text: lines.join("\n"),
-    entryCount: treeLines.length,
-  };
+/** Normalized `local://` URI of a folder, ending in exactly one `/`. */
+function folderUri(requestedPath: string): string {
+  return isLocalRootTarget(requestedPath) ? LOCAL_URI_PREFIX : requestedPath.replace(/\/*$/u, "/");
 }
 
-async function buildLocalRootTreeLines(directoryPath: string, depth: number): Promise<string[]> {
+/** One-level listing of a backing folder, every entry with its `local://` path. */
+async function buildLocalListing(requestedPath: string, directoryPath: string): Promise<{ text: string; entryCount: number }> {
+  const uri = folderUri(requestedPath);
   const entries = await readdir(directoryPath, { withFileTypes: true });
   const sortedEntries = [...entries].sort((left, right) => {
     const leftDirectory = left.isDirectory();
@@ -191,45 +180,54 @@ async function buildLocalRootTreeLines(directoryPath: string, depth: number): Pr
     return left.name.localeCompare(right.name);
   });
 
-  const indent = "  ".repeat(depth);
-  const lines: string[] = [];
+  const lines: string[] = [
+    `# ${uri} · ${sortedEntries.length} ${sortedEntries.length === 1 ? "entry" : "entries"}`,
+    "",
+    `Backing path: \`${directoryPath}\``,
+    "",
+  ];
+
+  if (sortedEntries.length === 0) {
+    lines.push("_(empty)_");
+  }
 
   for (const entry of sortedEntries) {
-    if (entry.name === LOCAL_ROOT_LISTING_FILE) {
-      continue;
-    }
-
-    const isDirectory = entry.isDirectory();
-    const isSymbolicLink = entry.isSymbolicLink();
-    const suffix = isDirectory ? "/" : isSymbolicLink ? "@" : "";
-    lines.push(`${indent}- \`${entry.name}${suffix}\``);
-
-    if (isDirectory) {
-      lines.push(...(await buildLocalRootTreeLines(resolve(directoryPath, entry.name), depth + 1)));
+    if (entry.isDirectory()) {
+      lines.push(`- ${entry.name}/ · \`${uri}${entry.name}/\``);
+    } else if (entry.isSymbolicLink()) {
+      lines.push(`- ${entry.name}@ · \`${uri}${entry.name}\``);
+    } else {
+      const { size } = await stat(join(directoryPath, entry.name));
+      lines.push(`- ${entry.name}  (${size} bytes) · \`${uri}${entry.name}\``);
     }
   }
 
-  return lines;
-}
-
-async function buildLocalRootListingFile(
-  ctx: SessionLocalContext,
-  requestedPath: string,
-): Promise<{ listingPath: string; sessionRoot: string; entryCount: number }> {
-  const sessionRoot = await ensureSessionLocalRootDirectory(ctx);
-  const listing = await buildLocalRootListing(requestedPath, sessionRoot);
-  const listingPath = getSessionLocalPath(ctx, LOCAL_ROOT_LISTING_FILE);
-  await writeFile(listingPath, listing.text, "utf8");
+  lines.push("", `Read an entry with \`${uri}<name>\`.`);
 
   return {
-    listingPath,
-    sessionRoot,
-    entryCount: listing.entryCount,
+    text: lines.join("\n"),
+    entryCount: sortedEntries.length,
   };
+}
+
+/** Listings live outside the Agent-tree root, one file per tool call, so concurrent reads never share one.
+ *  Provider tool-call IDs can exceed filename limits, so the name is a hash of the ID. */
+function listingFilePath(toolCallId: string): string {
+  const name = createHash("sha256").update(toolCallId).digest("hex").slice(0, 32);
+  return join(tmpdir(), `pi-session-local-${process.getuid?.() ?? 0}`, `${name}.md`);
+}
+
+async function isDirectoryPath(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 export default function sessionLocalTools(pi: ExtensionAPI): void {
   const localResolutions = new Map<string, LocalResolution>();
+  const listingFiles = new Map<string, string>();
 
   pi.on("tool_call", async (rawEvent, ctx) => {
     const event = rawEvent as ToolCallEvent | null;
@@ -248,27 +246,33 @@ export default function sessionLocalTools(pi: ExtensionAPI): void {
       return undefined;
     }
 
-    if (isLocalListingTarget(requestedPath)) {
+    const resolvedPath = isLocalRootTarget(requestedPath)
+      ? await ensureSessionLocalRootDirectory(ctx)
+      : await resolveSessionLocalTarget(ctx, requestedPath);
+
+    if (await isDirectoryPath(resolvedPath)) {
       if (event.toolName !== "read") {
         return {
           block: true,
-          reason: `${event.toolName} does not support ${LOCAL_URI_PREFIX} root targets. Use read path="local://" to inspect the session-local root.`,
+          reason: `${event.toolName} does not support ${LOCAL_URI_PREFIX} folder targets. Use read path="${requestedPath}" to list the folder.`,
         };
       }
 
-      const { listingPath, sessionRoot, entryCount } = await buildLocalRootListingFile(ctx, requestedPath);
+      const listing = await buildLocalListing(requestedPath, resolvedPath);
+      const listingPath = listingFilePath(event.toolCallId);
+      await mkdir(dirname(listingPath), { recursive: true, mode: 0o700 });
+      await writeFile(listingPath, listing.text, "utf8");
+      listingFiles.set(event.toolCallId, listingPath);
       event.input.path = listingPath;
       localResolutions.set(event.toolCallId, {
         localPath: requestedPath,
         resolvedPath: listingPath,
-        targetKind: "root",
-        sessionRoot,
-        entryCount,
+        targetKind: "directory",
+        directoryPath: resolvedPath,
+        entryCount: listing.entryCount,
       });
       return undefined;
     }
-
-    const resolvedPath = await resolveSessionLocalTarget(ctx, requestedPath);
 
     if (event.toolName === "read") {
       let exists = true;
@@ -319,6 +323,11 @@ export default function sessionLocalTools(pi: ExtensionAPI): void {
     }
 
     localResolutions.delete(event.toolCallId);
+    const listingPath = listingFiles.get(event.toolCallId);
+    if (listingPath) {
+      listingFiles.delete(event.toolCallId);
+      await rm(listingPath, { force: true });
+    }
     return undefined;
   });
 

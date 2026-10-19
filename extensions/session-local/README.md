@@ -8,7 +8,7 @@ Agent-tree-local file storage via `local://` URI paths. A parent session default
 - Resolves `local://<path>` under `~/.pi/agent/local/<root-session-id>/`
 - Shares that root across a parent session and all fresh agent descendants
 - Keeps unrelated sessions on separate roots
-- `read local://` (root) generates a directory listing of the Agent-tree storage
+- `read` of a `local://` folder, including bare `local://`, returns a one-level listing: each entry with its `local://` path, file sizes, and the folder's backing path
 - Blocks `read` of a missing `local://` file with Agent-tree scope guidance
 - Rewrites resolved paths back to `local://` in tool results so the LLM sees virtual paths
 - Validates scope IDs and paths to prevent root escape (no `..` traversal)
