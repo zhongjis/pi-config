@@ -108,7 +108,7 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 		const lines: string[] = [];
 		q.options.forEach((option, i) => {
 			const cursor = i === state.optionIndex;
-			const tag = q.recommended === i ? muted("  recommended") : "";
+			const tag = q.recommended === i ? `  ${theme.fg("success", theme.bold("[Recommended]"))}` : "";
 			lines.push(`${cursorMark(cursor)}${box(state.isOptionToggled(q.id, i))}${theme.fg(cursor ? "text" : "muted", String(i + 1).padEnd(numWidth))}${theme.fg(cursor ? "accent" : "text", option.label)}${tag}`);
 			if (option.description) lines.push(...wrap(option.description, width, muted, labelCol));
 			lines.push(...noteLines(q.id, width, labelCol, i));
