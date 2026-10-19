@@ -75,7 +75,7 @@ const PROMPT_GUIDE = [
   "- `gh://owner/repo/path` — repo file or directory (`?ref=<branch|tag|sha>`; default branch otherwise). Enterprise: `gh://<host>/owner/repo/path`.",
   "- `gh-pr://<n>` — pull request: description, reviews, review threads, checks, comments. `gh-pr://<n>/diff` lists changed files; " +
     "`gh-pr://<n>/diff/<path>` is one file's diff; `gh-pr://<n>.diff` is the full diff.",
-  "- `gh-issue://<n>` — GitHub issue. Not for Jira or Linear keys.",
+  "- `gh-issue://<n>` — GitHub issue number only.",
   "- `<n>` uses the current repo; `owner/repo/<n>` names another repo. Bare `gh-pr://` / `gh-issue://` (or `owner/repo`) list items: " +
     "`?state=&limit=&author=&label=`.",
   "- Pasted github.com links work as `read` paths.",

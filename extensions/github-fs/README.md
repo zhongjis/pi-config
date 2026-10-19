@@ -31,8 +31,8 @@ gh-issue://   gh-issue://owner/repo   gh-issue://123   gh-issue://owner/repo/123
 
 - A trailing slash never changes the result; GitHub decides whether a path is a file or a directory.
 - Query parameters: `gh://` takes `?ref=<branch|tag|sha>` (default branch otherwise). Lists take `?state=`, `?limit=`, `?author=`, `?label=`. Every form takes `?refresh=1` to bypass the cache. Unknown parameters are rejected.
-- `gh-issue://` is GitHub-only; a tracker key such as `ABC-123` gets a pointer to the Jira skill.
-- Pasted `github.com`, `raw.githubusercontent.com`, and logged-in Enterprise links (`/blob`, `/tree`, `/pull`, `/pull/N/files`, `/issues`, repo root) translate to the canonical path; `#L10-L20` becomes `offset`/`limit`.
+- `gh-issue://` takes GitHub issue numbers only; any other id is rejected as unsupported.
+- Pasted `github.com`, `raw.githubusercontent.com`, and logged-in Enterprise links (`/blob`, `/tree`, `/pull/N` with `/files`, `/commits`, `/checks`, `/pull/N.diff`, `/issues`, repo root) translate to the canonical path; `#L10-L20` becomes `offset`/`limit`.
 - Listings and views print full copyable paths for the next read.
 
 ## Host & Auth
@@ -51,4 +51,4 @@ There is no separate tool: `read` a path above. The hooks and the prompt section
 
 ## Out Of Scope
 
-Search and mutations (create, comment, review, resolve threads, checkout, push, Actions) are not paths — use the `gh` CLI/skill. Shell tools such as `rg` and `ls` cannot see virtual paths.
+Search and mutations (create, comment, review, resolve threads, checkout, push, Actions) are not paths — use the `gh` CLI. Shell tools such as `rg` and `ls` cannot see virtual paths.

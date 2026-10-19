@@ -76,15 +76,6 @@ function isListState(value: string, scheme: GithubScheme): value is PrState {
   return LIST_STATES[scheme].some((state) => state === value);
 }
 
-function rejectTrackerKey(value: string): void {
-  if (/^[A-Za-z][A-Za-z0-9]*-\d+$/.test(value)) {
-    throw new Error(
-      `gh-issue:// is for GitHub issues only (expected a number). '${value}' looks like a Jira/Linear key — ` +
-      "use the jira-integration skill or the tracker's own tool.",
-    );
-  }
-}
-
 export function parseGithubPath(input: string): ParsedGithubTarget | null {
   const match = /^(gh|gh-pr|gh-issue):\/\/(.*)$/s.exec(input);
   if (!match) return null;
@@ -112,7 +103,7 @@ export function parseGithubPath(input: string): ParsedGithubTarget | null {
   let repo: RepoRef | undefined;
   if (scheme === "github" || (segments.length > 0 && !/^\d+(?:\.diff)?$/.test(segments[0]))) {
     const [owner, name, ...rest] = segments;
-    if (scheme === "issue" && segments.length === 1 && owner !== undefined) rejectTrackerKey(owner);
+    if (scheme === "issue" && segments.length === 1 && owner !== undefined) invalid(`not a supported GitHub issue id '${owner}'`);
     if (owner === undefined || name === undefined) invalid("expected owner/repo");
     if (!/^[A-Za-z0-9-]+$/.test(owner)) invalid(`invalid owner segment '${owner}'`);
     if (!/^[A-Za-z0-9._-]+$/.test(name) || name === "." || name === "..") invalid(`invalid repo segment '${name}'`);
@@ -157,7 +148,7 @@ export function parseGithubPath(input: string): ParsedGithubTarget | null {
   const fullDiff = item.endsWith(".diff");
   const number = positiveInt(fullDiff ? item.slice(0, -5) : item);
   if (number === undefined) {
-    if (scheme === "issue") rejectTrackerKey(item);
+    if (scheme === "issue") invalid(`not a supported GitHub issue id '${item}'`);
     invalid("number must be a positive integer");
   }
   if (fullDiff || suffix.length) {

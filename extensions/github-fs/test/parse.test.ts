@@ -180,9 +180,9 @@ describe("grammar boundaries", () => {
   it.each(["gh://ghe.example.com/owner.dot/r", "gh-pr://ghe.example.com/owner.dot/r/1", "gh-issue://ghe.example.com/owner.dot/r"])("rejects dotted owner: %s", (path) => {
     expect(() => parseGithubPath(path)).toThrow(/owner segment/);
   });
-  it.each(["LM-223063", "CET-5352"])("explains tracker key %s", (key) => {
-    expect(() => parseGithubPath(`gh-issue://${key}`)).toThrow(`gh-issue:// is for GitHub issues only (expected a number). '${key}' looks like a Jira/Linear key — use the jira-integration skill or the tracker's own tool.`);
-    expect(() => parseGithubPath(`gh-issue://o/r/${key}`)).toThrow(/Jira\/Linear/);
+  it.each(["LM-223063", "abc"])("rejects non-numeric issue id %s", (key) => {
+    expect(() => parseGithubPath(`gh-issue://${key}`)).toThrow(`not a supported GitHub issue id '${key}'`);
+    expect(() => parseGithubPath(`gh-issue://o/r/${key}`)).toThrow(`not a supported GitHub issue id '${key}'`);
   });
   it.each([
     ["gh://o/r?foo=1", "ref, refresh"],
