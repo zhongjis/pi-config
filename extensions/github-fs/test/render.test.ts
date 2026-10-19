@@ -108,15 +108,15 @@ describe("renderDiff", () => {
     expect(md).toContain("+bar");
   });
 
-  it("mode=slice returns the nth file (1-based)", () => {
-    const md = renderDiff(SAMPLE_DIFF, 5, "slice", 2);
+  it("mode=slice selects the file by path", () => {
+    const md = renderDiff(SAMPLE_DIFF, 5, "slice", "src/b.ts");
     expect(md).toContain("file 2/2 · `src/b.ts`");
     expect(md).toContain("+bar");
     expect(md).not.toContain("+new");
   });
 
   it("mode=slice out of range explains", () => {
-    expect(renderDiff(SAMPLE_DIFF, 5, "slice", 9)).toContain("No file at index 9");
+    expect(renderDiff(SAMPLE_DIFF, 5, "slice", "missing.ts")).toContain("No diff for path 'missing.ts'");
   });
 });
 
@@ -135,7 +135,7 @@ describe("renderTree", () => {
     const fileIndex = out.indexOf("- a.ts");
     expect(dirIndex).toBeGreaterThan(-1);
     expect(fileIndex).toBeGreaterThan(dirIndex);
-    expect(out).toContain("github://o/r/src/<name>");
+    expect(out).toContain("gh://o/r/src/<name>");
   });
 
   it("marks an empty directory", () => {
@@ -162,5 +162,21 @@ describe("renderContentStub", () => {
     expect(out).toContain("too large");
     expect(out).toContain("2000000 bytes");
     expect(out).toContain("cafe");
+  });
+});
+
+describe("copyable paths", () => {
+  it("includes host, repository and ref in tree entry paths", () => {
+    const md = renderTree([{ name: "a.ts", type: "file", size: 1 }], { owner: "o", repo: "r" }, "src", "feature/x", "ghe.example.com");
+    expect(md).toContain("`gh://ghe.example.com/o/r/src/a.ts?ref=feature%2Fx`");
+  });
+  it("uses qualified paths for listed items", () => {
+    expect(renderList("issue", [{ number: 7 }], { owner: "o", repo: "r" }, "open", "ghe.example.com")).toContain("`gh-issue://ghe.example.com/o/r/7`");
+    expect(renderList("pr", [{ number: 7 }], { owner: "o", repo: "r" }, "open")).toContain("`gh-pr://o/r/7`");
+  });
+  it("uses qualified diff path and full diff hints", () => {
+    const md = renderDiff(SAMPLE_DIFF, 7, "list", undefined, { owner: "o", repo: "r" }, "ghe.example.com");
+    expect(md).toContain("gh-pr://ghe.example.com/o/r/7/diff/src/a.ts");
+    expect(md).toContain("gh-pr://ghe.example.com/o/r/7.diff");
   });
 });

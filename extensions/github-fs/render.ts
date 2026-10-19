@@ -84,11 +84,16 @@ export function renderSingle(scheme: GithubScheme, json: Record<string, unknown>
   return lines.join("\n");
 }
 
+function repoPath(repo: RepoRef | undefined, host: string): string {
+  return `${host === "github.com" ? "" : `${host}/`}${repo ? `${repo.owner}/${repo.repo}/` : ""}`;
+}
+
 export function renderList(
   scheme: GithubScheme,
   items: Array<Record<string, unknown>>,
   repo: RepoRef | undefined,
   state: string,
+  host = "github.com",
 ): string {
   const kind = scheme === "pr" ? "PRs" : "Issues";
   const lines: string[] = [`# ${kind} · ${repoLabel(repo)} · state=${state}`, ""];
@@ -107,10 +112,10 @@ export function renderList(
     const labels = labelNames(item.labels);
     const labelSuffix = labels.length > 0 ? ` · ${labels.join(", ")}` : "";
     lines.push(
-      `- **#${number}** ${itemState}${draft} — ${title} · @${author}${updated ? ` · updated ${updated}` : ""}${labelSuffix}`,
+      `- **#${number}** ${itemState}${draft} — ${title} · @${author}${updated ? ` · updated ${updated}` : ""}${labelSuffix} · \`gh-${scheme}://${repoPath(repo, host)}${number}\``,
     );
   }
-  lines.push("", `${items.length} item(s). Read a single item with \`${scheme}://<number>\`.`);
+  lines.push("", `${items.length} item(s). Read a single item with \`gh-${scheme}://${repoPath(repo, host)}<number>\`.`);
   return lines.join("\n");
 }
 
@@ -138,7 +143,11 @@ export function splitDiffFiles(diff: string): DiffFileSection[] {
   return files;
 }
 
-export function renderDiff(diff: string, number: number, mode: DiffMode, index: number | undefined): string {
+export function renderDiff(
+  diff: string, number: number, mode: DiffMode, path: string | undefined,
+  repo?: RepoRef, host = "github.com",
+): string {
+  const uri = `gh-pr://${repoPath(repo, host)}${number}`;
   const files = splitDiffFiles(diff);
 
   if (mode === "list") {
@@ -148,18 +157,19 @@ export function renderDiff(diff: string, number: number, mode: DiffMode, index: 
       return lines.join("\n");
     }
     files.forEach((file, i) => {
-      lines.push(`${i + 1}. \`${file.path}\``);
+      lines.push(`${i + 1}. \`${file.path}\` · \`${uri}/diff/${file.path}\``);
     });
-    lines.push("", `Read one file's diff with \`pr://${number}/diff/<index>\`, or all with \`pr://${number}/diff/all\`.`);
+    lines.push("", `Read one file's diff with \`${uri}/diff/<path>\`, or all with \`${uri}.diff\`.`);
     return lines.join("\n");
   }
 
   if (mode === "slice") {
-    if (index === undefined || index < 1 || index > files.length) {
-      return `# PR #${number} diff\n\nNo file at index ${index ?? "?"}. This PR has ${files.length} changed file(s); read \`pr://${number}/diff\` for the list.`;
+    const index = files.findIndex((file) => file.path === path);
+    if (index < 0) {
+      return `# PR #${number} diff\n\nNo diff for path '${path ?? "?"}'. This PR has ${files.length} changed file(s); read \`${uri}/diff\` for the list.`;
     }
-    const file = files[index - 1];
-    return `# PR #${number} diff · file ${index}/${files.length} · \`${file.path}\`\n\n${file.section}`;
+    const file = files[index];
+    return `# PR #${number} diff · file ${index + 1}/${files.length} · \`${file.path}\`\n\n${file.section}`;
   }
 
   // mode === "all"
@@ -171,6 +181,7 @@ export function renderTree(
   repo: RepoRef | undefined,
   path: string,
   ref?: string,
+  host = "github.com",
 ): string {
   const label = `${repoLabel(repo)}${path ? `/${path}` : ""}`;
   const lines: string[] = [
@@ -188,9 +199,10 @@ export function renderTree(
     return a.name.localeCompare(b.name);
   });
   for (const entry of sorted) {
-    lines.push(entry.type === "dir" ? `- ${entry.name}/` : `- ${entry.name}  (${entry.size} bytes)`);
+    const uri = `gh://${repoPath(repo, host)}${path ? `${path}/` : ""}${entry.name}${entry.type === "dir" ? "/" : ""}${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`;
+    lines.push(`- ${entry.name}${entry.type === "dir" ? "/" : `  (${entry.size} bytes)`} · \`${uri}\``);
   }
-  lines.push("", `Read a file with \`github://${repoLabel(repo)}/${path ? `${path}/` : ""}<name>\`.`);
+  lines.push("", `Read a file with \`gh://${repoPath(repo, host)}${path ? `${path}/` : ""}<name>${ref ? `?ref=${encodeURIComponent(ref)}` : ""}\`.`);
   return lines.join("\n");
 }
 

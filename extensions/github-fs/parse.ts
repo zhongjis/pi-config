@@ -1,32 +1,4 @@
-/**
- * Pure parser for `pr://` and `issue://` virtual paths.
- *
- * The built-in `read` tool never sees these schemes natively — the github-fs
- * extension intercepts them in a `tool_call` hook, so this module only turns a
- * raw path string into a structured target. It performs no I/O.
- *
- * Deliberately does NOT use `new URL()`: that lowercases the hostname, which
- * would corrupt case-preserving `owner/repo` segments carried in the path.
- * Everything after the scheme is split by hand.
- *
- * Grammar (segments are the `/`-split remainder after the scheme):
- *   pr://                         → list, default repo
- *   pr://owner/repo               → list, that repo
- *   pr://123                      → single item, default repo
- *   pr://owner/repo/123           → single item, that repo
- *   pr://123/diff[/all|/<i>]      → diff (pr only)
- *   pr://owner/repo/123/diff/...  → diff, that repo
- *   issue://…                     → same, minus diff
- *
- * Disambiguation: an all-digits first segment means the number form; any other
- * first segment means `owner/repo` (which then requires a repo segment).
- *
- * Query params: comments, state, limit, author, label, host, refresh.
- *
- * Not a github path → returns `null`. A github path that is malformed →
- * throws; the caller surfaces the message via a blocked tool call.
- */
-
+/** Pure parser for read-only gh://, gh-pr://, and gh-issue:// paths. */
 export type GithubScheme = "pr" | "issue";
 
 export interface RepoRef {
@@ -36,21 +8,17 @@ export interface RepoRef {
 
 export interface CommonFields {
   scheme: GithubScheme;
-  /** Explicit `?host=` override; undefined means "derive from cwd remote". */
+  /** Explicit host prefix. */
   host?: string;
-  /** Undefined means "derive default repo from cwd remote". */
+  /** Undefined means the cwd origin repository. */
   repo?: RepoRef;
-  /** `?refresh=1` — bypass all cache TTLs. */
   refresh: boolean;
-  /** The original input string, echoed back in output. */
   input: string;
 }
 
 export interface SingleTarget extends CommonFields {
   kind: "single";
   number: number;
-  /** Include comments in the rendered view (default true). */
-  comments: boolean;
 }
 
 export type IssueState = "open" | "closed" | "all";
@@ -71,296 +39,107 @@ export interface DiffTarget extends CommonFields {
   kind: "diff";
   number: number;
   mode: DiffMode;
-  /** 1-based file index when mode === "slice". */
-  index?: number;
+  path?: string;
 }
 
 export interface ContentTarget {
   scheme: "github";
   kind: "content";
-  /** Explicit `?host=` override; undefined means "derive from cwd remote". */
   host?: string;
-  /** Always fully-qualified for github:// paths. */
   repo: RepoRef;
-  /** `?refresh=1` — bypass all cache TTLs. */
   refresh: boolean;
-  /** The original input string, echoed back in output. */
   input: string;
-  /** "" for repo root; slash-joined otherwise; no leading/trailing slash. */
   path: string;
-  /** Undefined = default branch. */
   ref?: string;
 }
 
 export type ParsedGithubTarget = SingleTarget | ListTarget | DiffTarget | ContentTarget;
 
-const SCHEME_PREFIXES: Record<GithubScheme, string> = {
-  pr: "pr://",
-  issue: "issue://",
-};
-
-const GITHUB_PREFIX = "github://";
-
-const SEGMENT_PATTERN = /^[A-Za-z0-9._-]+$/;
-const HOST_PATTERN = /^[A-Za-z0-9.-]+$/;
-const DIGITS_PATTERN = /^\d+$/;
-const REF_PATTERN = /^[A-Za-z0-9._/-]+$/;
-
 export const LIST_LIMIT_DEFAULT = 30;
 export const LIST_LIMIT_MAX = 100;
 
-/** Cheap prefix check used by the hook before committing to a full parse. */
 export function isGithubPath(target: string): boolean {
-  return (
-    target.startsWith(SCHEME_PREFIXES.pr) ||
-    target.startsWith(SCHEME_PREFIXES.issue) ||
-    target.startsWith(GITHUB_PREFIX)
-  );
+  return /^(gh|gh-pr|gh-issue):\/\//.test(target);
 }
 
-function detectScheme(target: string): { scheme: GithubScheme; remainder: string } | null {
-  for (const scheme of Object.keys(SCHEME_PREFIXES) as GithubScheme[]) {
-    const prefix = SCHEME_PREFIXES[scheme];
-    if (target.startsWith(prefix)) {
-      return { scheme, remainder: target.slice(prefix.length) };
-    }
-  }
-  return null;
-}
-
-function parsePositiveInt(value: string): number | undefined {
-  if (!DIGITS_PATTERN.test(value)) return undefined;
-  const parsed = Number.parseInt(value, 10);
+function positiveInt(value: string): number | undefined {
+  const parsed = /^\d+$/.test(value) ? Number(value) : NaN;
   return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
 }
 
-function requireNumber(scheme: GithubScheme, value: string): number {
-  const parsed = parsePositiveInt(value);
-  if (parsed === undefined) {
-    throw new Error(`Invalid ${scheme}:// number '${value}': expected a positive integer.`);
-  }
-  return parsed;
-}
-
-function validateSegment(scheme: GithubScheme, value: string, label: string): string {
-  if (!SEGMENT_PATTERN.test(value)) {
-    throw new Error(`Invalid ${scheme}:// ${label} segment '${value}'.`);
-  }
-  return value;
-}
-
-function parseQuery(scheme: GithubScheme, search: URLSearchParams): {
-  host?: string;
-  refresh: boolean;
-  comments: boolean;
-  state?: string;
-  limit?: number;
-  author?: string;
-  label?: string;
-} {
-  const hostRaw = search.get("host") ?? undefined;
-  if (hostRaw !== undefined && !HOST_PATTERN.test(hostRaw)) {
-    throw new Error(`Invalid ${scheme}:// host '${hostRaw}'.`);
-  }
-
-  const commentsRaw = search.get("comments");
-  let comments = true;
-  if (commentsRaw !== null) {
-    if (commentsRaw !== "0" && commentsRaw !== "1") {
-      throw new Error(`Invalid ${scheme}:// comments '${commentsRaw}': expected 0 or 1.`);
-    }
-    comments = commentsRaw === "1";
-  }
-
-  const limitRaw = search.get("limit");
-  let limit: number | undefined;
-  if (limitRaw !== null) {
-    const parsed = parsePositiveInt(limitRaw);
-    if (parsed === undefined) {
-      throw new Error(`Invalid ${scheme}:// limit '${limitRaw}': expected a positive integer.`);
-    }
-    limit = Math.min(parsed, LIST_LIMIT_MAX);
-  }
-
-  return {
-    host: hostRaw,
-    refresh: search.get("refresh") === "1",
-    comments,
-    state: search.get("state") ?? undefined,
-    limit,
-    author: search.get("author") ?? undefined,
-    label: search.get("label") ?? undefined,
-  };
-}
-
-function resolveListState(scheme: GithubScheme, raw: string | undefined): IssueState | PrState {
-  const allowed: string[] = scheme === "pr" ? ["open", "closed", "merged", "all"] : ["open", "closed", "all"];
-  if (raw === undefined) return "open";
-  if (!allowed.includes(raw)) {
-    throw new Error(`Invalid ${scheme}:// state '${raw}': expected one of ${allowed.join(", ")}.`);
-  }
-  return raw as IssueState | PrState;
-}
-
-function parseDiffSuffix(scheme: GithubScheme, suffix: string[]): { mode: DiffMode; index?: number } {
-  // suffix[0] is always "diff" here.
-  if (suffix.length === 1) return { mode: "list" };
-  if (suffix.length === 2) {
-    const sub = suffix[1];
-    if (sub === "all") return { mode: "all" };
-    const index = parsePositiveInt(sub);
-    if (index !== undefined) return { mode: "slice", index };
-    throw new Error(`Invalid ${scheme}:// diff selector '${sub}': expected 'all' or a positive file index.`);
-  }
-  throw new Error(`Invalid ${scheme}:// diff path: too many segments after 'diff'.`);
-}
-
-/**
- * Parse a `pr://` / `issue://` path. Returns null for non-github paths so the
- * hook can bail cheaply; throws with an actionable message for malformed
- * github paths.
- */
 export function parseGithubPath(input: string): ParsedGithubTarget | null {
-  if (input.startsWith(GITHUB_PREFIX)) return parseGithubContentPath(input);
-
-  const detected = detectScheme(input);
-  if (!detected) return null;
-  const { scheme } = detected;
-
-  // Split query off the raw remainder before touching the path.
-  const questionIndex = detected.remainder.indexOf("?");
-  const pathPart = questionIndex >= 0 ? detected.remainder.slice(0, questionIndex) : detected.remainder;
-  const queryPart = questionIndex >= 0 ? detected.remainder.slice(questionIndex + 1) : "";
-  const query = parseQuery(scheme, new URLSearchParams(queryPart));
-
-  const segments = pathPart.split("/").filter((seg) => seg.length > 0);
-  const common: CommonFields = {
-    scheme,
-    host: query.host,
-    refresh: query.refresh,
-    input,
+  const match = /^(gh|gh-pr|gh-issue):\/\/(.*)$/s.exec(input);
+  if (!match) return null;
+  const prefix = `${match[1]}://`;
+  const scheme = match[1] === "gh" ? "github" : match[1] === "gh-pr" ? "pr" : "issue";
+  const invalid = (detail: string): never => {
+    throw new Error(`Invalid ${prefix} path '${input}': ${detail}. Expected ${prefix}${scheme === "github" ? "[host/]owner/repo[/path]" : "<number> or [host/]owner/repo[/<number>]"}${scheme === "pr" ? "; diffs: gh-pr://<number>/diff[/<path>] or gh-pr://<number>.diff" : ""}.`);
   };
-
-  // pr:// or issue:// with no path → list of the default repo.
-  if (segments.length === 0) {
-    return {
-      ...common,
-      kind: "list",
-      state: resolveListState(scheme, query.state),
-      limit: query.limit ?? LIST_LIMIT_DEFAULT,
-      author: query.author,
-      label: query.label,
-    };
+  const question = match[2].indexOf("?");
+  const rawPath = question < 0 ? match[2] : match[2].slice(0, question);
+  const search = new URLSearchParams(question < 0 ? "" : match[2].slice(question + 1));
+  const segments = rawPath.replace(/\/$/, "").split("/");
+  if (segments.length === 1 && segments[0] === "") segments.pop();
+  if (segments.some((s) => !s)) invalid("empty path segment");
+  let host: string | undefined;
+  // N.diff is a short PR form, not a hostname.
+  if (segments[0]?.includes(".") && !/^\d+\.diff$/.test(segments[0])) {
+    host = segments.shift()!.toLowerCase();
+    if (!/^[A-Za-z0-9.-]+$/.test(host)) invalid("invalid host prefix");
   }
-
-  const firstIsNumber = DIGITS_PATTERN.test(segments[0]);
   let repo: RepoRef | undefined;
-  let rest: string[];
-
-  if (firstIsNumber) {
-    // Number form: pr://123[/diff...].
-    rest = segments;
-  } else {
-    // owner/repo form.
-    if (segments.length < 2) {
-      throw new Error(
-        `Invalid ${scheme}:// path '${input}': expected ${scheme}://<number>, ${scheme}://owner/repo, or ${scheme}://owner/repo/<number>.`,
-      );
+  if (scheme === "github" || (segments.length > 0 && !/^\d+(?:\.diff)?$/.test(segments[0]))) {
+    if (scheme === "issue" && segments.length === 1 && /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(segments[0])) {
+      throw new Error(`gh-issue:// is for GitHub issues only (expected a number). '${segments[0]}' looks like a Jira/Linear key — use the jira-integration skill or the tracker's own tool.`);
     }
-    repo = {
-      owner: validateSegment(scheme, segments[0], "owner"),
-      repo: validateSegment(scheme, segments[1], "repo"),
-    };
-    rest = segments.slice(2);
-    common.repo = repo;
-
-    // owner/repo alone → list of that repo.
-    if (rest.length === 0) {
-      return {
-        ...common,
-        kind: "list",
-        state: resolveListState(scheme, query.state),
-        limit: query.limit ?? LIST_LIMIT_DEFAULT,
-        author: query.author,
-        label: query.label,
-      };
+    if (segments.length < 2) invalid("expected owner/repo");
+    const owner = segments.shift()!;
+    const name = segments.shift()!;
+    if (!/^[A-Za-z0-9-]+$/.test(owner)) invalid(`invalid owner segment '${owner}'`);
+    if (!/^[A-Za-z0-9._-]+$/.test(name) || name === "." || name === "..") invalid(`invalid repo segment '${name}'`);
+    repo = { owner, repo: name };
+  } else if (host) {
+    invalid("a host prefix requires owner/repo");
+  }
+  const kind = scheme === "github" ? "content" : segments.length === 0 ? "list" : "single";
+  const allowed = kind === "content" ? ["ref", "refresh"] : kind === "list" ? ["state", "limit", "author", "label", "refresh"] : ["refresh"];
+  for (const key of search.keys()) {
+    if (!allowed.includes(key)) invalid(`unknown query parameter '${key}'; allowed parameters: ${allowed.join(", ")}`);
+  }
+  const common = { host, repo, refresh: search.get("refresh") === "1", input };
+  const validatePath = (parts: string[]): string => {
+    for (const part of parts) {
+      if (part === "." || part === ".." || /[\u0000-\u001f\u007f]/.test(part)) invalid(`invalid path segment '${part}'`);
     }
-  }
-
-  // rest[0] must be the item number.
-  const number = requireNumber(scheme, rest[0]);
-  const afterNumber = rest.slice(1);
-
-  if (afterNumber.length === 0) {
-    return { ...common, kind: "single", number, comments: query.comments };
-  }
-
-  // Only `diff` may follow the number.
-  if (afterNumber[0] !== "diff") {
-    throw new Error(`Invalid ${scheme}:// path '${input}': only '/diff' may follow the number.`);
-  }
-  if (scheme !== "pr") {
-    throw new Error("issue:// paths do not support /diff. Use pr://<N>/diff for pull-request diffs.");
-  }
-
-  const diff = parseDiffSuffix(scheme, afterNumber);
-  return {
-    ...(common as CommonFields & { scheme: "pr" }),
-    scheme: "pr",
-    kind: "diff",
-    number,
-    mode: diff.mode,
-    index: diff.index,
+    return parts.join("/");
   };
-}
-
-/**
- * Parse a `github://owner/repo[/path][?ref=…&host=…&refresh=1]` path into a
- * {@link ContentTarget}. Fully-qualified only; throws for malformed input.
- */
-function parseGithubContentPath(input: string): ContentTarget {
-  const remainder = input.slice(GITHUB_PREFIX.length);
-  const questionIndex = remainder.indexOf("?");
-  const pathPart = questionIndex >= 0 ? remainder.slice(0, questionIndex) : remainder;
-  const queryPart = questionIndex >= 0 ? remainder.slice(questionIndex + 1) : "";
-  const search = new URLSearchParams(queryPart);
-
-  const host = search.get("host") ?? undefined;
-  if (host !== undefined && !HOST_PATTERN.test(host)) {
-    throw new Error(`Invalid github:// host '${host}'.`);
+  if (scheme === "github") {
+    const ref = search.get("ref") ?? undefined;
+    if (ref !== undefined && !/^[A-Za-z0-9._/-]+$/.test(ref)) invalid(`invalid ref '${ref}'`);
+    return { ...common, scheme, kind: "content", repo: repo!, path: validatePath(segments), ref };
   }
-  const ref = search.get("ref") ?? undefined;
-  if (ref !== undefined && !REF_PATTERN.test(ref)) {
-    throw new Error(`Invalid github:// ref '${ref}'.`);
+  if (kind === "list") {
+    const state = search.get("state") ?? "open";
+    const states = scheme === "pr" ? ["open", "closed", "merged", "all"] : ["open", "closed", "all"];
+    if (!states.includes(state)) invalid(`invalid state '${state}'; expected ${states.join(", ")}`);
+    const limit = search.has("limit") ? positiveInt(search.get("limit")!) : LIST_LIMIT_DEFAULT;
+    if (limit === undefined) invalid("limit must be a positive integer");
+    return { ...common, scheme, kind: "list", state: state as PrState, limit: Math.min(limit!, LIST_LIMIT_MAX), author: search.get("author") ?? undefined, label: search.get("label") ?? undefined };
   }
-  const refresh = search.get("refresh") === "1";
-
-  const segments = pathPart.split("/").filter((seg) => seg.length > 0);
-  if (segments.length < 2) {
-    throw new Error(`Invalid github:// path '${input}': expected github://owner/repo[/path].`);
-  }
-  if (!SEGMENT_PATTERN.test(segments[0])) {
-    throw new Error(`Invalid github:// owner segment '${segments[0]}'.`);
-  }
-  if (!SEGMENT_PATTERN.test(segments[1])) {
-    throw new Error(`Invalid github:// repo segment '${segments[1]}'.`);
-  }
-
-  const pathSegs = segments.slice(2);
-  for (const seg of pathSegs) {
-    if (seg === "." || seg === ".." || /[\u0000-\u001f]/.test(seg)) {
-      throw new Error(`Invalid github:// path segment '${seg}'.`);
+  const item = segments.shift()!;
+  const fullDiff = item.endsWith(".diff");
+  const number = positiveInt(fullDiff ? item.slice(0, -5) : item);
+  if (number === undefined) {
+    if (scheme === "issue" && /^[A-Za-z][A-Za-z0-9]*-\d+$/.test(item)) {
+      throw new Error(`gh-issue:// is for GitHub issues only (expected a number). '${item}' looks like a Jira/Linear key — use the jira-integration skill or the tracker's own tool.`);
     }
+    invalid("number must be a positive integer");
   }
-
-  return {
-    scheme: "github",
-    kind: "content",
-    host,
-    repo: { owner: segments[0], repo: segments[1] },
-    refresh,
-    input,
-    path: pathSegs.join("/"),
-    ref,
-  };
+  if (fullDiff || segments.length) {
+    if (scheme !== "pr") invalid("diffs require gh-pr://<number>/diff or gh-pr://<number>.diff");
+    if (fullDiff && segments.length) invalid("nothing may follow N.diff");
+    if (!fullDiff && segments.shift() !== "diff") invalid("only /diff may follow the number");
+    return { ...common, scheme: "pr", kind: "diff", number: number!, mode: fullDiff ? "all" : segments.length ? "slice" : "list", path: segments.length ? validatePath(segments) : undefined };
+  }
+  return { ...common, scheme, kind: "single", number: number! };
 }

@@ -158,6 +158,7 @@ export interface ResolvedAccount {
 export interface AuthResolver {
   /** Return an account that can read owner/repo on host, or throw. Memoized. */
   resolve(host: string, owner: string, repo: string, signal?: AbortSignal): Promise<ResolvedAccount>;
+  hasHost(host: string, signal?: AbortSignal): Promise<boolean>;
 }
 
 /**
@@ -177,10 +178,13 @@ export function createAuthResolver(run: GhRunner): AuthResolver {
 
   const candidatesFor = (accounts: GhAccount[], host: string): GhAccount[] =>
     accounts
-      .filter((account) => account.host === host)
+      .filter((account) => account.host.toLowerCase() === host.toLowerCase())
       .sort((left, right) => Number(right.active) - Number(left.active));
 
   return {
+    async hasHost(host, signal) {
+      return candidatesFor(await getAccounts(signal), host).length > 0;
+    },
     async resolve(host, owner, repo, signal) {
       const key = `${host}/${owner}/${repo}`;
       const cached = repoMemo.get(key);
@@ -202,6 +206,11 @@ export function createAuthResolver(run: GhRunner): AuthResolver {
       const tried: string[] = [];
       for (const account of candidates) {
         const token = await getToken(run, host, account.user, signal);
+        if (candidates.length === 1) {
+          const resolved = { user: account.user, token };
+          repoMemo.set(key, resolved);
+          return resolved;
+        }
         const probe = await run({
           args: ["api", `repos/${owner}/${repo}`, "--hostname", host, "-q", ".full_name"],
           host,
@@ -226,11 +235,8 @@ export function createAuthResolver(run: GhRunner): AuthResolver {
 // --- Conservative --json field sets (avoid GHES field drift) -----------------
 
 const ISSUE_VIEW_FIELDS = "number,title,state,author,labels,body,comments,createdAt,updatedAt,url";
-const ISSUE_VIEW_FIELDS_NO_COMMENTS = "number,title,state,author,labels,body,createdAt,updatedAt,url";
 const PR_VIEW_FIELDS =
   "number,title,state,author,labels,body,comments,createdAt,updatedAt,url,baseRefName,headRefName,isDraft,additions,deletions,mergedAt";
-const PR_VIEW_FIELDS_NO_COMMENTS =
-  "number,title,state,author,labels,body,createdAt,updatedAt,url,baseRefName,headRefName,isDraft,additions,deletions,mergedAt";
 const ISSUE_LIST_FIELDS = "number,title,state,author,labels,updatedAt";
 const PR_LIST_FIELDS = "number,title,state,author,labels,updatedAt,isDraft";
 
@@ -256,16 +262,9 @@ function parseJson<T>(result: GhRunResult, action: string): T {
 export async function ghViewSingle(
   run: GhRunner,
   scheme: GithubScheme,
-  args: { host: string; owner: string; repo: string; number: number; comments: boolean; token: string; signal?: AbortSignal },
+  args: { host: string; owner: string; repo: string; number: number; token: string; signal?: AbortSignal },
 ): Promise<Record<string, unknown>> {
-  const fields =
-    scheme === "pr"
-      ? args.comments
-        ? PR_VIEW_FIELDS
-        : PR_VIEW_FIELDS_NO_COMMENTS
-      : args.comments
-        ? ISSUE_VIEW_FIELDS
-        : ISSUE_VIEW_FIELDS_NO_COMMENTS;
+  const fields = scheme === "pr" ? PR_VIEW_FIELDS : ISSUE_VIEW_FIELDS;
   const result = await run({
     args: [scheme, "view", String(args.number), "-R", repoFlag(args.host, args.owner, args.repo), "--json", fields],
     host: args.host,

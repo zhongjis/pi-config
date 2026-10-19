@@ -1,8 +1,8 @@
 /**
  * github-fs — read GitHub issues, PRs, and diffs as `read` paths.
  *
- * Mirrors the session-local pattern: a `tool_call` hook rewrites `pr://` /
- * `issue://` paths to a materialized cache file so the built-in `read` tool
+ * Mirrors the session-local pattern: a `tool_call` hook rewrites `gh-pr://` /
+ * `gh-issue://` paths to a materialized cache file so the built-in `read` tool
  * pages them like any file; a `tool_result` hook rewrites the cache path back
  * to the original virtual path. Read-only — `write`/`edit` on these paths are
  * blocked. See README.md for the path grammar.
@@ -23,7 +23,7 @@ interface GitChildProcess {
 import { createCache } from "./cache.js";
 import { createAuthResolver, createGhRunner } from "./gh.js";
 import { isGithubPath, parseGithubPath } from "./parse.js";
-import { type ResolveDeps, resolveGithubView } from "./resolve.js";
+import { type ResolveDeps, createRemoteResolver, resolveGithubView } from "./resolve.js";
 
 interface ToolCallEvent {
   toolCallId: string;
@@ -45,6 +45,7 @@ interface ToolResultEvent {
   toolCallId: string;
   content: ToolResultBlock[];
   details?: Record<string, unknown>;
+  structuredContent?: unknown;
 }
 
 interface BeforeAgentStartEvent {
@@ -53,6 +54,7 @@ interface BeforeAgentStartEvent {
 
 interface GithubFsContext {
   cwd: string;
+  signal?: AbortSignal;
 }
 
 interface ExtensionAPI {
@@ -66,19 +68,15 @@ interface Resolution {
 
 const GITHUB_FS_TOOL_NAMES = new Set(["read", "write", "edit"]);
 
-const GITHUB_SELECTOR_RE = /(:(?:raw|conflicts|\d+(?:[-+]\d+)?(?:,\d+(?:[-+]\d+)?)*(?::raw)?|raw:\d+(?:[-+]\d+)?))$/;
-
 const PROMPT_GUIDE = [
-  "## GitHub virtual paths (github-fs)",
-  "Read GitHub issues and pull requests as paths with the `read` tool — no separate GitHub tool:",
-  "- `issue://<n>` / `pr://<n>` — single item in the current repo (repo + host derived from the git remote)",
-  "- `issue://owner/repo/<n>` / `pr://owner/repo/<n>` — fully qualified",
-  "- `issue://` / `pr://` (optionally `owner/repo`) — list recent items; filter with `?state=`, `?limit=`, `?author=`, `?label=`",
-  "- `pr://<n>/diff` (file list), `pr://<n>/diff/all` (full diff), `pr://<n>/diff/<i>` (one file, 1-based)",
-  "- `github://owner/repo/path/to/file` — a repo file's contents; `github://owner/repo/path/to/dir` — one-level directory listing; `github://owner/repo` — repo root",
-  "- `?ref=<branch|tag|sha>` pins a version (default branch otherwise); line ranges work: `github://owner/repo/file.ts:20-60`",
-  "- Query flags: `?comments=0` (hide comments), `?host=<ghe-host>`, `?refresh=1` (bypass cache)",
-  "These are read-only views; use the gh CLI to create or modify. Page large diffs/lists with read's offset/limit.",
+  "## GitHub as a filesystem (github-fs)",
+  "Read GitHub content with the `read` tool like local files; page with `offset`/`limit`. Read-only.",
+  "- `gh://owner/repo/path` — repo file or directory (`?ref=<branch|tag|sha>`; default branch otherwise). Enterprise: `gh://<host>/owner/repo/path`.",
+  "- `gh-pr://<n>` — pull request: description, reviews, review threads, checks, comments. `gh-pr://<n>/diff` lists changed files; `gh-pr://<n>/diff/<path>` is one file's diff; `gh-pr://<n>.diff` is the full diff.",
+  "- `gh-issue://<n>` — GitHub issue. Not for Jira or Linear keys.",
+  "- `<n>` uses the current repo; `owner/repo/<n>` names another repo. Bare `gh-pr://` / `gh-issue://` (or `owner/repo`) list items: `?state=&limit=&author=&label=`.",
+  "- Pasted github.com links work as `read` paths.",
+  "Prefer these paths over `gh`, `curl`, or web fetch for reading GitHub. Use the `gh` CLI to search, create, comment, review, or check CI.",
 ].join("\n");
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -90,23 +88,45 @@ function getRequestedPath(input: Record<string, unknown>): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
-function splitGithubSelector(path: string): { base: string; selector: string } {
-  if (!path.startsWith("github://")) return { base: path, selector: "" };
-  const m = GITHUB_SELECTOR_RE.exec(path);
-  if (!m) return { base: path, selector: "" };
-  return { base: path.slice(0, m.index), selector: m[1] };
-}
-
-// A materialized github:// cache file is a real file the read tool pages via
-// offset/limit — not a `:range` path suffix. Map a simple numeric selector to
-// offset/limit; return null for raw/conflicts/multi-range (whole-file read).
-function selectorToRange(selector: string): { offset: number; limit?: number } | null {
-  const m = /^:(\d+)(?:-(\d+)|\+(\d+))?$/.exec(selector);
-  if (!m) return null;
-  const start = Number(m[1]);
-  if (m[2]) return { offset: start, limit: Math.max(1, Number(m[2]) - start + 1) };
-  if (m[3]) return { offset: start, limit: Number(m[3]) };
-  return { offset: start };
+/** Translate only supported GitHub web routes; other URLs remain native read paths. */
+export async function translateGithubUrl(
+  path: string,
+  hasHost: (host: string) => Promise<boolean>,
+): Promise<{ path: string; offset?: number; limit?: number } | undefined> {
+  if (!/^https?:\/\//i.test(path)) return undefined;
+  let url: URL;
+  try { url = new URL(path); } catch { return undefined; }
+  const host = url.hostname.toLowerCase();
+  const raw = host === "raw.githubusercontent.com";
+  if (host !== "github.com" && host !== "www.github.com" && !raw && !(await hasHost(host))) return undefined;
+  if (url.port || url.username || url.password) return undefined;
+  let parts: string[];
+  try { parts = url.pathname.replace(/^\/|\/$/g, "").split("/").map(decodeURIComponent); } catch { return undefined; }
+  const [owner, repo, route, item, ...rest] = parts;
+  if (!owner || !repo) return undefined;
+  const base = `${host === "github.com" || host === "www.github.com" || raw ? "" : `${host}/`}${owner}/${repo}`;
+  let canonical: string;
+  if (raw || route === "blob" || route === "tree") {
+    // ponytail: pasted refs are one segment; slash-containing branches need an explicit gh:// path with ?ref=.
+    const ref = raw ? route : item;
+    const file = raw ? parts.slice(3) : rest;
+    if (!ref || (route !== "tree" && file.length === 0)) return undefined;
+    canonical = `gh://${base}/${file.join("/")}?ref=${encodeURIComponent(ref)}`;
+  } else if (parts.length === 2) {
+    canonical = `gh://${base}/`;
+  } else if (route === "pull" && /^\d+(?:\.diff)?$/.test(item ?? "")) {
+    if (rest.length > 1 || (rest.length === 1 && !["files", "commits", "checks"].includes(rest[0])) || (item.endsWith(".diff") && rest.length)) return undefined;
+    canonical = `gh-pr://${base}/${item}${rest[0] === "files" ? "/diff" : ""}`;
+  } else if (route === "issues" && /^\d+$/.test(item ?? "") && rest.length === 0) {
+    canonical = `gh-issue://${base}/${item}`;
+  } else {
+    return undefined;
+  }
+  try { parseGithubPath(canonical); } catch { return undefined; }
+  const line = /^#L(\d+)(?:-L(\d+))?$/.exec(url.hash);
+  const start = line ? Number(line[1]) : 0;
+  const end = line ? Number(line[2] ?? line[1]) : 0;
+  return { path: canonical, ...(Number.isSafeInteger(start) && Number.isSafeInteger(end) && start > 0 && end >= start ? { offset: start, limit: end - start + 1 } : {}) };
 }
 
 function describeError(error: unknown): string {
@@ -123,6 +143,13 @@ function rewriteContent(content: ToolResultBlock[], resolution: Resolution): Too
       ? { ...block, text: rewriteText(block.text, resolution) }
       : block,
   );
+}
+
+function rewriteStructured(value: unknown, resolution: Resolution): unknown {
+  if (typeof value === "string") return rewriteText(value, resolution);
+  if (Array.isArray(value)) return value.map((item) => rewriteStructured(item, resolution));
+  if (isRecord(value)) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, rewriteStructured(item, resolution)]));
+  return value;
 }
 
 function rewriteDetails(
@@ -181,8 +208,7 @@ export default function githubFsTools(pi: ExtensionAPI): void {
     run,
     auth: createAuthResolver(run),
     cache: createCache(),
-    gitRemoteUrl: createGitRemoteUrl(),
-    resolveHostAlias: createResolveHostAlias(),
+    remote: createRemoteResolver(createGitRemoteUrl(), createResolveHostAlias()),
   };
 
   pi.on("tool_call", async (rawEvent, ctx) => {
@@ -192,20 +218,23 @@ export default function githubFsTools(pi: ExtensionAPI): void {
     if (!isRecord(event.input)) return undefined;
 
     const requestedPath = getRequestedPath(event.input);
-    if (!requestedPath || !isGithubPath(requestedPath)) return undefined;
+    if (!requestedPath) return undefined;
+    const translated = event.toolName === "read" && !isGithubPath(requestedPath)
+      ? await translateGithubUrl(requestedPath, (host) => deps.auth.hasHost(host, ctx.signal))
+      : undefined;
+    const virtualPath = translated?.path ?? requestedPath;
+    if (!isGithubPath(virtualPath)) return undefined;
 
     if (event.toolName !== "read") {
       return {
         block: true,
-        reason: `${event.toolName} cannot modify ${requestedPath}. github-fs paths (pr://, issue://, github://) are read-only views — use the gh CLI to create or change issues/PRs, or clone the repo to edit files.`,
+        reason: `${event.toolName} cannot modify ${requestedPath}. github-fs paths (gh://, gh-pr://, gh-issue://) are read-only views — use the gh CLI to create or change issues/PRs, or clone the repo to edit files.`,
       };
     }
 
-    const { base, selector } = splitGithubSelector(requestedPath);
-
     let target;
     try {
-      target = parseGithubPath(base);
+      target = parseGithubPath(virtualPath);
     } catch (error) {
       return { block: true, reason: describeError(error) };
     }
@@ -213,21 +242,17 @@ export default function githubFsTools(pi: ExtensionAPI): void {
 
     let resolvedPath: string;
     try {
-      resolvedPath = await resolveGithubView(ctx.cwd, target, deps);
+      resolvedPath = await resolveGithubView(ctx.cwd, target, deps, ctx.signal);
     } catch (error) {
       return { block: true, reason: `Could not read ${requestedPath}: ${describeError(error)}` };
     }
 
     event.input.path = resolvedPath;
-    // The cache file is a real file read pages via offset/limit, not a `:range`
-    // path suffix. Translate a simple numeric selector unless the harness already
-    // derived a window; leave raw/conflicts/multi-range to a whole-file read.
-    const range = selector ? selectorToRange(selector) : null;
-    if (range && event.input.offset === undefined && event.input.limit === undefined) {
-      event.input.offset = range.offset;
-      if (range.limit !== undefined) event.input.limit = range.limit;
+    if (translated?.offset !== undefined && event.input.offset === undefined && event.input.limit === undefined) {
+      event.input.offset = translated.offset;
+      event.input.limit = translated.limit;
     }
-    resolutions.set(event.toolCallId, { input: base, resolvedPath });
+    resolutions.set(event.toolCallId, { input: virtualPath, resolvedPath });
     return undefined;
   });
 
@@ -240,6 +265,7 @@ export default function githubFsTools(pi: ExtensionAPI): void {
     return {
       content: rewriteContent(event.content, resolution),
       details: rewriteDetails(event.details, resolution),
+      ...(event.structuredContent !== undefined ? { structuredContent: rewriteStructured(event.structuredContent, resolution) } : {}),
     };
   });
 

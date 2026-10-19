@@ -174,7 +174,7 @@ describe("createAuthResolver", () => {
 });
 
 describe("fetch primitives", () => {
-  it("ghViewSingle requests comment fields when comments=true and targets host/owner/repo", async () => {
+  it("ghViewSingle requests comment fields when always included and targets host/owner/repo", async () => {
     const { run, calls } = fakeRunner([
       { when: argsAre(["issue", "view"]), result: { stdout: JSON.stringify({ number: 5, title: "hi" }) } },
     ]);
@@ -183,7 +183,6 @@ describe("fetch primitives", () => {
       owner: "o",
       repo: "r",
       number: 5,
-      comments: true,
       token: "t",
     });
     expect(json).toMatchObject({ number: 5, title: "hi" });
@@ -191,14 +190,6 @@ describe("fetch primitives", () => {
     expect(call.args).toContain("-R");
     expect(call.args).toContain("github.com/o/r");
     expect(call.args[call.args.indexOf("--json") + 1]).toContain("comments");
-  });
-
-  it("ghViewSingle drops comments field when comments=false", async () => {
-    const { run, calls } = fakeRunner([
-      { when: argsAre(["pr", "view"]), result: { stdout: "{}" } },
-    ]);
-    await ghViewSingle(run, "pr", { host: "github.com", owner: "o", repo: "r", number: 1, comments: false, token: "t" });
-    expect(calls[0].args[calls[0].args.indexOf("--json") + 1]).not.toContain("comments");
   });
 
   it("ghList passes state/limit/author/label", async () => {
@@ -314,5 +305,22 @@ describe("ghContents", () => {
     await expect(
       ghContents(run, { host: "github.com", owner: "o", repo: "r", path: "missing", token: "secret-token" }),
     ).rejects.not.toThrow(/secret-token/);
+  });
+});
+
+describe("single-account and URL host enumeration", () => {
+  it("skips the repo probe, fetches the token, and reuses enumeration with signals", async () => {
+    const signal = new AbortController().signal;
+    const { run, calls } = fakeRunner([
+      { when: argsAre(["auth", "status"]), result: { stdout: "github.com\n  ✓ Logged in to github.com account solo (keyring)\n" } },
+      { when: argsAre(["auth", "token"]), result: { stdout: "test-token" } },
+    ]);
+    const resolver = createAuthResolver(run);
+    expect(await resolver.hasHost("github.com", signal)).toBe(true);
+    expect(await resolver.hasHost("unknown.example", signal)).toBe(false);
+    expect(await resolver.resolve("github.com", "o", "r", signal)).toMatchObject({ user: "solo", token: "test-token" });
+    expect(calls.filter((call) => call.args[0] === "api")).toHaveLength(0);
+    expect(calls.filter((call) => call.args[1] === "status")).toHaveLength(1);
+    expect(calls.every((call) => call.signal === signal)).toBe(true);
   });
 });

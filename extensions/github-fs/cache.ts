@@ -11,7 +11,7 @@
  *
  * Freshness:
  *   - `?refresh=1` → always miss.
- *   - terminal entries (merged/closed) → always hit (immutable, best-effort).
+ *   - terminal entries (merged or full-SHA content) → always hit (immutable, best-effort).
  *   - age < soft TTL → hit; otherwise miss (refetch, overwrite).
  * Entries older than the hard TTL are opportunistically evicted on write.
  *
@@ -38,6 +38,8 @@ const { resolve, join } = require("node:path") as {
   resolve: (...parts: string[]) => string;
   join: (...parts: string[]) => string;
 };
+
+export const RENDER_VERSION = 2;
 
 const CACHE_DIR_NAME = "github-fs-cache";
 const DIR_MODE = 0o700;
@@ -122,7 +124,7 @@ export function createCache(options: CacheOptions = {}): GithubCache {
 
   return {
     key(parts) {
-      return createHash("sha256").update(JSON.stringify(parts)).digest("hex").slice(0, 32);
+      return createHash("sha256").update(JSON.stringify({ v: RENDER_VERSION, parts })).digest("hex").slice(0, 32);
     },
 
     async get(key, { refresh }) {
@@ -156,5 +158,5 @@ export function createCache(options: CacheOptions = {}): GithubCache {
 export function isTerminalState(state: string | undefined): boolean {
   if (!state) return false;
   const normalized = state.toUpperCase();
-  return normalized === "MERGED" || normalized === "CLOSED";
+  return normalized === "MERGED";
 }

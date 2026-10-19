@@ -1,9 +1,10 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { createCache, isTerminalState } from "../cache.js";
+import { createCache, isTerminalState, RENDER_VERSION } from "../cache.js";
 
 let dir = "";
 
@@ -15,6 +16,13 @@ afterEach(async () => {
 });
 
 describe("cache key", () => {
+  it("includes the render version in every key", () => {
+    const parts = { host: "github.com", account: "u" };
+    const key = createCache({ agentDir: dir }).key(parts);
+    expect(RENDER_VERSION).toBe(2);
+    expect(key).toBe(createHash("sha256").update(JSON.stringify({ v: RENDER_VERSION, parts })).digest("hex").slice(0, 32));
+    expect(key).not.toBe(createHash("sha256").update(JSON.stringify(parts)).digest("hex").slice(0, 32));
+  });
   it("is stable and distinguishes account identity", () => {
     const cache = createCache({ agentDir: dir });
     const base = { host: "github.com", repo: "o/r", kind: "single", number: 1 };
@@ -73,9 +81,9 @@ describe("file permissions", () => {
 });
 
 describe("isTerminalState", () => {
-  it("treats MERGED/CLOSED as terminal, OPEN as not", () => {
+  it("treats only MERGED as terminal", () => {
     expect(isTerminalState("MERGED")).toBe(true);
-    expect(isTerminalState("closed")).toBe(true);
+    expect(isTerminalState("closed")).toBe(false);
     expect(isTerminalState("OPEN")).toBe(false);
     expect(isTerminalState(undefined)).toBe(false);
   });

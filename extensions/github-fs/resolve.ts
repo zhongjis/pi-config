@@ -1,7 +1,7 @@
 /**
  * Orchestrates a parsed github path into a materialized markdown file path.
  *
- * Flow: derive host+repo (explicit → cwd git remote → github.com) → resolve an
+ * Flow: resolve host+repo → resolve an
  * account with access → cache lookup (account-scoped key) → on miss, fetch via
  * gh, render, and cache. Returns the on-disk `.md` path the built-in `read`
  * tool then pages.
@@ -51,10 +51,28 @@ export interface ResolveDeps {
   run: GhRunner;
   auth: AuthResolver;
   cache: GithubCache;
-  /** Return the origin remote URL for a cwd, or null when not a git repo. */
-  gitRemoteUrl: (cwd: string) => Promise<string | null>;
-  /** Canonicalize an SSH host alias to its real hostname (e.g. via `ssh -G`). */
-  resolveHostAlias: (host: string) => Promise<string>;
+  /** Return the cwd origin remote with SSH aliases canonicalized, or null when not a git repo. */
+  remote: (cwd: string) => Promise<RemoteRef | null>;
+}
+
+/** Memoize origin parsing and SSH alias canonicalization within an extension instance. */
+export function createRemoteResolver(
+  gitRemoteUrl: (cwd: string) => Promise<string | null>,
+  resolveHostAlias: (host: string) => Promise<string>,
+): (cwd: string) => Promise<RemoteRef | null> {
+  const memo = new Map<string, Promise<RemoteRef | null>>();
+  return (cwd) => {
+    let pending = memo.get(cwd);
+    if (!pending) {
+      pending = (async () => {
+        const url = await gitRemoteUrl(cwd);
+        const remote = url ? parseRemoteUrl(url) : null;
+        return remote?.ssh ? { ...remote, host: await resolveHostAlias(remote.host) } : remote;
+      })();
+      memo.set(cwd, pending);
+    }
+    return pending;
+  };
 }
 
 async function resolveHostAndRepo(
@@ -62,24 +80,15 @@ async function resolveHostAndRepo(
   target: ParsedGithubTarget,
   deps: ResolveDeps,
 ): Promise<{ host: string; repo: RepoRef }> {
-  let remote: RemoteRef | null = null;
-  if (!target.host || !target.repo) {
-    const url = await deps.gitRemoteUrl(cwd);
-    remote = url ? parseRemoteUrl(url) : null;
-    // An SSH remote host may be a ~/.ssh/config alias (e.g. github.com-work);
-    // resolve it to the real hostname so auth + gh target the right host.
-    if (remote?.ssh) {
-      remote = { ...remote, host: await deps.resolveHostAlias(remote.host) };
-    }
-  }
-
-  const host = target.host ?? remote?.host ?? GITHUB_DOT_COM;
-
+  const remote = target.host && target.repo ? null : await deps.remote(cwd);
+  const matchesRemote = target.repo && remote &&
+    target.repo.owner.toLowerCase() === remote.owner.toLowerCase() &&
+    target.repo.repo.toLowerCase() === remote.repo.toLowerCase();
+  const host = target.host ?? (target.repo && !matchesRemote ? GITHUB_DOT_COM : remote?.host ?? GITHUB_DOT_COM);
   if (target.repo) return { host, repo: target.repo };
   if (remote) return { host, repo: { owner: remote.owner, repo: remote.repo } };
-
   throw new Error(
-    `Cannot determine a repository for '${target.input}'. Run from inside a git checkout with an 'origin' remote, or use a fully-qualified path like ${target.scheme}://owner/repo/<number>.`,
+    `Cannot determine a repository for '${target.input}'. Run from inside a git checkout with an 'origin' remote, or use ${target.scheme === "pr" ? "gh-pr" : "gh-issue"}://[host/]owner/repo/<number>.`,
   );
 }
 
@@ -91,7 +100,7 @@ function deriveExt(name: string): string {
 function contentShape(target: ParsedGithubTarget): Record<string, unknown> {
   switch (target.kind) {
     case "single":
-      return { kind: "single", number: target.number, comments: target.comments };
+      return { kind: "single", number: target.number };
     case "list":
       return {
         kind: "list",
@@ -101,7 +110,7 @@ function contentShape(target: ParsedGithubTarget): Record<string, unknown> {
         label: target.label ?? null,
       };
     case "diff":
-      return { kind: "diff", number: target.number, mode: target.mode, index: target.index ?? null };
+      return { kind: "diff", number: target.number, mode: target.mode, path: target.path ?? null };
     case "content":
       return { kind: "content", path: target.path, ref: target.ref ?? null };
   }
@@ -113,14 +122,14 @@ async function fetchAndRender(
   host: string,
   repo: RepoRef,
   target: ParsedGithubTarget,
+  signal?: AbortSignal,
 ): Promise<{ markdown: string; terminal: boolean; ext: string }> {
-  const shared = { host, owner: repo.owner, repo: repo.repo, token };
+  const shared = { host, owner: repo.owner, repo: repo.repo, token, signal };
 
   if (target.kind === "single") {
     const json = await ghViewSingle(deps.run, target.scheme, {
       ...shared,
       number: target.number,
-      comments: target.comments,
     });
     return {
       markdown: renderSingle(target.scheme, json, repo),
@@ -137,26 +146,26 @@ async function fetchAndRender(
       author: target.author,
       label: target.label,
     });
-    return { markdown: renderList(target.scheme, items, repo, target.state), terminal: false, ext: ".md" };
+    return { markdown: renderList(target.scheme, items, repo, target.state, host), terminal: false, ext: ".md" };
   }
 
   if (target.kind === "content") {
     const res = await ghContents(deps.run, { ...shared, path: target.path, ref: target.ref });
     const terminal = /^[0-9a-f]{40}$/i.test(target.ref ?? "");
-    if (res.kind === "dir") return { markdown: renderTree(res.entries, repo, target.path, target.ref), terminal, ext: ".md" };
+    if (res.kind === "dir") return { markdown: renderTree(res.entries, repo, target.path, target.ref, host), terminal, ext: ".md" };
     if (res.kind === "file") return { markdown: res.text, terminal, ext: deriveExt(res.name) };
     return { markdown: renderContentStub(res, repo, target.ref), terminal, ext: ".md" };
   }
 
   // diff (pr only)
   const diff = await ghPrDiff(deps.run, { ...shared, number: target.number });
-  return { markdown: renderDiff(diff, target.number, target.mode, target.index), terminal: false, ext: ".md" };
+  return { markdown: renderDiff(diff, target.number, target.mode, target.path, repo, host), terminal: false, ext: ".md" };
 }
 
 /** Resolve a parsed target to a materialized `.md` path. */
-export async function resolveGithubView(cwd: string, target: ParsedGithubTarget, deps: ResolveDeps): Promise<string> {
+export async function resolveGithubView(cwd: string, target: ParsedGithubTarget, deps: ResolveDeps, signal?: AbortSignal): Promise<string> {
   const { host, repo } = await resolveHostAndRepo(cwd, target, deps);
-  const account = await deps.auth.resolve(host, repo.owner, repo.repo);
+  const account = await deps.auth.resolve(host, repo.owner, repo.repo, signal);
 
   const key = deps.cache.key({
     host,
@@ -170,6 +179,6 @@ export async function resolveGithubView(cwd: string, target: ParsedGithubTarget,
   const hit = await deps.cache.get(key, { refresh: target.refresh });
   if (hit) return hit;
 
-  const { markdown, terminal, ext } = await fetchAndRender(deps, account.token, host, repo, target);
+  const { markdown, terminal, ext } = await fetchAndRender(deps, account.token, host, repo, target, signal);
   return deps.cache.put(key, markdown, { terminal, ext });
 }
