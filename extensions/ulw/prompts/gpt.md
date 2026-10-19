@@ -46,7 +46,7 @@ Name the tool and invocation per scenario. Tear down the processes, ports, sessi
 
 ## Commits
 
-Ultrawork counts as the explicit commit request: commit each verified increment using the `git-master` skill. Never push unless user requests.
+Ultrawork counts as the explicit commit request: commit each verified increment using the `git-master` skill. Never push unless user requests. (except main)
 
 ## Finish gate
 

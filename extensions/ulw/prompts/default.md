@@ -63,7 +63,7 @@ Diagnostics catch type errors only. After the change, exercise the real surface 
 
 ## 6. COMMITS
 
-Ultrawork counts as the explicit commit request: commit each verified increment using the `git-master` skill. Never push unless user requests.
+Ultrawork counts as the explicit commit request: commit each verified increment using the `git-master` skill. Never push unless user requests. (except main)
 
 ## 7. FINISH GATE
 
