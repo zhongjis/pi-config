@@ -16,7 +16,8 @@ vi.mock("../resolve.js", () => ({
   createRemoteResolver: () => async () => null,
 }));
 
-import githubFsTools, { translateGithubUrl } from "../index.js";
+import githubFsTools from "../index.js";
+import { translateGithubUrl } from "../url.js";
 
 type Ctx = { cwd: string; signal?: AbortSignal };
 type Handler = (event: unknown, ctx: Ctx) => unknown | Promise<unknown>;
