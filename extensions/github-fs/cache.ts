@@ -39,7 +39,7 @@ const { resolve, join } = require("node:path") as {
   join: (...parts: string[]) => string;
 };
 
-export const RENDER_VERSION = 3;
+export const RENDER_VERSION = 4;
 
 const CACHE_DIR_NAME = "github-fs-cache";
 const DIR_MODE = 0o700;

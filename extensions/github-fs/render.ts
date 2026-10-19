@@ -7,7 +7,8 @@
  */
 
 import type { GithubScheme, ReviewThreadsResult } from "./gh.js";
-import type { DiffMode, RepoRef } from "./parse.js";
+import type { RepoRef } from "./parse.js";
+import { type RepoLocation, repoPath } from "./location.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
@@ -35,8 +36,8 @@ function repoLabel(repo: RepoRef | undefined): string {
 }
 
 export function renderSingle(
-  scheme: GithubScheme, json: Record<string, unknown>, repo: RepoRef | undefined,
-  host = "github.com", reviewThreads?: ReviewThreadsResult,
+  scheme: GithubScheme, json: Record<string, unknown>, location: RepoLocation,
+  reviewThreads?: ReviewThreadsResult,
 ): string {
   const number = num(json.number) ?? "?";
   const title = str(json.title) ?? "(no title)";
@@ -64,7 +65,7 @@ export function renderSingle(
         const check = asRecord(raw);
         const result = (str(check.conclusion) ?? str(check.state) ?? "").toLowerCase();
         if (["success", "neutral", "skipped"].includes(result)) passed++;
-        else if (["failure", "cancelled", "timed_out", "action_required", "error"].includes(result)) {
+        else if (["failure", "cancelled", "timed_out", "action_required", "error", "startup_failure"].includes(result)) {
           failed++;
           failing.push(str(check.name) ?? str(check.context) ?? "unknown");
         } else pending++;
@@ -142,27 +143,22 @@ export function renderSingle(
   }
 
   if (scheme === "pr") {
-    const uri = `gh-pr://${repoPath(repo, host)}${number}`;
+    const uri = `gh-pr://${repoPath(location)}${number}`;
     const oid = str(json.headRefOid);
-    lines.push("", `Changed files: ${uri}/diff · Full diff: ${uri}.diff${oid ? ` · Files at head: gh://${repoPath(repo, host)}?ref=${encodeURIComponent(oid)}` : ""}`);
+    lines.push("", `Changed files: ${uri}/diff · Full diff: ${uri}.diff${oid ? ` · Files at head: gh://${repoPath(location)}?ref=${encodeURIComponent(oid)}` : ""}`);
   }
 
   return lines.join("\n");
 }
 
-function repoPath(repo: RepoRef | undefined, host: string): string {
-  return `${host === "github.com" ? "" : `${host}/`}${repo ? `${repo.owner}/${repo.repo}/` : ""}`;
-}
-
 export function renderList(
   scheme: GithubScheme,
   items: Array<Record<string, unknown>>,
-  repo: RepoRef | undefined,
+  location: RepoLocation,
   state: string,
-  host = "github.com",
 ): string {
   const kind = scheme === "pr" ? "PRs" : "Issues";
-  const lines: string[] = [`# ${kind} · ${repoLabel(repo)} · state=${state}`, ""];
+  const lines: string[] = [`# ${kind} · ${repoLabel(location.repo)} · state=${state}`, ""];
   if (items.length === 0) {
     lines.push("_(no matching items)_");
     return lines.join("\n");
@@ -178,107 +174,20 @@ export function renderList(
     const labels = labelNames(item.labels);
     const labelSuffix = labels.length > 0 ? ` · ${labels.join(", ")}` : "";
     lines.push(
-      `- **#${number}** ${itemState}${draft} — ${title} · @${author}${updated ? ` · updated ${updated}` : ""}${labelSuffix} · \`gh-${scheme}://${repoPath(repo, host)}${number}\``,
+      `- **#${number}** ${itemState}${draft} — ${title} · @${author}${updated ? ` · updated ${updated}` : ""}${labelSuffix} · \`gh-${scheme}://${repoPath(location)}${number}\``,
     );
   }
-  lines.push("", `${items.length} item(s). Read a single item with \`gh-${scheme}://${repoPath(repo, host)}<number>\`.`);
+  lines.push("", `${items.length} item(s). Read a single item with \`gh-${scheme}://${repoPath(location)}<number>\`.`);
   return lines.join("\n");
-}
-
-interface DiffFileSection {
-  path: string;
-  section: string;
-  status: "added" | "deleted" | "renamed" | "modified";
-  additions: number;
-  deletions: number;
-}
-
-const GIT_DIFF_HEADER = /^diff --git a\/(.+) b\/(.+)$/;
-
-/** Prefer patch paths over the ambiguous git header, preserving each full section. */
-export function splitDiffFiles(diff: string): DiffFileSection[] {
-  const files: DiffFileSection[] = [];
-  let current: DiffFileSection | undefined;
-  let oldPath: string | undefined;
-  let patchPath: string | undefined;
-  let renamedPath: string | undefined;
-  let inHunk = false;
-  const finish = () => {
-    if (!current) return;
-    current.path = patchPath ?? renamedPath ?? oldPath ?? current.path;
-    files.push(current);
-  };
-  for (const line of diff.split("\n")) {
-    if (line.startsWith("diff --git ")) {
-      finish();
-      const match = GIT_DIFF_HEADER.exec(line);
-      current = { path: match ? match[2] : line.slice("diff --git ".length), section: line,
-        status: "modified", additions: 0, deletions: 0 };
-      oldPath = patchPath = renamedPath = undefined;
-      inHunk = false;
-    } else if (current) {
-      current.section += `\n${line}`;
-      if (line.startsWith("@@ ")) inHunk = true;
-      if (inHunk) {
-        if (line.startsWith("+")) current.additions++;
-        else if (line.startsWith("-")) current.deletions++;
-      } else if (line.startsWith("--- a/")) oldPath = line.slice(6);
-      else if (line === "--- /dev/null" || line.startsWith("new file mode ")) current.status = "added";
-      else if (line.startsWith("+++ b/")) patchPath = line.slice(6);
-      else if (line === "+++ /dev/null" || line.startsWith("deleted file mode ")) current.status = "deleted";
-      else if (line.startsWith("rename to ")) {
-        renamedPath = line.slice(10);
-        current.status = "renamed";
-      }
-    }
-  }
-  finish();
-  return files;
-}
-
-export function renderDiff(
-  diff: string, number: number, mode: DiffMode, path: string | undefined,
-  repo?: RepoRef, host = "github.com",
-): string {
-  const uri = `gh-pr://${repoPath(repo, host)}${number}`;
-  const files = splitDiffFiles(diff);
-
-  if (mode === "list") {
-    const additions = files.reduce((sum, file) => sum + file.additions, 0);
-    const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
-    const lines = [`# PR #${number} diff · ${files.length} file(s) · +${additions} / -${deletions}`, ""];
-    if (files.length === 0) {
-      lines.push("_(no changes)_");
-      return lines.join("\n");
-    }
-    files.forEach((file, i) => {
-      lines.push(`${i + 1}. \`${file.path}\` · +${file.additions} / -${file.deletions} · ${file.status} · \`${uri}/diff/${file.path}\``);
-    });
-    lines.push("", `Read one file's diff with \`${uri}/diff/<path>\`, or all with \`${uri}.diff\`.`);
-    return lines.join("\n");
-  }
-
-  if (mode === "slice") {
-    const index = files.findIndex((file) => file.path === path);
-    if (index < 0) {
-      return `# PR #${number} diff\n\nNo diff for path '${path ?? "?"}'. This PR has ${files.length} changed file(s); read \`${uri}/diff\` for the list.`;
-    }
-    const file = files[index];
-    return `# PR #${number} diff · file ${index + 1}/${files.length} · \`${file.path}\`\n\n${file.section}`;
-  }
-
-  // mode === "all"
-  return `# PR #${number} diff · ${files.length} file(s)\n\n${diff}`;
 }
 
 export function renderTree(
   entries: Array<{ name: string; type: string; size: number }>,
-  repo: RepoRef | undefined,
+  location: RepoLocation,
   path: string,
   ref?: string,
-  host = "github.com",
 ): string {
-  const label = `${repoLabel(repo)}${path ? `/${path}` : ""}`;
+  const label = `${repoLabel(location.repo)}${path ? `/${path}` : ""}`;
   const lines: string[] = [
     `# ${label} · tree${ref ? `@${ref}` : ""} · ${entries.length} ${entries.length === 1 ? "entry" : "entries"}`,
     "",
@@ -294,10 +203,10 @@ export function renderTree(
     return a.name.localeCompare(b.name);
   });
   for (const entry of sorted) {
-    const uri = `gh://${repoPath(repo, host)}${path ? `${path}/` : ""}${entry.name}${entry.type === "dir" ? "/" : ""}${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`;
+    const uri = `gh://${repoPath(location)}${path ? `${path}/` : ""}${entry.name}${entry.type === "dir" ? "/" : ""}${ref ? `?ref=${encodeURIComponent(ref)}` : ""}`;
     lines.push(`- ${entry.name}${entry.type === "dir" ? "/" : `  (${entry.size} bytes)`} · \`${uri}\``);
   }
-  lines.push("", `Read a file with \`gh://${repoPath(repo, host)}${path ? `${path}/` : ""}<name>${ref ? `?ref=${encodeURIComponent(ref)}` : ""}\`.`);
+  lines.push("", `Read a file with \`gh://${repoPath(location)}${path ? `${path}/` : ""}<name>${ref ? `?ref=${encodeURIComponent(ref)}` : ""}\`.`);
   return lines.join("\n");
 }
 

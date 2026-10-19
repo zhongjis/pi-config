@@ -175,7 +175,7 @@ describe("createAuthResolver", () => {
 });
 
 describe("fetch primitives", () => {
-  it("ghViewSingle requests comment fields when always included and targets host/owner/repo", async () => {
+  it("ghViewSingle includes comments and targets host/owner/repo", async () => {
     const { run, calls } = fakeRunner([
       { when: argsAre(["issue", "view"]), result: { stdout: JSON.stringify({ number: 5, title: "hi" }) } },
     ]);
@@ -371,5 +371,20 @@ describe("PR enrichment", () => {
     const result = await ghReviewThreads(run, { host: "github.com", owner: "o", repo: "r", number: 7, token: "private-token" });
     expect(result.unavailable).toBeTruthy();
     expect(JSON.stringify(result)).not.toContain("private-token");
+  });
+});
+
+describe("account enumeration recovery", () => {
+  it("retries enumeration after a rejected lookup", async () => {
+    let statusCalls = 0;
+    const run: GhRunner = async () => {
+      if (++statusCalls === 1) throw new Error("gh is unavailable");
+      return { code: 0, stdout: AUTH_STATUS_SAMPLE, stderr: "" };
+    };
+    const resolver = createAuthResolver(run);
+    await expect(resolver.hasHost("github.com")).rejects.toThrow("gh is unavailable");
+    expect(await resolver.hasHost("github.com")).toBe(true);
+    expect(await resolver.hasHost("github.com")).toBe(true);
+    expect(statusCalls).toBe(2);
   });
 });

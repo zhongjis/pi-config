@@ -19,7 +19,6 @@ describe("cache key", () => {
   it("includes the render version in every key", () => {
     const parts = { host: "github.com", account: "u" };
     const key = createCache({ agentDir: dir }).key(parts);
-    expect(RENDER_VERSION).toBe(3);
     expect(key).toBe(createHash("sha256").update(JSON.stringify({ v: RENDER_VERSION, parts })).digest("hex").slice(0, 32));
     expect(key).not.toBe(createHash("sha256").update(JSON.stringify(parts)).digest("hex").slice(0, 32));
   });

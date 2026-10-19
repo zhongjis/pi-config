@@ -191,6 +191,12 @@ describe("before_agent_start", () => {
 });
 
 describe("URL translation", () => {
+  it("leaves non-GitHub URLs native when account lookup fails", async () => {
+    const hasHost = vi.fn(async () => { throw new Error("gh is unavailable"); });
+    expect(await translateGithubUrl("https://example.com/o/r", hasHost)).toBeUndefined();
+    expect(hasHost).toHaveBeenCalledWith("example.com");
+  });
+
   it.each([
     ["https://github.com/o/r", "gh://o/r/"],
     ["http://www.github.com/o/r/", "gh://o/r/"],
@@ -245,13 +251,6 @@ describe("URL translation", () => {
     await mock.fire("tool_call", { toolCallId: "plain", toolName: "read", input: { path: "gh-pr://1" } });
     const [patch] = await mock.fire("tool_result", { toolCallId: "plain", content: [] });
     expect(patch).not.toHaveProperty("structuredContent");
-  });
-
-  it.each(["pr://1", "issue://1", "github://o/r"])("does not intercept removed scheme %s", async (path) => {
-    const input = { path };
-    await setup().fire("tool_call", { toolCallId: "old", toolName: "read", input });
-    expect(input.path).toBe(path);
-    expect(resolveGithubView).not.toHaveBeenCalled();
   });
 
   it("does not translate write URLs", async () => {

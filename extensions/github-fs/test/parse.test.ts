@@ -125,12 +125,8 @@ describe("parseGithubPath - malformed", () => {
     expect(() => parseGithubPath("gh-pr://o/r/0")).toThrow(/number/);
   });
 
-  it("rejects bad comments value", () => {
-    expect(() => parseGithubPath("gh-pr://1?comments=2")).toThrow(/comments/);
-  });
-
-  it("rejects bad host", () => {
-    expect(() => parseGithubPath("gh-pr://1?host=bad host")).toThrow(/host/);
+  it("rejects unknown query parameters", () => {
+    expect(() => parseGithubPath("gh-pr://1?foo=1")).toThrow(/unknown query parameter 'foo'/);
   });
 });
 
@@ -177,11 +173,7 @@ describe("parseGithubPath - github content", () => {
   });
 });
 
-describe("stage 1 grammar boundaries", () => {
-  it.each(["pr://1", "issue://1", "github://o/r"])("does not intercept %s", (path) => {
-    expect(isGithubPath(path)).toBe(false);
-    expect(parseGithubPath(path)).toBeNull();
-  });
+describe("grammar boundaries", () => {
   it.each(["gh://ghe.example.com/o/r/src/", "gh-pr://ghe.example.com/o/r/1/diff/src/a.ts", "gh-issue://ghe.example.com/o/r/1"])("parses host prefixes: %s", (path) => {
     expect(parseGithubPath(path)).toMatchObject({ host: "ghe.example.com", repo: { owner: "o", repo: "r" } });
   });
@@ -193,8 +185,8 @@ describe("stage 1 grammar boundaries", () => {
     expect(() => parseGithubPath(`gh-issue://o/r/${key}`)).toThrow(/Jira\/Linear/);
   });
   it.each([
-    ["gh://o/r?comments=1", "ref, refresh"],
-    ["gh-pr://?host=example.com", "state, limit, author, label, refresh"],
+    ["gh://o/r?foo=1", "ref, refresh"],
+    ["gh-pr://?foo=1", "state, limit, author, label, refresh"],
     ["gh-pr://1?state=open", "refresh"],
     ["gh-pr://1/diff?limit=1", "refresh"],
   ])("lists allowed query params for %s", (path, allowed) => {

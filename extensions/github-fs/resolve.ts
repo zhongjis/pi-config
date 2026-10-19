@@ -1,9 +1,9 @@
 /**
- * Orchestrates a parsed github path into a materialized markdown file path.
+ * Orchestrates a parsed github path into a materialized file path.
  *
  * Flow: resolve host+repo → resolve an
  * account with access → cache lookup (account-scoped key) → on miss, fetch via
- * gh, render, and cache. Returns the on-disk `.md` path the built-in `read`
+ * gh, render, and cache. Returns the on-disk file path the built-in `read`
  * tool then pages.
  *
  * All external effects arrive through {@link ResolveDeps} so the orchestrator
@@ -14,7 +14,8 @@ import type { AuthResolver, GhRunner } from "./gh.js";
 import { ghContents, ghList, ghPrDiff, ghReviewThreads, ghViewSingle } from "./gh.js";
 import type { GithubCache } from "./cache.js";
 import { isTerminalState } from "./cache.js";
-import { renderContentStub, renderDiff, renderList, renderSingle, renderTree } from "./render.js";
+import { renderContentStub, renderList, renderSingle, renderTree } from "./render.js";
+import { renderDiff } from "./render-diff.js";
 import type { ParsedGithubTarget, RepoRef } from "./parse.js";
 
 declare function require(id: string): unknown;
@@ -138,7 +139,7 @@ async function fetchAndRender(
       number: target.number,
     });
     return {
-      markdown: renderSingle(target.scheme, json, repo, host, target.scheme === "pr"
+      markdown: renderSingle(target.scheme, json, { host, repo }, target.scheme === "pr"
         ? await ghReviewThreads(deps.run, { ...shared, number: target.number }) : undefined),
       terminal: isTerminalState(typeof json.state === "string" ? json.state : undefined),
       ext: ".md",
@@ -153,12 +154,12 @@ async function fetchAndRender(
       author: target.author,
       label: target.label,
     });
-    return { markdown: renderList(target.scheme, items, repo, target.state, host), terminal: false, ext: ".md" };
+    return { markdown: renderList(target.scheme, items, { host, repo }, target.state), terminal: false, ext: ".md" };
   }
 
   const res = await ghContents(deps.run, { ...shared, path: target.path, ref: target.ref });
   const terminal = /^[0-9a-f]{40}$/i.test(target.ref ?? "");
-  if (res.kind === "dir") return { markdown: renderTree(res.entries, repo, target.path, target.ref, host), terminal, ext: ".md" };
+  if (res.kind === "dir") return { markdown: renderTree(res.entries, { host, repo }, target.path, target.ref), terminal, ext: ".md" };
   if (res.kind === "file") return { markdown: res.text, terminal, ext: deriveExt(res.name) };
   return { markdown: renderContentStub(res, repo, target.ref), terminal, ext: ".md" };
 }
@@ -195,7 +196,7 @@ async function cachedRawDiff(
   }
 }
 
-/** Resolve a parsed target to a materialized `.md` path. */
+/** Resolve a parsed target to a materialized file path. */
 export async function resolveGithubView(cwd: string, target: ParsedGithubTarget, deps: ResolveDeps, signal?: AbortSignal): Promise<string> {
   const { host, repo } = await resolveHostAndRepo(cwd, target, deps);
   const account = await deps.auth.resolve(host, repo.owner, repo.repo, signal);
@@ -213,7 +214,7 @@ export async function resolveGithubView(cwd: string, target: ParsedGithubTarget,
     const rawKey = deps.cache.key({ ...identity, kind: "raw-diff", number: target.number });
     const diff = await cachedRawDiff(deps, rawKey, { host, owner: repo.owner, repo: repo.repo,
       number: target.number, token: account.token, signal }, target.refresh);
-    return deps.cache.put(key, renderDiff(diff, target.number, target.mode, target.path, repo, host), { terminal: false });
+    return deps.cache.put(key, renderDiff(diff, target.number, target.mode, target.path, { host, repo }), { terminal: false });
   }
 
   const hit = await deps.cache.get(key, { refresh: target.refresh });

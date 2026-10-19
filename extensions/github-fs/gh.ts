@@ -172,7 +172,13 @@ export function createAuthResolver(run: GhRunner): AuthResolver {
   let accountsPromise: Promise<GhAccount[]> | undefined;
 
   const getAccounts = (signal?: AbortSignal, force = false): Promise<GhAccount[]> => {
-    if (force || !accountsPromise) accountsPromise = listAccounts(run, signal);
+    if (force || !accountsPromise) {
+      const pending = listAccounts(run, signal).catch((error: unknown) => {
+        if (accountsPromise === pending) accountsPromise = undefined;
+        throw error;
+      });
+      accountsPromise = pending;
+    }
     return accountsPromise;
   };
 

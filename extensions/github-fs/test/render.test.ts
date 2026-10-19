@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { renderContentStub, renderDiff, renderList, renderSingle, renderTree, splitDiffFiles } from "../render.js";
+import { renderContentStub, renderList, renderSingle, renderTree } from "../render.js";
+import { renderDiff, splitDiffFiles } from "../render-diff.js";
 
 describe("renderSingle", () => {
   it("renders a PR with meta, body, and comments", () => {
@@ -21,7 +22,7 @@ describe("renderSingle", () => {
         url: "https://github.com/o/r/pull/42",
         comments: [{ author: { login: "reviewer" }, body: "LGTM", createdAt: "2026-01-01" }],
       },
-      { owner: "o", repo: "r" },
+      { host: "github.com", repo: { owner: "o", repo: "r" } },
     );
     expect(md).toContain("# PR #42 · Add feature");
     expect(md).toContain("**OPEN**");
@@ -37,7 +38,7 @@ describe("renderSingle", () => {
   });
 
   it("degrades gracefully on missing fields", () => {
-    const md = renderSingle("issue", { number: 1 }, undefined);
+    const md = renderSingle("issue", { number: 1 }, { host: "github.com", repo: undefined });
     expect(md).toContain("# Issue #1");
     expect(md).toContain("author @unknown");
     expect(md).toContain("_(no description)_");
@@ -52,7 +53,7 @@ describe("renderList", () => {
         { number: 1, state: "OPEN", title: "First", author: { login: "a" }, updatedAt: "2026-01-02", isDraft: true },
         { number: 2, state: "MERGED", title: "Second", author: { login: "b" }, labels: [{ name: "bug" }] },
       ],
-      { owner: "o", repo: "r" },
+      { host: "github.com", repo: { owner: "o", repo: "r" } },
       "all",
     );
     expect(md).toContain("# PRs · o/r · state=all");
@@ -62,7 +63,7 @@ describe("renderList", () => {
   });
 
   it("handles empty list", () => {
-    expect(renderList("issue", [], undefined, "open")).toContain("_(no matching items)_");
+    expect(renderList("issue", [], { host: "github.com", repo: undefined }, "open")).toContain("_(no matching items)_");
   });
 });
 
@@ -128,7 +129,7 @@ describe("renderTree", () => {
         { name: "lib", type: "dir", size: 0 },
         { name: "a.ts", type: "file", size: 20 },
       ],
-      { owner: "o", repo: "r" },
+      { host: "github.com", repo: { owner: "o", repo: "r" } },
       "src",
     );
     const dirIndex = out.indexOf("- lib/");
@@ -139,7 +140,7 @@ describe("renderTree", () => {
   });
 
   it("marks an empty directory", () => {
-    expect(renderTree([], { owner: "o", repo: "r" }, "")).toContain("_(empty)_");
+    expect(renderTree([], { host: "github.com", repo: { owner: "o", repo: "r" } }, "")).toContain("_(empty)_");
   });
 });
 
@@ -167,15 +168,15 @@ describe("renderContentStub", () => {
 
 describe("copyable paths", () => {
   it("includes host, repository and ref in tree entry paths", () => {
-    const md = renderTree([{ name: "a.ts", type: "file", size: 1 }], { owner: "o", repo: "r" }, "src", "feature/x", "ghe.example.com");
+    const md = renderTree([{ name: "a.ts", type: "file", size: 1 }], { host: "ghe.example.com", repo: { owner: "o", repo: "r" } }, "src", "feature/x");
     expect(md).toContain("`gh://ghe.example.com/o/r/src/a.ts?ref=feature%2Fx`");
   });
   it("uses qualified paths for listed items", () => {
-    expect(renderList("issue", [{ number: 7 }], { owner: "o", repo: "r" }, "open", "ghe.example.com")).toContain("`gh-issue://ghe.example.com/o/r/7`");
-    expect(renderList("pr", [{ number: 7 }], { owner: "o", repo: "r" }, "open")).toContain("`gh-pr://o/r/7`");
+    expect(renderList("issue", [{ number: 7 }], { host: "ghe.example.com", repo: { owner: "o", repo: "r" } }, "open")).toContain("`gh-issue://ghe.example.com/o/r/7`");
+    expect(renderList("pr", [{ number: 7 }], { host: "github.com", repo: { owner: "o", repo: "r" } }, "open")).toContain("`gh-pr://o/r/7`");
   });
   it("uses qualified diff path and full diff hints", () => {
-    const md = renderDiff(SAMPLE_DIFF, 7, "list", undefined, { owner: "o", repo: "r" }, "ghe.example.com");
+    const md = renderDiff(SAMPLE_DIFF, 7, "list", undefined, { host: "ghe.example.com", repo: { owner: "o", repo: "r" } });
     expect(md).toContain("gh-pr://ghe.example.com/o/r/7/diff/src/a.ts");
     expect(md).toContain("gh-pr://ghe.example.com/o/r/7.diff");
   });
@@ -193,7 +194,7 @@ describe("PR single view enrichment", () => {
         { author: { login: "commenter" }, state: "COMMENTED", body: "A review comment" },
       ],
       comments: [{ author: { login: "discussion" }, body: "General comment" }],
-    }, { owner: "o", repo: "r" }, "ghe.example.com", { threads: [
+    }, { host: "ghe.example.com", repo: { owner: "o", repo: "r" } }, { threads: [
       { id: "resolved", path: "old.ts", line: 4, isResolved: true, resolvedBy: { login: "fixer" }, comments: { nodes: [{ body: "hidden resolved detail" }] } },
       { id: "active", path: "src/a.ts", line: 8, originalLine: 5, isResolved: false, comments: { nodes: [{ databaseId: 123, author: { login: "reviewer" }, createdAt: "2026-01-02", body: "Please fix" }] } },
       { id: "outdated", path: "src/b.ts", line: null, originalLine: 9, isOutdated: true, isResolved: false, comments: { nodes: [] } },
@@ -225,11 +226,11 @@ describe("PR single view enrichment", () => {
   it.each([
     ["SUCCESS", "passed"], ["NEUTRAL", "passed"], ["SKIPPED", "passed"],
     ["FAILURE", "failed"], ["CANCELLED", "failed"], ["TIMED_OUT", "failed"],
-    ["ACTION_REQUIRED", "failed"], ["ERROR", "failed"],
+    ["ACTION_REQUIRED", "failed"], ["ERROR", "failed"], ["STARTUP_FAILURE", "failed"],
     ["PENDING", "pending"], [null, "pending"], ["UNKNOWN", "pending"],
   ])("normalizes CheckRun and StatusContext %s as %s", (state, outcome) => {
     for (const check of [{ name: "run", status: state === null ? "IN_PROGRESS" : "COMPLETED", conclusion: state }, { context: "legacy", state }]) {
-      const md = renderSingle("pr", { number: 7, statusCheckRollup: [check] }, { owner: "o", repo: "r" });
+      const md = renderSingle("pr", { number: 7, statusCheckRollup: [check] }, { host: "github.com", repo: { owner: "o", repo: "r" } });
       expect(md).toContain(`checks: ${outcome === "passed" ? 1 : 0} passed, ${outcome === "failed" ? 1 : 0} failed, ${outcome === "pending" ? 1 : 0} pending`);
       if (outcome === "failed") expect(md).toContain(`failing: ${"name" in check ? "run" : "legacy"}`);
       else expect(md).not.toContain("failing:");
@@ -240,19 +241,19 @@ describe("PR single view enrichment", () => {
     const md = renderSingle("pr", { number: 7, statusCheckRollup: [
       { name: "unit", conclusion: "SUCCESS" }, { context: "lint", state: "FAILURE" },
       { name: "build", conclusion: "ERROR" }, { name: "queued", status: "QUEUED", conclusion: null },
-    ] }, { owner: "o", repo: "r" });
+    ] }, { host: "github.com", repo: { owner: "o", repo: "r" } });
     expect(md).toContain("checks: 1 passed, 2 failed, 1 pending");
     expect(md).toContain("failing: lint, build");
     expect(md).toContain("gh-pr://o/r/7/diff");
     expect(md).not.toContain("Files at head:");
-    expect(renderSingle("pr", { statusCheckRollup: [] }, undefined)).toContain("checks: 0 passed, 0 failed, 0 pending");
-    expect(renderSingle("pr", {}, undefined)).not.toContain("checks:");
+    expect(renderSingle("pr", { statusCheckRollup: [] }, { host: "github.com", repo: undefined })).toContain("checks: 0 passed, 0 failed, 0 pending");
+    expect(renderSingle("pr", {}, { host: "github.com", repo: undefined })).not.toContain("checks:");
   });
 
   it("shows safe unavailable thread metadata without changing issue views", () => {
-    expect(renderSingle("pr", { number: 7 }, undefined, "github.com", { unavailable: "request failed" })).toContain("_Review threads unavailable: request failed_");
+    expect(renderSingle("pr", { number: 7 }, { host: "github.com", repo: undefined }, { unavailable: "request failed" })).toContain("_Review threads unavailable: request failed_");
     const json = { number: 7, headRefOid: "abcdef1", reviews: [], statusCheckRollup: [], comments: [] };
-    const issue = renderSingle("issue", json, { owner: "o", repo: "r" }, "github.com", { threads: [] });
+    const issue = renderSingle("issue", json, { host: "github.com", repo: { owner: "o", repo: "r" } }, { threads: [] });
     expect(issue).toContain("## Comments (0)");
     for (const prOnly of ["head abcdef1", "## Reviews", "## Review threads", "checks:", "Changed files:"]) expect(issue).not.toContain(prOnly);
   });
@@ -304,7 +305,7 @@ describe("diff path and statistics mechanics", () => {
   });
 
   it("lists totals and per-file status/counts with selectable paths", () => {
-    const md = renderDiff(EDGE_DIFF, 7, "list", undefined, { owner: "o", repo: "r" });
+    const md = renderDiff(EDGE_DIFF, 7, "list", undefined, { host: "github.com", repo: { owner: "o", repo: "r" } });
     expect(md).toContain("5 file(s) · +4 / -4");
     expect(md).toContain("`src/with b/name.ts` · +3 / -2 · modified · `gh-pr://o/r/7/diff/src/with b/name.ts`");
     expect(md).toContain("`deleted.ts` · +0 / -2 · deleted");
@@ -313,5 +314,17 @@ describe("diff path and statistics mechanics", () => {
     const slice = renderDiff(EDGE_DIFF, 7, "slice", "src/with b/name.ts");
     expect(slice).toContain("+extra");
     expect(slice).not.toContain("deleted file mode");
+  });
+});
+
+describe("git patch path terminators", () => {
+  it("strips trailing tabs from modified and deleted paths without changing patch content", () => {
+    const diff = "diff --git a/a b/file.ts b/a b/file.ts\n--- a/a b/file.ts\t\n+++ b/a b/file.ts\t\n@@ -1 +1 @@\n-old\n+new\n" +
+      "diff --git a/deleted file.ts b/deleted file.ts\n--- a/deleted file.ts\t\n+++ /dev/null\n@@ -1 +0,0 @@\n-gone";
+    const files = splitDiffFiles(diff);
+    expect(files.map((file) => file.path)).toEqual(["a b/file.ts", "deleted file.ts"]);
+    expect(files[0].section).toContain("+++ b/a b/file.ts\t");
+    expect(renderDiff(diff, 7, "slice", "a b/file.ts")).toContain("+new");
+    expect(renderDiff(diff, 7, "slice", "deleted file.ts")).toContain("-gone");
   });
 });
