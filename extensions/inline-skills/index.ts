@@ -706,12 +706,19 @@ export default function (pi: ExtensionAPI): void {
       ) ?? []
       if (skills.length === 0) return
       try {
-        const { content } = buildInlineSkillContent(skills, ctx.cwd)
-        for (const skill of skills) {
-          loadedSkills.add(skill.name)
-          pi.appendEntry(LOADED_SKILL_ENTRY_TYPE, { name: skill.name, source: "tool-result" })
-        }
-        return { content: [...event.content, { type: "text", text: content }] }
+        const { content, skillBlocks } = buildInlineSkillContent(skills, ctx.cwd)
+        for (const skill of skills) loadedSkills.add(skill.name)
+        // Same displayed message as prompt injection; steer delivers it before the next model call.
+        pi.sendMessage(
+          {
+            customType: INLINE_SKILL_MESSAGE_TYPE,
+            content,
+            display: true,
+            details: { names: skills.map((skill) => skill.name), skills: skillBlocks },
+          },
+          { deliverAs: "steer" },
+        )
+        return
       } catch (error) {
         ctx.ui.notify(
           `inline-skills: failed to load skill: ${error instanceof Error ? error.message : String(error)}`,

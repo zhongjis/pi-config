@@ -64,6 +64,7 @@ function currentStub(
 function createHarness(defs: SkillDef[], options: HarnessOptions = {}) {
   const lifecycle = new Map<string, Handler[]>();
   const appended: Array<{ type: string; data: unknown }> = [];
+  const sent: Array<{ message: { customType: string; content: string; display: boolean; details?: { skills?: unknown[] } }; options?: { deliverAs?: string } }> = [];
   let autocompleteFactory: AutocompleteFactory | undefined;
   const notices: Array<{ message: string; level: string }> = [];
   let toolCallEvents = 0;
@@ -81,6 +82,9 @@ function createHarness(defs: SkillDef[], options: HarnessOptions = {}) {
       messageRenderer = renderer as typeof messageRenderer;
     },
     registerCommand: () => {},
+    sendMessage: (message: (typeof sent)[number]["message"], options?: { deliverAs?: string }) => {
+      sent.push({ message, options });
+    },
     appendEntry: (type: string, data: unknown) => {
       appended.push({ type, data });
     },
@@ -103,7 +107,9 @@ function createHarness(defs: SkillDef[], options: HarnessOptions = {}) {
       },
     },
     sessionManager: {
-      getBranch: () => (options.branch ? appended.map((e) => ({ type: "custom", customType: e.type, data: e.data })) : []),
+      getBranch: () => (options.branch
+        ? sent.map(({ message }) => ({ type: "custom_message", customType: message.customType, details: message.details }))
+        : []),
       getSessionId: () => sessionId,
     },
   };
@@ -129,6 +135,7 @@ function createHarness(defs: SkillDef[], options: HarnessOptions = {}) {
     getToolCallEvents: () => toolCallEvents,
     getProvider: () => autocompleteFactory,
     getRenderer: () => messageRenderer,
+    sent,
   };
 }
 
@@ -308,33 +315,31 @@ describe("inline-skills ($skill: token)", () => {
     ]);
   });
 
-  it("appends $skill: content to an ask result once and ignores other tools", async () => {
+  it("steers a displayed skill message for $skill: in an ask result once and ignores other tools", async () => {
     const h = createHarness([{ name: "tdd", path: tddPath }]);
     await h.fire("session_start");
     const answer = { type: "text", text: "Scope: user wrote: use $skill:tdd for this" };
-    const askResult = (await h.fire("tool_result", {
-      toolName: "ask",
-      isError: false,
-      input: {},
-      content: [answer],
-    })) as { content?: Array<{ type: string; text: string }> } | undefined;
-    expect(askResult?.content?.[0]).toEqual(answer);
-    expect(askResult?.content?.[1]?.text).toContain("<inline_skills>");
-    expect(askResult?.content?.[1]?.text).toContain("TDD_BODY_MARKER");
+    const fire = (toolName: string) => h.fire("tool_result", { toolName, isError: false, input: {}, content: [answer] });
+    expect(await fire("ask")).toBeUndefined();
+    expect(h.sent).toHaveLength(1);
+    expect(h.sent[0].options).toEqual({ deliverAs: "steer" });
+    expect(h.sent[0].message.customType).toBe("inline-skill");
+    expect(h.sent[0].message.display).toBe(true);
+    expect(h.sent[0].message.content).toContain("TDD_BODY_MARKER");
 
-    const again = await h.fire("tool_result", { toolName: "ask", isError: false, input: {}, content: [answer] });
-    expect(again).toBeUndefined();
-    const bash = await h.fire("tool_result", { toolName: "bash", isError: false, input: {}, content: [answer] });
-    expect(bash).toBeUndefined();
+    await fire("ask");
+    await fire("bash");
+    expect(h.sent).toHaveLength(1);
   });
 
   it("remembers ask-loaded skills after the branch is restored", async () => {
     const h = createHarness([{ name: "tdd", path: tddPath }], { branch: true });
     await h.fire("session_start");
     const answer = { type: "text", text: "use $skill:tdd" };
-    expect(await h.fire("tool_result", { toolName: "ask", isError: false, input: {}, content: [answer] })).toBeDefined();
+    await h.fire("tool_result", { toolName: "ask", isError: false, input: {}, content: [answer] });
     await h.fire("input", { source: "user", text: "next" });
-    expect(await h.fire("tool_result", { toolName: "ask", isError: false, input: {}, content: [answer] })).toBeUndefined();
+    await h.fire("tool_result", { toolName: "ask", isError: false, input: {}, content: [answer] });
+    expect(h.sent).toHaveLength(1);
   });
 });
 
