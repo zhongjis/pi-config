@@ -695,7 +695,7 @@ export default function (pi: ExtensionAPI): void {
   })
 
   pi.on("tool_result", async (event, ctx) => {
-    // ask results carry only user-authored text (picked options, typed answers, notes).
+    // ask results hold picked options, typed answers, and notes (plus the model's own title/labels).
     if (event.toolName === "ask" && !event.isError) {
       const text = event.content
         .map((part) => (part.type === "text" ? part.text : ""))
@@ -709,7 +709,7 @@ export default function (pi: ExtensionAPI): void {
         const { content } = buildInlineSkillContent(skills, ctx.cwd)
         for (const skill of skills) {
           loadedSkills.add(skill.name)
-          pi.appendEntry(LOADED_SKILL_ENTRY_TYPE, { name: skill.name, source: "ask" })
+          pi.appendEntry(LOADED_SKILL_ENTRY_TYPE, { name: skill.name, source: "tool-result" })
         }
         return { content: [...event.content, { type: "text", text: content }] }
       } catch (error) {

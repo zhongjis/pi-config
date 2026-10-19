@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -61,7 +62,7 @@ describe("ask autocomplete", () => {
 			trigger.mockRestore();
 		}
 	});
-	it("finds and applies a real file through fd on PATH", async () => {
+	it.skipIf(spawnSync("fd", ["--version"]).error)("finds and applies a real file through fd on PATH", async () => {
 		const cwd = mkdtempSync(join(tmpdir(), "ask-completion-"));
 		try {
 			writeFileSync(join(cwd, "completion-proof.txt"), "fixture");

@@ -56,6 +56,7 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 		finished = true;
 		signal?.removeEventListener("abort", onAbort);
 		editor.focused = false;
+		// Clearing the text also cancels a pending completion request; pi-tui keeps cancelAutocomplete private.
 		editor.setText("");
 	}
 	function apply(effect: AskEffect | undefined, aborted = false) {
@@ -135,9 +136,11 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 			const lead = `${cursorMark(cursor)}${box(custom !== undefined)}${" ".repeat(numWidth)}`;
 			const target = state.editorTarget;
 			const editing = target?.kind === "custom" && target.questionId === q.id;
+			// Style each line separately so multiline answers keep their colour after the split below.
+			const perLine = (text: string, style: (s: string) => string) => text.split("\n").map(style).join("\n");
 			const value = editing ? word("Other")
-				: custom !== undefined ? `${word("Other")}  ${plain(`“${custom}”`)}`
-					: draft !== undefined ? `${word("Other")}  ${muted(`draft “${draft}”`)}` : word("Other…");
+				: custom !== undefined ? `${word("Other")}  ${perLine(`“${custom}”`, plain)}`
+					: draft !== undefined ? `${word("Other")}  ${perLine(`draft “${draft}”`, muted)}` : word("Other…");
 			lines.push(...`${lead}${value}`.split("\n").map((line, i) => i ? `${" ".repeat(labelCol)}${line}` : line));
 			if (editing) lines.push(...editLines(width, labelCol));
 		}

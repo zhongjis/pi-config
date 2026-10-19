@@ -1,28 +1,11 @@
 /** ask — Native file completion and independent $skill: completion. */
 
-import { accessSync, constants } from "node:fs";
-import { delimiter, join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type AutocompleteProvider, CombinedAutocompleteProvider } from "@earendil-works/pi-tui";
 
-function findFd(): string | undefined {
-	const names = process.platform === "win32" ? ["fd.exe", "fdfind.exe", "fd", "fdfind"] : ["fd", "fdfind"];
-	for (const dir of (process.env.PATH ?? "").split(delimiter)) {
-		for (const name of names) {
-			const path = join(dir, name);
-			try {
-				accessSync(path, constants.X_OK);
-				return path;
-			} catch {
-				continue;
-			}
-		}
-	}
-	return undefined;
-}
-
 export function createAskAutocompleteProvider(cwd: string, commands: Pick<ReturnType<ExtensionAPI["getCommands"]>[number], "name" | "description" | "source">[]): AutocompleteProvider {
-	const files = new CombinedAutocompleteProvider([], cwd, findFd());
+	// Spawned through PATH; pi-tui treats a missing fd as no file suggestions.
+	const files = new CombinedAutocompleteProvider([], cwd, "fd");
 	const skills = commands
 		.filter((command) => command.source === "skill" && command.name.startsWith("skill:"))
 		.map((command) => ({ value: `$skill:${command.name.slice("skill:".length)}`, label: command.name.slice("skill:".length), description: command.description }));

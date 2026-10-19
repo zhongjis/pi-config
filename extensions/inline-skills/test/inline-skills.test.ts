@@ -35,6 +35,7 @@ interface HarnessOptions {
   activeTools?: string[]
   cwd?: string
   sessionId?: string
+  branch?: boolean
 }
 
 function makeCommands(defs: SkillDef[]) {
@@ -102,7 +103,7 @@ function createHarness(defs: SkillDef[], options: HarnessOptions = {}) {
       },
     },
     sessionManager: {
-      getBranch: () => [],
+      getBranch: () => (options.branch ? appended.map((e) => ({ type: "custom", customType: e.type, data: e.data })) : []),
       getSessionId: () => sessionId,
     },
   };
@@ -325,6 +326,15 @@ describe("inline-skills ($skill: token)", () => {
     expect(again).toBeUndefined();
     const bash = await h.fire("tool_result", { toolName: "bash", isError: false, input: {}, content: [answer] });
     expect(bash).toBeUndefined();
+  });
+
+  it("remembers ask-loaded skills after the branch is restored", async () => {
+    const h = createHarness([{ name: "tdd", path: tddPath }], { branch: true });
+    await h.fire("session_start");
+    const answer = { type: "text", text: "use $skill:tdd" };
+    expect(await h.fire("tool_result", { toolName: "ask", isError: false, input: {}, content: [answer] })).toBeDefined();
+    await h.fire("input", { source: "user", text: "next" });
+    expect(await h.fire("tool_result", { toolName: "ask", isError: false, input: {}, content: [answer] })).toBeUndefined();
   });
 });
 
