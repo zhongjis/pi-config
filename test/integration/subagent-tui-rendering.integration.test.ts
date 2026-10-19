@@ -145,7 +145,7 @@ describe("subagent TUI rendering — integration", () => {
 			const before = JSON.stringify(message);
 			const collapsed = renderer(message, { expanded: false }, THEME);
 			const expanded = renderer(message, { expanded: true }, THEME);
-			const previewLine = renderText(collapsed).split("\n").map(stripVTControlCharacters).find((line) => line.includes(grapheme));
+			const previewLine = renderText(collapsed, 80).split("\n").map(stripVTControlCharacters).find((line) => line.includes(grapheme));
 			if (!previewLine) throw new TypeError("notification preview line was not rendered");
 			const preview = previewLine.trim();
 			expect(preview).toMatch(/…$/u);

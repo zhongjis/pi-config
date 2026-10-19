@@ -88,6 +88,8 @@ type ToolFixture = {
   args: Record<string, unknown>;
   raw: string;
   details: unknown;
+  /** Details-driven renderers expand into their report, not the raw text; defaults to the last raw line. */
+  expandedMarker?: string;
 };
 
 const FIXTURES: Record<string, ToolFixture> = {
@@ -109,6 +111,7 @@ const FIXTURES: Record<string, ToolFixture> = {
     args: { questions: [{ id: "scope", label: "Scope", prompt: "Which scope?", options: [{ value: "all", label: "All" }] }] },
     raw: "Scope: user selected: 1. All\nRAW31_08",
     details: { questions: [{ id: "scope", label: "Scope", prompt: "Which scope?", options: [{ value: "all", label: "All" }] }], answers: [{ id: "scope", multi: false, wasCustom: false, values: ["all"], labels: ["All"], indices: [1] }], cancelled: false },
+    expandedMarker: "✓ answered 1/1",
   },
   bash: { args: { command: "printf renderer", cwd: "/tmp/render-cwd" }, raw: "renderer output\nRAW31_09", details: {} },
   boomerang: { args: { task: "Review renderer output", rethrow: 2 }, raw: "Boomerang task queued.\nRAW31_10", details: {} },
@@ -270,7 +273,7 @@ describe("tool output TUI rendering — real Pi integration", () => {
         const expandedText = renderAt(expanded, width, `${definition.name} expanded`).join("\n");
         renderAt(malformedComponent, width, `${definition.name} malformed`);
         renderAt(absentComponent, width, `${definition.name} absent`);
-        expect(expandedText, `${definition.name} complete expanded marker`).toContain(fixture.raw.split("\n").at(-1));
+        expect(expandedText, `${definition.name} complete expanded marker`).toContain(fixture.expandedMarker ?? fixture.raw.split("\n").at(-1));
         if (!NATIVE_RESULT_DELEGATES.has(definition.name)) expect(collapsedLines.length, `${definition.name} collapsed row budget at ${width}`).toBeLessThanOrEqual(3);
       }
 

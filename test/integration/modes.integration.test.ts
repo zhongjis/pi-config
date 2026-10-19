@@ -128,6 +128,7 @@ describe("modes extension — integration", () => {
 		});
 
 		const fuxiSkillsDir = path.resolve(PROJECT_ROOT, "modes/fuxi/skills");
+		const kuafuSkillsDir = path.resolve(PROJECT_ROOT, "modes/kuafu/skills");
 		const discoveredPaths = async () => {
 			const runner = (t.session as any).extensionRunner;
 			const resources = await runner.emitResourcesDiscover(PROJECT_ROOT, "reload");
@@ -140,13 +141,13 @@ describe("modes extension — integration", () => {
 			expect(context).not.toContain("mode-skill-bootstrap:");
 		};
 
-		await expectPaths([]);
+		await expectPaths([kuafuSkillsDir]);
 		await switchMode(t, "fuxi");
 		await expectPaths([fuxiSkillsDir]);
 		await switchMode(t, "houtu");
 		await expectPaths([]);
 		await switchMode(t, "kuafu");
-		await expectPaths([]);
+		await expectPaths([kuafuSkillsDir]);
 	});
 
 	it("updates mode-owned skill inventory after real /mode reload with inline-skills loaded", async () => {
