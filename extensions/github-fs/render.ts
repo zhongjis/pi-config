@@ -6,7 +6,7 @@
  * rather than throwing. Never emits tokens or secrets.
  */
 
-import type { GithubScheme } from "./gh.js";
+import type { GithubScheme, ReviewThreadsResult } from "./gh.js";
 import type { DiffMode, RepoRef } from "./parse.js";
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -34,7 +34,10 @@ function repoLabel(repo: RepoRef | undefined): string {
   return repo ? `${repo.owner}/${repo.repo}` : "current repo";
 }
 
-export function renderSingle(scheme: GithubScheme, json: Record<string, unknown>, repo: RepoRef | undefined): string {
+export function renderSingle(
+  scheme: GithubScheme, json: Record<string, unknown>, repo: RepoRef | undefined,
+  host = "github.com", reviewThreads?: ReviewThreadsResult,
+): string {
   const number = num(json.number) ?? "?";
   const title = str(json.title) ?? "(no title)";
   const state = str(json.state) ?? "UNKNOWN";
@@ -48,6 +51,27 @@ export function renderSingle(scheme: GithubScheme, json: Record<string, unknown>
   lines.push(meta.join(" · "));
 
   if (scheme === "pr") {
+    const oid = str(json.headRefOid);
+    if (oid) lines.push(`head ${oid.slice(0, 7)}`);
+    const decision = str(json.reviewDecision);
+    if (decision) lines.push(`review: ${decision}`);
+    if (Array.isArray(json.statusCheckRollup)) {
+      let passed = 0;
+      let failed = 0;
+      let pending = 0;
+      const failing: string[] = [];
+      for (const raw of json.statusCheckRollup) {
+        const check = asRecord(raw);
+        const result = (str(check.conclusion) ?? str(check.state) ?? "").toLowerCase();
+        if (["success", "neutral", "skipped"].includes(result)) passed++;
+        else if (["failure", "cancelled", "timed_out", "action_required", "error"].includes(result)) {
+          failed++;
+          failing.push(str(check.name) ?? str(check.context) ?? "unknown");
+        } else pending++;
+      }
+      lines.push(`checks: ${passed} passed, ${failed} failed, ${pending} pending`);
+      if (failing.length) lines.push(`failing: ${failing.join(", ")}`);
+    }
     const base = str(json.baseRefName);
     const head = str(json.headRefName);
     if (base && head) lines.push(`branch: \`${head}\` → \`${base}\``);
@@ -69,6 +93,42 @@ export function renderSingle(scheme: GithubScheme, json: Record<string, unknown>
 
   lines.push("", "---", "", str(json.body) ?? "_(no description)_");
 
+  if (scheme === "pr") {
+    if (Array.isArray(json.reviews)) {
+      const reviews = json.reviews.map(asRecord).filter((review) =>
+        review.state !== "COMMENTED" || (str(review.body)?.trim().length ?? 0) > 0);
+      lines.push("", `## Reviews (${reviews.length})`);
+      for (const review of reviews) {
+        const when = str(review.submittedAt);
+        lines.push("", `### @${login(review.author)} · ${str(review.state) ?? "UNKNOWN"}${when ? ` · ${when}` : ""}`, "", str(review.body) ?? "");
+      }
+    }
+    if (reviewThreads?.unavailable !== undefined) {
+      lines.push("", `_Review threads unavailable: ${reviewThreads.unavailable}_`);
+    } else if (reviewThreads?.threads) {
+      const threads = reviewThreads.threads.map(asRecord);
+      const resolved = threads.filter((thread) => thread.isResolved === true);
+      lines.push("", `## Review threads (${threads.length}, ${resolved.length} resolved)`);
+      for (const thread of [...threads.filter((thread) => thread.isResolved !== true), ...resolved]) {
+        const location = `${str(thread.path) ?? "?"}:${num(thread.line) ?? num(thread.originalLine) ?? "?"}`;
+        const id = str(thread.id) ?? "?";
+        if (thread.isResolved === true) {
+          lines.push(`- ${location} · resolved by @${login(thread.resolvedBy)} · thread ${id}`);
+          continue;
+        }
+        lines.push("", `### ${location} · unresolved${thread.isOutdated === true ? " · outdated" : ""} · thread ${id}`);
+        const comments = asRecord(thread.comments).nodes;
+        if (Array.isArray(comments)) {
+          for (const raw of comments) {
+            const comment = asRecord(raw);
+            const when = str(comment.createdAt);
+            lines.push("", `**@${login(comment.author)}**${when ? ` · ${when}` : ""} · comment ${num(comment.databaseId) ?? "?"}`, "", str(comment.body) ?? "");
+          }
+        }
+      }
+    }
+  }
+
   if (Array.isArray(json.comments)) {
     lines.push("", `## Comments (${json.comments.length})`);
     if (json.comments.length === 0) {
@@ -79,6 +139,12 @@ export function renderSingle(scheme: GithubScheme, json: Record<string, unknown>
       const when = str(comment.createdAt);
       lines.push("", `### @${login(comment.author)}${when ? ` · ${when}` : ""}`, "", str(comment.body) ?? "");
     }
+  }
+
+  if (scheme === "pr") {
+    const uri = `gh-pr://${repoPath(repo, host)}${number}`;
+    const oid = str(json.headRefOid);
+    lines.push("", `Changed files: ${uri}/diff · Full diff: ${uri}.diff${oid ? ` · Files at head: gh://${repoPath(repo, host)}?ref=${encodeURIComponent(oid)}` : ""}`);
   }
 
   return lines.join("\n");
@@ -122,24 +188,51 @@ export function renderList(
 interface DiffFileSection {
   path: string;
   section: string;
+  status: "added" | "deleted" | "renamed" | "modified";
+  additions: number;
+  deletions: number;
 }
 
 const GIT_DIFF_HEADER = /^diff --git a\/(.+) b\/(.+)$/;
 
-/** Split a unified diff into per-file sections keyed by the b-side path. */
+/** Prefer patch paths over the ambiguous git header, preserving each full section. */
 export function splitDiffFiles(diff: string): DiffFileSection[] {
   const files: DiffFileSection[] = [];
   let current: DiffFileSection | undefined;
+  let oldPath: string | undefined;
+  let patchPath: string | undefined;
+  let renamedPath: string | undefined;
+  let inHunk = false;
+  const finish = () => {
+    if (!current) return;
+    current.path = patchPath ?? renamedPath ?? oldPath ?? current.path;
+    files.push(current);
+  };
   for (const line of diff.split("\n")) {
     if (line.startsWith("diff --git ")) {
-      if (current) files.push(current);
+      finish();
       const match = GIT_DIFF_HEADER.exec(line);
-      current = { path: match ? match[2] : line.slice("diff --git ".length), section: line };
+      current = { path: match ? match[2] : line.slice("diff --git ".length), section: line,
+        status: "modified", additions: 0, deletions: 0 };
+      oldPath = patchPath = renamedPath = undefined;
+      inHunk = false;
     } else if (current) {
       current.section += `\n${line}`;
+      if (line.startsWith("@@ ")) inHunk = true;
+      if (inHunk) {
+        if (line.startsWith("+")) current.additions++;
+        else if (line.startsWith("-")) current.deletions++;
+      } else if (line.startsWith("--- a/")) oldPath = line.slice(6);
+      else if (line === "--- /dev/null" || line.startsWith("new file mode ")) current.status = "added";
+      else if (line.startsWith("+++ b/")) patchPath = line.slice(6);
+      else if (line === "+++ /dev/null" || line.startsWith("deleted file mode ")) current.status = "deleted";
+      else if (line.startsWith("rename to ")) {
+        renamedPath = line.slice(10);
+        current.status = "renamed";
+      }
     }
   }
-  if (current) files.push(current);
+  finish();
   return files;
 }
 
@@ -151,13 +244,15 @@ export function renderDiff(
   const files = splitDiffFiles(diff);
 
   if (mode === "list") {
-    const lines = [`# PR #${number} diff · ${files.length} file(s)`, ""];
+    const additions = files.reduce((sum, file) => sum + file.additions, 0);
+    const deletions = files.reduce((sum, file) => sum + file.deletions, 0);
+    const lines = [`# PR #${number} diff · ${files.length} file(s) · +${additions} / -${deletions}`, ""];
     if (files.length === 0) {
       lines.push("_(no changes)_");
       return lines.join("\n");
     }
     files.forEach((file, i) => {
-      lines.push(`${i + 1}. \`${file.path}\` · \`${uri}/diff/${file.path}\``);
+      lines.push(`${i + 1}. \`${file.path}\` · +${file.additions} / -${file.deletions} · ${file.status} · \`${uri}/diff/${file.path}\``);
     });
     lines.push("", `Read one file's diff with \`${uri}/diff/<path>\`, or all with \`${uri}.diff\`.`);
     return lines.join("\n");

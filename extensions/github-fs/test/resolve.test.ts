@@ -71,6 +71,7 @@ describe("resolveGithubView", () => {
       const [a, b] = options.args;
       if (a === "issue" && b === "view") return { code: 0, stdout: JSON.stringify({ number: 7, title: "T", state: "OPEN" }), stderr: "" };
       if (a === "pr" && b === "view") return { code: 0, stdout: JSON.stringify({ number: 7, title: "P", state: "MERGED" }), stderr: "" };
+      if (a === "api" && b === "graphql") return { code: 0, stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [] } } } } }), stderr: "" };
       if (a === "pr" && b === "list") return { code: 0, stdout: "[]", stderr: "" };
       if (a === "pr" && b === "diff") return { code: 0, stdout: "diff --git a/x b/x\n+y", stderr: "" };
       if (a === "api" && typeof b === "string" && b.includes("/contents/")) {
@@ -216,6 +217,79 @@ describe("resolveGithubView", () => {
     expect(auth.resolve.mock.calls[0]?.[3]).toBe(signal);
     expect(run.mock.calls.length).toBeGreaterThan(0);
     expect(run.mock.calls.every(([options]) => options.signal === signal)).toBe(true);
+  });
+
+  it.each([
+    { code: 1, stdout: "", stderr: "HTTP 500" },
+    { code: 0, stdout: '{"errors":[{"message":"unavailable"}]}', stderr: "" },
+    { code: 0, stdout: "invalid JSON", stderr: "" },
+  ])("keeps the PR view usable when review threads fail: %o", async (failure) => {
+    const { deps } = makeDeps();
+    const original = deps.run;
+    const run = vi.fn<GhRunner>(async (options) => options.args[1] === "graphql" ? failure : original(options));
+    deps.run = run;
+    const path = await resolveGithubView("/cwd", parseGithubPath("gh-pr://7")!, deps);
+    const md = await readFile(path, "utf8");
+    expect(md).toContain("# PR #7 · P");
+    expect(md).toContain("_Review threads unavailable:");
+    expect(md).toContain("Changed files: gh-pr://octo/repo/7/diff");
+    expect(run.mock.calls.filter(([options]) => options.args[1] === "graphql")).toHaveLength(1);
+  });
+
+  it("renders fetched review threads only for PRs", async () => {
+    const { deps } = makeDeps();
+    const original = deps.run;
+    const run = vi.fn<GhRunner>(async (options) => options.args[1] === "graphql"
+      ? { code: 0, stderr: "", stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: [
+        { id: "T1", path: "x", line: 2, isResolved: false, comments: { nodes: [{ databaseId: 5, body: "Fix this", author: { login: "reviewer" } }] } },
+      ] } } } } }) } : original(options));
+    deps.run = run;
+    const md = await readFile(await resolveGithubView("/cwd", parseGithubPath("gh-pr://7")!, deps), "utf8");
+    expect(md).toContain("## Review threads (1, 0 resolved)");
+    expect(md).toContain("thread T1");
+    expect(md).toContain("Fix this");
+    await resolveGithubView("/cwd", parseGithubPath("gh-issue://7")!, deps);
+    expect(run.mock.calls.filter(([options]) => options.args[1] === "graphql")).toHaveLength(1);
+  });
+
+  it.each([false, true])("shares one raw fetch for list, 20 file views and full diff (parallel=%s)", async (parallel) => {
+    const { deps } = makeDeps();
+    const diff = Array.from({ length: 20 }, (_, i) => `diff --git a/f${i}.ts b/f${i}.ts\n--- a/f${i}.ts\n+++ b/f${i}.ts\n@@ -1 +1 @@\n-old${i}\n+new${i}`).join("\n");
+    const run = vi.fn<GhRunner>(async () => ({ code: 0, stdout: diff, stderr: "" }));
+    deps.run = run;
+    const inputs = ["gh-pr://7/diff", ...Array.from({ length: 20 }, (_, i) => `gh-pr://7/diff/f${i}.ts`), "gh-pr://7.diff"];
+    const read = async (input: string) => readFile(await resolveGithubView("/cwd", parseGithubPath(input)!, deps), "utf8");
+    const views: string[] = [];
+    if (parallel) views.push(...await Promise.all(inputs.map(read)));
+    else for (const input of inputs) views.push(await read(input));
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0][0].args.slice(0, 2)).toEqual(["pr", "diff"]);
+    expect(views[0]).toContain("20 file(s) · +20 / -20");
+    expect(views[1]).toContain("+new0");
+    expect(views[1]).not.toContain("+new1");
+    expect(views.at(-1)).toContain("+new19");
+    const { deps: nextInstance } = makeDeps();
+    nextInstance.run = run;
+    expect(await readFile(await resolveGithubView("/cwd", parseGithubPath("gh-pr://7/diff/f0.ts")!, nextInstance), "utf8")).toContain("+new0");
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("expires and refreshes raw diffs without serving stale rendered views; isolates accounts", async () => {
+    let now = 1_000_000;
+    const { deps } = makeDeps({ cache: createCache({ agentDir: dir, now: () => now }) });
+    let version = 0;
+    const run = vi.fn<GhRunner>(async () => ({ code: 0, stdout: `diff --git a/x b/x\n--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+version${++version}`, stderr: "" }));
+    deps.run = run;
+    const read = async (suffix: string) => readFile(await resolveGithubView("/cwd", parseGithubPath(`gh-pr://7${suffix}`)!, deps), "utf8");
+    expect(await read(".diff")).toContain("+version1");
+    expect(await read("/diff/x")).toContain("+version1");
+    now += 6 * 60 * 1000;
+    expect(await read("/diff/x")).toContain("+version2");
+    expect(await read(".diff?refresh=1")).toContain("+version3");
+    expect(await read("/diff/x")).toContain("+version3");
+    deps.auth = { resolve: async () => ({ user: "other", token: "other-token" }), hasHost: async () => true };
+    expect(await read(".diff")).toContain("+version4");
+    expect(run).toHaveBeenCalledTimes(4);
   });
 
 });

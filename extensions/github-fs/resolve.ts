@@ -11,11 +11,17 @@
  */
 
 import type { AuthResolver, GhRunner } from "./gh.js";
-import { ghContents, ghList, ghPrDiff, ghViewSingle } from "./gh.js";
+import { ghContents, ghList, ghPrDiff, ghReviewThreads, ghViewSingle } from "./gh.js";
 import type { GithubCache } from "./cache.js";
 import { isTerminalState } from "./cache.js";
 import { renderContentStub, renderDiff, renderList, renderSingle, renderTree } from "./render.js";
 import type { ParsedGithubTarget, RepoRef } from "./parse.js";
+
+declare function require(id: string): unknown;
+
+const { readFile } = require("node:fs/promises") as {
+  readFile: (path: string, encoding: string) => Promise<string>;
+};
 
 const GITHUB_DOT_COM = "github.com";
 
@@ -121,7 +127,7 @@ async function fetchAndRender(
   token: string,
   host: string,
   repo: RepoRef,
-  target: ParsedGithubTarget,
+  target: Exclude<ParsedGithubTarget, { kind: "diff" }>,
   signal?: AbortSignal,
 ): Promise<{ markdown: string; terminal: boolean; ext: string }> {
   const shared = { host, owner: repo.owner, repo: repo.repo, token, signal };
@@ -132,7 +138,8 @@ async function fetchAndRender(
       number: target.number,
     });
     return {
-      markdown: renderSingle(target.scheme, json, repo),
+      markdown: renderSingle(target.scheme, json, repo, host, target.scheme === "pr"
+        ? await ghReviewThreads(deps.run, { ...shared, number: target.number }) : undefined),
       terminal: isTerminalState(typeof json.state === "string" ? json.state : undefined),
       ext: ".md",
     };
@@ -149,17 +156,43 @@ async function fetchAndRender(
     return { markdown: renderList(target.scheme, items, repo, target.state, host), terminal: false, ext: ".md" };
   }
 
-  if (target.kind === "content") {
-    const res = await ghContents(deps.run, { ...shared, path: target.path, ref: target.ref });
-    const terminal = /^[0-9a-f]{40}$/i.test(target.ref ?? "");
-    if (res.kind === "dir") return { markdown: renderTree(res.entries, repo, target.path, target.ref, host), terminal, ext: ".md" };
-    if (res.kind === "file") return { markdown: res.text, terminal, ext: deriveExt(res.name) };
-    return { markdown: renderContentStub(res, repo, target.ref), terminal, ext: ".md" };
-  }
+  const res = await ghContents(deps.run, { ...shared, path: target.path, ref: target.ref });
+  const terminal = /^[0-9a-f]{40}$/i.test(target.ref ?? "");
+  if (res.kind === "dir") return { markdown: renderTree(res.entries, repo, target.path, target.ref, host), terminal, ext: ".md" };
+  if (res.kind === "file") return { markdown: res.text, terminal, ext: deriveExt(res.name) };
+  return { markdown: renderContentStub(res, repo, target.ref), terminal, ext: ".md" };
+}
 
-  // diff (pr only)
-  const diff = await ghPrDiff(deps.run, { ...shared, number: target.number });
-  return { markdown: renderDiff(diff, target.number, target.mode, target.path, repo, host), terminal: false, ext: ".md" };
+// Coalesce parallel diff views within each extension cache instance; disk cache owns freshness.
+const diffFetches = new WeakMap<GithubCache, Map<string, Promise<string>>>();
+
+async function cachedRawDiff(
+  deps: ResolveDeps,
+  key: string,
+  args: Parameters<typeof ghPrDiff>[1],
+  refresh: boolean,
+): Promise<string> {
+  let pending = diffFetches.get(deps.cache);
+  if (!pending) {
+    pending = new Map();
+    diffFetches.set(deps.cache, pending);
+  }
+  let fetch = pending.get(key);
+  if (!fetch) {
+    fetch = (async () => {
+      const hit = await deps.cache.get(key, { refresh });
+      if (hit) return readFile(hit, "utf8");
+      const diff = await ghPrDiff(deps.run, args);
+      await deps.cache.put(key, diff, { terminal: false, ext: ".diff" });
+      return diff;
+    })();
+    pending.set(key, fetch);
+  }
+  try {
+    return await fetch;
+  } finally {
+    pending.delete(key);
+  }
 }
 
 /** Resolve a parsed target to a materialized `.md` path. */
@@ -167,14 +200,21 @@ export async function resolveGithubView(cwd: string, target: ParsedGithubTarget,
   const { host, repo } = await resolveHostAndRepo(cwd, target, deps);
   const account = await deps.auth.resolve(host, repo.owner, repo.repo, signal);
 
-  const key = deps.cache.key({
+  const identity = {
     host,
     account: account.user,
     owner: repo.owner,
     repo: repo.repo,
     scheme: target.scheme,
-    ...contentShape(target),
-  });
+  };
+  const key = deps.cache.key({ ...identity, ...contentShape(target) });
+
+  if (target.kind === "diff") {
+    const rawKey = deps.cache.key({ ...identity, kind: "raw-diff", number: target.number });
+    const diff = await cachedRawDiff(deps, rawKey, { host, owner: repo.owner, repo: repo.repo,
+      number: target.number, token: account.token, signal }, target.refresh);
+    return deps.cache.put(key, renderDiff(diff, target.number, target.mode, target.path, repo, host), { terminal: false });
+  }
 
   const hit = await deps.cache.get(key, { refresh: target.refresh });
   if (hit) return hit;

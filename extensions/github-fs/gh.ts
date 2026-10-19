@@ -236,7 +236,7 @@ export function createAuthResolver(run: GhRunner): AuthResolver {
 
 const ISSUE_VIEW_FIELDS = "number,title,state,author,labels,body,comments,createdAt,updatedAt,url";
 const PR_VIEW_FIELDS =
-  "number,title,state,author,labels,body,comments,createdAt,updatedAt,url,baseRefName,headRefName,isDraft,additions,deletions,mergedAt";
+  "number,title,state,author,labels,body,comments,createdAt,updatedAt,url,baseRefName,headRefName,isDraft,additions,deletions,mergedAt,reviews,headRefOid,reviewDecision,statusCheckRollup";
 const ISSUE_LIST_FIELDS = "number,title,state,author,labels,updatedAt";
 const PR_LIST_FIELDS = "number,title,state,author,labels,updatedAt,isDraft";
 
@@ -272,6 +272,40 @@ export async function ghViewSingle(
     signal: args.signal,
   });
   return parseJson<Record<string, unknown>>(result, `${scheme} view`);
+}
+
+export type ReviewThreadsResult =
+  | { threads: Array<Record<string, unknown>>; unavailable?: never }
+  | { unavailable: string; threads?: never };
+
+// ponytail: first 100 threads and first 50 comments per thread; add GraphQL pagination if larger reviews need it.
+const REVIEW_THREADS_QUERY = "query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){reviewThreads(first:100){nodes{id isResolved isOutdated path line originalLine resolvedBy{login} comments(first:50){nodes{databaseId body createdAt author{login}}}}}}}}";
+
+/** Review-thread failures are optional metadata; never expose transport output or credentials. */
+export async function ghReviewThreads(
+  run: GhRunner,
+  args: { host: string; owner: string; repo: string; number: number; token: string; signal?: AbortSignal },
+): Promise<ReviewThreadsResult> {
+  try {
+    const result = await run({
+      args: ["api", "graphql", "--hostname", args.host, "-f", `query=${REVIEW_THREADS_QUERY}`,
+        "-F", `owner=${args.owner}`, "-F", `repo=${args.repo}`, "-F", `number=${args.number}`],
+      host: args.host,
+      token: args.token,
+      signal: args.signal,
+    });
+    if (result.code !== 0) return { unavailable: `gh graphql failed (exit code ${result.code})` };
+    const json = JSON.parse(result.stdout) as {
+      errors?: unknown[];
+      data?: { repository?: { pullRequest?: { reviewThreads?: { nodes?: Array<Record<string, unknown>> } } } };
+    } | null;
+    if (json?.errors?.length) return { unavailable: "GitHub GraphQL returned errors" };
+    const threads = json?.data?.repository?.pullRequest?.reviewThreads?.nodes;
+    if (!Array.isArray(threads)) return { unavailable: "invalid GraphQL response" };
+    return { threads };
+  } catch {
+    return { unavailable: "review thread request failed or returned invalid JSON" };
+  }
 }
 
 export async function ghList(

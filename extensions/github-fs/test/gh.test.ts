@@ -8,6 +8,7 @@ import {
   ghContents,
   ghList,
   ghPrDiff,
+  ghReviewThreads,
   ghViewSingle,
   listAccounts,
   parseAuthStatus,
@@ -322,5 +323,53 @@ describe("single-account and URL host enumeration", () => {
     expect(calls.filter((call) => call.args[0] === "api")).toHaveLength(0);
     expect(calls.filter((call) => call.args[1] === "status")).toHaveLength(1);
     expect(calls.every((call) => call.signal === signal)).toBe(true);
+  });
+});
+
+describe("PR enrichment", () => {
+  it("requests reviews, head OID, review decision and checks", async () => {
+    const { run, calls } = fakeRunner([{ when: argsAre(["pr", "view"]), result: { stdout: "{}" } }]);
+    await ghViewSingle(run, "pr", { host: "ghe.example.com", owner: "o", repo: "r", number: 7, token: "t" });
+    const fields = calls[0].args[calls[0].args.indexOf("--json") + 1].split(",");
+    expect(fields).toEqual(expect.arrayContaining(["reviews", "headRefOid", "reviewDecision", "statusCheckRollup", "comments"]));
+  });
+
+  it("fetches bounded review threads with host, typed variables, credentials and signal", async () => {
+    const signal = new AbortController().signal;
+    const threads = [{ id: "thread-1", isResolved: false }];
+    const { run, calls } = fakeRunner([{ when: argsAre(["api", "graphql"]), result: {
+      stdout: JSON.stringify({ data: { repository: { pullRequest: { reviewThreads: { nodes: threads } } } } }),
+    } }]);
+    expect(await ghReviewThreads(run, { host: "ghe.example.com", owner: "o", repo: "r", number: 7, token: "t", signal })).toEqual({ threads });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ host: "ghe.example.com", token: "t", signal });
+    const args = calls[0].args;
+    expect(args.slice(0, 4)).toEqual(["api", "graphql", "--hostname", "ghe.example.com"]);
+    for (const variable of ["owner=o", "repo=r", "number=7"]) expect(args[args.indexOf(variable) - 1]).toBe("-F");
+    const query = args.find((arg) => arg.startsWith("query="))!;
+    expect(query).toContain("reviewThreads(first:100)");
+    expect(query).toContain("comments(first:50)");
+    expect(query).toContain("resolvedBy{login}");
+    expect(query).toContain("databaseId");
+  });
+
+  it.each([
+    { code: 1, stderr: "private-token should not escape", stdout: "" },
+    { code: 0, stderr: "", stdout: '{"errors":[{"message":"private-token should not escape"}]}' },
+    { code: 0, stderr: "", stdout: "not JSON private-token" },
+    { code: 0, stderr: "", stdout: '{"data":{"repository":null}}' },
+  ])("returns safe unavailable metadata for failed or invalid responses: %o", async (result) => {
+    const { run } = fakeRunner([{ when: argsAre(["api", "graphql"]), result }]);
+    const value = await ghReviewThreads(run, { host: "github.com", owner: "o", repo: "r", number: 7, token: "private-token" });
+    expect(value.unavailable).toEqual(expect.any(String));
+    expect(value.threads).toBeUndefined();
+    expect(JSON.stringify(value)).not.toContain("private-token");
+  });
+
+  it("does not expose a rejected runner's error", async () => {
+    const run: GhRunner = async () => { throw new Error("private-token"); };
+    const result = await ghReviewThreads(run, { host: "github.com", owner: "o", repo: "r", number: 7, token: "private-token" });
+    expect(result.unavailable).toBeTruthy();
+    expect(JSON.stringify(result)).not.toContain("private-token");
   });
 });
