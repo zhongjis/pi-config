@@ -15,7 +15,7 @@
  *   - age < soft TTL → hit; otherwise miss (refetch, overwrite).
  * Entries older than the hard TTL are opportunistically evicted on write.
  *
- * Never writes tokens or secrets — only rendered markdown and timestamps.
+ * Never writes tokens or secrets — only rendered content and timestamps.
  */
 
 declare function require(id: string): any;

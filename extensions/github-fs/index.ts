@@ -1,10 +1,10 @@
 /**
- * github-fs — read GitHub issues, PRs, and diffs as `read` paths.
+ * github-fs — read GitHub repos, PRs, issues, and diffs as `read` paths.
  *
  * A `tool_call` hook translates supported pasted GitHub URLs and rewrites
  * `gh://`, `gh-pr://`, and `gh-issue://` paths to a materialized cache file so
  * the built-in `read` tool pages them like any file; a `tool_result` hook rewrites the cache path back
- * to the original virtual path. Read-only — `write`/`edit` on these paths are
+ * to the canonical virtual path. Read-only — `write`/`edit` on these paths are
  * blocked. See README.md for the path grammar.
  */
 

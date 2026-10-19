@@ -163,7 +163,8 @@ export interface AuthResolver {
 
 /**
  * Resolves repo access by probing candidate accounts in order (active first),
- * memoizing the winner per `host/owner/repo`. The account enumeration is cached
+ * memoizing the winner per `host/owner/repo`. A host with one account skips the
+ * probe. The account enumeration is cached
  * but re-run once when a host has no candidates, so a `gh auth login/refresh`
  * performed mid-session is picked up.
  */
