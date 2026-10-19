@@ -47,15 +47,15 @@ Then declare WHEN TO STOP for the whole run in one line: "I'll stop right away w
 
 Diagnostics catch type errors only. After the change, exercise the real surface yourself:
 
-| If your change... | Do this |
-|---|---|
-| Adds or modifies a CLI command | Run it with bash. Show output. |
-| Changes build output | Run the build. Verify the output files. |
-| Modifies API behavior | Call the endpoint. Show the response. |
-| Renders or changes a web page | Drive the real page with the `agent-browser` skill. Screenshot plus action log; check the screenshot with `look_at`. |
-| Changes TUI or terminal layout | Run it in `interactive_shell` and read the rendered output from that session. |
-| Adds a tool, hook, or feature | Exercise one real end-to-end scenario. |
-| Modifies config handling | Load the config. Verify the parsed shape. |
+| If your change...              | Do this                                                                                                              |
+| ------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| Adds or modifies a CLI command | Run it with bash. Show output.                                                                                       |
+| Changes build output           | Run the build. Verify the output files.                                                                              |
+| Modifies API behavior          | Call the endpoint. Show the response.                                                                                |
+| Renders or changes a web page  | Drive the real page with the `agent-browser` skill. Screenshot plus action log; check the screenshot with `look_at`. |
+| Changes TUI or terminal layout | Run it in `interactive_shell` and read the rendered output from that session.                                        |
+| Adds a tool, hook, or feature  | Exercise one real end-to-end scenario.                                                                               |
+| Modifies config handling       | Load the config. Verify the parsed shape.                                                                            |
 
 - Name the tool and invocation per scenario.
 - Tear down the processes, ports, sessions, and temp files QA created before you report; keep running whatever the user wants running.
@@ -63,7 +63,7 @@ Diagnostics catch type errors only. After the change, exercise the real surface 
 
 ## 6. COMMITS
 
-Ultrawork counts as the explicit commit request: commit each verified increment using the `git-master` skill. Never push.
+Ultrawork counts as the explicit commit request: commit each verified increment using the `git-master` skill. Never push unless user requests.
 
 ## 7. FINISH GATE
 
