@@ -24,6 +24,7 @@ Shared test harness, smoke coverage, fixtures, stubs, and runtime integration te
 
 ## Verification
 
+- Before committing: `pnpm test` (all projects).
 - Unit project: `pnpm test:extensions`.
 - Real-runtime project: `pnpm test:integration`.
 
