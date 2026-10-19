@@ -188,6 +188,7 @@ Rules:
   4. `MUST NOT DO`: forbidden actions and out-of-scope files.
   5. `CONTEXT`: exact file paths, existing patterns to follow, constraints, user decisions, and rejected approaches with their reasons.
 - Judge the child by its returned `EVIDENCE` against its `STOP WHEN`, never by its self-report.
+- A worker's linked work notes are self-report too: read them to choose what to verify and to carry earlier workers' findings into the next packet's `CONTEXT`; never accept them as evidence.
 - Before writing a handoff, check the selected worker's tool roster and request only actions and deliverables it supports.
 - State the read-only boundary explicitly in each read-only worker handoff.
 - Request returned evidence from read-only workers; the parent persists artifacts.

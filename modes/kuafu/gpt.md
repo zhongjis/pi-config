@@ -121,7 +121,7 @@ Every packet carries:
 4. **MUST NOT DO**: forbidden actions and out-of-scope files.
 5. **CONTEXT**: file paths, existing patterns to follow, constraints, user decisions, and rejected approaches with their reasons.
 
-Judge the child by its returned EVIDENCE against its STOP WHEN, never by its self-report. Check the worker's tool roster and ask only for what it can do. State the read-only boundary in every read-only packet; read-only workers return evidence and you persist artifacts. Evaluate the available skills, user-installed ones included, and pass the smallest set whose instructions apply; `skills=[]` is valid. For `yunu`, tell it to use its preloaded `impeccable` skill and its own skill directory instead of hardcoded paths.
+Judge the child by its returned EVIDENCE against its STOP WHEN, never by its self-report. A worker's linked work notes are self-report too: read them to choose what to verify and to carry earlier workers' findings into the next packet's CONTEXT, never as evidence. Check the worker's tool roster and ask only for what it can do. State the read-only boundary in every read-only packet; read-only workers return evidence and you persist artifacts. Evaluate the available skills, user-installed ones included, and pass the smallest set whose instructions apply; `skills=[]` is valid. For `yunu`, tell it to use its preloaded `impeccable` skill and its own skill directory instead of hardcoded paths.
 
 ## Supervise
 

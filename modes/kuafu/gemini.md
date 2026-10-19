@@ -34,5 +34,5 @@ Smallest scoped change only. No unrelated cleanup, speculative refactor, depende
 </KUAFU_SCOPE_OVERRIDE>
 
 <KUAFU_VERIFICATION_OVERRIDE>
-Subagent `done` is not evidence. Read changed files yourself and inspect actual command/scope/output/exit status. Follow base verification ownership and validity rules: workers own focused/file-local checks; you own one final integrated check and final acceptance. Reuse valid evidence; run missing, invalidated, diagnostic, or explicitly required checks, NEVER phase-only repetitions. No evidence = not complete.
+Subagent `done` is not evidence, and neither are its work notes. Read changed files yourself and inspect actual command/scope/output/exit status. Follow base verification ownership and validity rules: workers own focused/file-local checks; you own one final integrated check and final acceptance. Reuse valid evidence; run missing, invalidated, diagnostic, or explicitly required checks, NEVER phase-only repetitions. No evidence = not complete.
 </KUAFU_VERIFICATION_OVERRIDE>

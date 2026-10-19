@@ -38,7 +38,7 @@ import {
 import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import sessionLocalTools from "../../session-local/index.js";
-import { seedSessionLocalScope } from "../../session-local/storage.js";
+import { getSessionLocalPath, seedSessionLocalScope } from "../../session-local/storage.js";
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import { installExtensionToolScope } from "./agent-tool-scope.js";
 import { getAgentConfig, getConfig, resolveType } from "./agent-types.js";
@@ -54,6 +54,7 @@ import { sessionFastPolicies } from "./session-fast.js";
 import { preloadSkills } from "./skill-loader.js";
 import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, STRUCTURED_OUTPUT_TOOL_NAME } from "./structured-output.js";
 import type { AgentConfig, SubagentType, ThinkingLevel } from "./types.js";
+import { workNotesRelativePath, workNotesSection } from "./work-notes.js";
 
 const TRUSTED_FALLBACK_EXTENSION_PATH = "<inline:subagent-model-fallback>";
 const TRUSTED_FAST_EXTENSION_PATH = "<inline:subagent-fast>";
@@ -234,6 +235,8 @@ export interface OpenSessionOptions {
   nestedSpawn?: NestedSpawn;
   /** Receives setup diagnostics (extension warnings and errors, tool-scope diagnostics). */
   onToolActivity?: (activity: ToolActivity) => void;
+  /** Receives the absolute work-notes path when the prompt assigns this agent a notes file. */
+  onNotesFile?: (path: string) => void;
 }
 
 export function resolveConfiguredSessionDir(sessionDir: string | undefined, cwd: string): string | undefined {
@@ -392,6 +395,16 @@ export async function openSession(
     const fallback = DEFAULT_AGENTS.get("general-purpose");
     if (!fallback) throw new Error(`No fallback config available for unknown type "${type}"`);
     systemPrompt = buildAgentPrompt({ ...fallback, name: type }, effectiveCwd, env, parentSystemPrompt, extras);
+  }
+
+  // Built-in grants are name-only, so they resolve before the session exists.
+  const grantedBuiltinSet = resolveToolAccess(toolRules, BUILTIN_TOOL_NAMES.map((name) => ({ name, extensionIds: [] })), gates).allowed;
+
+  // Writing agents own one notes file in the shared Agent-tree `local://` root;
+  // isolated agents load no session-local, and graph children return typed output.
+  if (options.agentId && !isolated && !options.graphRun && (grantedBuiltinSet.has("write") || grantedBuiltinSet.has("edit"))) {
+    systemPrompt += `\n\n${workNotesSection(options.agentId)}`;
+    if (ctx.sessionManager) options.onNotesFile?.(getSessionLocalPath(ctx, workNotesRelativePath(options.agentId)));
   }
 
   if (options.graphRun && !options.structuredOutput) {
@@ -618,7 +631,6 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   // Without extensions (including `isolated`), the granted built-ins are a
   // static allowlist: nothing async can appear, and a hard registry gate is the
   // correct boundary.
-  const grantedBuiltinSet = resolveToolAccess(toolRules, BUILTIN_TOOL_NAMES.map((name) => ({ name, extensionIds: [] })), gates).allowed;
   const grantedBuiltins = BUILTIN_TOOL_NAMES.filter((name) => grantedBuiltinSet.has(name));
 
   let sessionTools: string[] | undefined;

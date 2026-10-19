@@ -131,6 +131,8 @@ export interface AgentRecord {
   toolCallId?: string;
   /** Path to the streaming output transcript file. */
   outputFile?: string;
+  /** Absolute path of the agent's `local://notes/<id>.md` work notes when its prompt carries them. */
+  notesFile?: string;
   /** Cleanup function for the output file stream subscription. */
   outputCleanup?: () => void;
   /**

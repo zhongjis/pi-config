@@ -6,6 +6,7 @@ import { type AgentRecord, agentExecutionKey, type JoinMode, type NotificationDe
 import type { AgentActivity } from "./ui/agent-format.js";
 import type { FleetList } from "./ui/fleet-list.js";
 import { getLifetimeTotal, getSessionContextPercent } from "./usage.js";
+import { workNotesUri } from "./work-notes.js";
 
 /** Human-readable status label for agent completion. */
 function getStatusLabel(status: string, error?: string): string {
@@ -37,12 +38,14 @@ function formatTaskNotification(record: AgentRecord, resultMaxLen: number): stri
       ? record.result.slice(0, resultMaxLen) + "\n...(truncated, use get_agent_result for full output)"
       : record.result
     : "No output.";
+  const notes = workNotesUri(record);
 
   return [
     `<task-notification>`,
     `<task-id>${record.id}</task-id>`,
     record.toolCallId ? `<tool-use-id>${escapeXml(record.toolCallId)}</tool-use-id>` : null,
     record.outputFile ? `<output-file>${escapeXml(record.outputFile)}</output-file>` : null,
+    notes ? `<work-notes>${escapeXml(notes)}</work-notes>` : null,
     `<status>${escapeXml(status)}</status>`,
     `<summary>Agent "${escapeXml(record.description)}" ${record.status}${getStatusNote(record.status, record.interruptionCause)}</summary>`,
     `<result>${escapeXml(resultPreview)}</result>`,

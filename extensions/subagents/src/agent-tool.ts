@@ -19,6 +19,7 @@ import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js"
 import { turnCheckInNotice } from "./turn-ceiling.js";
 import type { AgentConfig, AgentInvocation, AgentRecord, SubagentType } from "./types.js";
 import { type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel } from "./ui/agent-format.js";
+import { workNotesSuffix } from "./work-notes.js";
 
 /** Shared by the tool description and agent-authoring menus. */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -291,8 +292,8 @@ Terse command-style prompts produce shallow, generic work.
             (record.outputFile ? `Output file: ${record.outputFile}\n` : "") +
             "Continue non-overlapping work, then call get_agent_result with run_id and wait: true. Do not end your turn while this agent runs.", details,
           );
-          if (record.status === "error") return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}`, details);
-          return textResult((record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause), details);
+          if (record.status === "error") return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}${workNotesSuffix(record)}`, details);
+          return textResult((record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause) + workNotesSuffix(record), details);
         };
         const existing = manager.getRecord(resumeId);
         if (!existing) {
@@ -525,14 +526,14 @@ Terse command-style prompts produce shallow, generic work.
         : "";
       const foregroundAgentId = `Agent ID: ${record.id}\n`;
       if (record.status === "error") {
-        return textResult(`${fallbackNote}${foregroundAgentId}Agent failed: ${record.error}${partialOutputSuffix(record)}`, details);
+        return textResult(`${fallbackNote}${foregroundAgentId}Agent failed: ${record.error}${partialOutputSuffix(record)}${workNotesSuffix(record)}`, details);
       }
       const durationMs = (record.completedAt ?? Date.now()) - record.startedAt;
       const statsParts = [`${record.toolUses} tool uses`];
       if (tokenText) statsParts.push(tokenText);
       return textResult(
         `${fallbackNote}${foregroundAgentId}Agent ${record.status === "completed" || record.status === "force_steered" ? "completed" : "interrupted"} in ${formatMs(durationMs)} (${statsParts.join(", ")}).\n\n` +
-        (record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause),
+        (record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause) + workNotesSuffix(record),
         details,
       );
     },

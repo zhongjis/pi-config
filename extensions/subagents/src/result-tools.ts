@@ -1,5 +1,6 @@
 import { defineTool, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { getSessionLocalPath } from "../../session-local/storage.js";
 import { mergeAgentHistory, readHistoryConversation } from "./agent-history.js";
 import type { AgentManager } from "./agent-manager.js";
 import { formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
@@ -13,6 +14,7 @@ import { turnCheckInNotice } from "./turn-ceiling.js";
 import type { AgentRecord, EvictedAgent } from "./types.js";
 import { type AgentDetails, formatDuration, getDisplayName } from "./ui/agent-format.js";
 import { getSessionContextPercent } from "./usage.js";
+import { workNotesRelativePath, workNotesSuffix } from "./work-notes.js";
 
 /** Retrieval reads live report state and suppresses held completion delivery. */
 interface ResultDelivery {
@@ -24,6 +26,8 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
   /** Read-only report of an evicted run from its history entry and transcript; never inserts a record. */
   async function retrieveEvicted(evicted: EvictedAgent, ctx: ExtensionContext, verbose?: boolean) {
     const [record] = mergeAgentHistory([], [evicted]);
+    // Restore reuses the id, so the evicted agent's notes sit at the same Agent-tree path.
+    record.notesFile = getSessionLocalPath(ctx, workNotesRelativePath(record.id));
     const owned = resolveOwnedSessionFile(ctx, evicted.type, evicted.sessionFile);
     const transcript = owned.ok ? await readHistoryConversation(owned.file) : owned;
     const statsParts = [`Tool uses: ${record.toolUses}`];
@@ -35,7 +39,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
       `Type: ${getDisplayName(record.type)} | Status: ${record.status}${getStatusNote(record.status)} | ${statsParts.join(" | ")}\n` +
       `Description: ${record.description}\n\n`;
     if (!transcript.ok) {
-      output += `Transcript unavailable (${transcript.reason}).`;
+      output += `Transcript unavailable (${transcript.reason}).${workNotesSuffix(record)}`;
       return textResult(output, delivery.details(record));
     }
     const assistants = transcript.messages.filter((message): message is Extract<typeof message, { role: "assistant" }> => message.role === "assistant");
@@ -46,6 +50,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     record.error = errorMessage;
     if (errorMessage) output += `Error: ${errorMessage}\n\n`;
     output += lastText || "No output.";
+    output += workNotesSuffix(record);
     const details = delivery.details(record);
     if (verbose) {
       const conversation = formatAgentConversation(transcript.messages);
@@ -97,6 +102,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     } else {
       output += record.result?.trim() || "No output.";
     }
+    output += workNotesSuffix(record);
 
     if (!pending) {
       record.resultConsumed = true;

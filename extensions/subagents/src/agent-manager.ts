@@ -426,6 +426,7 @@ export class AgentManager {
         parentSessionId: getParentSessionId(ctx),
         nestedSpawn: this.nestedSpawnFor(record, pi, ctx),
         onToolActivity,
+        onNotesFile: (path) => { record.notesFile = path; },
       });
       return disposal ? disposal.then(open) : open();
     };
