@@ -695,6 +695,31 @@ export default function (pi: ExtensionAPI): void {
   })
 
   pi.on("tool_result", async (event, ctx) => {
+    // ask results carry only user-authored text (picked options, typed answers, notes).
+    if (event.toolName === "ask" && !event.isError) {
+      const text = event.content
+        .map((part) => (part.type === "text" ? part.text : ""))
+        .join("\n")
+      if (!text.includes("$skill:")) return
+      const skills = findInlineSkills(text, getSkills(pi))?.selected.filter(
+        (skill) => !loadedSkills.has(skill.name),
+      ) ?? []
+      if (skills.length === 0) return
+      try {
+        const { content } = buildInlineSkillContent(skills, ctx.cwd)
+        for (const skill of skills) {
+          loadedSkills.add(skill.name)
+          pi.appendEntry(LOADED_SKILL_ENTRY_TYPE, { name: skill.name, source: "ask" })
+        }
+        return { content: [...event.content, { type: "text", text: content }] }
+      } catch (error) {
+        ctx.ui.notify(
+          `inline-skills: failed to load skill: ${error instanceof Error ? error.message : String(error)}`,
+          "error",
+        )
+        return
+      }
+    }
     if (event.toolName !== "read" || event.isError) return
 
     const input = event.input as { path?: unknown }

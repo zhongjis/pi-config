@@ -306,6 +306,26 @@ describe("inline-skills ($skill: token)", () => {
       "SkillInvocationMessageComponent",
     ]);
   });
+
+  it("appends $skill: content to an ask result once and ignores other tools", async () => {
+    const h = createHarness([{ name: "tdd", path: tddPath }]);
+    await h.fire("session_start");
+    const answer = { type: "text", text: "Scope: user wrote: use $skill:tdd for this" };
+    const askResult = (await h.fire("tool_result", {
+      toolName: "ask",
+      isError: false,
+      input: {},
+      content: [answer],
+    })) as { content?: Array<{ type: string; text: string }> } | undefined;
+    expect(askResult?.content?.[0]).toEqual(answer);
+    expect(askResult?.content?.[1]?.text).toContain("<inline_skills>");
+    expect(askResult?.content?.[1]?.text).toContain("TDD_BODY_MARKER");
+
+    const again = await h.fire("tool_result", { toolName: "ask", isError: false, input: {}, content: [answer] });
+    expect(again).toBeUndefined();
+    const bash = await h.fire("tool_result", { toolName: "bash", isError: false, input: {}, content: [answer] });
+    expect(bash).toBeUndefined();
+  });
 });
 
 describe("inline-skills ($graph: token)", () => {
