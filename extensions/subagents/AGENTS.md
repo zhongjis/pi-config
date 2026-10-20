@@ -17,7 +17,7 @@ Run isolated Agent sessions with foreground results and background supervision. 
 - `src/builtin-agents.ts` loads runtime-internal agent definitions from `builtin-agents/` fail-closed; they are never registered.
 - `src/agent-tool-scope.ts` owns subagent tool-scope enforcement (keeping the ceiling tool active after bind and on `turn_end`, and the `beforeToolCall` veto); `src/agent-runner.ts` owns resume-from-file reopen and rule-driven extension loading, including Pi built-in extension factories (codemode, tool-search, mcp), the hidden `subagent-nested-tool-scope` hook that blocks nested (codemode-script) calls outside `tools:` and drops fully denied MCP servers from the `mcp_servers` prompt section, the `subagent_tool_ceiling` that hides ungranted declarations from the first turn, and the MCP excludes that keep denied MCP tools out of a `builtin:mcp` child's registry.
 - `src/agent-manager.ts` `disposeChildSession` owns child disposal: emit `session_shutdown` (reason `quit`) once, then dispose even if a handler fails. Child settings MUST honor the parent's project trust.
-- `src/agent-runner.ts` owns canonical read-only Bash guard selection; Huayan reuses its trusted hidden guard.
+- [The runner](src/agent-runner.ts) owns canonical read-only Bash guard selection; Wenchang's CLI retrieval uses the same trusted hidden guard as read-only consultants.
 - `src/research-delegation.ts` owns the `delegate_research` tool, and `src/agent-manager.ts` owns its root-manager bridge ([ADR 0007](../../docs/adr/0007-nested-research-through-a-root-manager-bridge.md)).
 
 ## Local Contracts

@@ -245,7 +245,63 @@ describe("aggregate bash danger policy", () => {
 		(command) => expect(codes(command)).toContain("uninspectable-shell-syntax"),
 	);
 
-	it.each(["ls -la", "echo hello", "git status", "kubectl get pods", "curl https://example.test/data"])(
+	it.each([
+		"lark-cli --help", "lark-cli -h", "lark-cli --version", "lark-cli docs --help",
+		"lark-cli docs -h", "lark-cli docs +search --help", "lark-cli docs +fetch -h",
+		"lark-cli docs +search --query 'project plan'",
+		'lark-cli docs +search --query="project plan" --format=json --json --dry-run',
+		`lark-cli docs +search --query=plan --filter '{"owner":"me"}' --page-size 10 --page-token next --jq '.items' --as user`,
+		"lark-cli docs +search --query=plan --format=csv -q .items",
+		"lark-cli docs +fetch --doc https://example.test/doc/token --doc-format markdown --detail with-ids --scope range --start-block-id -2 --end-block-id=-1",
+		"lark-cli docs +fetch --doc=token --doc-format=im-markdown --detail=full --scope=keyword --keyword 'bug|error' --context-before 2 --context-after=3 --max-depth -1 --revision-id=-1 --lang zh-CN --as=user --jq . --dry-run",
+		"lark-cli docs +fetch --doc token --scope outline --doc-format xml --detail simple -q .",
+		"lark-cli docs +fetch --doc token --scope section --start-block-id block",
+		String.raw`lark-cli docs +search --query escaped\ space`,
+		String.raw`lark-cli docs +search --query "escaped\" quote"`,
+		"lark-cli docs +search --query '$literal * [text] ; data'",
+	])("allows exact literal Lark reads and discovery: %s", (command) => {
+		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "allow" });
+	});
+
+	it.each([
+		"lark-cli", "lark-cli docs", "lark-cli docs +search", "lark-cli docs +fetch",
+		"lark-cli api get /docs", "lark-cli auth login", "lark-cli config set x y", "lark-cli update",
+		"lark-cli docs +create --help", "lark-cli docs +write --doc x", "lark-cli docs +revert --doc x",
+		"lark-cli docs +fetch --doc x --output out", "lark-cli docs +fetch --doc x --download out",
+		"lark-cli docs +fetch --doc x --profile other", "lark-cli docs +fetch --doc x --unknown",
+		"lark-cli docs +fetch --doc x --json", "lark-cli docs +search --query x --doc y",
+		"lark-cli docs +search --query x --format xml", "lark-cli docs +fetch --doc x --scope unknown",
+		"lark-cli docs +fetch --doc x --doc-format json", "lark-cli docs +fetch --doc x --detail unknown",
+		"lark-cli docs +search --query --help", "lark-cli docs +fetch --doc --dry-run",
+		"lark-cli docs +fetch --doc=", "lark-cli docs +search --query ''", 'lark-cli docs +fetch --doc ""',
+		"lark-cli docs +search --query x ''", "lark-cli docs +fetch --doc x extra",
+		"lark-cli docs +search --query '' --unknown", "lark-cli docs +search --query x --json=true",
+		"lark-cli docs +fetch --doc x --help=anything", "lark-cli docs +fetch --doc x --as admin",
+		"lark-cli docs +fetch --doc x --as bot", "lark-cli docs +fetch --doc x --",
+		"/usr/bin/lark-cli docs +fetch --doc x", "env lark-cli docs +fetch --doc x",
+		"TOKEN=x lark-cli docs +fetch --doc x", "command -- lark-cli docs +fetch --doc x",
+		"nohup lark-cli docs +fetch --doc x", "env -u TOKEN /bin/lark-cli docs +fetch --doc x",
+		"lark-cli docs +fetch --doc x | cat", "pwd; lark-cli docs +fetch --doc x",
+		"lark-cli docs +fetch --doc x; pwd", "lark-cli docs +fetch --doc x\npwd",
+		"lark-cli docs +fetch --doc x >/dev/null", "lark-cli docs +fetch --doc x <input",
+		"lark-cli docs +fetch --doc $DOC", 'lark-cli docs +fetch --doc "$DOC"',
+		"lark-cli docs +fetch --doc *", "lark-cli docs +fetch --doc [ab]", "lark-cli docs +fetch --doc ~user",
+		"lark-cli docs +fetch --doc {a,b}", "lark-cli docs +fetch --doc x # comment",
+		String.raw`lark-cli docs +fetch --doc "x\q"`,
+	])("blocks non-exact Lark rather than using a classifier: %s", (command) => {
+		expect(codes(command)).toContain("external-system-mutation");
+	});
+
+	it.each([
+		"lark-cli docs +fetch --doc x >out",
+		'lark-cli docs +search --query "$(touch out)"',
+		"lark-cli docs +fetch --doc x; rm out",
+		"bash -c 'lark-cli docs +fetch --doc x'",
+	])("retains ordinary shell danger checks for Lark: %s", (command) => {
+		expect(evaluateBashPolicy({ ...BASE_INPUT, command }).kind).toBe("block");
+	});
+
+	it.each(["ls -la", "echo hello", "echo lark-cli docs +create", "git status", "kubectl get pods", "curl https://example.test/data"])(
 		"defers non-dangerous remainder: %s",
 		(command) => expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "defer" }),
 	);

@@ -1004,7 +1004,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     }>;
   }
 
-  it.each(["chengfeng", "direnjie", "taishang", "xuannv", "yanluo", "huayan"] as const)(
+  it.each(["chengfeng", "wenchang", "direnjie", "taishang", "xuannv", "yanluo", "huayan"] as const)(
     "guards canonical type %s through registry resolution without extension rules",
     async (canonicalType) => {
       vi.mocked(resolveType).mockReturnValueOnce(canonicalType);
@@ -1081,7 +1081,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     expect(lastToolsPassed()).not.toContain("unrelated_tool");
   });
 
-  it.each(["chengfeng", "huayan"] as const)(
+  it.each(["chengfeng", "wenchang", "huayan"] as const)(
     "coexists with repeated auto registration as one effective bash hook for %s",
     async (canonicalType) => {
       vi.mocked(resolveType).mockReturnValueOnce(canonicalType);

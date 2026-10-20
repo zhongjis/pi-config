@@ -149,6 +149,7 @@ function mcpToolExcludes(
 
 const GUARDED_CANONICAL_AGENT_TYPES = new Set([
   "chengfeng",
+  "wenchang",
   "direnjie",
   "taishang",
   "xuannv",

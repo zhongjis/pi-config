@@ -299,11 +299,70 @@ function isExactAgentBrowserReadOnly(words: Word[]): boolean {
 	return false;
 }
 
-function inspectCommand(words: Word[], add: (code: BashDangerCode, position: number) => void): { name: string; position: number } | undefined {
+// Unlike the general hazard scanner, this literal-only parser preserves empty words.
+function literalLarkWords(command: string): string[] | undefined {
+	const words: string[] = [];
+	const literalWordPattern = /(?:[^\s'"\\$`*?[\]{}~#!();&|<>]|'[^']*'|"(?:[^"\\$`]|\\["\\$`])*"|\\[^\n\r])+/y;
+	let index = 0;
+	while (index < command.length) {
+		while (command[index] === " " || command[index] === "\t") index += 1;
+		if (index === command.length) break;
+		literalWordPattern.lastIndex = index;
+		const match = literalWordPattern.exec(command);
+		if (!match) return undefined;
+		words.push(match[0].replace(/'([^']*)'|"((?:[^"\\]|\\.)*)"|\\(.)/gs,
+			(_chunk, single: string | undefined, double: string | undefined, escaped: string | undefined) =>
+				single ?? (double === undefined ? escaped ?? "" : double.replace(/\\(["\\$`])/g, "$1"))));
+		index = literalWordPattern.lastIndex;
+		if (index < command.length && command[index] !== " " && command[index] !== "\t") return undefined;
+	}
+	return words;
+}
+
+const LARK_SEARCH_VALUES = new Set(["--query", "--filter", "--page-size", "--page-token", "--format", "--jq", "-q", "--as"]);
+const LARK_FETCH_VALUES = new Set([
+	"--doc", "--doc-format", "--detail", "--scope", "--start-block-id", "--end-block-id", "--keyword",
+	"--context-before", "--context-after", "--max-depth", "--revision-id", "--lang", "--jq", "-q", "--as",
+]);
+
+function isExactLarkReadOnly(command: string): boolean {
+	const words = literalLarkWords(command);
+	if (!words || words[0] !== "lark-cli") return false;
+	const help = (word: string): boolean => word === "--help" || word === "-h";
+	if (words.length === 2 && (help(words[1]) || words[1] === "--version")) return true;
+	if (words[1] !== "docs") return false;
+	if (words.length === 3 && help(words[2])) return true;
+	const search = words[2] === "+search";
+	if (!search && words[2] !== "+fetch") return false;
+	const values = search ? LARK_SEARCH_VALUES : LARK_FETCH_VALUES;
+	let selector = false;
+	let wantsHelp = false;
+	for (let index = 3; index < words.length; index += 1) {
+		const word = words[index];
+		if (help(word)) { wantsHelp = true; continue; }
+		if (word === "--dry-run" || search && word === "--json") continue;
+		const equals = word.indexOf("=");
+		const flag = equals < 0 ? word : word.slice(0, equals);
+		if (!values.has(flag)) return false;
+		const value = equals < 0 ? words[++index] : word.slice(equals + 1);
+		// Do not swallow another option as a value; signed numeric selectors are valid.
+		if (!value || value.startsWith("-") && !/^-\d+$/.test(value)) return false;
+		if (flag === "--as" && value !== "user") return false;
+		if (flag === "--format" && !["json", "pretty", "table", "ndjson", "csv"].includes(value)) return false;
+		if (flag === "--doc-format" && !["xml", "markdown", "im-markdown"].includes(value)) return false;
+		if (flag === "--detail" && !["simple", "with-ids", "full"].includes(value)) return false;
+		if (flag === "--scope" && !["full", "outline", "range", "keyword", "section"].includes(value)) return false;
+		if (flag === (search ? "--query" : "--doc")) selector = true;
+	}
+	return selector || wantsHelp;
+}
+
+function inspectCommand(words: Word[], add: (code: BashDangerCode, position: number) => void, exactLark: boolean): { name: string; position: number } | undefined {
 	const argv = unwrap(words);
 	const executable = argv[0];
 	if (!executable) return undefined;
 	const name = basename(executable.text);
+	if (name === "lark-cli" && !exactLark) add("external-system-mutation", executable.start);
 	if (FILESYSTEM_COMMANDS.has(name)) add("filesystem-mutation", executable.start);
 	if (SHELL_COMMANDS.has(name)) add("dynamic-shell-execution", executable.start);
 	if (INTERPRETERS.has(name)) add("interpreter-execution", executable.start);
@@ -362,7 +421,8 @@ export function evaluateBashPolicy(input: BashPolicyInput): BashPolicyOutcome {
 			add("uninspectable-shell-syntax", lexeme.start);
 		}
 	});
-	const commands = stages.map((stage) => inspectCommand(stage, add));
+	const exactLark = isExactLarkReadOnly(input.command);
+	const commands = stages.map((stage) => inspectCommand(stage, add, exactLark));
 	for (const indexes of pipelineGroups) {
 		const downloader = indexes.map((index) => commands[index]).find((command) => command && ["curl", "wget"].includes(command.name));
 		const executor = indexes.map((index) => commands[index]).find((command) => command && (SHELL_COMMANDS.has(command.name) || INTERPRETERS.has(command.name)));
@@ -371,6 +431,6 @@ export function evaluateBashPolicy(input: BashPolicyInput): BashPolicyOutcome {
 	const findings = [...earliest].map(([code, position]) => ({ code, position })).sort((left, right) =>
 		left.position - right.position || BASH_DANGER_CODES.indexOf(left.code) - BASH_DANGER_CODES.indexOf(right.code));
 	if (findings.length > 0) return { kind: "block", findings };
-	if (input.command.trim() === "pwd" || stages.length === 1 && isExactAgentBrowserReadOnly(stages[0])) return { kind: "allow" };
+	if (exactLark || input.command.trim() === "pwd" || stages.length === 1 && isExactAgentBrowserReadOnly(stages[0])) return { kind: "allow" };
 	return { kind: "defer" };
 }

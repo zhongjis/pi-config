@@ -7,7 +7,7 @@ Guards selected built-in `bash` calls with deterministic policy checks and a fai
 | Caller | Built-in `bash` behavior |
 |---|---|
 | Fu Xi mode | Guarded when the latest active mode is `fuxi`; missing guard capability blocks execution. |
-| `chengfeng`, `direnjie`, `taishang`, `xuannv`, `yanluo`, `huayan` | Guarded by a trusted hidden subagent factory, including when ordinary extensions are disabled, isolated, or filtered. |
+| Canonical read-only agents selected by [the subagent runner](../subagents/src/agent-runner.ts) | Guarded by a trusted hidden subagent factory, including when ordinary extensions are disabled, isolated, or filtered. |
 | Other modes and agents | Scope providers abstain; smart-tool-guards does not alter the call. |
 | Non-`bash` tools | Always bypassed. |
 
@@ -32,8 +32,9 @@ Guarded calls use this precedence:
 
 1. Invalid `command`, `cwd`, or `timeout` input blocks.
 2. Deterministic policy findings block before model use, with stable finding codes for filesystem, VCS, external-system, privilege/system-control, redirection, shell/interpreter, downloaded-code, and uninspectable-syntax hazards.
-3. Exact trimmed `pwd` and exact single-command, read-only `agent-browser` forms allow without a classifier call. The browser allowlist covers page inspection, runtime and metadata reads, documented output-only flags and filters, and help/version queries; URL reads, effectful waits, mutating siblings, wrappers, pipelines, and compound commands are excluded.
-4. Every other command defers to the classifier.
+3. The [Lark policy](src/bash-policy.ts) allows exact direct literal document search/fetch forms and their syntax-discovery help/version queries, using only verified read flags and required selectors. Other recognized Lark calls block without classifier fallback, including path and known-wrapper variants; compounds, pipelines, environment overrides, expansions, output/download flags, and unknown operations are not allowed.
+4. Exact trimmed `pwd` and exact single-command, read-only `agent-browser` forms allow without a classifier call. The browser allowlist covers page inspection, runtime and metadata reads, documented output-only flags and filters, and help/version queries; URL reads, effectful waits, mutating siblings, wrappers, pipelines, and compound commands are excluded.
+5. Every other command defers to the classifier.
 
 The guard evaluates the model-issued command recorded at assistant `message_end`, and falls back to the current input when no record exists. `tool_call` input mutations by other extensions (for example `rtk`) are trusted and not re-evaluated. The guard itself never rewrites input. Allowed calls continue through Pi's native `bash` executor with the current input, requested `cwd`, and requested `timeout`. Classifier context includes the evaluated command, the requested cwd and timeout, and an effective cwd resolved from the session cwd; omitted timeout remains omitted. Caller cancellation and the classifier's own five-second decision deadline both abort the nested model request, independently of native execution timeout.
 
