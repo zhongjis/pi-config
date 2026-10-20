@@ -184,56 +184,127 @@ describe("preloadSkills", () => {
     expect(result[1].content).toBe("Good content");
   });
 
-  it("rejects symlinked flat .md files", () => {
+  it("loads symlinked flat .md files with logical metadata", () => {
     mkdirSync(projectRoot(), { recursive: true });
-    const secret = join(tmpDir, "secret.md");
-    writeFileSync(secret, "TOP SECRET");
-    symlinkSync(secret, join(projectRoot(), "evil.md"));
-    const result = preloadSkills(["evil"], tmpDir);
-    expect(result[0].content).toContain("not found");
-    expect(result[0].content).not.toContain("TOP SECRET");
+    const target = join(tmpDir, "installed-flat.md");
+    writeFileSync(target, "Installed flat instructions");
+    const sourcePath = join(projectRoot(), "linked-flat.md");
+    symlinkSync(target, sourcePath);
+    expect(preloadSkills(["linked-flat"], tmpDir)).toEqual([{
+      name: "linked-flat", content: "Installed flat instructions", sourcePath, baseDir: projectRoot(),
+    }]);
   });
 
-  it("rejects symlinked skill directories", () => {
-    mkdirSync(projectRoot(), { recursive: true });
-    const realDir = join(tmpDir, "real-skill");
-    mkdirSync(realDir, { recursive: true });
-    writeFileSync(join(realDir, "SKILL.md"), "TOP SECRET");
-    symlinkSync(realDir, join(projectRoot(), "evil-dir"));
-    const result = preloadSkills(["evil-dir"], tmpDir);
-    expect(result[0].content).toContain("not found");
-    expect(result[0].content).not.toContain("TOP SECRET");
+  it("loads symlinked skill directories with logical metadata", () => {
+    mkdirSync(globalRoot(), { recursive: true });
+    writeSkillDir(tmpDir, "installed-skill", "Installed directory instructions");
+    const baseDir = join(globalRoot(), "linked-dir");
+    symlinkSync(join(tmpDir, "installed-skill"), baseDir);
+    expect(preloadSkills(["linked-dir"], tmpDir)).toEqual([{
+      name: "linked-dir", content: "Installed directory instructions", sourcePath: join(baseDir, "SKILL.md"), baseDir,
+    }]);
   });
 
-  it("rejects symlinked skill root", () => {
-    // <cwd>/.pi/skills → symlink to a directory that holds real-looking skills.
-    const realRoot = join(tmpDir, "elsewhere");
-    mkdirSync(realRoot, { recursive: true });
-    writeFileSync(join(realRoot, "leaked-flat.md"), "TOP SECRET FLAT");
-    mkdirSync(join(realRoot, "leaked-dir"), { recursive: true });
-    writeFileSync(join(realRoot, "leaked-dir", "SKILL.md"), "TOP SECRET DIR");
+  it("loads flat and directory skills from a symlinked search root", () => {
+    const realRoot = join(tmpDir, "installed-root");
+    writeFlat(realRoot, "linked-root-flat", "Root flat instructions");
+    writeSkillDir(realRoot, "linked-root-dir", "Root directory instructions");
     mkdirSync(join(tmpDir, ".pi"), { recursive: true });
     symlinkSync(realRoot, projectRoot());
-
-    const flatResult = preloadSkills(["leaked-flat"], tmpDir)[0].content;
-    expect(flatResult).toContain("not found");
-    expect(flatResult).not.toContain("TOP SECRET");
-
-    const dirResult = preloadSkills(["leaked-dir"], tmpDir)[0].content;
-    expect(dirResult).toContain("not found");
-    expect(dirResult).not.toContain("TOP SECRET");
+    expect(preloadSkills(["linked-root-flat", "linked-root-dir"], tmpDir)).toEqual([
+      {
+        name: "linked-root-flat", content: "Root flat instructions",
+        sourcePath: join(projectRoot(), "linked-root-flat.md"), baseDir: projectRoot(),
+      },
+      {
+        name: "linked-root-dir", content: "Root directory instructions",
+        sourcePath: join(projectRoot(), "linked-root-dir", "SKILL.md"), baseDir: join(projectRoot(), "linked-root-dir"),
+      },
+    ]);
   });
 
-  it("rejects symlinked SKILL.md inside a real skill directory", () => {
-    const skillDir = join(projectRoot(), "evil-inner");
-    mkdirSync(skillDir, { recursive: true });
-    const secret = join(tmpDir, "secret.md");
-    writeFileSync(secret, "TOP SECRET");
-    symlinkSync(secret, join(skillDir, "SKILL.md"));
-    const result = preloadSkills(["evil-inner"], tmpDir);
-    expect(result[0].content).toContain("not found");
-    expect(result[0].content).not.toContain("TOP SECRET");
+  it("loads symlinked SKILL.md inside a real skill directory", () => {
+    const baseDir = join(projectRoot(), "linked-inner");
+    mkdirSync(baseDir, { recursive: true });
+    const target = join(tmpDir, "installed-inner.md");
+    writeFileSync(target, "Installed inner instructions");
+    const sourcePath = join(baseDir, "SKILL.md");
+    symlinkSync(target, sourcePath);
+    expect(preloadSkills(["linked-inner"], tmpDir)).toEqual([{
+      name: "linked-inner", content: "Installed inner instructions", sourcePath, baseDir,
+    }]);
   });
+
+  it("discovers frontmatter names through nested installed packages with logical metadata", () => {
+    const installed = join(tmpDir, "installed-package");
+    writeSkillDir(join(installed, "skills"), "physical-name", "---\nname: linked-package-skill\n---\nPackage instructions");
+    mkdirSync(globalRoot(), { recursive: true });
+    symlinkSync(installed, join(globalRoot(), "package"));
+    const baseDir = join(globalRoot(), "package", "skills", "physical-name");
+    expect(preloadSkills(["linked-package-skill"], tmpDir)).toEqual([{
+      name: "linked-package-skill", content: "---\nname: linked-package-skill\n---\nPackage instructions",
+      sourcePath: join(baseDir, "SKILL.md"), baseDir,
+    }]);
+  });
+
+  it("prefers project skills over linked installed package skills", () => {
+    const installed = join(tmpDir, "installed-package");
+    writeSkillDir(join(installed, "skills"), "physical-name", "---\nname: linked-package-skill\n---\nPackage instructions");
+    mkdirSync(globalRoot(), { recursive: true });
+    symlinkSync(installed, join(globalRoot(), "package"));
+    writeSkillDir(projectRoot(), "linked-package-skill", "Project instructions");
+    expect(preloadSkills(["linked-package-skill"], tmpDir)[0].content).toBe("Project instructions");
+  });
+
+  it("keeps same-target directory aliases discoverable by their inferred names", () => {
+    writeSkillDir(tmpDir, "installed-alias-target", "Shared alias instructions");
+    mkdirSync(globalRoot(), { recursive: true });
+    for (const name of ["linked-alias-a", "linked-alias-b"]) {
+      symlinkSync(join(tmpDir, "installed-alias-target"), join(globalRoot(), name));
+    }
+    expect(preloadSkills(["linked-alias-a", "linked-alias-b"], tmpDir)).toEqual(
+      ["linked-alias-a", "linked-alias-b"].map((name) => ({
+        name, content: "Shared alias instructions", sourcePath: join(globalRoot(), name, "SKILL.md"), baseDir: join(globalRoot(), name),
+      })),
+    );
+  });
+
+  it.each(["self", "ancestor", "two-directory"])("skips %s cycles while delivering reachable skills", (cycle) => {
+    const installed = join(tmpDir, "cycle-package");
+    const branch = join(installed, "branch");
+    mkdirSync(branch, { recursive: true });
+    if (cycle === "two-directory") {
+      const other = join(tmpDir, "other-package");
+      writeSkillDir(other, "linked-cycle-skill", "Cycle-safe instructions");
+      symlinkSync(other, join(branch, "next"));
+      symlinkSync(installed, join(other, "back"));
+    } else {
+      writeSkillDir(branch, "linked-cycle-skill", "Cycle-safe instructions");
+      symlinkSync(cycle === "self" ? branch : installed, join(branch, "back"));
+    }
+    mkdirSync(globalRoot(), { recursive: true });
+    symlinkSync(installed, join(globalRoot(), "package"));
+    expect(preloadSkills(["linked-cycle-skill", "linked-cycle-absent"], tmpDir).map((skill) => skill.content)).toEqual([
+      "Cycle-safe instructions", '(Skill "linked-cycle-absent" not found in Pi skill locations)',
+    ]);
+  });
+
+  it("ignores broken links and non-regular skill files without losing valid siblings", () => {
+    mkdirSync(projectRoot(), { recursive: true });
+    symlinkSync(join(tmpDir, "missing"), join(projectRoot(), "linked-broken.md"));
+    symlinkSync(join(tmpDir, "missing-directory"), join(projectRoot(), "linked-broken-dir"));
+    symlinkSync("/dev/null", join(projectRoot(), "linked-device.md"));
+    const invalidSkill = join(projectRoot(), "linked-nonregular");
+    mkdirSync(invalidSkill, { recursive: true });
+    symlinkSync("/dev/null", join(invalidSkill, "SKILL.md"));
+    mkdirSync(join(projectRoot(), "linked-directory.md"));
+    writeFlat(projectRoot(), "linked-valid", "Valid sibling instructions");
+    const missing = ["linked-broken", "linked-broken-dir", "linked-device", "linked-nonregular", "linked-directory"];
+    expect(preloadSkills([...missing, "linked-valid"], tmpDir).map((skill) => skill.content)).toEqual([
+      ...missing.map((name) => `(Skill "${name}" not found in Pi skill locations)`), "Valid sibling instructions",
+    ]);
+  });
+
 });
 
 describe("preloadSkills — frontmatter-name matching and metadata", () => {

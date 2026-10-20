@@ -8,11 +8,11 @@
  * to the directory name (for `<name>/SKILL.md`) or the filename stem (for `<name>.md`).
  */
 
-import { type Dirent, existsSync, readdirSync, statSync } from "node:fs";
+import { type Dirent, existsSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
-import { isSymlink, isUnsafeName, safeReadFile } from "./fs-safety.js";
+import { isUnsafeName } from "./fs-safety.js";
 
 export interface PreloadedSkill {
   name: string;
@@ -134,41 +134,49 @@ function tryReadSkillFile(searchDir: SkillSearchDir, name: string): LoadedSkill 
 
 function collectSkillFiles(dir: string, includeRootFiles: boolean): string[] {
   const files: string[] = [];
-  collectSkillFilesInternal(dir, includeRootFiles, dir, files);
+  const activePaths = new Set<string>();
+
+  function collectSkillFilesInternal(dir: string, includeRootFiles: boolean): void {
+    let canonicalPath: string;
+    let entries: Dirent<string>[];
+    try {
+      canonicalPath = realpathSync(dir);
+      if (activePaths.has(canonicalPath)) return;
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    // Only active ancestors count as cycles; sibling aliases remain discoverable.
+    activePaths.add(canonicalPath);
+    try {
+      const skillPath = join(dir, "SKILL.md");
+      if (entries.some((entry) => entry.name === "SKILL.md" && isReadableFile(skillPath))) {
+        files.push(skillPath);
+        return;
+      }
+
+      for (const entry of entries) {
+        if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+
+        const entryPath = join(dir, entry.name);
+        const kind = getEntryKind(entryPath, entry);
+        if (kind === "directory") {
+          collectSkillFilesInternal(entryPath, false);
+          continue;
+        }
+
+        if (kind === "file" && includeRootFiles && entry.name.endsWith(".md")) {
+          files.push(entryPath);
+        }
+      }
+    } finally {
+      activePaths.delete(canonicalPath);
+    }
+  }
+
+  collectSkillFilesInternal(dir, includeRootFiles);
   return files;
-}
-
-function collectSkillFilesInternal(dir: string, includeRootFiles: boolean, rootDir: string, files: string[]): void {
-  // Reject symlinked roots to prevent reading arbitrary files.
-  if (isSymlink(dir)) return;
-
-  let entries: Dirent<string>[];
-  try {
-    entries = readdirSync(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-
-  const skillPath = join(dir, "SKILL.md");
-  if (entries.some((entry) => entry.name === "SKILL.md" && isReadableFile(skillPath))) {
-    files.push(skillPath);
-    return;
-  }
-
-  for (const entry of entries) {
-    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
-
-    const entryPath = join(dir, entry.name);
-    const kind = getEntryKind(entryPath, entry);
-    if (kind === "directory") {
-      collectSkillFilesInternal(entryPath, false, rootDir, files);
-      continue;
-    }
-
-    if (kind === "file" && includeRootFiles && dir === rootDir && entry.name.endsWith(".md")) {
-      files.push(entryPath);
-    }
-  }
 }
 
 function isReadableFile(path: string): boolean {
@@ -200,8 +208,12 @@ function readSkill(sourcePath: string): LoadedSkill | undefined {
 }
 
 function getFileContent(sourcePath: string): string | undefined {
-  // safeReadFile rejects symlinks to prevent reading arbitrary files.
-  return safeReadFile(sourcePath);
+  try {
+    if (!statSync(sourcePath).isFile()) return undefined;
+    return readFileSync(sourcePath, "utf-8");
+  } catch {
+    return undefined;
+  }
 }
 
 function getSkillName(sourcePath: string, content: string): string {
