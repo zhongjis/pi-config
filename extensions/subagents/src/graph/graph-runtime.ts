@@ -42,7 +42,7 @@ export interface GraphExecutionHost extends Readonly<Pick<NodeHostOptions, "pi" 
 
 /** Held delivery is shared with ordinary background-agent completions. */
 export interface GraphRunNotifications {
-  readonly schedule: (key: string, send: () => void) => void;
+  readonly schedule: (key: string, send: (wake: boolean) => void) => void;
   readonly cancel: (key: string) => void;
 }
 
@@ -312,7 +312,7 @@ export function createGraphRuntime(
     if (!sessionActive || tasks.get(task.id) !== task) return;
     refresh("fleet");
     const result = graphRunResultText(task);
-    notifications.schedule(task.id, () => {
+    notifications.schedule(task.id, wake => {
       if (!sessionActive || tasks.get(task.id) !== task) return;
       if (task.resultConsumed) return;
       pi.sendMessage<NotificationDetails>({
@@ -332,7 +332,7 @@ export function createGraphRuntime(
           resultPreview: result.length > 500 ? `${result.slice(0, 500)}…` : result,
           graphRun: graphRunEntryData(task),
         },
-      }, { deliverAs: "followUp", triggerTurn: true });
+      }, { deliverAs: "followUp", triggerTurn: wake });
     });
   }
 

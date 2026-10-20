@@ -102,7 +102,11 @@ export function createNotificationCoordinator(
 ) {
   const pendingNudges = new Map<string, ReturnType<typeof setTimeout>>();
   let parking = false;
-  const parked = new Map<string, () => void>();
+  /** After an Esc-aborted run: follow-ups still post, but none starts a turn until the next turn starts. */
+  let quiet = false;
+  /** Session teardown: no new follow-up may be scheduled. */
+  let closed = false;
+  const parked = new Map<string, (wake: boolean) => void>();
   const completions = new Map<string, Completion>();
   /** Executions launched through `track`; only they receive check-in follow-ups. */
   const tracked = new Set<string>();
@@ -110,11 +114,13 @@ export function createNotificationCoordinator(
   let batchFinalizeTimer: ReturnType<typeof setTimeout> | undefined;
   let batchCounter = 0;
 
-  function deliver(send: () => void) {
-    try { send(); } catch { /* ignore stale completion side-effect errors */ }
+  /** `send` receives whether its follow-up may start a turn (`triggerTurn`). */
+  function deliver(send: (wake: boolean) => void) {
+    try { send(!quiet); } catch { /* ignore stale completion side-effect errors */ }
   }
 
-  function schedule(key: string, send: () => void, delay = NUDGE_HOLD_MS) {
+  function schedule(key: string, send: (wake: boolean) => void, delay = NUDGE_HOLD_MS) {
+    if (closed) return;
     cancel(key);
     pendingNudges.set(key, setTimeout(() => {
       pendingNudges.delete(key);
@@ -134,14 +140,20 @@ export function createNotificationCoordinator(
 
   function hold() {
     parking = true;
+    quiet = false;
   }
 
-  function release(flush = true) {
+  function release() {
     parking = false;
-    if (!flush) return;
     const sends = [...parked.values()];
     parked.clear();
     for (const send of sends) deliver(send);
+  }
+
+  /** The run was aborted (Esc): post held follow-ups now and later ones without starting a turn. */
+  function interrupt() {
+    quiet = true;
+    release();
   }
 
   function capture(record: AgentRecord): Completion {
@@ -182,12 +194,12 @@ export function createNotificationCoordinator(
   function sendIndividualNudge(completion: Completion) {
     markFinished(completion);
     const key = agentExecutionKey(completion);
-    schedule(key, () => {
+    schedule(key, wake => {
       completions.delete(key);
       if (isConsumed(completion)) return;
       pi.sendMessage<NotificationDetails>({
         customType: "subagent-notification", ...completion.individual, display: true,
-      }, { deliverAs: "followUp", triggerTurn: true });
+      }, { deliverAs: "followUp", triggerTurn: wake });
     });
   }
 
@@ -195,7 +207,7 @@ export function createNotificationCoordinator(
     (records, partial) => {
       for (const completion of records) markFinished(completion);
       const groupKey = `group:${records.map(agentExecutionKey).join(",")}`;
-      schedule(groupKey, () => {
+      schedule(groupKey, wake => {
         for (const completion of records) completions.delete(agentExecutionKey(completion));
         const unconsumed = records.filter(completion => !isConsumed(completion));
         if (unconsumed.length === 0) return;
@@ -210,7 +222,7 @@ export function createNotificationCoordinator(
           customType: "subagent-notification",
           content: `Background agent group completed: ${label}\n\n${notifications}\n\nUse get_agent_result for full output.`,
           display: true, details,
-        }, { deliverAs: "followUp", triggerTurn: true });
+        }, { deliverAs: "followUp", triggerTurn: wake });
       });
     },
     30_000,
@@ -267,18 +279,20 @@ export function createNotificationCoordinator(
   function checkIn(record: AgentRecord, threshold: number) {
     const key = agentExecutionKey(record);
     if (!tracked.has(key)) return;
-    schedule(`${key}:check-in`, () => {
+    schedule(`${key}:check-in`, wake => {
       const current = getRecord(record.id);
       if (!current || agentExecutionKey(current) !== key || current.status !== "running") return;
       const notice = turnCheckInNotice(current, threshold);
       pi.sendMessage<NotificationDetails>({
         customType: "subagent-notification", content: notice, display: true,
         details: { ...buildNotificationDetails(current, 0, current.activity), durationMs: Date.now() - current.startedAt, resultPreview: notice },
-      }, { deliverAs: "followUp", triggerTurn: true });
+      }, { deliverAs: "followUp", triggerTurn: wake });
     });
   }
 
-  function clearPending() {
+  /** Teardown: drop pending follow-ups and refuse new ones; completions keep settling during the drain. */
+  function close() {
+    closed = true;
     for (const timer of pendingNudges.values()) clearTimeout(timer);
     pendingNudges.clear();
     parked.clear();
@@ -290,5 +304,5 @@ export function createNotificationCoordinator(
     parking = false;
   }
 
-  return { schedule, cancel, consume, onComplete, track, checkIn, clearPending, hold, release };
+  return { schedule, cancel, consume, onComplete, track, checkIn, close, hold, release, interrupt };
 }

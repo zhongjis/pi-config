@@ -314,15 +314,6 @@ it("retains spent deltas through failed calls", async () => {
   expect((await finish("agent", result)).usage?.input).toBe(10);
 });
 
-it("preserves pending usage through a switch preflight that does not commit", async () => {
-  const { execute, finish, lifecycle } = activate({ reportUsage: true });
-  const result = await execute();
-  await lifecycle("session_before_switch");
-  // Another extension can cancel the switch: no shutdown/start follows.
-  expect((await finish("get_agent_result", result)).usage?.input).toBe(10);
-  expect((await finish("get_agent_result", result)).usage).toBeUndefined();
-});
-
 it("prepares configured direct model and thinking before spawning", async () => {
   writeFileSync(
     join(dir, ".pi", "agents", "fixture.md"),

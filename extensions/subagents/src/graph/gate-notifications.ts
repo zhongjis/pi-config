@@ -12,7 +12,7 @@ export function createGateNotifications(pi: ExtensionAPI, notifications: GraphRu
     publish(gate: GateRequest) {
       const key = `${task.id}:gate:${gate.gate_id}:${gate.revision}`;
       scheduled.set(gate.gate_id, key);
-      notifications.schedule(key, () => {
+      notifications.schedule(key, wake => {
         if (!scheduled.delete(gate.gate_id) || !isPending(gate.gate_id)) return;
         const next = `Call get_agent_result with run_id "${task.id}" and wait:true for the questions and state; decide yourself or ask the human with ask, then resolve_agent_graph_gate.`;
         pi.sendMessage<NotificationDetails>({
@@ -20,7 +20,7 @@ export function createGateNotifications(pi: ExtensionAPI, notifications: GraphRu
           content: `<task-notification>\n<task-id>${task.id}</task-id>\n<status>Decision escalated</status>\nReason: ${gate.reason}\n${next}\n</task-notification>`,
           details: { id: task.id, description: "Graph decision escalated", status: "running", toolUses: task.totalToolCalls,
             turnCount: 0, totalTokens: task.totalTokens, durationMs: Date.now() - task.startTime, resultPreview: next },
-        }, { deliverAs: "followUp", triggerTurn: true });
+        }, { deliverAs: "followUp", triggerTurn: wake });
       });
     },
     observed(gateId: string) {

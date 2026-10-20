@@ -314,6 +314,8 @@ Foreground calls have an independent FIFO pool controlled by `maxConcurrentForeg
 
 When background agents complete, they notify the main agent. The **join mode** controls how these notifications are delivered. It applies only to background agents. Notifications for results already collected with get_agent_result are omitted, and notifications that arrive while the orchestrator's turn runs are delivered at the end of that turn.
 
+**Esc:** Esc stops the current turn and the foreground agents it waits for; background agents and agent graph runs keep running. After an Esc, notifications still appear, but they do not start a turn: the main agent reads them with your next prompt. While background work runs, a second Esc within the [window](src/background-stop.ts) stops the background agents and agent graph runs as a user stop (a stopped graph run cannot resume). Starting a new session (`/new`, `/resume`, fork) or quitting stops all running agents and sends no further notifications.
+
 | Mode | Behavior |
 |------|----------|
 | `smart` (default) | 2+ background agents spawned in the same turn are auto-grouped into a single consolidated notification. Solo agents notify individually. |

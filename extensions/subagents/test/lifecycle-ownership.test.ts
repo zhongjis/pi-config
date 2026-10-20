@@ -135,7 +135,6 @@ describe("manager registry lifecycle ownership", () => {
     expect(child.tools.has("agent"), "child tool registration remains available").toBe(true);
     await fire(child, "session_start", {}, context());
     await fire(child, "tool_execution_start", {}, context());
-    await fire(child, "session_before_switch");
     await fire(child, "session_shutdown", {}, context());
 
     expect(graphRun.stop, "child cannot stop the active parent graph run").not.toHaveBeenCalled();
@@ -151,15 +150,11 @@ describe("manager registry lifecycle ownership", () => {
       "child cannot publish lifecycle readiness",
     ).toHaveLength(0);
 
-    await fire(parent, "session_before_switch");
-    expect(graphRun.stop).toHaveBeenCalledWith("switch");
-    expect(clearCompleted).toHaveBeenCalledWith(true);
-
     await fire(parent, "session_shutdown", { reason: "shutdown" }, context());
     expect(graphRun.stop).toHaveBeenCalledWith("shutdown");
     expect(dispose).toHaveBeenCalledTimes(2);
     const parentManager = dispose.mock.contexts[1];
     expect(parentManager).not.toBe(childManager);
-    expect(abortAll.mock.contexts.slice(1)).toEqual([parentManager, parentManager]);
+    expect(abortAll.mock.contexts.slice(1)).toEqual([parentManager]);
   });
 });

@@ -35,7 +35,7 @@ describe("graph history lifecycle", () => {
     await store.flush();
   });
 
-  it("captures a registered graph before notification, flushes at switch, and reloads only the exact session", async () => {
+  it("captures a registered graph before notification, flushes at shutdown, and reloads only the exact session", async () => {
     const host = boot();
     await host.lifecycle("session_start");
     const result = await required(host.tools.get("agent_graph")).execute("call", {
@@ -43,7 +43,7 @@ describe("graph history lifecycle", () => {
     }, undefined, undefined, host.ctx);
     const id = required(result.details?.taskId);
     await host.notification(id);
-    await host.lifecycle("session_before_switch");
+    await host.lifecycle("session_shutdown");
     const text = await readFile(join(required(process.env.PI_CODING_AGENT_DIR), "local/parent/graph-history.json"), "utf8");
     expect(text).not.toContain("PRIVATE_SENTINEL");
     expect((await GraphHistoryStore.load("parent")).runs[0]?.id).toBe(id);

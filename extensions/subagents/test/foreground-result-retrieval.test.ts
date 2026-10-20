@@ -208,7 +208,7 @@ describe("issue #174: foreground agent that hits the turn ceiling", () => {
     await parent.lifecycle.get("session_shutdown")?.({}, ctx());
   });
 
-  it("IS evicted by a session switch — its result was already delivered inline", async () => {
+  it("IS evicted by session_start — its result was already delivered inline", async () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
     const { id } = await runForegroundSteeredAgent(tools);
@@ -216,7 +216,7 @@ describe("issue #174: foreground agent that hits the turn ceiling", () => {
     // Foreground results count as consumed the moment they're returned inline,
     // so clearCompleted(true)'s #108 preservation deliberately does not cover
     // them. This is the ONLY path that makes a foreground id stop resolving.
-    await lifecycle.get("session_before_switch")?.();
+    await lifecycle.get("session_start")?.({}, ctx());
 
     const read = await tools.get("get_agent_result").execute("tc-read", { run_id: id }, undefined, undefined, ctx());
     expect(textOf(read)).toContain("Agent not found");

@@ -119,6 +119,38 @@ describe("Symbol.for manager registry across activations", () => {
   });
 });
 
+describe("owner session_shutdown ordering (/new, /resume, quit)", () => {
+  it("stops every agent before awaiting, sends no follow-up while draining, then releases the slot", async () => {
+    delete (globalThis as any)[MANAGER_KEY];
+    const root = makePi();
+    subagentsExtension(root.pi);
+    const entry = (globalThis as any)[MANAGER_KEY];
+    const lingering = deferred<string>();
+    vi.mocked(openSession)
+      .mockImplementationOnce(async () => opened(fakeSession(async (_prompt, session) => {
+        await session.aborted;
+        return { text: "a", aborted: true };
+      })))
+      .mockImplementationOnce(async () => opened(fakeSession(() => lingering.promise)));
+    const spawn = async (description: string) => /Agent ID: (\S+)/.exec(textOf(await root.tools.get("agent").execute(
+      "tc", { prompt: "go", description, subagent_type: "general-purpose", run_in_background: true }, undefined, undefined, ctx())))![1];
+    const ids = [await spawn("settles on abort"), await spawn("ignores abort")];
+    await new Promise(resolve => setImmediate(resolve));
+    const records = ids.map(id => entry.getRecord(id));
+
+    const shutdown = Promise.resolve(root.lifecycle.get("session_shutdown")?.({ reason: "new" }, ctx()));
+    expect(records.map(record => [record.status, record.interruptionCause])).toEqual([["stopped", "lifecycle"], ["stopped", "lifecycle"]]);
+    // Longer than the 200ms follow-up hold: the first agent settled, the second still drains.
+    await new Promise(resolve => setTimeout(resolve, 250));
+    expect(root.pi.sendMessage).not.toHaveBeenCalled();
+    expect((globalThis as any)[MANAGER_KEY], "a child opening during the drain must not find a free slot").toBe(entry);
+    lingering.resolve("b");
+    await shutdown;
+    expect(root.pi.sendMessage).not.toHaveBeenCalled();
+    expect((globalThis as any)[MANAGER_KEY]).toBeUndefined();
+  });
+});
+
 describe("Symbol.for manager registry — getLifetimeCost bridge", () => {
   it("registryEntry.getLifetimeCost is a function returning a number after extension wires the registry", async () => {
     delete (globalThis as any)[MANAGER_KEY];

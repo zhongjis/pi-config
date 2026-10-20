@@ -196,30 +196,40 @@ describe("notification coordinator parking", () => {
     expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it("keeps parked sends when release does not flush", () => {
-    const agent = record("a1");
-    const { coordinator, sendMessage } = setup([agent]);
+  it("interrupt posts parked sends and later sends without starting a turn until the next turn", () => {
+    const first = record("a1");
+    const later = record("a2");
+    const next = record("a3");
+    const { coordinator, sendMessage } = setup([first, later, next]);
     coordinator.hold();
-    coordinator.onComplete(agent);
+    coordinator.onComplete(first);
     vi.advanceTimersByTime(200);
-    coordinator.release(false);
     expect(sendMessage).not.toHaveBeenCalled();
+    coordinator.interrupt();
+    coordinator.onComplete(later);
+    vi.advanceTimersByTime(200);
+    coordinator.hold();
     coordinator.release();
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(sendMessage.mock.calls[0]?.[0].content).toContain("<task-id>a1</task-id>");
+    coordinator.onComplete(next);
+    vi.advanceTimersByTime(200);
+    expect(sendMessage.mock.calls.map(call => [call[0].details.id, call[1]])).toEqual([
+      ["a1", { deliverAs: "followUp", triggerTurn: false }],
+      ["a2", { deliverAs: "followUp", triggerTurn: false }],
+      ["a3", { deliverAs: "followUp", triggerTurn: true }],
+    ]);
   });
 
-  it("clearPending drops parked sends and resumes direct delivery", () => {
+  it("close drops parked sends and refuses later ones", () => {
     const agent = record("a1");
     const { coordinator, sendMessage } = setup([agent]);
     coordinator.hold();
     coordinator.onComplete(agent);
     vi.advanceTimersByTime(200);
-    coordinator.clearPending();
+    coordinator.close();
     coordinator.release();
-    expect(sendMessage).not.toHaveBeenCalled();
     coordinator.onComplete(agent);
     vi.advanceTimersByTime(200);
-    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

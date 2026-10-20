@@ -1,5 +1,6 @@
 import { createAgentResultBuilder } from "./agent-result.js";
 import { createAgentTool } from "./agent-tool.js";
+import { createBackgroundStop } from "./background-stop.js";
 import { createGraphRuntime } from "./graph/graph-runtime.js";
 import { runReplayCommand } from "./graph/replay-command.js";
 import { createResultTools } from "./result-tools.js";
@@ -146,7 +147,10 @@ export default function (pi: ExtensionAPI) {
   const { schedule: scheduleNudge, cancel: cancelNudge } = notifications;
   // Park completion follow-ups while this session's turn runs. Pi queues followUp
   // immediately, so a mid-turn send cannot be retracted.
-  pi.on("turn_start", () => notifications.hold());
+  pi.on("turn_start", () => {
+    notifications.hold();
+    backgroundStop.disarm();
+  });
   pi.on("turn_end", (event) => {
     const message = event.message;
     if (
@@ -158,10 +162,22 @@ export default function (pi: ExtensionAPI) {
       notifications.release();
     }
   });
-  pi.on("agent_end", (event) => {
-    const lastAssistant = [...event.messages].reverse().find((message) => message.role === "assistant");
-    notifications.release(lastAssistant?.stopReason !== "aborted");
+  // agent_settled, not agent_end: an Esc abort can end with stopReason "error", and a
+  // follow-up sent before the run is idle can be lost. Pi defers turn-starting sends here.
+  pi.on("agent_settled", (event, ctx) => {
+    if (!event.aborted) {
+      notifications.release();
+      return;
+    }
+    notifications.interrupt();
+    if (ctx.hasUI) backgroundStop.arm(ctx.ui);
   });
+  const backgroundStop = createBackgroundStop({
+    listAgents: () => manager.listAgents(),
+    abortAgent: id => manager.abort(id, "user"),
+    graphRuns: () => getGraphRuns().values(),
+  });
+  let backgroundStopUnsub: (() => void) | undefined;
 
   /** Helper: build event data for lifecycle events from an AgentRecord. */
   function buildEventData(record: AgentRecord) {
@@ -308,7 +324,7 @@ export default function (pi: ExtensionAPI) {
   // here makes a filtered session behave like an absent one (#142).
   let rpcHandle: RpcHandle | undefined;
   // Background auto-supervision loop handle. Started on session_start, stopped on
-  // switch/shutdown. `undefined` = not running (used as the double-start guard).
+  // session_shutdown. `undefined` = not running (used as the double-start guard).
   let supervisionStop: (() => void) | undefined;
   // The graph run inspector's Herdr side pane, constructed per activation. A
   // strict no-op when there is no Herdr-managed pane to split off, in which case
@@ -365,58 +381,42 @@ export default function (pi: ExtensionAPI) {
         console.warn(`[pi-subagents] ${label}: ${err instanceof Error ? err.message : String(err)}`),
     });
     await graphRunPane.reconcile();
+    backgroundStopUnsub?.();
+    backgroundStopUnsub = ctx.hasUI ? backgroundStop.listen(ctx.ui, () => ctx.isIdle()) : undefined;
     resumeDurableGraphRuns(ctx);
   });
 
-  pi.on("session_before_switch", async () => {
-    if (!ownsManagerRegistry) return;
-    notifications.clearPending();
-    agentHistory?.disableCapture();
-    await agentHistory?.flush();
-    agentHistory = undefined;
-    await stopGraphRuns("switch");
-    manager.clearCompleted(true);
-    supervisionStop?.();
-    supervisionStop = undefined;
-    await graphRunPane?.dispose();
-    graphRunPane = undefined;
-  });
-
-  // On shutdown, abort all agents immediately and clean up.
-  // If the session is going down, there's nothing left to consume agent results.
+  // Session replacement (/new, /resume, fork) and quit all end here; session_before_switch
+  // is cancellable, so nothing is torn down there. Stop synchronously before any await:
+  // history capture and follow-ups first, then graph runs (their stop aborts before its
+  // first await, so graph children stop as graph cancellations), then the manager.
   pi.on("session_shutdown", async (event) => {
-    if (!ownsManagerRegistry) {
-      manager.setUsageListener(undefined);
-      pendingUsage = new PendingUsagePool();
-      notifications.clearPending();
-      fleet.dispose();
-      await manager.dispose();
-      return;
-    }
     agentHistory?.disableCapture();
-    await agentHistory?.flush();
-    agentHistory = undefined;
-    await stopGraphRuns(event?.reason === "reload" ? "reload" : "shutdown");
-    await graphRunPane?.dispose();
-    graphRunPane = undefined;
+    notifications.close();
     manager.setUsageListener(undefined);
     pendingUsage = new PendingUsagePool();
+    const graphsStopped = ownsManagerRegistry ? stopGraphRuns(event?.reason === "reload" ? "reload" : "shutdown") : undefined;
+    const drained = manager.dispose(); // abortAll("lifecycle"), refuses new spawns
+    fleet.dispose();
+    backgroundStopUnsub?.();
+    backgroundStopUnsub = undefined;
+    backgroundStop.disarm();
+    supervisionStop?.();
+    supervisionStop = undefined;
     rpcHandle?.unsubSpawn();
     rpcHandle?.unsubStop();
     rpcHandle?.unsubPing();
     rpcHandle = undefined;
     currentCtx = undefined;
-    supervisionStop?.();
-    supervisionStop = undefined;
-    // Only release the global slot if this activation claimed it — a child
-    // session's shutdown must not delete the root session's registry entry.
+    // allSettled never rejects, so the registry release below always runs.
+    await Promise.allSettled([agentHistory?.flush(), graphsStopped, graphRunPane?.dispose(), drained]);
+    agentHistory = undefined;
+    graphRunPane = undefined;
+    // Release last: a child session still opening during the drain must not claim a
+    // free slot. Only the activation that claimed it releases it.
     if (ownsManagerRegistry && (globalThis as any)[MANAGER_KEY] === registryEntry) {
       delete (globalThis as any)[MANAGER_KEY];
     }
-    manager.abortAll("lifecycle");
-    notifications.clearPending();
-    fleet.dispose();
-    await manager.dispose();
   });
 
   // Claude Code-style FleetView: navigable list of main + subagents below the editor.
