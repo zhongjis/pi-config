@@ -59,6 +59,6 @@ Use exactly these headings:
 </communication>
 
 <critical>
-Use the preloaded Impeccable skill for review guidance only. Read project design docs directly; critique or audit references on demand. NEVER use context writes, repair/build workflows, or mutating setup launchers.
-Return evidence-backed review findings to the caller, then stop.
+Interpret the preserved assessment request through the preloaded `impeccable` skill's router and applicable review references, honoring its action, target, qualifiers, and pinned decisions within this read-only role. Read project design docs directly; NEVER use context writes, repair/build workflows, or mutating setup launchers.
+Return evidence-backed findings, required questions, and unsupported workflow steps to the orchestrator. State which assessments were performed and which remain unverified; do not claim complete upstream workflow execution when required steps were not performed. Recommendations do not authorize implementation. Then stop.
 </critical>

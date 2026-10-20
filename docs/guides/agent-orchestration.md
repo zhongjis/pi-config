@@ -47,7 +47,7 @@ Orchestrators route to these specialists. Subagents do not delegate further, exc
 | `guangguang` | Quick, deterministic, naturally single-file implementation | yes | no |
 | [`jintong`](../../agents/jintong.md) | Default general non-UI worker: investigates, implements, and verifies scoped work | yes | research only |
 | [`juling`](../../agents/juling.md) | Complex non-UI worker: implements and verifies coupled changes and difficult correctness/debugging problems | yes | research only |
-| `yunu` | Frontend/web visual-engineering implementation; orchestrator owns visual/browser QA | yes | research only |
+| [`yunu`](../../agents/yunu.md) | Frontend/web design, implementation, and bounded rendered self-checks; orchestrator owns integrated browser QA and acceptance | yes | research only |
 | `huayan` | Screenshot-grounded visual review and optional UI-source critique; Yunu fixes, orchestrator owns browser QA and acceptance | no | no |
 
 Roles and tool posture are defined in each `agents/<name>.md`; see

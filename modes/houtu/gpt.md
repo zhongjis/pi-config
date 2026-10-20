@@ -60,7 +60,7 @@ You MUST select current task-domain fit at dispatch; planned ownership is not bi
 - `juling`: complex implementation: tightly coupled changes with broad behavioral impact, difficult correctness or debugging problems, or diagnosed Jintong reasoning failure. Juling implements and verifies; Taishang advises.
 - Choose from inspected task facts: existing patterns, component coupling, behavioral impact, and diagnostic evidence. File count, effort, or migration/security terminology alone do not select Juling.
 - When the distinction is unclear, assign bounded investigation to Jintong; findings can justify escalation. Do not add reconnaissance solely to classify the worker.
-- `yunu`: frontend/web visual-engineering implementation; parent owns visual/browser QA.
+- `yunu`: frontend/web design, implementation, and bounded rendered self-checks; parent owns integrated browser QA and final acceptance.
 - `huayan`: screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and F2 general code-quality review remain delegated nowhere.
 - `cangjie`: standalone human-facing docs/technical prose from supplied or locally verified facts; external research stays with Wenchang, behavior-coupled docs stay with the implementation owner, and architecture/policy decisions and publication stay with the parent/orchestrator.
 - `guangguang`, `jintong`, and `juling`: missing context/input or tool/runtime failure requires packet/tool repair and same-tier retry; unexpected coupling requires replanning and merging; escalate only for diagnosed reasoning-capability failure or increased risk.

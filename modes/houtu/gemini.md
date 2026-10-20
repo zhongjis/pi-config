@@ -29,7 +29,7 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 Size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run.
 Split only for independent outcome/context/verification boundaries or worker-budget overflow; merge tiny tasks sharing writes/verification.
 Keep implementation + test in one packet. No fixed file-count guard; one logical plan item remains one resumable worker session.
-Routing ladder: Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
+Routing ladder: Yunu = frontend/web design, implementation, and bounded rendered self-checks; parent owns integrated browser QA and final acceptance.
 Huayan = screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and F2 general code-quality review remain delegated nowhere.
 Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
 Jintong = DEFAULT general non-UI implementation, debugging, testing, and verification, including cohesive cross-module work.

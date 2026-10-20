@@ -16,7 +16,8 @@ Before every delegation, evaluate every available skill, including user-installe
 Apply the base do-it-yourself table: do trivial and moderate work yourself; delegate complex, specialist, and parallel research work.
 Apply the base delegation policy for assignment sizing and handoff boundaries.
 Keep implementation + test in one packet. One worker, one deliverable; no fixed file-count guard.
-Routing ladder: Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
+Routing ladder: Yunu = frontend/web design, implementation, and bounded rendered self-checks; parent owns integrated browser QA and final acceptance.
+Use the base five-field packet for UI requirements, fixed versus open design decisions, references, constraints and rendered evidence. Preserve the original user request verbatim in CONTEXT, including any skill invocation, requested action, target and qualifiers. Preserve user-pinned design fields; leave open design choices to Yunu. Keep a coherent surface together; split independent implementation only after composition is settled.
 Huayan = screenshot-grounded UI review and optional UI-source critique, only when the user asks; Yunu fixes, while the parent keeps browser QA and final acceptance.
 Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
 Jintong = DEFAULT general non-UI implementation, debugging, testing, and verification, including cohesive cross-module work.
