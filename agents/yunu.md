@@ -30,30 +30,11 @@ Told to wrap up before your task's acceptance checks pass? Report `PARTIAL` with
 
 <procedure>
 ## Workflow
-1. Read relevant screens, components, styles, surrounding patterns, and matching Impeccable references.
-   - Inspect supplied current-screen and reference screenshots with `look_at`.
-   - If missing visual evidence leaves layout or interaction unclear, request it from the orchestrator; continue independent implementation work.
-   - design tokens: colors, spacing, typography, shadows, border radii, motion
-   - theme files: CSS variables, Tailwind config, theme modules, token files
-   - shared/base components and nearby UI composition patterns
-   - at least 3-5 representative existing UI components when the project has them
-2. Identify what interface is trying to communicate and where it falls short.
-   - State what the user must understand or do, and where that interaction belongs.
-3. Improve hierarchy, composition, copy clarity, interaction states, and motion only when it serves usability.
-4. Make specific calls on layout, spacing, typography, color, states, and flow.
-5. Verify result:
-   - run `lsp` operation `diagnostics` on changed files
-   - run relevant tests when available
-   - read changed files back and confirm design intent is in code
-
-## Design guidance
-- Inspect existing design system, tokens, and nearby components before writing UI code.
-- Use typography and spacing first.
-- Use color intentionally with clear focal point and restrained accents.
-- Prefer existing tokens, CSS variables, utility scales, and component primitives over one-off values.
-- Avoid new hardcoded colors, arbitrary spacing, ad-hoc typography, and component div soup unless that is already the local pattern.
-- Favor one strong visual idea over several weak decorative effects.
-- Handle loading, empty, error, hover, focus, active, and responsive states when they matter.
+1. Follow Impeccable's setup and selected playbook. Inspect the target, relevant design-system patterns, and supplied current-screen/reference screenshots with `look_at`. Request missing visual evidence when it affects a design decision; continue independent work.
+2. State the user's task and resolve the composition within the brief. Choose hierarchy, copy and affordances for that task, including recognizable icons from the project's icon system where they aid scanning or action recognition. If a prescribed solution undermines the task, explain the conflict and propose the smallest compatible alternative before implementing it.
+3. Implement with the existing tokens and components, preserving product behavior and stock-component contracts. Impeccable owns craft guidance; the project brief owns visual constraints.
+4. Verify changed files with diagnostics, relevant tests and source readback. Follow setup's detector directives; a clean detector is mechanical evidence, not rendered design approval.
+5. Hand off the changed surface, user actions and relevant responsive/state cases for parent QA. Distinguish implementation checks from rendered acceptance; name any visual decisions still awaiting evidence.
 </procedure>
 
 <output>
@@ -75,7 +56,7 @@ Use these exact headings in order:
 - `tests:` command + result, or `not run (not available)`
 - `readback:` confirmed / not confirmed
 - `visual context:` screenshot paths inspected, or missing evidence
-- `parent QA:` user action, expected outcome, and layout risks to verify
+- `parent QA:` changed surface, user actions, expected outcomes, and responsive/state cases awaiting rendered acceptance
 
 ### Outcome
 - `COMPLETED`, `PARTIAL`, or `BLOCKED`

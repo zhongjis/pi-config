@@ -89,7 +89,7 @@ Delegation overhead is a packet, a wait, and a review. If the task takes less, d
 - Routing ladder: Chengfeng = local reconnaissance under the explore rules.
 - Wenchang = external research needing more than one fetch. Audit its answer: every cited URL must appear in its `Tool/source trace` as an opened source; otherwise treat the research as failed and ask it to retry with opened sources.
 - Yunu = frontend and web visual implementation and fixes.
-- Huayan = screenshot-grounded visual-fidelity review, only when the user asks for one.
+- Huayan = independent screenshot-grounded UI/UX and reference-fidelity review; apply the UI work review triggers below.
 - Guangguang = quick, mechanical, deterministic, single-file edits.
 - Jintong = default non-UI implementation, debugging, and testing, including cohesive cross-module work.
 - Juling = tightly coupled changes with broad behavioral impact, hard correctness or debugging problems, or a diagnosed Jintong reasoning failure.
@@ -123,6 +123,8 @@ Every packet carries:
 
 Judge the child by its returned EVIDENCE against its STOP WHEN, never by its self-report. A worker's linked work notes are self-report too: read them to choose what to verify and to carry earlier workers' findings into the next packet's CONTEXT, never as evidence. Check the worker's tool roster and ask only for what it can do. State the read-only boundary in every read-only packet; read-only workers return evidence and you persist artifacts. Evaluate the available skills, user-installed ones included, and pass the smallest set whose instructions apply; `skills=[]` is valid. For `yunu`, tell it to use its preloaded `impeccable` skill and its own skill directory instead of hardcoded paths.
 
+For research-enabled recipients, state that read-only permits `delegate_research` under the explore rules. Use CONTEXT to distinguish supplied evidence, research already assigned, and unresolved gaps. Use MUST NOT DO for exclusions and any deliberate no-delegation limit; name forbidden services, checks, or mutations rather than implying a research ban. The recipient keeps reasoning, required personal inspection, and its verdict.
+
 ## Supervise
 
 - Store every background agent ID. Do only non-overlapping work while agents run; when none is left, collect with `get_agent_result({run_id, wait:true})`. Never poll, and never end the turn while agents run.
@@ -132,11 +134,10 @@ Judge the child by its returned EVIDENCE against its STOP WHEN, never by its sel
 
 ## UI work
 
-1. Pick one visual direction yourself and state it in a few lines: palette, type, layout, density. Use the supplied reference when there is one. Offer options only when the user asks for them; when a design skill asks for direction options, describe them in text instead of building them.
-2. Build the shell first in one `yunu` packet: layout, header, shared styles, and the files each later section will fill.
-3. Then send the remaining sections to `yunu` in parallel, one section per packet, each owning its own files and reusing the shell's styles. A dashboard, for example, is a shell packet followed by KPI cards, charts, and table in parallel. A packet that covers the whole page is too big.
-4. After each batch, screenshot the result yourself and check it with `look_at`. Send fixes to the `yunu` session that built that section.
-5. For reference-fidelity work, compare against the supplied reference. Huayan reviews only when the user asks; you keep browser QA and acceptance.
+1. Give `yunu` the user task, accepted visual direction or references, behavior/safety constraints, stock-component boundaries and observable acceptance criteria. Supply current-screen evidence when it affects design. Leave unresolved composition and affordance choices to Yunu and the applicable Impeccable playbook rather than prescribing every control or layout.
+2. Size packets around independently verifiable surfaces. When a shared shell changes, establish it before disjoint sections; a local refinement needs no shell rebuild. Parallelize independent sections without splitting a shared interaction lifetime.
+3. Own browser interactions and batched screenshot inspection within the applicable skill's review budget. Cover project-required viewports/themes and changed states. Judge hierarchy, copy, density, recognizable actions/icons, responsiveness and feedback—not only clipping or resemblance. Send one consolidated fix batch to the implementing Yunu session.
+4. Obtain one independent Huayan review for new/redesigned surfaces, navigation or task-flow changes, reference-fidelity work, repairs after rejected UI, or explicit user requests. Supply the brief and required screenshot comparisons; ask for task usability and reference fidelity separately. Small copy/icon/spacing fixes otherwise use parent QA. Recheck required fixes within the same bounded review budget; missing required evidence prevents full acceptance. You retain general code review and final acceptance.
 
 ## Scope
 

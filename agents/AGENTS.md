@@ -26,10 +26,11 @@ Callable Subagent definitions and their bounded delegation contracts.
 ## Work Guidance
 
 - You SHOULD keep routing descriptions specific to worker capability.
+- [Taishang](taishang.md#research-delegation), [Di Renjie](direnjie.md#research-delegation), [Yanluo](yanluo.md#research-delegation), and [Xuannv](xuannv.md#research-delegation) own inline research routing aligned with [Kua Fu's exploration policy](../modes/kuafu/mode.md): delegate unresolved discovery, retain consultant judgment and required personal inspection.
 - Preserve [Jintong's general-worker boundary](jintong.md) and [Juling's complex-worker boundary](juling.md); their prompts own evidence-based routing and implementation duties.
 - Worker outcomes MUST be `COMPLETED`, `PARTIAL`, or `BLOCKED`; a wrap-up request or exhausted budget before the task's acceptance checks pass yields `PARTIAL` with a last-green anchor. Packet sizing and interruption handling belong to mode prompts and the subagents extension; worker prompts MUST NOT restate them.
 - You MUST preserve orchestrator-owned verification and final acceptance. Kua Fu's [gate-review](../modes/kuafu/skills/gate-review/SKILL.md) finish gate assigns Spec review to `direnjie` and Standards review to `taishang` through their diff-review paragraphs; both advise and never edit. [Jintong's prompt](jintong.md) owns outcome-based test selection and smaller-alternative escalation without weakening mandated acceptance or safety checks.
-- Huayan is a read-only screenshot-grounded UI reviewer; [Yunu](yunu.md) owns fixes, visual-context use and the visual QA handoff. The orchestrator retains browser QA, code-quality review, and acceptance.
+- [Huayan](huayan.md) reviews task usability and reference fidelity from screenshot evidence; [Yunu](yunu.md) owns design decisions within the brief, fixes and the rendered-QA handoff. Mode prompts own review triggers; the orchestrator retains browser QA, code-quality review and acceptance.
 
 ## Verification
 

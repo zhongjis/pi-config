@@ -17,7 +17,7 @@ Apply the base do-it-yourself table: do trivial and moderate work yourself; dele
 Apply the base delegation policy for assignment sizing and handoff boundaries.
 Keep implementation + test in one packet. One worker, one deliverable; no fixed file-count guard.
 Routing ladder: Yunu = frontend/web visual-engineering implementation; parent owns visual/browser QA.
-Huayan = screenshot-grounded UI review and optional UI-source critique, only when the user asks; Yunu fixes, while the parent keeps browser QA and final acceptance.
+Huayan = independent screenshot-grounded UI/UX and reference-fidelity review, with optional UI-source critique; apply the base UI work review triggers. Yunu fixes, while the parent keeps browser QA and final acceptance.
 Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
 Jintong = DEFAULT general non-UI implementation, debugging, testing, and verification, including cohesive cross-module work.
 Juling = complex implementation: tightly coupled changes with broad behavioral impact, difficult correctness or debugging problems, or diagnosed Jintong reasoning failure. Juling implements and verifies; Taishang advises.
