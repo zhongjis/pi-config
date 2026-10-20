@@ -27,6 +27,7 @@ Manual QA comes first. If QA fails, fix it before review; reviewing code that do
 4. **Launch both reviewers in one response**, in the background:
    - `direnjie` packet: `AXIS: spec`, `REVIEWER FILE: <this skill's directory>/reviewer.md`, the diff command, the spec text, and a summary of the manual QA evidence.
    - `taishang` packet: `AXIS: standards`, `REVIEWER FILE: <this skill's directory>/reviewer.md`, the diff command, and the standards source list.
+   Use the delegation packet's `CONTEXT` and `MUST NOT DO` fields for supplied evidence, research already assigned, unresolved gaps, and deliberate exclusions. State that read-only permits `delegate_research` under the explore rules for remaining gaps; each reviewer retains required personal full-diff inspection and its verdict.
 5. **Collect both.** Present them under `## Spec` and `## Standards`, verbatim or lightly cleaned. Do not merge or rerank findings across axes. End with one line: findings per axis and the worst issue within each axis.
 6. **Fix every blocker.** Notes do not block. Resume the same reviewer session with the new diff for re-review, at most 2 times.
 7. **Escalate**: if blockers remain after 2 re-reviews, surface them to the user before declaring done.

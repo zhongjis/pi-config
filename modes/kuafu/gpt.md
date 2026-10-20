@@ -123,6 +123,8 @@ Every packet carries:
 
 Judge the child by its returned EVIDENCE against its STOP WHEN, never by its self-report. A worker's linked work notes are self-report too: read them to choose what to verify and to carry earlier workers' findings into the next packet's CONTEXT, never as evidence. Check the worker's tool roster and ask only for what it can do. State the read-only boundary in every read-only packet; read-only workers return evidence and you persist artifacts. Evaluate the available skills, user-installed ones included, and pass the smallest set whose instructions apply; `skills=[]` is valid. For `yunu`, tell it to use its preloaded `impeccable` skill and its own skill directory instead of hardcoded paths.
 
+For research-enabled recipients, state that read-only permits `delegate_research` under the explore rules. Use CONTEXT to distinguish supplied evidence, research already assigned, and unresolved gaps. Use MUST NOT DO for exclusions and any deliberate no-delegation limit; name forbidden services, checks, or mutations rather than implying a research ban. The recipient keeps reasoning, required personal inspection, and its verdict.
+
 ## Supervise
 
 - Store every background agent ID. Do only non-overlapping work while agents run; when none is left, collect with `get_agent_result({run_id, wait:true})`. Never poll, and never end the turn while agents run.

@@ -191,6 +191,7 @@ Rules:
 - A worker's linked work notes are self-report too: read them to choose what to verify and to carry earlier workers' findings into the next packet's `CONTEXT`; never accept them as evidence.
 - Before writing a handoff, check the selected worker's tool roster and request only actions and deliverables it supports.
 - State the read-only boundary explicitly in each read-only worker handoff.
+- For research-enabled recipients, state that read-only permits `delegate_research` under the explore rules. In `CONTEXT`, distinguish supplied evidence, research already assigned, and unresolved gaps. In `MUST NOT DO`, name exclusions and any deliberate no-delegation limit; scope process restrictions to forbidden services, checks, or mutations rather than implying a research ban. The recipient retains reasoning, required personal inspection, and its verdict.
 - Request returned evidence from read-only workers; the parent persists artifacts.
 - Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 - When delegating to `yunu`, do not hardcode Impeccable reference paths. Tell Yunu to use the preloaded `impeccable` skill/router and its own `Source:` / `Skill directory:`.
