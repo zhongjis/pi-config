@@ -112,14 +112,36 @@ export class ClientPool<T extends { shutdown(): Promise<void> }> {
   }
 }
 
-const GLOBAL_POOL_SYMBOL = Symbol.for('panda-harness.pi-lsp.client-pool.v1');
+type ClientClass<T> = new (config: ResolvedServerConfig, rootPath: string) => T;
+
+const GLOBAL_POOLS_SYMBOL = Symbol.for('panda-harness.pi-lsp.client-pools.v2');
+
+/**
+ * Process-wide pool for clients built by `Client`, keyed by the class source.
+ *
+ * The registry lives on `globalThis`, so it outlives a module reload. Sessions
+ * running the same client code share one pool even when each loads its own
+ * module copy; after `/reload` with changed client code, the new code gets a
+ * fresh pool instead of instances of the old class (which may lack new methods).
+ */
+// ponytail: keyed on the client class only; a change limited to protocol.ts keeps
+// old connections until restart, and one pool per code version stays in memory
+// for the process lifetime. Key on a module hash if that ever matters.
+export function globalPoolFor<T extends { shutdown(): Promise<void> }>(
+  Client: ClientClass<T>,
+): ClientPool<T> {
+  const registry = globalThis as Record<PropertyKey, unknown>;
+  registry[GLOBAL_POOLS_SYMBOL] ??= new Map<string, unknown>();
+  const pools = registry[GLOBAL_POOLS_SYMBOL] as Map<string, ClientPool<T>>;
+  const version = Client.toString();
+  let pool = pools.get(version);
+  if (!pool) {
+    pool = new ClientPool((config, rootPath) => new Client(config, rootPath));
+    pools.set(version, pool);
+  }
+  return pool;
+}
 
 export function getGlobalClientPool(): ClientPool<LspClient> {
-  const registry = globalThis as Record<PropertyKey, unknown>;
-  const existing = registry[GLOBAL_POOL_SYMBOL] as ClientPool<LspClient> | undefined;
-  if (existing) return existing;
-
-  const pool = new ClientPool((config, rootPath) => new LspClient(config, rootPath));
-  registry[GLOBAL_POOL_SYMBOL] = pool;
-  return pool;
+  return globalPoolFor(LspClient);
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { ClientPool } from '../client-pool';
+import { ClientPool, globalPoolFor } from '../client-pool';
 import type { ResolvedServerConfig } from '../types';
 
 type TestClient = {
@@ -127,5 +127,30 @@ describe('ClientPool', () => {
     expect(freshClient).not.toBe(oldClient);
     expect(factory).toHaveBeenCalledTimes(2);
     expect(newOwner.existing('/workspace', config)).toBe(freshClient);
+  });
+});
+
+describe('globalPoolFor', () => {
+  // Each call returns a new class object with the same source, like a module loaded twice.
+  const loadClientModule = () =>
+    class ReloadProbeClient {
+      async shutdown() {}
+    };
+
+  it('shares one pool across module copies of the same client code', () => {
+    expect(globalPoolFor(loadClientModule())).toBe(globalPoolFor(loadClientModule()));
+  });
+
+  it('gives changed client code its own pool, so old-class clients are never reused', () => {
+    class ReloadProbeClient {
+      async shutdown() {}
+      onDiagnostics() {}
+    }
+    const oldPool = globalPoolFor(loadClientModule());
+    const newPool = globalPoolFor(ReloadProbeClient);
+    expect(newPool).not.toBe(oldPool);
+    expect(newPool.createOwner().acquire('/workspace', serverConfig())).toBeInstanceOf(
+      ReloadProbeClient,
+    );
   });
 });
