@@ -21,15 +21,16 @@ import { createSettingsMenu } from "./ui/settings-menu.js";
 
 import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Container, Text } from "@earendil-works/pi-tui";
+import { type AccessRule, hasPositiveDelegationRule } from "../../lib/active-tools.js";
 import { AgentHistoryStore, mergeAgentHistory } from "./agent-history.js";
 import { AgentManager } from "./agent-manager.js";
 import { registerAgentPolicyDenialResultHook } from "./agent-policy-denial-result.js";
-import { SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
-import { getAvailableTypes, isDefaultsDisabled, registerAgents, setDefaultsDisabled } from "./agent-types.js";
+import { isGuardedBashType, SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
+import { getAgentConfig, getAvailableTypes, isDefaultsDisabled, registerAgents, setDefaultsDisabled } from "./agent-types.js";
 import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
-import { loadCustomAgents } from "./custom-agents.js";
+import { loadCustomAgentsWithDiagnostics } from "./custom-agents.js";
 import { renderDelegationPolicyHint } from "./delegation-hint.js";
-import { formatDelegationPolicyDenial, type ModeStateEntryLike, resolvePersistedDelegationPolicy, resolvePersistedDelegationPolicyContext } from "./delegation-policy.js";
+import { formatDelegationPolicyDenial, getPermittedDelegationTypes, type ModeStateEntryLike, resolvePersistedDelegationPolicy, resolvePersistedDelegationPolicyContext } from "./delegation-policy.js";
 import { DEFAULT_MIN_CONFIDENCE } from "./graph/decision-gate.js";
 import { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData } from "./graph/entry.js";
 import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
@@ -37,6 +38,7 @@ import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pan
 import { graphSkillPath } from "./graph/tool-description.js";
 import { createNotificationCoordinator } from "./notification-coordinator.js";
 import { registerSubagentNotificationRenderer } from "./notification-rendering.js";
+import { currentTargets } from "./research-delegation.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged, type ToolDescriptionMode } from "./settings.js";
 import { startBackgroundSupervision } from "./supervision-loop.js";
 import { type AgentRecord, type JoinMode } from "./types.js";
@@ -129,9 +131,26 @@ export default function (pi: ExtensionAPI) {
   registerSubagentNotificationRenderer(pi);
 
   /** Reload agents from project/global custom agent dirs and merge with defaults (called on init and each `agent` invocation). */
-  const reloadCustomAgents = () => {
-    const userAgents = loadCustomAgents(process.cwd());
-    registerAgents(userAgents);
+  const notifiedDiagnostics = new Set<string>();
+  const reloadCustomAgents = (ctx?: ExtensionContext) => {
+    const loaded = loadCustomAgentsWithDiagnostics(process.cwd());
+    registerAgents(loaded.agents);
+    if (!ctx || !ownsManagerRegistry) return;
+    const diagnostics = loaded.diagnostics.map((diagnostic) => ({
+      message: `Agent ${diagnostic.agentName} (${diagnostic.file}) ${diagnostic.field}: ${diagnostic.message}`,
+      severity: diagnostic.severity,
+    }));
+    for (const type of getAvailableTypes()) {
+      const config = getAgentConfig(type);
+      if (config && hasPositiveDelegationRule(config.delegationRules ?? []) && currentTargets(config, isGuardedBashType).length === 0) {
+        diagnostics.push({ message: `Agent ${type} delegation: no valid read-only targets; nesting disabled.`, severity: "warning" });
+      }
+    }
+    for (const diagnostic of diagnostics) {
+      if (notifiedDiagnostics.has(diagnostic.message)) continue;
+      notifiedDiagnostics.add(diagnostic.message);
+      ctx.ui.notify(diagnostic.message, diagnostic.severity);
+    }
   };
 
   // Initial load
@@ -305,6 +324,7 @@ export default function (pi: ExtensionAPI) {
       manager.spawn(piRef, ctx, type, prompt, options),
     getRecord: (id: string) => manager.getRecord(id),
     getLifetimeCost: () => manager.getLifetimeCost(),
+    resolveDelegationTargets: (rules: AccessRule[]): string[] => getPermittedDelegationTypes({ rules }, getAvailableTypes()),
   };
   const ownsManagerRegistry = (globalThis as any)[MANAGER_KEY] === undefined;
   if (ownsManagerRegistry) {
@@ -334,6 +354,7 @@ export default function (pi: ExtensionAPI) {
   // Wires RPC handlers on the first bound session_start so a filtered-out activation never advertises (#142).
   pi.on("session_start", async (_event, ctx) => {
     if (!ownsManagerRegistry) return;
+    reloadCustomAgents(ctx);
     await stopGraphRuns("reload");
     await graphRuntime.loadHistory(ctx);
     agentHistory = await AgentHistoryStore.load(ctx.sessionManager.getSessionId(), message => ctx.ui.notify(message, "warning"));

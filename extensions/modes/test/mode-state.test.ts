@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { parseAccessRules } from "../../lib/active-tools.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { type AccessRule, parseAccessRules } from "../../lib/active-tools.js";
 import { resolvePersistedDelegationPolicy } from "../../subagents/src/delegation-policy.js";
 import { MODE_TOOL_CEILING_NAME } from "../src/constants.js";
 import { resolveModelFromStr, ModeStateManager } from "../src/mode-state.js";
@@ -361,6 +361,12 @@ describe("ModeStateManager", () => {
 });
 
 describe("ModeStateManager tool access", () => {
+	const managerKey = Symbol.for("pi-subagents:manager");
+	const priorBridge = Reflect.get(globalThis, managerKey);
+	afterEach(() => {
+		if (priorBridge === undefined) Reflect.deleteProperty(globalThis, managerKey);
+		else Reflect.set(globalThis, managerKey, priorBridge);
+	});
 	type FixtureTool = { name: string; exposure: string; sourceInfo: { path: string } };
 
 	const WEB_ACCESS = "/fixture/web-access/index.ts";
@@ -589,6 +595,53 @@ describe("ModeStateManager tool access", () => {
 		await state.switchMode("kuafu", ctx as never);
 
 		expect(pi.getActiveTools()).toEqual(kuafuTools);
+	});
+
+	it.each([
+		["absent", undefined, false],
+		["missing resolver", {}, false],
+		["empty targets", { resolveDelegationTargets: () => [] }, false],
+		["valid targets", { resolveDelegationTargets: () => ["leaf"] }, true],
+	])("gates delegation tools with %s bridge", (_label: string, bridge: unknown, permitted: boolean) => {
+		Reflect.set(globalThis, managerKey, bridge);
+		const names = ["agent", "get_agent_result", "steer_subagent", "resolve_agent_graph_gate", "agent_graph"];
+		const pi = createToolPi(names.map((name) => tool(name, SUBAGENTS)), names);
+		const state = createState(pi, { kuafu: {
+			body: "", toolRules: rules("+@all"), delegationRules: [{ sign: "+", selector: "leaf" }],
+		} });
+
+		expect([...state.toolAccess().allowed]).toEqual(permitted ? names : []);
+	});
+
+	it("warns once per mode and message when the registry resolves no delegation targets", async () => {
+		const resolveDelegationTargets = vi.fn(() => [] as string[]);
+		Reflect.set(globalThis, managerKey, { resolveDelegationTargets });
+		const pi = createToolPi([tool("agent", SUBAGENTS)], ["agent"]);
+		const config: ModeConfig = { body: "", toolRules: rules("+@all"), delegationRules: [{ sign: "+", selector: "missing" }] };
+		const state = createState(pi, { kuafu: config, houtu: config });
+		const ctx = createCtx();
+
+		await state.applyToolAccess(ctx as never);
+		await state.applyToolAccess(ctx as never);
+		state.currentMode = "houtu";
+		await state.applyToolAccess(ctx as never);
+
+		expect(resolveDelegationTargets).toHaveBeenCalledWith(config.delegationRules);
+		expect(ctx.ui.notify.mock.calls).toEqual([
+			["Mode kuafu delegation: no valid targets; delegation tools disabled.", "warning"],
+			["Mode houtu delegation: no valid targets; delegation tools disabled.", "warning"],
+		]);
+	});
+
+	it.each([undefined, [], [{ sign: "-", selector: "leaf" }]])("does not warn without positive intent or without a registry (%j)", async (delegationRules: AccessRule[] | undefined) => {
+		Reflect.deleteProperty(globalThis, managerKey);
+		const pi = createToolPi([tool("agent", SUBAGENTS)], ["agent"]);
+		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+@all"), delegationRules } });
+		const ctx = createCtx();
+		await state.applyToolAccess(ctx as never);
+		Reflect.set(globalThis, managerKey, { resolveDelegationTargets: () => [] });
+		if (!delegationRules?.some((rule) => rule.sign === "+")) await state.applyToolAccess(ctx as never);
+		expect(ctx.ui.notify).not.toHaveBeenCalled();
 	});
 
 	it("notifies a resolution diagnostic once across repeated applies", async () => {

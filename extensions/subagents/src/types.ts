@@ -41,8 +41,6 @@ export interface AgentConfig {
   toolRules: AccessRule[];
   /** Signed delegation rules; an empty policy grants no delegation. */
   delegationRules?: AccessRule[];
-  /** Derived from a positive delegation rule; permits nested research. */
-  allowNesting?: boolean;
   /** When true, pi's skill catalog is discoverable on demand. Default true. */
   discoverSkills: boolean;
   /** Skill names whose full content is eagerly injected into the system prompt. Default []. */

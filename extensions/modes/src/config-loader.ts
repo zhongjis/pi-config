@@ -19,7 +19,6 @@ export function parseModeAgentConfig(content: string): ModeConfig | null {
     body: trimmedBody,
     toolRules: parsed.toolRules,
     delegationRules: parsed.delegationRules,
-    allowNesting: parsed.allowNesting,
     model: parsed.model,
   };
 }

@@ -49,7 +49,7 @@ import type { OpenedSession, ToolActivity } from "./execution.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
 import { resolveAgentModel, type SelectedAgentModel } from "./model-resolution.js";
 import { buildAgentPrompt, type PromptExtras } from "./prompts.js";
-import { createDelegateResearchTool, DELEGATE_RESEARCH_TOOL_NAME, type NestedSpawn } from "./research-delegation.js";
+import { createDelegateResearchTool, currentTargets, DELEGATE_RESEARCH_TOOL_NAME, type NestedSpawn } from "./research-delegation.js";
 import { sessionFastPolicies } from "./session-fast.js";
 import { preloadSkills } from "./skill-loader.js";
 import { createStructuredCapture, createStructuredOutputTool, rememberStructuredCapture, STRUCTURED_OUTPUT_TOOL_NAME } from "./structured-output.js";
@@ -156,7 +156,7 @@ const GUARDED_CANONICAL_AGENT_TYPES = new Set([
   "yanluo",
   "huayan",
 ]);
-const isGuardedBashType = (type: string) => GUARDED_CANONICAL_AGENT_TYPES.has(type.toLowerCase());
+export const isGuardedBashType = (type: string) => GUARDED_CANONICAL_AGENT_TYPES.has(type.toLowerCase());
 
 /**
  * Tool names registered by THIS extension. Single source of truth so the
@@ -348,8 +348,9 @@ export async function openSession(
     : undefined;
   // A reopened session keeps its launch-time per-call options.
   const { isolated, skills } = reopened?.launch ?? options;
-  // `delegate_research` requires derived nesting permission; isolated runs keep built-ins only.
-  const nestedSpawn = !isolated && agentConfig?.allowNesting === true ? options.nestedSpawn : undefined;
+  // Resolve nesting against the live registry; isolated runs keep built-ins only.
+  const allowNesting = !isolated && currentTargets(agentConfig, isGuardedBashType).length > 0;
+  const nestedSpawn = allowNesting ? options.nestedSpawn : undefined;
 
   // Resolve working directory: caller-supplied cwd override > reopened session cwd > parent cwd
   const effectiveCwd = options.cwd ?? reopened?.sessionManager.getCwd() ?? ctx.cwd;
@@ -371,7 +372,7 @@ export async function openSession(
   // Resolve access rules: isolated loads no extensions (built-in tools only).
   const extensionRules: readonly AccessRule[] = isolated ? [] : config.extensionRules;
   const toolRules: readonly AccessRule[] = agentConfig?.toolRules ?? config.toolRules;
-  const gates: ToolAccessGates = { allowNesting: agentConfig?.allowNesting };
+  const gates: ToolAccessGates = { allowNesting };
   // discover_skills gates the on-demand skill catalog; preload_skills are eagerly
   // injected into the prompt. They are independent — the catalog can be on while
   // some skills are preloaded. isolated overrides both to off.

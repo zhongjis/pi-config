@@ -2,7 +2,7 @@ import { GOAL_TOOL_NAMES, goalToolAccess } from "../../goal/src/goal/access.js";
 import type { RuntimeModelCandidate } from "../../lib/runtime-model-fallback.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
-import { type AccessDiagnostic, resolveToolAccess, toolCandidates } from "../../lib/active-tools.js";
+import { type AccessDiagnostic, type AccessRule, hasPositiveDelegationRule, resolveToolAccess, toolCandidates } from "../../lib/active-tools.js";
 import { MODES, MODE_COLORS, MODE_META, MODE_TOOL_CEILING_NAME, RESET } from "./constants.js";
 import { getModeSkillPaths } from "./mode-skills.js";
 import { loadAgentConfig } from "./config-loader.js";
@@ -63,7 +63,7 @@ export class ModeStateManager {
 	resolvedFamily: "gpt" | "gemini" | "default" = "default";
 	/** Goal tools Goal access allowed at the last tool-access apply. */
 	allowedGoalTools: readonly string[] = [];
-	private notifiedToolDiagnostics = new Set<string>();
+	private notifiedModeDiagnostics = new Set<string>();
 	constructor(pi: ExtensionAPI) {
 		this.pi = pi;
 	}
@@ -104,7 +104,7 @@ export class ModeStateManager {
 	toolAccess(allowedGoals: readonly string[] = this.allowedGoalTools): { allowed: Set<string>; diagnostics: AccessDiagnostic[] } {
 		const config = this.loadConfig(this.currentMode);
 		return resolveToolAccess(config.toolRules, toolCandidates(this.pi.getAllTools()), {
-			allowNesting: config.allowNesting === true,
+			allowNesting: (this.delegationTargets(config.delegationRules ?? [])?.length ?? 0) > 0,
 			goalTools: { names: GOAL_TOOL_NAMES, allowed: allowedGoals },
 			planTools: this.currentMode === "fuxi",
 		});
@@ -128,8 +128,12 @@ export class ModeStateManager {
 		this.allowedGoalTools = goalNames.length ? await goalToolAccess(ctx) : [];
 
 		const { diagnostics } = this.toolAccess();
-		const configErrors = this.loadConfig(this.currentMode).errors ?? [];
-		this.notifyToolDiagnostics(ctx, [...configErrors.map((message) => ({ severity: "error" as const, message })), ...diagnostics]);
+		const config = this.loadConfig(this.currentMode);
+		const configErrors = config.errors ?? [];
+		this.notifyModeDiagnostics(ctx, "tools", [...configErrors.map((message) => ({ severity: "error" as const, message })), ...diagnostics]);
+		if (hasPositiveDelegationRule(config.delegationRules ?? []) && this.delegationTargets(config.delegationRules ?? [])?.length === 0) {
+			this.notifyModeDiagnostics(ctx, "delegation", [{ severity: "warning", message: "no valid targets; delegation tools disabled." }]);
+		}
 
 		const activeToolNames = this.pi.getActiveTools().filter((name) => registered.has(name));
 		if (registered.has(MODE_TOOL_CEILING_NAME) && !activeToolNames.includes(MODE_TOOL_CEILING_NAME)) {
@@ -142,12 +146,18 @@ export class ModeStateManager {
 		this.pi.setActiveTools(activeToolNames);
 	}
 
-	private notifyToolDiagnostics(ctx: ExtensionContext, diagnostics: readonly AccessDiagnostic[]): void {
+	private delegationTargets(rules: AccessRule[]): string[] | undefined {
+		const bridge: unknown = Reflect.get(globalThis, Symbol.for("pi-subagents:manager"));
+		if (typeof bridge !== "object" || bridge === null || !("resolveDelegationTargets" in bridge) || typeof bridge.resolveDelegationTargets !== "function") return undefined;
+		return bridge.resolveDelegationTargets(rules);
+	}
+
+	private notifyModeDiagnostics(ctx: ExtensionContext, field: "tools" | "delegation", diagnostics: readonly AccessDiagnostic[]): void {
 		for (const diagnostic of diagnostics) {
-			const key = `${this.currentMode}\0${diagnostic.message}`;
-			if (this.notifiedToolDiagnostics.has(key)) continue;
-			this.notifiedToolDiagnostics.add(key);
-			ctx.ui.notify(`Mode ${this.currentMode} tools: ${diagnostic.message}`, diagnostic.severity === "error" ? "error" : "warning");
+			const key = `${this.currentMode}\0${field}\0${diagnostic.message}`;
+			if (this.notifiedModeDiagnostics.has(key)) continue;
+			this.notifiedModeDiagnostics.add(key);
+			ctx.ui.notify(`Mode ${this.currentMode} ${field}: ${diagnostic.message}`, diagnostic.severity === "error" ? "error" : "warning");
 		}
 	}
 

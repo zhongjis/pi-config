@@ -1,4 +1,4 @@
-import { type AccessRule, BUILTIN_TOOL_NAMES, parseAccessRules, resolveToolAccess } from "../../lib/active-tools.js";
+import { type AccessRule, BUILTIN_TOOL_NAMES, hasPositiveDelegationRule, parseAccessRules, resolveToolAccess } from "../../lib/active-tools.js";
 import type { AgentConfig } from "./types.js";
 
 export interface DelegationPolicy {
@@ -27,7 +27,7 @@ function resolveCanonicalType(
 }
 
 export function hasDelegationPolicy(policy: DelegationPolicy): boolean {
-	return policy.rules.some((rule) => rule.sign === "+");
+	return hasPositiveDelegationRule(policy.rules);
 }
 
 export function getPermittedDelegationTypes(
@@ -54,16 +54,15 @@ const MUTATING_BUILTIN_TOOLS = ["edit", "write", "powershell"];
 
 /** Resolve signed delegation rules, retaining only enabled, read-only leaves. */
 export function resolveNestedTargets(
-	parent: Pick<AgentConfig, "name" | "allowNesting" | "delegationRules">,
+	parent: Pick<AgentConfig, "name" | "delegationRules">,
 	configs: readonly AgentConfig[],
 	isGuardedBash: (type: string) => boolean,
 ): string[] {
-	if (parent.allowNesting !== true) return [];
 	const byName = new Map(configs.map((config) => [config.name.toLowerCase(), config]));
 	const builtins = BUILTIN_TOOL_NAMES.map((name) => ({ name, extensionIds: [] }));
 	return getPermittedDelegationTypes({ rules: parent.delegationRules ?? [] }, configs.map((config) => config.name)).filter((type) => {
 		const target = byName.get(type.toLowerCase());
-		if (!target || target.enabled === false || target.allowNesting === true || target.promptMode === "append") return false;
+		if (!target || target.enabled === false || hasPositiveDelegationRule(target.delegationRules ?? []) || target.promptMode === "append") return false;
 		if (type.toLowerCase() === parent.name.toLowerCase()) return false;
 		const granted = resolveToolAccess(target.toolRules, builtins).allowed;
 		if (MUTATING_BUILTIN_TOOLS.some((name) => granted.has(name))) return false;

@@ -11,6 +11,7 @@ import {
   formatAccessRules,
   isBuiltinToolName,
   isTrustedToolSource,
+  hasPositiveDelegationRule,
   parseAccessRules,
   PLAN_TOOL_NAMES,
   resolveExtensionAccess,
@@ -480,6 +481,9 @@ describe("toolCandidates", () => {
 // ─── agent-frontmatter parser: toolRules/extensionRules/diagnostics ───────
 
 describe("parseAgentFrontmatter tools/extensions rules", () => {
+  it.each([["", false], ["-leaf", false], ["+leaf, -leaf", true], ["+missing", true]])("recognizes positive delegation intent in %s", (delegation, expected) => {
+    expect(hasPositiveDelegationRule(parseAgentFrontmatter({ delegation }).delegationRules)).toBe(expected);
+  });
   it("parses tools: and extensions: into rules and field-tagged diagnostics", () => {
     const parsed = parseAgentFrontmatter({ tools: ["+@all", "-edit"], extensions: ["+@all"] });
     expect(parsed.toolRules).toEqual([{ sign: "+", selector: "@all" }, { sign: "-", selector: "edit" }]);
@@ -492,14 +496,6 @@ describe("parseAgentFrontmatter tools/extensions rules", () => {
     expect(parsed.toolRules).toEqual([]);
     expect(parsed.extensionRules).toEqual([]);
     expect(parsed.invalidFields).toEqual([]);
-  });
-
-  it.each([undefined, "", [], "-leaf"])("derives no nesting from empty or only-minus delegation %j", (delegation) => {
-    expect(parseAgentFrontmatter({ delegation }).allowNesting).toBe(false);
-  });
-
-  it("derives nesting from a positive rule even when later subtracted", () => {
-    expect(parseAgentFrontmatter({ delegation: "+leaf, -leaf" }).allowNesting).toBe(true);
   });
 
   it("tags delegation parse errors with their field", () => {
@@ -544,7 +540,7 @@ describe("parseAgentFrontmatter tools/extensions rules", () => {
     ["inherit_skills", true, skillsMessage],
     ["allow_delegation_to", "chengfeng", "allow_delegation_to is obsolete; use `delegation: +chengfeng, +wenchang`."],
     ["disallow_delegation_to", "chengfeng", "disallow_delegation_to is obsolete; subtract agents with `delegation: +@all, -chengfeng`."],
-    ["allow_nesting", true, "allow_nesting is obsolete; nesting is on when delegation: has a + rule."],
+    ["allow_nesting", true, "allow_nesting is obsolete; nesting is on when delegation: rules resolve to a valid target."],
   ])("an obsolete %s field is an error with a rewrite hint", (field, value, message) => {
     const parsed = parseAgentFrontmatter({ [field]: value });
     expect({ invalidFields: parsed.invalidFields, diagnostics: parsed.diagnostics }).toEqual({

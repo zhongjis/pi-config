@@ -115,6 +115,29 @@ describe("manager registry lifecycle ownership", () => {
     vi.restoreAllMocks();
   });
 
+  it("leaves definition and empty-target warnings to the registry owner", async () => {
+    const agentsDir = join(tmpDir, ".pi", "agents");
+    mkdirSync(agentsDir);
+    writeFileSync(join(agentsDir, "broken.md"), "---\nskills: research\n---\nTask");
+    writeFileSync(join(agentsDir, "nester.md"), "---\ndelegation: +nosuch\n---\nTask");
+    const parent = makePi();
+    const parentCtx = context();
+    Reflect.apply(subagentsExtension, undefined, [parent.pi]);
+    await fire(parent, "session_start", {}, parentCtx);
+    const child = makePi();
+    const childCtx = context();
+    Reflect.apply(subagentsExtension, undefined, [child.pi]);
+    await fire(child, "session_start", {}, childCtx);
+    await fire(child, "session_shutdown", {}, childCtx);
+
+    expect(parentCtx.ui.notify.mock.calls).toEqual([
+      [expect.stringContaining("Agent broken ("), "error"],
+      ["Agent nester delegation: no valid read-only targets; nesting disabled.", "warning"],
+    ]);
+    expect(childCtx.ui.notify).not.toHaveBeenCalled();
+    await fire(parent, "session_shutdown", {}, parentCtx);
+  });
+
   it("keeps an active parent graph run and manager untouched by child lifecycle events while the owner still cleans up", async () => {
     const clearCompleted = vi.spyOn(AgentManager.prototype, "clearCompleted");
     const abortAll = vi.spyOn(AgentManager.prototype, "abortAll");

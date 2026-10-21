@@ -228,7 +228,7 @@ tool registered later by a granted extension is granted too.
 After the rules apply:
 
 - tools from trusted internal sources (`<inline:…>`, `<sdk:…>`) are always allowed;
-- nested subagent controls (`agent`, `get_agent_result`, `resolve_agent_graph_gate`, `steer_subagent`) require a `+` rule in `delegation`; Subagent sessions never receive them (see [Delegation](#delegation-fields));
+- nested subagent controls ([`NESTED_SUBAGENT_TOOL_NAMES`](../../extensions/lib/active-tools.ts)) require `delegation` rules that resolve to at least one valid target; Subagent sessions never receive them (see [Delegation](#delegation-fields));
 - goal tools require Goal access;
 - plan tools are granted only in Fu Xi.
 
@@ -300,14 +300,18 @@ delegation: +@all, -juling
 - Signed rules fold left to right from an empty set, like `tools`. Selectors are
   `@all` (every available agent type) or an exact agent name, matched
   case-insensitively. Globs and other `@` groups are errors; unknown names are dropped.
-- A `+` rule turns nesting on. Without one (field omitted, empty, or only `-`
+- Nesting is on only when the rules resolve to at least one valid target in the
+  current agent registry. Without a `+` rule (field omitted, empty, or only `-`
   rules) the agent cannot delegate, and a mode denies every delegation.
+- `+` rules that resolve to no valid target (unknown names, or every target
+  removed or filtered out) turn nesting off and warn the user once per session;
+  the model is not told.
 - Blocked delegations return a descriptive reason listing permitted targets.
 - In modes, delegation also requires the nested subagent tools granted in `tools`.
 - Subagent sessions never receive the nested subagent tools: the runner excludes
   them ([`agent-runner.ts`](../../extensions/subagents/src/agent-runner.ts)).
-- In a Subagent, a `+` rule enables only `delegate_research` (never in an isolated
-  run), which runs one read-only leaf target and
+- In a Subagent, delegation enables only `delegate_research` (never in an isolated
+  run), and only when at least one read-only leaf target resolves. The tool runs one target and
   returns its result to the calling Subagent only. The main session's mode
   delegation policy still applies. A target must be enabled, must not have a `+` rule in its own `delegation`, must not be
   the agent's own type, and must not use `prompt_mode: append`. Its `tools` must
@@ -396,8 +400,8 @@ delegation: +chengfeng, +wenchang, +xuannv, +jintong, +juling, +yunu, +guangguan
 ---
 ```
 
-`+@all` grants every registered tool except the subtracted ones, and the `+` rules
-in `delegation` let the nested subagent tools through the hard gate, enabling delegation. `display_name`/`inherit_context` here are informational — the mode label
+`+@all` grants every registered tool except the subtracted ones, and `delegation`
+rules that resolve to available agents let the nested subagent tools through the hard gate. `display_name`/`inherit_context` here are informational — the mode label
 comes from `MODE_META` and `inherit_context` is inert for modes.
 
 ---

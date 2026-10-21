@@ -28,7 +28,6 @@ Mode prompt.`);
 				{ sign: "+", selector: "@codegraph" },
 			],
 			delegationRules: [{ sign: "+", selector: "chengfeng" }, { sign: "+", selector: "yanluo" }, { sign: "-", selector: "houtu" }],
-			allowNesting: true,
 			model: "anthropic/claude-sonnet-4-6:medium",
 		});
 	});

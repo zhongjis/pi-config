@@ -194,7 +194,7 @@ Partial access.`);
     ]);
   });
 
-  it("parses delegation and nesting fields", () => {
+  it("parses delegation rules", () => {
     writeAgent("delegator", `---
 delegation: +Explore, +Plan, -general-purpose
 ---
@@ -204,7 +204,6 @@ Delegates.`);
     const result = loadCustomAgents(tmpDir);
     const agent = result.get("delegator")!;
     expect(agent.delegationRules).toEqual([{ sign: "+", selector: "explore" }, { sign: "+", selector: "plan" }, { sign: "-", selector: "general-purpose" }]);
-    expect(agent.allowNesting).toBe(true);
   });
 
   it("passes through thinking level as-is (no validation)", () => {

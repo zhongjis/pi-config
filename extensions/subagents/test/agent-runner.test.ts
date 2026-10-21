@@ -2,6 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import * as accessTools from "../../lib/active-tools.js";
 
 const {
   createAgentSession,
@@ -150,13 +151,9 @@ vi.mock("../src/skill-loader.js", () => ({
 }));
 
 import {
-  type AccessRule,
   type AccessRuleField,
   createToolCeilingTool,
   parseAccessRules,
-  resolveToolAccess,
-  type ToolAccessGates,
-  toolCandidates,
 } from "../../lib/active-tools.js";
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import {
@@ -248,6 +245,7 @@ const pi = { getAllTools: () => [] } as any;
 
 beforeEach(() => {
   createAgentSession.mockReset();
+  vi.mocked(getAllTypes).mockReturnValue([]);
   defaultResourceLoaderCtor.mockClear();
   getAgentDir.mockClear();
   sessionManagerInMemory.mockClear();
@@ -529,6 +527,7 @@ describe("getAgentConversation", () => {
 
 import {
   getAgentConfig,
+  getAllTypes,
   getConfig,
   resolveType,
 } from "../src/agent-types.js";
@@ -635,16 +634,14 @@ function lastToolsPassed(): string[] {
   const active = lastSession?.getActiveToolNames() ?? [];
   if (!active.includes(TOOL_CEILING_TOOL_NAME)) return active;
 
-  const agentConfigResult = vi.mocked(getAgentConfig).mock.results.at(-1)?.value as
-    | { toolRules?: readonly AccessRule[]; allowNesting?: boolean }
-    | undefined;
-  const configResult = vi.mocked(getConfig).mock.results.at(-1)?.value as
-    | { toolRules?: readonly AccessRule[] }
-    | undefined;
-  const toolRules = agentConfigResult?.toolRules ?? configResult?.toolRules ?? [];
-  const gates: ToolAccessGates = { allowNesting: agentConfigResult?.allowNesting };
-  const allowed = resolveToolAccess(toolRules, toolCandidates(lastSession!.getAllTools()), gates).allowed;
-  const ceiling = createToolCeilingTool(TOOL_CEILING_TOOL_NAME, () => allowed);
+  let ceiling: ReturnType<typeof createToolCeilingTool> | undefined;
+  const factories: Array<{ name: string; factory: (pi: unknown) => void }> = defaultResourceLoaderCtor.mock.calls[0][0].extensionFactories;
+  factories.find(({ name }) => name === "subagent-nested-tool-scope")?.factory({
+    getAllTools: lastSession?.getAllTools,
+    on: () => {},
+    registerTool: (tool: ReturnType<typeof createToolCeilingTool>) => { ceiling = tool; },
+  });
+  if (!ceiling) throw new Error("Runner did not register its tool ceiling");
   const declared = active.map((name) => ({
     name, label: name, description: "fixture tool", parameters: ceiling.parameters,
     execute: async () => ({ content: [], details: {} }),
@@ -1174,7 +1171,7 @@ describe("agent-runner master tool allowlist", () => {
   });
 
   it("EXCLUDED_TOOL_NAMES never reach the active set even if an extension registers them", async () => {
-    setupRules("+@all, -@builtin", "+@all", { allowNesting: true });
+    setupRules("+@all, -@builtin", "+@all");
     withExtensions({
       "/ext/evil.ts": ["agent", "get_agent_result", "steer_subagent", "ok_ext"],
     });
@@ -1922,7 +1919,7 @@ describe("graph run structured output", () => {
   });
 
   it("keeps StructuredOutput through live narrowing but blocks child orchestration tools", async () => {
-    setupRules("+@all, -@builtin", "+@builtin", { allowNesting: true });
+    setupRules("+@all, -@builtin", "+@builtin");
     const { session, listeners } = createSession("prose");
     createAgentSession.mockResolvedValue({ session });
     await openSession(ctx, "Explore", { pi, graphRun: true, structuredOutput: schema });
@@ -1941,7 +1938,12 @@ describe("graph run structured output", () => {
 
 describe("delegate_research bridge loading", () => {
   const nestedSpawn = vi.fn();
-  const bridge = { allowNesting: true, delegationRules: [{ sign: "+", selector: "chengfeng" }] };
+  const bridge = { delegationRules: [{ sign: "+", selector: "chengfeng" }] };
+
+  beforeEach(() => {
+    vi.mocked(getAllTypes).mockReturnValue(["chengfeng"]);
+    vi.mocked(getAgentConfig).mockImplementation(() => makeAgentConfig({ name: "chengfeng", toolRules: rules("tools", "+read") }));
+  });
 
   /** Run the runner's research-delegation factory and return the tools it registers. */
   function registeredResearchTools(): string[] {
@@ -1963,9 +1965,12 @@ describe("delegate_research bridge loading", () => {
   });
 
   it.each([
-    ["without derived nesting permission", { delegationRules: [{ sign: "+", selector: "chengfeng" }] }, {}],
+    ["without positive rules", { delegationRules: [] }, {}],
+    ["with an unknown target", { delegationRules: [{ sign: "+", selector: "nosuch" }] }, {}],
+    ["with a subtracted target", { delegationRules: [{ sign: "+", selector: "chengfeng" }, { sign: "-", selector: "chengfeng" }] }, {}],
     ["for an isolated run", bridge, { isolated: true }],
   ])("registers no bridge %s", async (_label, overrides, callOptions) => {
+    const resolveAccess = vi.spyOn(accessTools, "resolveToolAccess");
     setupRules("+@all, -@builtin", "+read", overrides);
     createAgentSession.mockResolvedValue(createSession("OK"));
 
@@ -1973,6 +1978,8 @@ describe("delegate_research bridge loading", () => {
 
     expect(registeredResearchTools()).toEqual([]);
     expect(lastToolsPassed() ?? []).not.toContain("delegate_research");
+    expect(resolveAccess).toHaveBeenCalledWith(expect.anything(), expect.anything(), { allowNesting: false });
+    resolveAccess.mockRestore();
   });
 
   it("admits delegate_research through the static built-in allowlist", async () => {

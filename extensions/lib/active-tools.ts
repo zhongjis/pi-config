@@ -13,7 +13,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { extractToolText, firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "./tool-output.js";
 
-export const NESTED_SUBAGENT_TOOL_NAMES = ["agent", "get_agent_result", "resolve_agent_graph_gate", "steer_subagent"] as const;
+export const NESTED_SUBAGENT_TOOL_NAMES = ["agent", "get_agent_result", "resolve_agent_graph_gate", "steer_subagent", "agent_graph"] as const;
 
 // ponytail: copy of Pi's internal built-in tool name list. Pi does not export
 // `ToolName`/`allToolNames`, so this is hand-maintained. Add new Pi built-ins
@@ -32,6 +32,11 @@ export type AccessRuleField = "tools" | "extensions" | "delegation";
 export interface AccessRule {
   readonly sign: "+" | "-";
   readonly selector: string;
+}
+
+/** Positive intent, independent of registry resolution or later subtraction. */
+export function hasPositiveDelegationRule(rules: readonly AccessRule[]): boolean {
+  return rules.some((rule) => rule.sign === "+");
 }
 
 export interface AccessDiagnostic {

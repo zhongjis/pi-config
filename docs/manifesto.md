@@ -67,7 +67,7 @@ Panda Harness fits one person's work ([README](../README.md), [root AGENTS.md](.
 
 Orchestrator side:
 
-- Mode Agents route work to leaf Subagents. Subagents do not delegate; nesting stays off unless an agent opts in with a `+` rule in `delegation` ([agent frontmatter](guides/agent-frontmatter.md)).
+- Mode Agents route work to leaf Subagents. Subagents do not delegate; nesting stays off unless an agent opts in with `delegation` rules that resolve to a valid target ([agent frontmatter](guides/agent-frontmatter.md)).
 - Each worker gets one cohesive packet; implementation travels with its tests.
 - Independent chunks run in parallel.
 - The orchestrator keeps routing, review, and acceptance ([agent orchestration](guides/agent-orchestration.md), [mode-scoped delegation](specs/mode-scoped-subagent-delegation.md)).

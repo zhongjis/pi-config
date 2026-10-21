@@ -4,8 +4,10 @@ import { type ExtensionCommandContext, getAgentDir, getSettingsListTheme } from 
 import { Container, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
 import { BUILTIN_TOOL_NAMES, formatAccessRules, resolveToolAccess, toolCandidates } from "../../../lib/active-tools.js";
 import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../../../lib/model-selection.js";
+import { isGuardedBashType } from "../agent-runner.js";
 import { type AgentToolHost, THINKING_LEVELS } from "../agent-tool.js";
 import { getAgentConfig, getAllTypes } from "../agent-types.js";
+import { currentTargets } from "../research-delegation.js";
 import type { AgentConfig, AgentRecord } from "../types.js";
 import { type AgentActivity, formatDuration, getDisplayName } from "./agent-format.js";
 import { type GraphRunMenuDeps, type GraphRunUIContext, showGraphRunsMenu } from "./graph-run-menu.js";
@@ -198,7 +200,7 @@ export function createAgentsMenu(
       menuOptions = ["Edit", "Disable", "Delete", "Back"];
     }
     // Rules are configuration; the resolved names depend on THIS session's tool registry.
-    const resolved = resolveToolAccess(cfg.toolRules, toolCandidates(pi.getAllTools()), { allowNesting: cfg.allowNesting }).allowed;
+    const resolved = resolveToolAccess(cfg.toolRules, toolCandidates(pi.getAllTools()), { allowNesting: currentTargets(cfg, isGuardedBashType).length > 0 }).allowed;
     const title = [
       name,
       `extensions: ${formatAccessRules(cfg.extensionRules) || "none"}`,

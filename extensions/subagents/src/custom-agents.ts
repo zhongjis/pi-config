@@ -96,7 +96,6 @@ export function toAgentConfig(name: string, parsed: ParsedAgentFrontmatter, sour
     extensionRules: parsed.extensionRules,
     toolRules: parsed.toolRules,
     delegationRules: parsed.delegationRules,
-    allowNesting: parsed.allowNesting,
     discoverSkills: parsed.discoverSkills,
     preloadSkills: parsed.preloadSkills,
     model: parsed.model,

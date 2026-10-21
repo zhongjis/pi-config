@@ -21,7 +21,7 @@ Provide shared extension utilities and integration primitives.
 - CLIProxyAPI Fast profiles support only `cliproxyapi` / `openai-responses` or `openai-codex-responses` and accept Pi local API-key auth; preserve the separate OpenAI Codex OAuth requirement.
 - `tool-output.ts` owns shared passive TUI helpers, including custom-message Box shells; callers retain content construction and delivery.
 - `active-tools.ts` owns the shared `extensions:`/`tools:`/`delegation:` access policy: rule parsing (`delegation:` parsing only, accepting `@all` or exact agent names), last-match-wins evaluation, groups, extension identity, and the ceiling tool. Mode and subagent loadout, blocking, nested guards, roster, and menu MUST use it.
-- Hard gates MUST apply after rules: trusted `<inline:…>`/`<sdk:…>` sources always allowed; nested controls (including result retrieval and graph-gate resolution) require `allowNesting` (derived from a `+` rule in `delegation`), and `tools` rules NEVER override `allowNesting: false`; goal tools require Goal access; plan tools only where the plan gate grants them.
+- Hard gates MUST apply after rules: trusted `<inline:…>`/`<sdk:…>` sources always allowed; nested controls (including `agent_graph`, result retrieval, and graph-gate resolution) require the caller-computed `allowNesting` gate (true only when `delegation` rules resolve to a valid target), and `tools` rules NEVER override `allowNesting: false`; goal tools require Goal access; plan tools only where the plan gate grants them.
 - `BUILTIN_TOOL_NAMES` is a copy of Pi's built-in tool list; update it when Pi adds a built-in tool.
 
 ## Work Guidance

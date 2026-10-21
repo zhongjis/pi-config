@@ -163,7 +163,7 @@ beforeEach(() => {
   ctx = context as ExtensionContext;
   registerAgents(new Map([
     ["probe", agent("probe")],
-    ["nester", agent("nester", { allowNesting: true, delegationRules: [{ sign: "+", selector: "probe" }] })],
+    ["nester", agent("nester", { delegationRules: [{ sign: "+", selector: "probe" }] })],
     ["scoped", SCOPED],
   ]));
   scripts.clear();

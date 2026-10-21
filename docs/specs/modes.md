@@ -57,7 +57,7 @@ Each mode reads its prompt and settings from `~/.pi/agent/modes/<mode>/mode.md` 
 
 - `prompt_mode` has no effect on modes; see [Prompt Injection](#prompt-injection). Modes always run with project AGENTS.md present.
 - `tools` is the mode's permission ceiling, not activation: Pi and owning extensions decide what's active; unpermitted tools are hidden from the model by `mode_tool_ceiling`, and every unpermitted call is blocked, top-level and nested. A mode file without `tools` permits no tools, and so does a missing or invalid mode file (whose errors are notified). `extensions` is an error in a mode file.
-- `delegation` is a signed rule list of permitted agent types; a `+` rule permits nested subagent controls only when `tools` also grants them ([delegation](../guides/agent-frontmatter.md#delegation-fields)).
+- `delegation` is a signed rule list of permitted agent types; nested subagent controls are permitted only when `tools` grants them and the rules resolve to at least one available agent; otherwise the user is warned once ([delegation](../guides/agent-frontmatter.md#delegation-fields)).
 - `model` is a model chain; the first available match wins ([model selection](model-selection-and-fallback.md)).
 
 ### Prompt Injection

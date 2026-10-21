@@ -198,7 +198,7 @@ describe("resolveNestedTargets", () => {
     promptMode: "replace",
     ...overrides,
   });
-  const parent = agent("parent", { allowNesting: true, delegationRules: [{ sign: "+", selector: "leaf" }] });
+  const parent = agent("parent", { delegationRules: [{ sign: "+", selector: "leaf" }] });
   const guarded = (type: string) => type === "leaf";
   const targetsWith = (leaf: Partial<AgentConfig>, policy: Partial<AgentConfig> = {}) =>
     resolveNestedTargets({ ...parent, ...policy }, [parent, agent("leaf", leaf), agent("other")], guarded);
@@ -212,11 +212,11 @@ describe("resolveNestedTargets", () => {
   });
 
   it.each<[string, Partial<AgentConfig>, Partial<AgentConfig>]>([
-    ["parent without derived nesting permission", {}, { allowNesting: false }],
     ["empty rules", {}, { delegationRules: [] }],
     ["subtracted target", {}, { delegationRules: [{ sign: "+", selector: "leaf" }, { sign: "-", selector: "leaf" }] }],
     ["disabled target", { enabled: false }, {}],
-    ["nesting target", { allowNesting: true }, {}],
+    ["nesting target with an unknown rule", { delegationRules: [{ sign: "+", selector: "missing" }] }, {}],
+    ["nesting target with a subtracted rule", { delegationRules: [{ sign: "+", selector: "other" }, { sign: "-", selector: "other" }] }, {}],
     ["append-mode target", { promptMode: "append" }, {}],
     ["edit grant", { toolRules: parseAccessRules("tools", "+read, +edit").rules }, {}],
     ["write grant", { toolRules: parseAccessRules("tools", "+@builtin, -edit").rules }, {}],

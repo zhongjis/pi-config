@@ -35,8 +35,7 @@ export interface NestedResearchResult {
 export type NestedSpawn = (request: NestedResearchRequest) => Promise<NestedResearchResult>;
 
 /** Re-resolved on every call: agent configurations may reload mid-run. */
-function currentTargets(parentType: string, isGuardedBash: (type: string) => boolean): string[] {
-  const parent = getAgentConfig(parentType);
+export function currentTargets(parent: Pick<AgentConfig, "name" | "delegationRules"> | undefined, isGuardedBash: (type: string) => boolean): string[] {
   if (!parent) return [];
   const configs = getAllTypes().map(getAgentConfig).filter((config): config is AgentConfig => config !== undefined);
   return resolveNestedTargets(parent, configs, isGuardedBash);
@@ -55,7 +54,7 @@ export function createDelegateResearchTool(
   spawn: NestedSpawn,
   isGuardedBash: (type: string) => boolean,
 ) {
-  const targets = currentTargets(parentType, isGuardedBash);
+  const targets = currentTargets(getAgentConfig(parentType), isGuardedBash);
   return defineTool({
     name: DELEGATE_RESEARCH_TOOL_NAME,
     label: "Delegate research",
@@ -70,7 +69,7 @@ Each call starts a fresh agent that has not seen this conversation. Calls in one
     }),
     execute: async (_toolCallId, params, signal) => {
       try {
-        const permitted = currentTargets(parentType, isGuardedBash);
+        const permitted = currentTargets(getAgentConfig(parentType), isGuardedBash);
         const type = permitted.find((name) => name.toLowerCase() === params.subagent_type.trim().toLowerCase());
         if (!type) {
           return resultText({

@@ -12,7 +12,6 @@ export interface ModeConfig {
   /** Error diagnostics of an invalid mode file, which grants no tools. */
   errors?: string[];
   delegationRules?: AccessRule[];
-  allowNesting?: boolean;
   model?: string;
   overlays?: string;
 }

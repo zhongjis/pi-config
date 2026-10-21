@@ -33,7 +33,7 @@ export interface AgentToolHost {
   readonly pi: ExtensionAPI;
   readonly manager: AgentManager;
   readonly settings: Readonly<Required<Pick<SubagentsSettings, "defaultJoinMode" | "scopeModels" | "outputTranscript" | "toolDescriptionMode" | "showCost">>>;
-  readonly reloadCustomAgents: () => void;
+  readonly reloadCustomAgents: (ctx?: ExtensionContext) => void;
   readonly resolveDelegation: (ctx: ExtensionContext, type: string) => ResolvedDelegationPolicy;
 }
 
@@ -235,7 +235,7 @@ Terse command-style prompts produce shallow, generic work.
       return renderAgentToolResult(result, options, theme);
     },
     execute: async (toolCallId, params, signal, onUpdate, ctx) => {
-      reloadCustomAgents();
+      reloadCustomAgents(ctx);
       const rawType = params.subagent_type as SubagentType;
       const resolved = resolveType(rawType);
       const subagentType = resolved ?? "general-purpose";

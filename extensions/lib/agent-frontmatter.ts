@@ -22,7 +22,6 @@ export interface ParsedAgentFrontmatter {
   displayName?: string;
   description?: string;
   delegationRules: AccessRule[];
-  allowNesting: boolean;
   discoverSkills: boolean;
   preloadSkills: string[];
   model?: string;
@@ -46,7 +45,7 @@ const DISALLOWED_TOOLS_HINT = "subtract tools with -name rules in tools:, e.g. `
 const OBSOLETE_FIELD_MESSAGES: Readonly<Record<string, string>> = {
   allow_delegation_to: "allow_delegation_to is obsolete; use `delegation: +chengfeng, +wenchang`.",
   disallow_delegation_to: "disallow_delegation_to is obsolete; subtract agents with `delegation: +@all, -chengfeng`.",
-  allow_nesting: "allow_nesting is obsolete; nesting is on when delegation: has a + rule.",
+  allow_nesting: "allow_nesting is obsolete; nesting is on when delegation: rules resolve to a valid target.",
   builtin_tools: "builtin_tools is obsolete; list built-in tools in tools:, e.g. `tools: +read, +bash` or `tools: +@builtin`.",
   extension_tools: "extension_tools is obsolete; list extension tools in tools:, e.g. `tools: +codegraph_*, +@pi-web-access`.",
   exclude_extensions: "exclude_extensions is obsolete; add -<id> rules to extensions:, e.g. `extensions: +@all, -ulw`.",
@@ -100,7 +99,6 @@ export function parseAgentFrontmatter(
     displayName: str(fm.display_name),
     description: str(fm.description),
     delegationRules: delegationParsed.rules,
-    allowNesting: delegationParsed.rules.some((rule) => rule.sign === "+"),
     discoverSkills: parseDiscoverSkills(fm.discover_skills),
     preloadSkills: csvListOptional(fm.preload_skills) ?? [],
     model: str(fm.model),
