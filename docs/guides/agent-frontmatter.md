@@ -297,7 +297,8 @@ delegation: +chengfeng, +wenchang
 delegation: +@all, -juling
 ```
 
-- Signed rules fold left to right from an empty set, like `tools`. Selectors are
+- Signed rules fold left to right from an empty set, like `tools`, including the
+  multi-line `|` block form with one group per line. Selectors are
   `@all` (every available agent type) or an exact agent name, matched
   case-insensitively. Globs and other `@` groups are errors; unknown names are dropped.
 - Nesting is on only when the rules resolve to at least one valid target in the
@@ -396,7 +397,10 @@ inherit_context: false
 tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write, -tool_search
-delegation: +chengfeng, +wenchang, +xuannv, +jintong, +juling, +yunu, +guangguang, +taishang, +direnjie
+delegation: |
+  +chengfeng, +wenchang,
+  +guangguang, +jintong, +juling, +yunu,
+  +taishang, +direnjie, +xuannv
 ---
 ```
 

@@ -26,7 +26,9 @@ tools: |
   +mcp__flux__search_flux_docs,
   +mcp__next_devtools__nextjs_docs, +mcp__next_devtools__nextjs_index,
   +mcp__next_devtools__browser_eval
-delegation: +chengfeng, +wenchang, +taishang, +direnjie, +yanluo, +huayan
+delegation: |
+  +chengfeng, +wenchang,
+  +taishang, +direnjie, +yanluo, +huayan
 ---
 
 <role>

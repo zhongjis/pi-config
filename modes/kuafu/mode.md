@@ -6,7 +6,10 @@ tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write, -tool_search,
   -mcp__linear_readonly__*
-delegation: +chengfeng, +wenchang, +cangjie, +xuannv, +jintong, +juling, +yunu, +huayan, +guangguang, +taishang, +direnjie, +simaqian
+delegation: |
+  +chengfeng, +wenchang,
+  +guangguang, +jintong, +juling, +yunu, +cangjie,
+  +taishang, +direnjie, +xuannv, +huayan, +simaqian
 ---
 
 <role>
