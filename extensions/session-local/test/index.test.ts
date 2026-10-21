@@ -113,12 +113,14 @@ describe("session-local extension composition", () => {
         input: event.input,
         content: [{ type: "text", text: `Read from ${resolvedPath}` }],
         details: { path: resolvedPath },
+        structuredContent: { image: { path: resolvedPath, mimeType: "image/png" } },
       },
       ctx,
     );
 
     expect(patch).toMatchObject({
       content: [{ type: "text", text: "Read from local://notes.md" }],
+      structuredContent: { image: { path: "local://notes.md", mimeType: "image/png" } },
       details: {
         path: "local://notes.md",
         localPath: "local://notes.md",

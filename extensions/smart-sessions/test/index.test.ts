@@ -114,6 +114,15 @@ describe("smart-sessions model selection", () => {
 		expect(options).not.toHaveProperty("headers");
 	});
 
+	it("aborts the in-flight summary on session_shutdown", async () => {
+		const model = { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" };
+		const { ctx, mock } = await runSummary([model]);
+		const signal = ctx.modelRegistry.complete.mock.calls[0]?.[2]?.signal as AbortSignal | undefined;
+		expect(signal?.aborted).toBe(false);
+		await mock.fireLifecycle("session_shutdown", {}, ctx);
+		expect(signal?.aborted).toBe(true);
+	});
+
 	it.each([
 		["Anthropic Haiku", { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" }],
 		["local Qwen", { id: "qwen2.5-coder:14b", name: "Qwen2.5 Coder 14B", provider: "llama-swap" }],

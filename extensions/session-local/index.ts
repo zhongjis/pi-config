@@ -68,12 +68,14 @@ interface ToolResultEvent {
   input: Record<string, unknown>;
   content: ToolResultBlock[];
   details?: Record<string, unknown>;
+  structuredContent?: unknown;
   isError?: boolean;
 }
 
 interface ToolResultPatch {
   content?: ToolResultBlock[];
   details?: Record<string, unknown>;
+  structuredContent?: unknown;
 }
 
 interface ExtensionAPI {
@@ -146,6 +148,17 @@ function rewriteResultContent(
       text: rewriteResolutionText(block.text, resolution),
     };
   });
+}
+
+function rewriteResultStructured(value: unknown, resolution: LocalResolution): unknown {
+  if (typeof value === "string") return rewriteResolutionText(value, resolution);
+  if (Array.isArray(value)) return value.map((item) => rewriteResultStructured(item, resolution));
+  if (isRecord(value)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, rewriteResultStructured(item, resolution)]),
+    );
+  }
+  return value;
 }
 
 function rewriteResultDetails(
@@ -313,6 +326,10 @@ export default function sessionLocalTools(pi: ExtensionAPI): void {
     return {
       content: rewriteResultContent(event.content, resolution),
       details: rewriteResultDetails(event.details, resolution),
+      // Pi drops structuredContent when only content is replaced.
+      ...(event.structuredContent !== undefined
+        ? { structuredContent: rewriteResultStructured(event.structuredContent, resolution) }
+        : {}),
     } satisfies ToolResultPatch;
   });
 

@@ -153,6 +153,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 	let pendingLLMCall = false;    // is an LLM call in flight?
 	let lastError = "";            // last error (code only)
 	let latestCtx: ExtensionContext | undefined; // most recent ctx for widget updates
+	let summaryAbort: AbortController | undefined; // aborts the in-flight summary on shutdown
 
 	// -- Persist + session name helpers -----------------------------------
 
@@ -334,6 +335,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		}
 
 		pendingLLMCall = true;
+		summaryAbort = new AbortController();
 
 		// Fire-and-forget: non-blocking async LLM call
 		ctx.modelRegistry.complete(model, {
@@ -346,6 +348,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		}, {
 			maxTokens: config.maxTokens,
 			sessionId: ctx.sessionManager.getSessionId(),
+			signal: summaryAbort.signal,
 		})
 			.then((response) => {
 			// Track usage/cost
@@ -522,6 +525,11 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 
 		// Generate summary asynchronously (non-blocking)
 		generateSummary(ctx);
+	});
+
+	pi.on("session_shutdown", () => {
+		summaryAbort?.abort();
+		summaryAbort = undefined;
 	});
 
 
