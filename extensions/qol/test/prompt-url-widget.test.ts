@@ -46,6 +46,7 @@ function createHarness(options: {
     setSessionName,
   };
   const ctx = {
+    mode: "tui",
     hasUI: options.hasUI ?? true,
     ui: { setWidget },
     sessionManager: {
@@ -208,7 +209,7 @@ describe("prompt-url widget characterization", () => {
       type: "message",
       message: { role: "user", content: "ordinary prompt" },
     });
-    await harness.handlers.get("session_switch")?.({}, harness.ctx);
+    await harness.handlers.get("session_start")?.({ reason: "new" }, harness.ctx);
 
     expect(harness.setWidget).toHaveBeenLastCalledWith("prompt-url", undefined);
   });
@@ -230,8 +231,6 @@ describe("prompt-url widget characterization", () => {
       harness.ctx,
     )).resolves.toBeUndefined();
     await expect(harness.handlers.get("session_start")?.({}, harness.ctx))
-      .resolves.toBeUndefined();
-    await expect(harness.handlers.get("session_switch")?.({}, harness.ctx))
       .resolves.toBeUndefined();
 
     expect(harness.exec).not.toHaveBeenCalled();

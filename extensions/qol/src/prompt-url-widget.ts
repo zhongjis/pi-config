@@ -4,6 +4,7 @@ import {
   type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Container, Text } from "@earendil-works/pi-tui";
+import { isTui } from "../../lib/mode.js";
 
 const PR_PROMPT_PATTERN =
   /^\s*You are given one or more GitHub PR URLs:\s*(\S+)/im;
@@ -66,12 +67,14 @@ function formatAuthor(author?: GhMetadata["author"]): string | undefined {
 }
 
 export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
+  let disposed = false;
   const setWidget = (
     ctx: ExtensionContext,
     match: PromptMatch,
     title?: string,
     authorText?: string,
   ) => {
+    if (!isTui(ctx)) return;
     ctx.ui.setWidget("prompt-url", (_tui, thm) => {
       const titleText = title
         ? thm.fg("accent", title)
@@ -125,15 +128,12 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
     setWidget(ctx, match);
     applySessionName(ctx, match);
     void fetchGhMetadata(pi, match.kind, match.url).then((meta) => {
+      if (disposed) return;
       const title = meta?.title?.trim();
       const authorText = formatAuthor(meta?.author);
       setWidget(ctx, match, title, authorText);
       applySessionName(ctx, match, title);
-    });
-  });
-
-  pi.on("session_switch" as "session_start", async (_event, ctx) => {
-    rebuildFromSession(ctx);
+    }).catch(() => undefined); // Best-effort UI enrichment can race with disposal.
   });
 
   const getUserText = (
@@ -170,21 +170,27 @@ export default function promptUrlWidgetExtension(pi: ExtensionAPI) {
     const text = getUserText(content);
     const match = text ? extractPromptMatch(text) : undefined;
     if (!match) {
-      ctx.ui.setWidget("prompt-url", undefined);
+      if (isTui(ctx)) ctx.ui.setWidget("prompt-url", undefined);
       return;
     }
 
     setWidget(ctx, match);
     applySessionName(ctx, match);
     void fetchGhMetadata(pi, match.kind, match.url).then((meta) => {
+      if (disposed) return;
       const title = meta?.title?.trim();
       const authorText = formatAuthor(meta?.author);
       setWidget(ctx, match, title, authorText);
       applySessionName(ctx, match, title);
-    });
+    }).catch(() => undefined); // Best-effort UI enrichment can race with disposal.
   };
 
   pi.on("session_start", async (_event, ctx) => {
+    disposed = false;
     rebuildFromSession(ctx);
+  });
+
+  pi.on("session_shutdown", async () => {
+    disposed = true;
   });
 }
