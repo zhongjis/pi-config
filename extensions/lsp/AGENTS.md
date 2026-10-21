@@ -1,6 +1,6 @@
 ## Purpose
 
-Expose language-server queries through the unified `lsp` tool.
+Expose language-server queries through the unified `lsp` tool and append LSP errors to successful `edit`/`write` results.
 
 ## Ownership
 

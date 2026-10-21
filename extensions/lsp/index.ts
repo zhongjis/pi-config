@@ -11,6 +11,7 @@
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Effect } from 'effect';
+import { basename, extname } from 'node:path';
 
 import { LspClient } from './client';
 import { getGlobalClientPool } from './client-pool';
@@ -20,6 +21,7 @@ import {
   serversForExtension,
   type LoadedConfig,
 } from './config';
+import { editDiagnostics, EDIT_HOOK_TOOLS } from './edit-hook';
 import { makeRuntimeLayer, type LspServices } from './effects/runtime';
 import { errorMessage } from './errors';
 import { registerLspTool, type ServerManagerService } from './tools';
@@ -46,6 +48,8 @@ export default function lspExtension(pi: ExtensionAPI) {
   let config: LoadedConfig | null = null;
   const clientOwner = getGlobalClientPool().createOwner();
   const runtimeLayer = makeRuntimeLayer();
+  /** File types already warned about this session. */
+  const warnedFileTypes = new Set<string>();
 
   function runLsp<A, E>(program: Effect.Effect<A, E, LspServices>): Promise<A> {
     return Effect.runPromise(program.pipe(Effect.provide(runtimeLayer)));
@@ -117,6 +121,7 @@ export default function lspExtension(pi: ExtensionAPI) {
   pi.on('session_start', async (_event, ctx) => {
     await shutdownAll();
     config = null;
+    warnedFileTypes.clear();
     rootPath = ctx.cwd;
 
     const scaffolded = await runLsp(scaffoldGlobalConfigEffect(rootPath)).catch((err) => {
@@ -142,6 +147,38 @@ export default function lspExtension(pi: ExtensionAPI) {
   pi.on('tool_execution_end', async (event, ctx) => {
     if (event.toolName !== 'lsp') return;
     refreshStatus(ctx.ui, config);
+  });
+
+  // ── Diagnostics after edit/write ──────────────────────────────────────
+
+  pi.on('tool_result', async (event, ctx) => {
+    if (event.isError || !EDIT_HOOK_TOOLS.has(event.toolName)) return;
+    if (!config || config.globalDisabled) return;
+    const rawPath = event.input.path;
+    // Virtual paths (local://, gh://) are not files a language server can see.
+    if (typeof rawPath !== 'string' || rawPath.includes('://')) return;
+    const filePath = rawPath.replace(/^@/, '');
+
+    const fileType = extname(filePath) || basename(filePath);
+    const warnOnce = (suffix = '') => {
+      if (warnedFileTypes.has(fileType)) return;
+      warnedFileTypes.add(fileType);
+      ctx.ui.notify(`LSP not available for filetype ${fileType}${suffix}`, 'warning');
+    };
+
+    const clients = serverManager.clientsForFile(filePath);
+    if (clients.length === 0) return warnOnce();
+
+    const text = await editDiagnostics(clients, filePath).catch((err) => {
+      warnOnce(`: ${errorMessage(err)}`);
+      return null;
+    });
+    refreshStatus(ctx.ui, config);
+    if (!text) return;
+    return {
+      content: [...event.content, { type: 'text' as const, text }],
+      structuredContent: event.structuredContent,
+    };
   });
 
   // ── Commands ──────────────────────────────────────────────────────────

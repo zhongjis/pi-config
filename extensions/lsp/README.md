@@ -14,6 +14,7 @@ Language Server Protocol extension for Pi. Registers one `lsp` tool plus `/lsp` 
 ## Entry Points
 
 - `lsp` tool — diagnostics, hover, definitions, references, symbols, call hierarchy, and code actions.
+- Edit diagnostics — successful `edit`/`write` results get the changed file's LSP errors appended ([edit-hook.ts](edit-hook.ts) owns the budget and cap); file types without a configured server get one `LSP not available for filetype …` warning per session.
 - `/lsp` — show configured servers and their status; `/lsp-restart` — reset this session's server leases.
 
 [index.ts](index.ts) and [tools.ts](tools.ts) register the full set of operations, commands, and hooks.
