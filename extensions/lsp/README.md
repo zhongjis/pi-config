@@ -41,4 +41,4 @@ Clients are shared process-wide only when the canonical workspace root and full 
 
 ## Local Tweaks
 
-See `AGENTS.md` for the sync manifest. Current local changes include repo-local layout/provenance docs, managed `~/.pi/agent/lsp.json` config ownership, runtime fixes for diagnostics/process restart handling, extension loading via `install.sh`, and keeping `effect` as an extension workspace dependency instead of a root dependency.
+See `AGENTS.md` for the sync manifest. Current local changes include repo-local layout/provenance docs, managed `~/.pi/agent/lsp.json` config ownership, runtime fixes for diagnostics/process restart handling, diagnostics settle/quiet windows after `didChange` in [client.ts](client.ts), extension loading via `install.sh`, and keeping `effect` as an extension workspace dependency instead of a root dependency.

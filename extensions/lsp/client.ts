@@ -27,6 +27,23 @@ import type {
 } from './types';
 import { withRetry } from './retry';
 
+/**
+ * How long an empty publish after a change must stay unchallenged before it counts
+ * as final. Covers servers that clear stale diagnostics before sending real ones.
+ */
+// ponytail: errors published after this window are missed until the next edit;
+// make it per-server if a server needs longer.
+export const DIAGNOSTICS_SETTLE_MS = 300;
+
+/**
+ * How long a change to a clean file may go without any publish before the file
+ * counts as still clean. Servers such as typescript-language-server skip
+ * empty-to-empty publishes, so silence is their "still clean" answer.
+ */
+// ponytail: a clean file's first errors published after this window are missed
+// until the next edit; make it per-server if a slow server needs longer.
+export const DIAGNOSTICS_QUIET_MS = 1_000;
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
@@ -112,10 +129,13 @@ interface OpenDocument {
  *
  * Instead of maintaining an array of waiters with individual timers, we keep one
  * pending promise per URI.  Non-empty `publishDiagnostics` notifications resolve
- * it immediately; empty ones are stored but do NOT resolve the pending — this
- * avoids the "empty-then-real" race where the server clears stale diagnostics
- * before sending real results.  A timeout passed via `Promise.race` in
- * `waitForDiagnostics` acts as a safety net for genuinely clean files.
+ * it immediately, as do empty ones whose `version` matches the open document.
+ * Other empty ones after a change start a `DIAGNOSTICS_SETTLE_MS` window that any
+ * later publish restarts — this avoids the "empty-then-real" race where the
+ * server clears stale diagnostics before sending real results.  A timeout passed
+ * via `Promise.race` in `waitForDiagnostics` covers servers that never publish.
+ * A change to a clean file also starts a `DIAGNOSTICS_QUIET_MS` window: if no
+ * publish arrives at all, the file is still clean.
  */
 interface PendingDiagnostic {
   resolve: () => void;
@@ -130,8 +150,10 @@ export class LspClient {
   private openDocs = new Map<string, OpenDocument>();
   private diagnosticStore = new Map<string, Diagnostic[]>();
   private pendingDiagnostics = new Map<string, PendingDiagnostic>();
-  /** URIs where we just sent didChange and haven't yet received non-empty diagnostics. */
+  /** URIs where we just sent didChange and haven't yet received final diagnostics. */
   private invalidatedUris = new Set<string>();
+  /** Running settle/quiet windows that will accept a URI's diagnostics as final. */
+  private finalizeTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private serverCapabilities: Record<string, unknown> = {};
   private stderrLog: string[] = [];
   private initTimestamp = 0;
@@ -155,27 +177,30 @@ export class LspClient {
 
     conn.setNotificationHandler((method, params) => {
       if (method === 'textDocument/publishDiagnostics') {
-        const { uri, diagnostics } = params as PublishDiagnosticsParams;
+        const { uri, diagnostics, version } = params as PublishDiagnosticsParams;
         const normalized = normalizeUri(uri);
+        const currentVersion = this.openDocs.get(normalized)?.version;
+        // Diagnostics for an older document version describe text that is gone.
+        if (typeof version === 'number' && currentVersion !== undefined && version < currentVersion) return;
+
         this.diagnosticStore.set(normalized, diagnostics);
+        this.clearFinalizeTimer(normalized);
 
-        // Decide whether to resolve the pending promise:
-        // • Non-empty diagnostics always resolve (real errors found).
-        // • Empty diagnostics resolve ONLY when the URI was NOT recently
-        //   invalidated by a didChange — this avoids the "empty-then-real"
-        //   race where servers clear stale diagnostics before sending real ones.
-        const shouldResolve = diagnostics.length > 0 || !this.invalidatedUris.has(normalized);
-
-        if (diagnostics.length > 0) {
-          this.invalidatedUris.delete(normalized);
-        }
-
-        if (shouldResolve) {
-          const pending = this.pendingDiagnostics.get(normalized);
-          if (pending) {
-            pending.resolve();
-            this.pendingDiagnostics.delete(normalized);
-          }
+        // Final when non-empty (real errors found), when the URI was not
+        // invalidated by a didChange, or when the server says these diagnostics
+        // are for the current version.  Otherwise an empty publish may be the
+        // clearing half of "empty-then-real": accept it once it settles.
+        const isFinal =
+          diagnostics.length > 0 ||
+          !this.invalidatedUris.has(normalized) ||
+          (typeof version === 'number' && version === currentVersion);
+        if (isFinal) {
+          this.markDiagnosticsFinal(normalized);
+        } else {
+          this.finalizeTimers.set(
+            normalized,
+            setTimeout(() => this.markDiagnosticsFinal(normalized), DIAGNOSTICS_SETTLE_MS),
+          );
         }
       }
     });
@@ -321,8 +346,20 @@ export class LspClient {
 
     if (existing) {
       existing.version++;
+      const wasClean = this.diagnosticStore.get(uri)?.length === 0;
       this.diagnosticStore.delete(uri); // Clear stale diagnostics before re-sync
-      this.invalidatedUris.add(uri); // Mark as invalidated until real diagnostics arrive
+      this.clearFinalizeTimer(uri); // A settling empty publish belongs to the old text
+      this.invalidatedUris.add(uri); // Mark as invalidated until final diagnostics arrive
+      if (wasClean) {
+        // Any publish clears this timer; silence means the file is still clean.
+        this.finalizeTimers.set(
+          uri,
+          setTimeout(() => {
+            this.diagnosticStore.set(uri, []);
+            this.markDiagnosticsFinal(uri);
+          }, DIAGNOSTICS_QUIET_MS),
+        );
+      }
       this.connection.sendNotification('textDocument/didChange', {
         textDocument: { uri, version: existing.version },
         contentChanges: [{ text }],
@@ -354,18 +391,18 @@ export class LspClient {
   }
 
   /**
-   * Wait until non-empty diagnostics arrive for `uri`, or until `timeoutMs` elapses.
+   * Wait until final diagnostics arrive for `uri`, or until `timeoutMs` elapses.
    *
-   * If non-empty diagnostics are already in the store (e.g. from a previous
+   * If final diagnostics are already in the store (e.g. from a previous
    * notification), resolves immediately.  Otherwise sets up a single pending
-   * promise that the notification handler will resolve when real diagnostics
-   * arrive.  `Promise.race` against a timeout ensures we don't wait forever
-   * for genuinely clean files.
+   * promise that the notification handler will resolve when diagnostics become
+   * final.  `Promise.race` against a timeout ensures we don't wait forever
+   * for servers that never publish.
    */
   private async waitForDiagnostics(uri: string, timeoutMs: number): Promise<void> {
     // Fast path: diagnostics already present and meaningful.
     // • Non-empty → file has errors, return immediately.
-    // • Empty + not invalidated → genuinely clean file (e.g. first open), return.
+    // • Empty + not invalidated → clean file (first open or settled), return.
     const existing = this.diagnosticStore.get(uri);
     if (existing !== undefined) {
       if (existing.length > 0 || !this.invalidatedUris.has(uri)) return;
@@ -378,7 +415,7 @@ export class LspClient {
     const { promise, resolve } = Promise.withResolvers<void>();
     this.pendingDiagnostics.set(uri, { resolve });
 
-    // Safety-net timeout: resolves the race for files with zero errors.
+    // Safety-net timeout: covers servers that never publish for this URI.
     let timer: ReturnType<typeof setTimeout>;
     const timeout = new Promise<void>((r) => {
       timer = setTimeout(r, timeoutMs);
@@ -390,7 +427,22 @@ export class LspClient {
     this.pendingDiagnostics.delete(uri);
   }
 
+  private clearFinalizeTimer(uri: string): void {
+    clearTimeout(this.finalizeTimers.get(uri));
+    this.finalizeTimers.delete(uri);
+  }
+
+  /** Accept the stored diagnostics for `uri` as final and release its waiter. */
+  private markDiagnosticsFinal(uri: string): void {
+    this.clearFinalizeTimer(uri);
+    this.invalidatedUris.delete(uri);
+    this.pendingDiagnostics.get(uri)?.resolve();
+    this.pendingDiagnostics.delete(uri);
+  }
+
   private clearAllPending(): void {
+    for (const timer of this.finalizeTimers.values()) clearTimeout(timer);
+    this.finalizeTimers.clear();
     for (const pending of this.pendingDiagnostics.values()) {
       pending.resolve();
     }

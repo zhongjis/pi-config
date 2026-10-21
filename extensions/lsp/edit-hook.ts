@@ -11,8 +11,7 @@ import { formatDiagnostics } from './formatting';
 import { DiagnosticSeverity } from './types';
 
 export const EDIT_HOOK_TOOLS = new Set(['edit', 'write']);
-// ponytail: fixed budget; clean files after didChange wait the full budget because
-// empty publishes do not resolve invalidated URIs. Make per-server if a slow server needs more.
+// ponytail: fixed budget; make it per-server if a slow server needs more.
 export const EDIT_HOOK_TIMEOUT_MS = 3_000;
 export const EDIT_HOOK_MAX_ERRORS = 10;
 
