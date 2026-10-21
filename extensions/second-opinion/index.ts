@@ -48,6 +48,7 @@ async function runReviewJobs(
   jobs: CodexReviewJob[],
   cwd: string,
   labelPrefix = "",
+  signal?: AbortSignal,
 ): Promise<ReviewRunResult> {
   const results: Array<{ label: string; review: string }> = [];
 
@@ -57,7 +58,7 @@ async function runReviewJobs(
       ctx.ui.setStatus("codex-review", `Running codex review: ${label}…`);
     }
 
-    const result = await runCodexReview(pi, ctx, job.argv, cwd, `codex review: ${label}`);
+    const result = await runCodexReview(pi, ctx, job.argv, cwd, `codex review: ${label}`, signal);
     if (!result.ok) {
       return { ok: false, review: `${label}: ${result.review}` };
     }
@@ -232,6 +233,7 @@ async function runScopedSessionReview(
   ctx: ExtensionContext,
   reason: string,
   scopes: SessionReviewScope[],
+  signal?: AbortSignal,
 ): Promise<ReviewRunResult> {
   const results: Array<{ label: string; review: string }> = [];
   const skipped: string[] = [];
@@ -257,7 +259,7 @@ async function runScopedSessionReview(
       continue;
     }
 
-    const result = await runReviewJobs(pi, ctx, jobs, scope.path, scope.path);
+    const result = await runReviewJobs(pi, ctx, jobs, scope.path, scope.path, signal);
     if (!result.ok) return result;
 
     results.push({ label: scope.path, review: result.review });
@@ -340,15 +342,15 @@ export default function secondOpinion(pi: ExtensionAPI) {
         expandLabel: "full result",
       });
     },
-    async execute(_id, params, _signal, _onUpdate, ctx) {
+    async execute(_id, params, signal, _onUpdate, ctx) {
       try {
         const { reason, repos } = parseScopes(params);
         const invalid = validateScopes(repos);
-        if (invalid) return { content: [{ type: "text", text: invalid }] };
+        if (invalid) return { content: [{ type: "text", text: invalid }], isError: true, details: undefined };
 
-        const result = await runScopedSessionReview(pi, ctx, reason, repos);
+        const result = await runScopedSessionReview(pi, ctx, reason, repos, signal);
         if (!result.ok) {
-          return { content: [{ type: "text", text: `Codex review failed: ${result.review}` }] };
+          return { content: [{ type: "text", text: `Codex review failed: ${result.review}` }], isError: true, details: undefined };
         }
 
         postReview(pi, result.review);
@@ -365,6 +367,7 @@ export default function secondOpinion(pi: ExtensionAPI) {
                 : "Codex scoped review complete and posted.",
             },
           ],
+          details: undefined,
         };
       } catch (err) {
         return {
@@ -374,6 +377,8 @@ export default function secondOpinion(pi: ExtensionAPI) {
               text: err instanceof Error ? err.message : String(err),
             },
           ],
+          isError: true,
+          details: undefined,
         };
       } finally {
         deactivateSessionTool(pi);

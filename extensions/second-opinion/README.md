@@ -8,7 +8,7 @@ Runs `codex review` on current git changes or agent-selected session scope and p
 - `/codex:review session` asks the agent to choose session-relevant scope, then runs scoped Codex review via `codex_review_session_scope`
 - Posts Codex output as a `second-opinion` message
 - After review, prompts whether the agent should address comments using a conservative address-comments workflow
-- Supports Escape / Ctrl-C to cancel a running review when in TUI mode
+- Supports Escape / Ctrl-C in TUI mode and tool abort signals to cancel a running review ([runner](src/run.ts))
 - Reports preflight failures (Codex missing, login missing, or no git repo for the selected review target) without starting a review
 
 Requires `codex` CLI on PATH and a valid `codex login` session.

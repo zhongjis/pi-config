@@ -1,5 +1,9 @@
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { getEventListeners } from "node:events";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import secondOpinion from "../index.js";
 
 vi.mock("@earendil-works/pi-tui", async () =>
@@ -8,9 +12,12 @@ vi.mock("@earendil-works/pi-tui", async () =>
 
 type RenderableText = { render?: (width: number) => string[]; text?: string };
 type PlainTheme = { fg: (color: string, text: string) => string; bold: (text: string) => string };
-type ToolResult = { content?: readonly { type: "text"; text: string }[]; details?: unknown };
+type ToolResult = { content?: readonly { type: "text"; text: string }[]; details?: unknown; isError?: boolean };
+type ExecResult = { code: number; stdout: string; stderr: string };
+type TestContext = { cwd: string; mode: "rpc"; ui: { notify: () => void; select: () => Promise<string> } };
 type ToolDefinition = {
   name: string;
+  execute: (id: string, params: unknown, signal: AbortSignal, onUpdate: undefined, ctx: TestContext) => Promise<ToolResult>;
   renderCall?: (args: Record<string, unknown>, theme: PlainTheme, context?: unknown) => RenderableText;
   renderResult?: (
     result: ToolResult,
@@ -25,10 +32,10 @@ type MockPi = {
   registerCommand: (name: string, command: unknown) => void;
   registerFlag: (flag: unknown) => void;
   on: (event: string, handler: unknown) => void;
-  sendMessage: () => never;
+  sendMessage: () => void;
   sendUserMessage: () => never;
-  exec: () => never;
-  events: { emit: () => never };
+  exec: (command: string, args: string[]) => Promise<ExecResult>;
+  events: { emit: () => void };
   getActiveTools: () => never;
   setActiveTools: () => never;
 };
@@ -60,7 +67,7 @@ function expectWidthSafe(component: RenderableText): void {
   }
 }
 
-function registerScopeTool(): ToolDefinition {
+function registerScopeTool(overrides: Partial<MockPi> = {}): ToolDefinition {
   let registered: ToolDefinition | undefined;
   const pi: MockPi = {
     registerTool(tool) {
@@ -75,10 +82,12 @@ function registerScopeTool(): ToolDefinition {
     events: { emit: () => { throw new Error("renderer must not emit events"); } },
     getActiveTools: () => { throw new Error("renderer must not read active tools"); },
     setActiveTools: () => { throw new Error("renderer must not set active tools"); },
+    ...overrides,
   };
   secondOpinion(pi as never);
   expect(registered).toBeDefined();
-  return registered!;
+  if (!registered) throw new Error("scope tool was not registered");
+  return registered;
 }
 
 function textResult(text: string): ToolResult {
@@ -110,5 +119,91 @@ describe("codex_review_session_scope rendering", () => {
     expect(expanded.text).toBe("Codex scoped review complete and posted. Address-comments follow-up sent.");
     expect(complete.content![0].text).toBe("Codex scoped review complete and posted. Address-comments follow-up sent.");
     expectWidthSafe(tool.renderResult!(complete, { expanded: false }, plainTheme, { args }));
+  });
+});
+
+describe("codex_review_session_scope execution", () => {
+  let directory: string;
+  const controller = () => new AbortController();
+  const ctx: TestContext = { cwd: process.cwd(), mode: "rpc", ui: { notify() {}, select: async () => "No" } };
+  const scope = { reason: "implementation", repos: [{ path: process.cwd(), include: ["src/a.ts"] }] };
+  const exec: MockPi["exec"] = async (command, argv) => ({
+    code: 0,
+    stdout: command === "codex" ? "Logged in" : argv[0] === "status" ? " M src/a.ts" : argv[0] === "rev-parse" ? "main" : "",
+    stderr: "",
+  });
+
+  beforeEach(async () => {
+    directory = await mkdtemp(join(tmpdir(), "second-opinion-"));
+    vi.stubEnv("PATH", `${directory}:${process.env.PATH}`);
+    await writeFile(join(directory, "codex"), `#!${process.execPath}\nprocess.stdout.write("review complete");\n`, { mode: 0o700 });
+  });
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    await rm(directory, { recursive: true, force: true });
+  });
+
+  it("marks invalid scope as an error with explicit details", async () => {
+    const result = await registerScopeTool().execute("scope", { repos: [] }, controller().signal, undefined, ctx);
+    expect(result).toMatchObject({ isError: true, details: undefined });
+    expect(result.content?.[0].text).toBe("At least one repo scope is required.");
+  });
+
+  it("marks review failure as an error with the renderer prefix", async () => {
+    await writeFile(join(directory, "codex"), `#!${process.execPath}\nprocess.stderr.write("review unavailable"); process.exit(1);\n`);
+    const result = await registerScopeTool({ exec }).execute("scope", scope, controller().signal, undefined, ctx);
+    expect(result).toMatchObject({ isError: true, details: undefined });
+    expect(result.content?.[0].text).toMatch(/^Codex review failed: .*review unavailable/);
+  });
+
+  it("marks caught exceptions as errors without changing their text", async () => {
+    const tool = registerScopeTool({ exec, sendMessage() { throw new Error("posting failed"); } });
+    const result = await tool.execute("scope", scope, controller().signal, undefined, ctx);
+    expect(result).toMatchObject({ isError: true, details: undefined });
+    expect(result.content?.[0].text).toBe("posting failed");
+  });
+
+  it("returns explicit details on success and removes its abort listener", async () => {
+    const abort = controller();
+    const result = await registerScopeTool({ exec, sendMessage() {}, events: { emit() {} } }).execute("scope", scope, abort.signal, undefined, ctx);
+    expect(result).toHaveProperty("details", undefined);
+    expect(result.isError).not.toBe(true);
+    expect(result.content?.[0].text).toBe("Codex scoped review complete and posted.");
+    expect(getEventListeners(abort.signal, "abort")).toHaveLength(0);
+  });
+
+  it("kills the child and settles promptly when the tool is aborted", async () => {
+    const ready = join(directory, "ready");
+    const killed = join(directory, "killed");
+    await writeFile(join(directory, "codex"), `#!${process.execPath}
+const fs = require("node:fs");
+process.on("SIGTERM", () => { fs.writeFileSync(${JSON.stringify(killed)}, "SIGTERM"); process.exit(0); });
+fs.writeFileSync(${JSON.stringify(ready)}, "ready");
+setInterval(() => {}, 1000);
+`);
+    const abort = controller();
+    const posted = vi.fn();
+    const pending = registerScopeTool({ exec, sendMessage: posted }).execute("scope", scope, abort.signal, undefined, ctx);
+    try {
+      await vi.waitFor(async () => expect(await readFile(ready, "utf8")).toBe("ready"));
+      abort.abort();
+      await expect(pending).resolves.toMatchObject({ isError: true, details: undefined });
+      await vi.waitFor(async () => expect(await readFile(killed, "utf8")).toBe("SIGTERM"));
+      expect(posted).not.toHaveBeenCalled();
+      expect(getEventListeners(abort.signal, "abort")).toHaveLength(0);
+    } finally {
+      abort.abort();
+      await pending;
+    }
+  });
+
+  it("does not spawn a review when the tool signal is already aborted", async () => {
+    await writeFile(join(directory, "codex"), `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(join(directory, "spawned"))}, "spawned");\n`);
+    const abort = controller();
+    abort.abort();
+    const result = await registerScopeTool({ exec }).execute("scope", scope, abort.signal, undefined, ctx);
+    expect(result.isError).toBe(true);
+    await expect(readFile(join(directory, "spawned"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 });

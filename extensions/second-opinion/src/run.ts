@@ -14,7 +14,10 @@ export async function runCodexReview(
   argv: string[],
   cwd = ctx.cwd,
   widgetLabel = "codex review",
+  signal?: AbortSignal,
 ): Promise<{ ok: boolean; review: string }> {
+  if (signal?.aborted) return { ok: false, review: "Codex review aborted." };
+
   return new Promise((resolve) => {
     let resolved = false;
     let ticker: ReturnType<typeof setInterval> | undefined;
@@ -28,6 +31,7 @@ export async function runCodexReview(
       } finally {
         if (ticker !== undefined) clearInterval(ticker);
         if (off !== undefined) off();
+        signal?.removeEventListener("abort", onAbort);
         if (isTui(ctx)) {
           ctx.ui.setWidget("codex-review", undefined);
           ctx.ui.setStatus("codex-review", undefined);
@@ -40,6 +44,11 @@ export async function runCodexReview(
       env: process.env,
       stdio: ["ignore", "pipe", "pipe"],
     });
+
+    const onAbort = () => {
+      child.kill("SIGTERM");
+      finish({ ok: false, review: "Codex review aborted." });
+    };
 
     let stdoutBuf = "";
     let stderrBuf = "";
@@ -119,5 +128,8 @@ export async function runCodexReview(
           "Unknown error";
       finish({ ok, review });
     });
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) onAbort();
   });
 }
