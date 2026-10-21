@@ -130,6 +130,5 @@ export async function runCodexReview(
     });
 
     signal?.addEventListener("abort", onAbort, { once: true });
-    if (signal?.aborted) onAbort();
   });
 }
