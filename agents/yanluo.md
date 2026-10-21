@@ -10,8 +10,7 @@ extensions: |
 tools: |
   +@all,
   -@builtin, +read, +bash
-allow_nesting: true
-allow_delegation_to: chengfeng, wenchang
+delegation: +chengfeng, +wenchang
 ---
 
 <role>

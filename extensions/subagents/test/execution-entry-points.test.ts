@@ -163,7 +163,7 @@ beforeEach(() => {
   ctx = context as ExtensionContext;
   registerAgents(new Map([
     ["probe", agent("probe")],
-    ["nester", agent("nester", { allowNesting: true, allowDelegationTo: ["probe"] })],
+    ["nester", agent("nester", { allowNesting: true, delegationRules: [{ sign: "+", selector: "probe" }] })],
     ["scoped", SCOPED],
   ]));
   scripts.clear();
@@ -439,7 +439,7 @@ describe("evicted resume", () => {
     expect(onComplete).toHaveBeenCalledExactlyOnceWith(record);
   });
 
-  it("gives the reopened session delegate_research for an allow_nesting type", async () => {
+  it("gives the reopened session delegate_research for a delegation-enabled type", async () => {
     manager = new AgentManager();
     const { id } = indexEvicted({ type: "nester" });
 

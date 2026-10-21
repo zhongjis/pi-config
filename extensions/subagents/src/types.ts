@@ -39,11 +39,9 @@ export interface AgentConfig {
   extensionRules: AccessRule[];
   /** Signed `tools:` rules deciding which tools the agent may use; last match wins, empty = no tools. */
   toolRules: AccessRule[];
-  /** Agent allowlist — only these subagents may be delegated to. */
-  allowDelegationTo?: string[];
-  /** Agent denylist — these subagents may not be delegated to. */
-  disallowDelegationTo?: string[];
-  /** Permits allowlisted nested launch, retrieval, steering, and graph-gate resolution tools. */
+  /** Signed delegation rules; an empty policy grants no delegation. */
+  delegationRules?: AccessRule[];
+  /** Derived from a positive delegation rule; permits nested research. */
   allowNesting?: boolean;
   /** When true, pi's skill catalog is discoverable on demand. Default true. */
   discoverSkills: boolean;

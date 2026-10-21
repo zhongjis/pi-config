@@ -1,6 +1,6 @@
 /**
  * research-delegation.ts — `delegate_research`, the trusted inline tool that
- * lets an `allow_nesting` Subagent run one read-only research Subagent through
+ * lets a delegation-enabled Subagent run one read-only research Subagent through
  * the root AgentManager ([ADR 0007](../../../docs/adr/0007-nested-research-through-a-root-manager-bridge.md)).
  */
 

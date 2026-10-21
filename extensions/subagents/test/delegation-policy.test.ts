@@ -21,34 +21,33 @@ describe("delegation-policy", () => {
 		"taishang",
 	];
 
-	it("uses canonical type names for allowlists", () => {
+	it("uses canonical type names and drops unknown names", () => {
 		expect(
 			getPermittedDelegationTypes(
 				{
-					allowDelegationTo: ["ChengFeng", "TAISHANG", "missing"],
+					rules: [{ sign: "+", selector: "ChengFeng" }, { sign: "+", selector: "TAISHANG" }, { sign: "+", selector: "missing" }],
 				},
 				availableTypes,
 			),
 		).toEqual(["chengfeng", "taishang"]);
 	});
 
-	it("applies disallow list after allow list", () => {
+	it("subtracts names from previous grants", () => {
 		expect(
 			getPermittedDelegationTypes(
 				{
-					allowDelegationTo: ["chengfeng", "wenchang", "taishang"],
-					disallowDelegationTo: ["WENCHANG"],
+					rules: [{ sign: "+", selector: "chengfeng" }, { sign: "+", selector: "wenchang" }, { sign: "+", selector: "taishang" }, { sign: "-", selector: "wenchang" }],
 				},
 				availableTypes,
 			),
 		).toEqual(["chengfeng", "taishang"]);
 	});
 
-	it("subtracts denylist from all available types when no allowlist is set", () => {
+	it("subtracts names after an explicit +@all grant", () => {
 		expect(
 			getPermittedDelegationTypes(
 				{
-					disallowDelegationTo: ["jintong", "YUNU"],
+					rules: [{ sign: "+", selector: "@all" }, { sign: "-", selector: "jintong" }, { sign: "-", selector: "yunu" }],
 				},
 				availableTypes,
 			),
@@ -59,7 +58,7 @@ describe("delegation-policy", () => {
 		expect(
 			resolveDelegationRequest(
 				{
-					allowDelegationTo: ["chengfeng", "taishang"],
+					rules: [{ sign: "+", selector: "chengfeng" }, { sign: "+", selector: "taishang" }],
 				},
 				"TAISHANG",
 				availableTypes,
@@ -72,8 +71,8 @@ describe("delegation-policy", () => {
 	});
 
 	it("detects when a policy is absent", () => {
-		expect(hasDelegationPolicy({})).toBe(false);
-		expect(hasDelegationPolicy({ allowDelegationTo: ["chengfeng"] })).toBe(
+		expect(hasDelegationPolicy({ rules: [] })).toBe(false);
+		expect(hasDelegationPolicy({ rules: [{ sign: "+", selector: "chengfeng" }] })).toBe(
 			true,
 		);
 	});
@@ -82,8 +81,8 @@ describe("delegation-policy", () => {
 		expect(
 			resolvePersistedDelegationPolicy({
 				entries: [
-					{ type: "custom", customType: "agent-mode", data: { mode: "kuafu", delegationPolicy: { version: 1, allowDelegationTo: ["chengfeng"], disallowDelegationTo: [] } } },
-					{ type: "custom", customType: "agent-mode", data: { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } } },
+					{ type: "custom", customType: "agent-mode", data: { mode: "kuafu", delegationPolicy: { version: 2, rules: [{ sign: "+", selector: "chengfeng" }] } } },
+					{ type: "custom", customType: "agent-mode", data: { mode: "fuxi", delegationPolicy: { version: 2, rules: [{ sign: "+", selector: "jintong" }] } } },
 				],
 				availableTypes,
 				requestedType: "jintong",
@@ -106,14 +105,17 @@ describe("delegation-policy", () => {
 
 	it.each([
 		["missing policy", { mode: "fuxi" }],
-		["unknown version", { mode: "fuxi", delegationPolicy: { version: 2, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } }],
-		["malformed allowlist", { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: "jintong", disallowDelegationTo: [] } }],
-		["malformed denylist member", { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [1] } }],
-		["missing mode", { delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } }],
+		["v1 policy", { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } }],
+		["unknown version", { mode: "fuxi", delegationPolicy: { version: 3, rules: [] } }],
+		["malformed rules", { mode: "fuxi", delegationPolicy: { version: 2, rules: "+jintong" } }],
+		["malformed rule member", { mode: "fuxi", delegationPolicy: { version: 2, rules: [1] } }],
+		["unsigned rule", { mode: "fuxi", delegationPolicy: { version: 2, rules: [{ sign: "", selector: "jintong" }] } }],
+		["invalid selector", { mode: "fuxi", delegationPolicy: { version: 2, rules: [{ sign: "+", selector: "@builtin" }] } }],
+		["missing mode", { delegationPolicy: { version: 2, rules: [{ sign: "+", selector: "jintong" }] } }],
 	])("fails closed for latest entry with %s", (_label, data) => {
 		expect(resolvePersistedDelegationPolicy({
 			entries: [
-				{ type: "custom", customType: "agent-mode", data: { mode: "kuafu", delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } } },
+				{ type: "custom", customType: "agent-mode", data: { mode: "kuafu", delegationPolicy: { version: 2, rules: [{ sign: "+", selector: "jintong" }] } } },
 				{ type: "custom", customType: "agent-mode", data },
 			],
 			availableTypes,
@@ -131,7 +133,7 @@ describe("delegation-policy", () => {
 	});
 
 	it("fails closed when an active mode config has no delegation policy", () => {
-		expect(resolveDelegationPolicy({ activeMode: "fuxi", policy: {}, availableTypes, requestedType: "jintong" })).toEqual({
+		expect(resolveDelegationPolicy({ activeMode: "fuxi", policy: { rules: [] }, availableTypes, requestedType: "jintong" })).toEqual({
 			status: "unresolved",
 			activeMode: "fuxi",
 			permittedTypes: [],
@@ -148,10 +150,20 @@ describe("delegation-policy", () => {
 		});
 	});
 
+  it("folds repeated rules left-to-right, deduplicating canonical names", () => {
+    expect(getPermittedDelegationTypes({ rules: parseAccessRules("delegation", "+@all, -alpha, +ALPHA, +alpha").rules }, ["Alpha", "Beta"])).toEqual(["Beta", "Alpha"]);
+  });
+
+  it("treats only-minus rules as no policy", () => {
+    const policy = { rules: parseAccessRules("delegation", "-jintong").rules };
+    expect(hasDelegationPolicy(policy)).toBe(false);
+    expect(resolveDelegationPolicy({ activeMode: "fuxi", policy, availableTypes, requestedType: "jintong" })).toMatchObject({ status: "unresolved", permittedTypes: [], decision: { allowed: false } });
+  });
+
   it("uses one resolved policy decision with deterministic permitted ordering", () => {
     expect(resolveDelegationPolicy({
       activeMode: "fuxi",
-      policy: { allowDelegationTo: ["TAISHANG", "chengfeng", "missing"], disallowDelegationTo: ["taishang"] },
+      policy: { rules: [{ sign: "+", selector: "taishang" }, { sign: "+", selector: "chengfeng" }, { sign: "+", selector: "missing" }, { sign: "-", selector: "taishang" }] },
       availableTypes,
       requestedType: "chengfeng",
     })).toEqual({
@@ -186,7 +198,7 @@ describe("resolveNestedTargets", () => {
     promptMode: "replace",
     ...overrides,
   });
-  const parent = agent("parent", { allowNesting: true, allowDelegationTo: ["leaf"] });
+  const parent = agent("parent", { allowNesting: true, delegationRules: [{ sign: "+", selector: "leaf" }] });
   const guarded = (type: string) => type === "leaf";
   const targetsWith = (leaf: Partial<AgentConfig>, policy: Partial<AgentConfig> = {}) =>
     resolveNestedTargets({ ...parent, ...policy }, [parent, agent("leaf", leaf), agent("other")], guarded);
@@ -200,10 +212,9 @@ describe("resolveNestedTargets", () => {
   });
 
   it.each<[string, Partial<AgentConfig>, Partial<AgentConfig>]>([
-    ["parent without allow_nesting", {}, { allowNesting: false }],
-    ["missing allowlist", {}, { allowDelegationTo: undefined }],
-    ["empty allowlist", {}, { allowDelegationTo: [] }],
-    ["denylisted target", {}, { disallowDelegationTo: ["LEAF"] }],
+    ["parent without derived nesting permission", {}, { allowNesting: false }],
+    ["empty rules", {}, { delegationRules: [] }],
+    ["subtracted target", {}, { delegationRules: [{ sign: "+", selector: "leaf" }, { sign: "-", selector: "leaf" }] }],
     ["disabled target", { enabled: false }, {}],
     ["nesting target", { allowNesting: true }, {}],
     ["append-mode target", { promptMode: "append" }, {}],
@@ -214,19 +225,19 @@ describe("resolveNestedTargets", () => {
   });
 
   it("denies a target outside the allowlist", () => {
-    expect(targetsWith({}, { allowDelegationTo: ["other"] })).toEqual(["other"]);
+    expect(targetsWith({}, { delegationRules: [{ sign: "+", selector: "other" }] })).toEqual(["other"]);
   });
 
   it("denies unguarded Bash", () => {
     const configs = [parent, agent("leaf"), agent("shell", { toolRules: parseAccessRules("tools", "+read, +bash").rules })];
-    expect(resolveNestedTargets({ ...parent, allowDelegationTo: ["leaf", "shell"] }, configs, guarded)).toEqual(["leaf"]);
+    expect(resolveNestedTargets({ ...parent, delegationRules: [{ sign: "+", selector: "leaf" }, { sign: "+", selector: "shell" }] }, configs, guarded)).toEqual(["leaf"]);
   });
 
   it("denies the parent's own type", () => {
-    expect(resolveNestedTargets({ ...parent, allowDelegationTo: ["PARENT", "leaf"] }, [parent, agent("leaf")], guarded)).toEqual(["leaf"]);
+    expect(resolveNestedTargets({ ...parent, delegationRules: [{ sign: "+", selector: "parent" }, { sign: "+", selector: "leaf" }] }, [parent, agent("leaf")], guarded)).toEqual(["leaf"]);
   });
 
   it("denies an unknown target", () => {
-    expect(resolveNestedTargets({ ...parent, allowDelegationTo: ["missing"] }, [parent, agent("leaf")], guarded)).toEqual([]);
+    expect(resolveNestedTargets({ ...parent, delegationRules: [{ sign: "+", selector: "missing" }] }, [parent, agent("leaf")], guarded)).toEqual([]);
   });
 });

@@ -382,7 +382,7 @@ describe("spawn RPC delegation policy", () => {
         customType: "agent-mode",
         data: {
           mode: "fuxi",
-          delegationPolicy: { version: 1, allowDelegationTo: ["chengfeng"], disallowDelegationTo: [] },
+          delegationPolicy: { version: 2, rules: [{ sign: "+", selector: "chengfeng" }] },
         },
       },
     ];

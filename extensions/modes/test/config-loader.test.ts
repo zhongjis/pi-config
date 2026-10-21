@@ -14,9 +14,7 @@ describe("parseModeAgentConfig", () => {
 		const config = parseModeAgentConfig(`---
 prompt_mode: replace
 tools: +@all, -edit, +@codegraph
-allow_delegation_to: chengfeng,yanluo
-disallow_delegation_to: houtu
-allow_nesting: true
+delegation: +chengfeng, +yanluo, -houtu
 model: anthropic/claude-sonnet-4-6:medium
 ---
 
@@ -29,8 +27,7 @@ Mode prompt.`);
 				{ sign: "-", selector: "edit" },
 				{ sign: "+", selector: "@codegraph" },
 			],
-			allowDelegationTo: ["chengfeng", "yanluo"],
-			disallowDelegationTo: ["houtu"],
+			delegationRules: [{ sign: "+", selector: "chengfeng" }, { sign: "+", selector: "yanluo" }, { sign: "-", selector: "houtu" }],
 			allowNesting: true,
 			model: "anthropic/claude-sonnet-4-6:medium",
 		});

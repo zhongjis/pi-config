@@ -95,6 +95,19 @@ describe("parseAccessRules", () => {
     expect(diagnostics[0].severity).toBe("error");
   });
 
+  it("delegation: accepts CSV or array rules and lowercases exact names", () => {
+    const parsed = parseAccessRules("delegation", "+@ALL, -ChengFeng, +Missing");
+    expect(parsed).toEqual(parseAccessRules("delegation", ["+@ALL", "-ChengFeng", "+Missing"]));
+    expect(parsed.rules).toEqual([{ sign: "+", selector: "@all" }, { sign: "-", selector: "chengfeng" }, { sign: "+", selector: "missing" }]);
+    expect(parsed.diagnostics).toEqual([]);
+  });
+
+  it.each(["+agent*", "+agent?", "+[agent]", "+{a,b}", "+@builtin", "+@codegraph", "+@"])("delegation: rejects %s", (value) => {
+    const parsed = parseAccessRules("delegation", [value]);
+    expect(parsed.rules).toEqual([]);
+    expect(parsed.diagnostics).toContainEqual(expect.objectContaining({ severity: "error" }));
+  });
+
   it("extensions: only @all and @builtin groups are allowed", () => {
     expect(parseAccessRules("extensions", ["+@all"]).diagnostics).toEqual([]);
     expect(parseAccessRules("extensions", ["+@builtin"]).diagnostics).toEqual([]);
@@ -481,6 +494,20 @@ describe("parseAgentFrontmatter tools/extensions rules", () => {
     expect(parsed.invalidFields).toEqual([]);
   });
 
+  it.each([undefined, "", [], "-leaf"])("derives no nesting from empty or only-minus delegation %j", (delegation) => {
+    expect(parseAgentFrontmatter({ delegation }).allowNesting).toBe(false);
+  });
+
+  it("derives nesting from a positive rule even when later subtracted", () => {
+    expect(parseAgentFrontmatter({ delegation: "+leaf, -leaf" }).allowNesting).toBe(true);
+  });
+
+  it("tags delegation parse errors with their field", () => {
+    const parsed = parseAgentFrontmatter({ delegation: "+@builtin" });
+    expect(parsed.invalidFields).toEqual(["delegation"]);
+    expect(parsed.diagnostics).toContainEqual(expect.objectContaining({ field: "delegation", severity: "error" }));
+  });
+
   it("a tools: parse error adds 'tools' to invalidFields, tagged with field 'tools'", () => {
     const parsed = parseAgentFrontmatter({ tools: ["read"] });
     expect(parsed.invalidFields).toEqual(["tools"]);
@@ -515,6 +542,9 @@ describe("parseAgentFrontmatter tools/extensions rules", () => {
     ["disallow_tools", "edit", "disallow_tools is invalid; subtract tools with -name rules in tools:, e.g. `tools: +@all, -edit`."],
     ["skills", "a", skillsMessage],
     ["inherit_skills", true, skillsMessage],
+    ["allow_delegation_to", "chengfeng", "allow_delegation_to is obsolete; use `delegation: +chengfeng, +wenchang`."],
+    ["disallow_delegation_to", "chengfeng", "disallow_delegation_to is obsolete; subtract agents with `delegation: +@all, -chengfeng`."],
+    ["allow_nesting", true, "allow_nesting is obsolete; nesting is on when delegation: has a + rule."],
   ])("an obsolete %s field is an error with a rewrite hint", (field, value, message) => {
     const parsed = parseAgentFrontmatter({ [field]: value });
     expect({ invalidFields: parsed.invalidFields, diagnostics: parsed.diagnostics }).toEqual({

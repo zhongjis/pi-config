@@ -23,24 +23,10 @@ function sameToolSet(a: readonly string[], b: readonly string[]): boolean {
   return true;
 }
 
-function normalizeDelegationTargets(targets: readonly string[] | undefined): string[] {
-  const normalized: string[] = [];
-  const seen = new Set<string>();
-  for (const target of targets ?? []) {
-    const value = target.trim();
-    const key = value.toLowerCase();
-    if (!value || seen.has(key)) continue;
-    seen.add(key);
-    normalized.push(value);
-  }
-  return normalized;
-}
-
 function delegationPolicyFromConfig(config: ModeConfig): VersionedDelegationPolicy {
   return {
-    version: 1,
-    allowDelegationTo: normalizeDelegationTargets(config.allowDelegationTo),
-    disallowDelegationTo: normalizeDelegationTargets(config.disallowDelegationTo),
+    version: 2,
+    rules: config.delegationRules ?? [],
   };
 }
 

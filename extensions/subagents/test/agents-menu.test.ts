@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAccessRules } from "../../lib/active-tools.js";
+import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
 import { AgentManager } from "../src/agent-manager.js";
 import { registerAgents } from "../src/agent-types.js";
 import type { AgentConfig } from "../src/types.js";
@@ -13,6 +14,7 @@ const probe: AgentConfig = {
   description: "probe",
   extensionRules: parseAccessRules("extensions", "+matrix").rules,
   toolRules: parseAccessRules("tools", "+read, +@matrix").rules,
+  delegationRules: parseAccessRules("delegation", "+@all, -writer").rules,
   discoverSkills: true,
   preloadSkills: [],
   systemPrompt: "Probe.",
@@ -77,10 +79,10 @@ describe("agents menu access rules", () => {
   it("shows the agent's rules and the tools they resolve to in this session", async () => {
     const titles = await openDetail("probe", "Back");
 
-    expect(titles).toContain("probe\nextensions: +matrix\ntools: +read, +@matrix\nresolves here to: read, matrix_a");
+    expect(titles).toContain("probe\nextensions: +matrix\ntools: +read, +@matrix\ndelegation: +@all, -writer\nresolves here to: read, matrix_a");
   });
 
-  it("ejects the normalized extensions: and tools: rules", async () => {
+  it("ejects normalized access and delegation rules", async () => {
     registerAgents(new Map([["probe", { ...probe, isDefault: true }]]));
 
     await openDetail("probe", "Eject (export as .md)", {
@@ -88,7 +90,10 @@ describe("agents menu access rules", () => {
     });
 
     const ejected = readFileSync(join(root, "agent-dir", "agents", "probe.md"), "utf-8");
-    expect(ejected.split("\n").filter((line) => /^\w*(extensions|tools)\w*:/.test(line)))
-      .toEqual(["extensions: +matrix", "tools: +read, +@matrix"]);
+    const parsed = parseAgentMarkdown(ejected);
+    expect(parsed.invalidFields).toEqual([]);
+    expect(parsed.extensionRules).toEqual(probe.extensionRules);
+    expect(parsed.toolRules).toEqual(probe.toolRules);
+    expect(parsed.delegationRules).toEqual([{ sign: "+", selector: "@all" }, { sign: "-", selector: "writer" }]);
   });
 });

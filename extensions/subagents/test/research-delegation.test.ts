@@ -35,7 +35,7 @@ const agent = (name: string, overrides: Partial<AgentConfig> = {}): AgentConfig 
   ...overrides,
 });
 
-const PARENT = agent("parent", { allowNesting: true, allowDelegationTo: ["leaf"] });
+const PARENT = agent("parent", { allowNesting: true, delegationRules: [{ sign: "+", selector: "leaf" }] });
 
 function setAgents(...configs: AgentConfig[]) {
   registerAgents(new Map(configs.map((config) => [config.name, config])));
@@ -178,10 +178,10 @@ describe("delegate_research bridge", () => {
   });
 
   it.each<[string, AgentConfig[], string]>([
-    ["a target outside the allowlist", [agent("parent", { allowNesting: true, allowDelegationTo: ["other"] }), agent("leaf"), agent("other")], "leaf"],
-    ["an empty allowlist", [agent("parent", { allowNesting: true, allowDelegationTo: [] }), agent("leaf")], "leaf"],
+    ["a target outside the allowlist", [agent("parent", { allowNesting: true, delegationRules: [{ sign: "+", selector: "other" }] }), agent("leaf"), agent("other")], "leaf"],
+    ["an empty allowlist", [agent("parent", { allowNesting: true, delegationRules: [] }), agent("leaf")], "leaf"],
     ["a nesting target", [PARENT, agent("leaf", { allowNesting: true })], "leaf"],
-    ["the parent's own type", [agent("parent", { allowNesting: true, allowDelegationTo: ["parent"] })], "parent"],
+    ["the parent's own type", [agent("parent", { allowNesting: true, delegationRules: [{ sign: "+", selector: "parent" }] })], "parent"],
     ["an editing target", [PARENT, agent("leaf", { toolRules: parseAccessRules("tools", "+read, +edit").rules })], "leaf"],
     ["an unguarded Bash target", [PARENT, agent("leaf", { toolRules: parseAccessRules("tools", "+read, +bash").rules })], "leaf"],
     ["an unknown target", [PARENT], "leaf"],

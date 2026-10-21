@@ -1,9 +1,8 @@
-import { BUILTIN_TOOL_NAMES, resolveToolAccess } from "../../lib/active-tools.js";
+import { type AccessRule, BUILTIN_TOOL_NAMES, parseAccessRules, resolveToolAccess } from "../../lib/active-tools.js";
 import type { AgentConfig } from "./types.js";
 
 export interface DelegationPolicy {
-	allowDelegationTo?: string[];
-	disallowDelegationTo?: string[];
+	readonly rules: AccessRule[];
 }
 
 export interface ModeStateEntryLike {
@@ -12,26 +11,12 @@ export interface ModeStateEntryLike {
 	data?: unknown;
 }
 
-interface VersionedDelegationPolicyV1 {
-	version: 1;
-	allowDelegationTo: string[];
-	disallowDelegationTo: string[];
+interface VersionedDelegationPolicyV2 extends DelegationPolicy {
+	version: 2;
 }
 
 function buildCanonicalTypeMap(availableTypes: string[]): Map<string, string> {
 	return new Map(availableTypes.map((type) => [type.toLowerCase(), type]));
-}
-
-function dedupeTypes(types: string[]): string[] {
-	const seen = new Set<string>();
-	const deduped: string[] = [];
-	for (const type of types) {
-		const key = type.toLowerCase();
-		if (seen.has(key)) continue;
-		seen.add(key);
-		deduped.push(type);
-	}
-	return deduped;
 }
 
 function resolveCanonicalType(
@@ -42,9 +27,7 @@ function resolveCanonicalType(
 }
 
 export function hasDelegationPolicy(policy: DelegationPolicy): boolean {
-	return Boolean(
-		policy.allowDelegationTo?.length || policy.disallowDelegationTo?.length,
-	);
+	return policy.rules.some((rule) => rule.sign === "+");
 }
 
 export function getPermittedDelegationTypes(
@@ -52,46 +35,33 @@ export function getPermittedDelegationTypes(
 	availableTypes: string[],
 ): string[] {
 	const canonicalTypes = buildCanonicalTypeMap(availableTypes);
-	const allowlisted = policy.allowDelegationTo?.length
-		? dedupeTypes(
-				policy.allowDelegationTo
-					.map((type) => resolveCanonicalType(type, canonicalTypes))
-					.filter((type): type is string => type != null),
-			)
-		: [...availableTypes];
-
-	if (!policy.disallowDelegationTo?.length) {
-		return allowlisted;
+	const permitted = new Set<string>();
+	for (const rule of policy.rules) {
+		const selector = rule.selector.toLowerCase();
+		const targets = selector === "@all"
+			? [...canonicalTypes.values()]
+			: [resolveCanonicalType(selector, canonicalTypes)];
+		for (const target of targets) {
+			if (target === undefined) continue;
+			if (rule.sign === "+") permitted.add(target);
+			else permitted.delete(target);
+		}
 	}
-
-	const disallowed = new Set(
-		policy.disallowDelegationTo
-			.map((type) => resolveCanonicalType(type, canonicalTypes)?.toLowerCase())
-			.filter((type): type is string => type != null),
-	);
-
-	return allowlisted.filter((type) => !disallowed.has(type.toLowerCase()));
+	return [...permitted];
 }
 
 const MUTATING_BUILTIN_TOOLS = ["edit", "write", "powershell"];
 
-/**
- * `delegate_research` targets for an `allow_nesting` Subagent: its
- * `allow_delegation_to` minus `disallow_delegation_to`, where an empty or
- * missing allowlist permits none.
- * A target must be an enabled, read-only leaf: not the parent's own type, no
- * `allow_nesting`, not append prompt mode, no mutating built-in, and `bash`
- * only with the guarded read-only Bash (`isGuardedBash`).
- */
+/** Resolve signed delegation rules, retaining only enabled, read-only leaves. */
 export function resolveNestedTargets(
-	parent: Pick<AgentConfig, "name" | "allowNesting" | "allowDelegationTo" | "disallowDelegationTo">,
+	parent: Pick<AgentConfig, "name" | "allowNesting" | "delegationRules">,
 	configs: readonly AgentConfig[],
 	isGuardedBash: (type: string) => boolean,
 ): string[] {
-	if (parent.allowNesting !== true || !parent.allowDelegationTo?.length) return [];
+	if (parent.allowNesting !== true) return [];
 	const byName = new Map(configs.map((config) => [config.name.toLowerCase(), config]));
 	const builtins = BUILTIN_TOOL_NAMES.map((name) => ({ name, extensionIds: [] }));
-	return getPermittedDelegationTypes(parent, configs.map((config) => config.name)).filter((type) => {
+	return getPermittedDelegationTypes({ rules: parent.delegationRules ?? [] }, configs.map((config) => config.name)).filter((type) => {
 		const target = byName.get(type.toLowerCase());
 		if (!target || target.enabled === false || target.allowNesting === true || target.promptMode === "append") return false;
 		if (type.toLowerCase() === parent.name.toLowerCase()) return false;
@@ -194,28 +164,29 @@ export function resolveDelegationPolicy(input: {
 	);
 }
 
-function isStringArray(value: unknown): value is string[] {
-	return Array.isArray(value) && value.every((item) => typeof item === "string");
-}
-
 function parsePersistedModeState(data: unknown): {
 	activeMode: string;
-	policy: VersionedDelegationPolicyV1;
+	policy: VersionedDelegationPolicyV2;
 } | undefined {
 	if (!data || typeof data !== "object") return undefined;
 	const state = data as Record<string, unknown>;
 	if (typeof state.mode !== "string" || !state.mode.trim()) return undefined;
 	if (!state.delegationPolicy || typeof state.delegationPolicy !== "object") return undefined;
 	const policy = state.delegationPolicy as Record<string, unknown>;
-	if (policy.version !== 1 || !isStringArray(policy.allowDelegationTo) || !isStringArray(policy.disallowDelegationTo)) {
-		return undefined;
+	if (policy.version !== 2 || !Array.isArray(policy.rules)) return undefined;
+	const entries: string[] = [];
+	for (const rule of policy.rules) {
+		if (!rule || typeof rule !== "object" || !("sign" in rule) || !("selector" in rule)) return undefined;
+		if ((rule.sign !== "+" && rule.sign !== "-") || typeof rule.selector !== "string") return undefined;
+		entries.push(`${rule.sign}${rule.selector}`);
 	}
+	const parsed = parseAccessRules("delegation", entries);
+	if (parsed.diagnostics.some((diagnostic) => diagnostic.severity === "error")) return undefined;
 	return {
 		activeMode: state.mode,
 		policy: {
-			version: 1,
-			allowDelegationTo: policy.allowDelegationTo,
-			disallowDelegationTo: policy.disallowDelegationTo,
+			version: 2,
+			rules: parsed.rules,
 		},
 	};
 }

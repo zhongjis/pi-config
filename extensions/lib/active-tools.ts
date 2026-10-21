@@ -27,7 +27,7 @@ export function isBuiltinToolName(name: string): boolean {
 /** Fu Xi-only plan tools. Granted only through the `planTools` hard gate. */
 export const PLAN_TOOL_NAMES = ["plan_approve", "plan_scaffold"] as const;
 
-export type AccessRuleField = "tools" | "extensions";
+export type AccessRuleField = "tools" | "extensions" | "delegation";
 
 export interface AccessRule {
   readonly sign: "+" | "-";
@@ -42,7 +42,7 @@ export interface AccessDiagnostic {
 const RESERVED_TOOL_GROUP_WORDS = new Set(["read", "write", "package", "project", "user"]);
 
 /**
- * Parse a `tools:`/`extensions:` frontmatter value into signed rules.
+ * Parse a `tools:`/`extensions:`/`delegation:` frontmatter value into signed rules.
  *
  * `undefined`/`null` and an empty list both mean "nothing" (no implicit
  * rules). A string value is split on `,`; an array must contain only
@@ -97,7 +97,13 @@ export function parseAccessRules(field: AccessRuleField, value: unknown): { rule
       continue;
     }
 
-    if (field === "extensions") {
+    if (field === "delegation") {
+      selector = selector.toLowerCase();
+      if ((selector.startsWith("@") && selector !== "@all") || /[*?[\]{}!]/.test(selector)) {
+        diagnostics.push({ severity: "error", message: `invalid delegation selector "${selector}": use @all or an exact agent name; groups and globs are not supported.` });
+        continue;
+      }
+    } else if (field === "extensions") {
       selector = selector.toLowerCase();
       if (selector.startsWith("@")) {
         const group = selector.slice(1);

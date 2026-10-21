@@ -134,7 +134,7 @@ describe("toolDescriptionMode", () => {
     }
   });
 
-  const policy = (mode: string, allow: string[]) => ({ mode, delegationPolicy: { version: 1, allowDelegationTo: allow, disallowDelegationTo: [] } });
+  const policy = (mode: string, allow: string[]) => ({ mode, delegationPolicy: { version: 2, rules: allow.map((selector) => ({ sign: "+", selector })) } });
   it.each([
     { name: "kuafu allows alpha", data: policy("kuafu", ["alpha"]), active: true, present: ["alpha"], absent: ["beta"] },
     { name: "fuxi allows beta", data: policy("fuxi", ["beta"]), active: true, present: ["beta"], absent: ["alpha"] },

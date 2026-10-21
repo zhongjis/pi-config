@@ -203,6 +203,7 @@ export function createAgentsMenu(
       name,
       `extensions: ${formatAccessRules(cfg.extensionRules) || "none"}`,
       `tools: ${formatAccessRules(cfg.toolRules) || "none"}`,
+      `delegation: ${formatAccessRules(cfg.delegationRules ?? []) || "none"}`,
       `resolves here to: ${[...resolved].join(", ") || "none"}`,
     ].join("\n");
     const choice = await ctx.ui.select(title, menuOptions);
@@ -259,6 +260,7 @@ export function createAgentsMenu(
     if (cfg.displayName) fmFields.push(`display_name: ${cfg.displayName}`);
     if (cfg.extensionRules.length > 0) fmFields.push(`extensions: ${formatAccessRules(cfg.extensionRules)}`);
     if (cfg.toolRules.length > 0) fmFields.push(`tools: ${formatAccessRules(cfg.toolRules)}`);
+    if (cfg.delegationRules?.length) fmFields.push(`delegation: ${formatAccessRules(cfg.delegationRules)}`);
     if (cfg.model) fmFields.push(`model: ${cfg.model}`);
     if (cfg.thinking) fmFields.push(`thinking: ${cfg.thinking}`);
     fmFields.push(`prompt_mode: ${cfg.promptMode}`);
@@ -360,6 +362,7 @@ The file format is a markdown file with YAML frontmatter and a system prompt bod
 description: <one-line description shown in UI>
 extensions: <signed rules choosing which extensions load, e.g. "+@all" or "+@all, -@builtin". Omit to load none>
 tools: <signed rules choosing which tools the agent may use, e.g. "+read, +bash" or "+@all, -edit". Omit for no tools>
+delegation: <signed exact agent names or @all, e.g. "+chengfeng, +wenchang" or "+@all, -jintong". Omit for no delegation or nesting>
 model: <optional model as "provider/modelId", e.g. "anthropic/claude-haiku-4-5". Omit to inherit parent model>
 thinking: <optional thinking level: ${THINKING_LEVELS.join(", ")}. Omit for model default>
 prompt_mode: <"replace" (body IS the full system prompt) or "append" (body is appended to default prompt). Default: replace>
@@ -381,6 +384,7 @@ isolated: <true for no extensions; built-in tools only. Default: false>
 - a name — an extension id (directory or package name, or builtin:<name>) / a tool name, e.g. read, mcp__context7__resolve
 - a glob — \`*\` matches any characters, e.g. builtin:*, codegraph_*
 Loading an extension grants none of its tools; grant them in \`tools:\`.
+\`delegation:\` follows the same ordered signed-rule format, but only accepts \`@all\` or exact agent names (case-insensitive, no globs). Any + rule enables nesting; targets must still be read-only leaves.
 
 Guidelines for choosing settings:
 - For read-only tasks (review, analysis): tools: +read, +bash, +grep, +find, +ls

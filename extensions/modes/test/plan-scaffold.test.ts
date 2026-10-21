@@ -322,7 +322,7 @@ describe("plan_scaffold", () => {
 				mode: "fuxi",
 				planReviewApproved: true,
 				planReviewFeedback: "stale feedback",
-				delegationPolicy: { version: 1, allowDelegationTo: [], disallowDelegationTo: [] },
+				delegationPolicy: { version: 2, rules: [] },
 			},
 		}];
 		await handlers.get("session_start")?.({}, ctx);

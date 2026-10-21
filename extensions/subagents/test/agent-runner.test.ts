@@ -1941,7 +1941,7 @@ describe("graph run structured output", () => {
 
 describe("delegate_research bridge loading", () => {
   const nestedSpawn = vi.fn();
-  const bridge = { allowNesting: true, allowDelegationTo: ["chengfeng"] };
+  const bridge = { allowNesting: true, delegationRules: [{ sign: "+", selector: "chengfeng" }] };
 
   /** Run the runner's research-delegation factory and return the tools it registers. */
   function registeredResearchTools(): string[] {
@@ -1953,7 +1953,7 @@ describe("delegate_research bridge loading", () => {
     return registered;
   }
 
-  it("registers delegate_research for allow_nesting with a non-empty allowlist", async () => {
+  it("registers delegate_research when derived nesting permission is enabled", async () => {
     setupRules("+@all, -@builtin", "+read", bridge);
     createAgentSession.mockResolvedValue(createSession("OK"));
 
@@ -1963,9 +1963,7 @@ describe("delegate_research bridge loading", () => {
   });
 
   it.each([
-    ["without allow_nesting", { allowDelegationTo: ["chengfeng"] }, {}],
-    ["with an empty allowlist", { allowNesting: true, allowDelegationTo: [] }, {}],
-    ["without an allowlist", { allowNesting: true }, {}],
+    ["without derived nesting permission", { delegationRules: [{ sign: "+", selector: "chengfeng" }] }, {}],
     ["for an isolated run", bridge, { isolated: true }],
   ])("registers no bridge %s", async (_label, overrides, callOptions) => {
     setupRules("+@all, -@builtin", "+read", overrides);

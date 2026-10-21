@@ -21,9 +21,8 @@ export interface ParsedAgentFrontmatter {
   invalidFields: string[];
   displayName?: string;
   description?: string;
-  allowDelegationTo?: string[];
-  disallowDelegationTo?: string[];
-  allowNesting?: boolean;
+  delegationRules: AccessRule[];
+  allowNesting: boolean;
   discoverSkills: boolean;
   preloadSkills: string[];
   model?: string;
@@ -45,6 +44,9 @@ const DISALLOWED_TOOLS_HINT = "subtract tools with -name rules in tools:, e.g. `
 
 /** Obsolete or invalid fields and their rewrite hints. */
 const OBSOLETE_FIELD_MESSAGES: Readonly<Record<string, string>> = {
+  allow_delegation_to: "allow_delegation_to is obsolete; use `delegation: +chengfeng, +wenchang`.",
+  disallow_delegation_to: "disallow_delegation_to is obsolete; subtract agents with `delegation: +@all, -chengfeng`.",
+  allow_nesting: "allow_nesting is obsolete; nesting is on when delegation: has a + rule.",
   builtin_tools: "builtin_tools is obsolete; list built-in tools in tools:, e.g. `tools: +read, +bash` or `tools: +@builtin`.",
   extension_tools: "extension_tools is obsolete; list extension tools in tools:, e.g. `tools: +codegraph_*, +@pi-web-access`.",
   exclude_extensions: "exclude_extensions is obsolete; add -<id> rules to extensions:, e.g. `extensions: +@all, -ulw`.",
@@ -74,6 +76,9 @@ export function parseAgentFrontmatter(
     if (hasField(fm, field)) diagnostics.push({ field, severity: "error", message });
   }
 
+  const delegationParsed = parseAccessRules("delegation", fm.delegation);
+  diagnostics.push(...delegationParsed.diagnostics.map((d) => ({ field: "delegation", ...d })));
+
   const toolsParsed = parseAccessRules("tools", fm.tools);
   diagnostics.push(...toolsParsed.diagnostics.map((d) => ({ field: "tools", ...d })));
 
@@ -94,9 +99,8 @@ export function parseAgentFrontmatter(
     invalidFields,
     displayName: str(fm.display_name),
     description: str(fm.description),
-    allowDelegationTo: csvListOptional(fm.allow_delegation_to),
-    disallowDelegationTo: csvListOptional(fm.disallow_delegation_to),
-    allowNesting: fm.allow_nesting === true,
+    delegationRules: delegationParsed.rules,
+    allowNesting: delegationParsed.rules.some((rule) => rule.sign === "+"),
     discoverSkills: parseDiscoverSkills(fm.discover_skills),
     preloadSkills: csvListOptional(fm.preload_skills) ?? [],
     model: str(fm.model),

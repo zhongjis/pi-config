@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { parseAccessRules } from "../../lib/active-tools.js";
+import { resolvePersistedDelegationPolicy } from "../../subagents/src/delegation-policy.js";
 import { MODE_TOOL_CEILING_NAME } from "../src/constants.js";
 import { resolveModelFromStr, ModeStateManager } from "../src/mode-state.js";
 import type { Mode, ModeConfig } from "../src/types.js";
@@ -85,28 +86,24 @@ describe("ModeStateManager", () => {
 		return pi;
 	}
 
-	it("persists normalized versioned delegation policy from mode config", () => {
+	it("persists signed versioned delegation policy from mode config", () => {
 		const pi = createMockPi();
 		const state = new ModeStateManager(pi as never);
 		state.cachedConfigs["kuafu:default"] = {
 			body: "build",
 			toolRules: [],
-			allowDelegationTo: [" jintong ", "chengfeng", "jintong", ""],
-			disallowDelegationTo: [" houtu ", "houtu", ""],
+			delegationRules: parseAccessRules("delegation", "+@all, -houtu, +jintong").rules,
 		};
 
 		state.persistState();
 
-		expect(pi.appendEntry).toHaveBeenCalledWith(
-			"agent-mode",
-			expect.objectContaining({
-				delegationPolicy: {
-					version: 1,
-					allowDelegationTo: ["jintong", "chengfeng"],
-					disallowDelegationTo: ["houtu"],
-				},
-			}),
-		);
+		const [customType, data] = pi.appendEntry.mock.calls[0];
+		expect(data.delegationPolicy.version).toBe(2);
+		expect(resolvePersistedDelegationPolicy({
+			entries: [{ type: "custom", customType, data: JSON.parse(JSON.stringify(data)) }],
+			availableTypes: ["jintong", "houtu", "chengfeng"],
+			requestedType: "jintong",
+		})).toMatchObject({ status: "resolved", permittedTypes: ["jintong", "chengfeng"], decision: { allowed: true } });
 	});
 
 	it("switches mode and persists state", async () => {
@@ -551,7 +548,7 @@ describe("ModeStateManager tool access", () => {
 		});
 	});
 
-	it("denies nested agent tools under +@all unless allow_nesting is true", async () => {
+	it("denies nested agent tools under +@all unless derived nesting permission is true", async () => {
 		const agentTools = ["agent", "get_agent_result", "steer_subagent"];
 		const pi = createToolPi([builtin("read"), ...agentTools.map((name) => tool(name, SUBAGENTS))], ["read", ...agentTools]);
 		const state = createState(pi, { kuafu: { body: "", toolRules: rules("+@all") } });

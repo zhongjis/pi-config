@@ -12,7 +12,7 @@ Where the details live:
 | Delegation authorization internals | [`docs/specs/mode-scoped-subagent-delegation.md`](../specs/mode-scoped-subagent-delegation.md) |
 | Mode switching, plan approval, restrictions | [`docs/specs/modes.md`](../specs/modes.md) · [`extensions/modes/README.md`](../../extensions/modes/README.md) |
 | `agent` tool API (spawn / resume / supervise) | [`extensions/subagents/README.md`](../../extensions/subagents/README.md) |
-| Frontmatter fields (`allow_delegation_to`, `prompt_mode`, …) | [`docs/guides/agent-frontmatter.md`](agent-frontmatter.md) |
+| Frontmatter fields (`delegation`, `prompt_mode`, …) | [`docs/guides/agent-frontmatter.md`](agent-frontmatter.md) |
 
 ---
 
@@ -32,7 +32,7 @@ Details of each mode's lifecycle, restrictions, and gates are in
 
 ## Subagent roster (delegation targets)
 
-Orchestrators route to these specialists. Subagents do not delegate further, except that agents marked "research only" may run the read-only research Subagents `chengfeng` and `wenchang` through `delegate_research` ([delegation fields](agent-frontmatter.md#delegation-fields)).
+Orchestrators route to these specialists. Subagents do not delegate further, except that agents marked "research only" may run the read-only research Subagents `chengfeng` and `wenchang` through `delegate_research` ([delegation](agent-frontmatter.md#delegation-fields)).
 
 | Agent | Role | Writes code? | Can delegate? |
 |-------|------|:---:|:---:|
@@ -57,7 +57,7 @@ Roles and tool posture are defined in each `agents/<name>.md`; see
 
 ## Delegation matrix
 
-Each mode's `allow_delegation_to` / `disallow_delegation_to` frontmatter defines
+Each mode's `delegation` frontmatter defines
 which subagents it may delegate to: [`kuafu`](../../modes/kuafu/mode.md),
 [`fuxi`](../../modes/fuxi/mode.md), [`houtu`](../../modes/houtu/mode.md).
 
@@ -66,8 +66,8 @@ and `xuannv` is kuafu-only. Kua Fu and Hou Tu allow `wenchang`, `chengfeng` and 
 that use them pass graph delegation preflight. **Hou Tu is never a delegation target** — it is reached
 through the approval → `/handoff:start-work` bridge, not by delegation.
 
-Delegation is **mode-scoped and fail-closed**: the allowlist sets candidates, the
-blocklist removes them, and any target outside the resolved set is denied at every
+Delegation is **mode-scoped and fail-closed**: `delegation` rules fold left to
+right into the permitted set, and any target outside the resolved set is denied at every
 spawn ingress (a denial reports the permitted targets). Full model:
 [mode-scoped-subagent-delegation.md](../specs/mode-scoped-subagent-delegation.md).
 

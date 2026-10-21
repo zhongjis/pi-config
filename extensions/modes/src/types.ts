@@ -11,8 +11,7 @@ export interface ModeConfig {
   toolRules: AccessRule[];
   /** Error diagnostics of an invalid mode file, which grants no tools. */
   errors?: string[];
-  allowDelegationTo?: string[];
-  disallowDelegationTo?: string[];
+  delegationRules?: AccessRule[];
   allowNesting?: boolean;
   model?: string;
   overlays?: string;
@@ -26,9 +25,8 @@ export interface AwaitingUserActionState {
 }
 
 export interface VersionedDelegationPolicy {
-	version: 1;
-	allowDelegationTo: string[];
-	disallowDelegationTo: string[];
+	version: 2;
+	rules: AccessRule[];
 }
 
 

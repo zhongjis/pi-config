@@ -348,8 +348,8 @@ export async function openSession(
     : undefined;
   // A reopened session keeps its launch-time per-call options.
   const { isolated, skills } = reopened?.launch ?? options;
-  // `delegate_research` loads only for `allow_nesting` with a non-empty allowlist; isolated runs keep built-ins only.
-  const nestedSpawn = !isolated && agentConfig?.allowNesting === true && agentConfig.allowDelegationTo?.length ? options.nestedSpawn : undefined;
+  // `delegate_research` requires derived nesting permission; isolated runs keep built-ins only.
+  const nestedSpawn = !isolated && agentConfig?.allowNesting === true ? options.nestedSpawn : undefined;
 
   // Resolve working directory: caller-supplied cwd override > reopened session cwd > parent cwd
   const effectiveCwd = options.cwd ?? reopened?.sessionManager.getCwd() ?? ctx.cwd;

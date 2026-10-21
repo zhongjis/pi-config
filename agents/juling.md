@@ -11,8 +11,7 @@ extensions: |
 tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write
-allow_nesting: true
-allow_delegation_to: chengfeng, wenchang
+delegation: +chengfeng, +wenchang
 ---
 
 <role>

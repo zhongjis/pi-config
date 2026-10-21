@@ -21,9 +21,9 @@ Modes do not authorize `agent` calls in `tool_call`. Subagent direct, checked RP
 
 ## User Stories
 
-1. As a mode author, I want `allow_delegation_to` to define the mode's permitted subagent types, so that delegation matches the mode's responsibilities.
-2. As a mode author, I want `disallow_delegation_to` applied as exclusions from the allowlist, so that broad policy can retain explicit exceptions.
-3. As a mode author, I want existing frontmatter syntax and parsing preserved, so that this change does not create a second configuration format.
+1. As a mode author, I want `delegation` `+` rules to define the mode's permitted subagent types, so that delegation matches the mode's responsibilities.
+2. As a mode author, I want `-` rules applied in order after `+` rules such as `+@all`, so that broad policy can retain explicit exceptions.
+3. As a mode author, I want `delegation` to use the same signed-rule syntax as `tools`, so that access configuration has one format.
 4. As a mode author, I want unknown agent names handled deterministically, so that stale configuration cannot silently widen access.
 5. As a parent agent, I want the registered `agent` contract to avoid advertising globally enabled targets that my active mode may forbid, so that static schema guidance never contradicts runtime policy.
 6. As a parent agent, I want mode prompts to supply specialist routing and policy denials to report current permitted targets, so that I can choose or recover without stale schema data.
@@ -36,7 +36,7 @@ Modes do not authorize `agent` calls in `tool_call`. Subagent direct, checked RP
 13. As a user, I want equivalent direct and RPC delegation requests to have the same outcome, so behavior is predictable.
 14. As a user, I want forbidden delegation to produce no child session or lifecycle side effects, so that denial is complete.
 15. As a user, I want allowed delegation to preserve current prompts, lifecycle events, foreground/background behavior, and results, so that policy enforcement does not alter normal execution.
-16. As a maintainer, I want one pure resolver to own allowlist/blocklist precedence, so that ingress checks cannot drift.
+16. As a maintainer, I want one pure resolver to own rule precedence, so that ingress checks cannot drift.
 17. As a maintainer, I want the static `agent` contract non-stale and denial guidance derived from the resolver, so that advertised guidance never contradicts executable policy.
 18. As a maintainer, I want no duplicate modes-hook authorization branch, so direct, RPC, and global bridge execution share subagent authority.
 19. As a maintainer, I want direct `agent` execution to recheck policy authoritatively, so that hook omission or alternate invocation cannot bypass enforcement.
@@ -55,9 +55,9 @@ Modes do not authorize `agent` calls in `tool_call`. Subagent direct, checked RP
 ## Implementation Decisions
 
 - The canonical mode parser persists a versioned delegation-policy snapshot in each `agent-mode` entry. Subagent resolves the latest snapshot with the available agent registry; no ingress reparses mode frontmatter or consults modes runtime state.
-- Existing shared frontmatter parsing remains authoritative for `allow_delegation_to` and `disallow_delegation_to`; its normalized snapshot is consumed by existing delegation-policy helpers rather than reimplemented at each ingress.
-- Allowlist/blocklist precedence remains the current contract: the allowlist establishes candidates; the blocklist removes candidates when both are present. Unknown or unavailable targets are never added to the permitted set.
-- The resolver distinguishes no active agent mode from an identified mode whose persisted policy is missing, invalid, or contains neither `allow_delegation_to` nor `disallow_delegation_to`. No active mode preserves existing unrestricted delegation; an unresolved identified mode fails closed.
+- Shared frontmatter parsing is authoritative for `delegation` rules; the persisted rule snapshot is consumed by the delegation-policy helpers rather than reimplemented at each ingress.
+- Rules fold left to right from an empty set: `@all` adds every available type, names add or remove one type. Unknown or unavailable targets are never added to the permitted set.
+- The resolver distinguishes no active agent mode from an identified mode whose persisted policy is missing, invalid, or contains no `+` delegation rule. No active mode preserves existing unrestricted delegation; an unresolved identified mode fails closed.
 - Registered Pi tool schemas cannot refresh safely after mode switches. The `agent` description and `subagent_type` schema therefore stay generic and advertise no target list. Mode prompts provide routing; current permitted targets appear in policy denial output.
 - Modes `tool_call` hooks retain non-`agent` mode guards only; they do not duplicate delegation authorization.
 - Direct `agent` execution performs an authoritative snapshot check immediately before any new spawn or resume manager operation. Foreground and background calls share this check; denial remains a structured tool observation.
@@ -75,7 +75,7 @@ Modes do not authorize `agent` calls in `tool_call`. Subagent direct, checked RP
 - Foreground and background `agent` invocations use the same persisted-snapshot resolver.
 - Checked RPC and global manager-bridge coverage confirm an allowed target reaches manager spawn unchanged and a forbidden target does not reach manager spawn. RPC tests also lock the standard error-only envelope and stable denial prefix.
 - Denied ingress assertions include no manager spawn/resume call and no widget activation or manager-visible run caused by the denied request.
-- Unit tests cover pure resolver behavior: allowlist-only, allowlist plus exclusions, empty permitted set, unknown targets, no active mode, unavailable identified mode, active mode with no delegation fields, and deterministic permitted-target ordering.
+- Unit tests cover pure resolver behavior: `+` rules only, `+@all` plus `-` exclusions, empty permitted set, unknown targets, no active mode, unavailable identified mode, active mode with no `+` delegation rule, and deterministic permitted-target ordering.
 - Modes-hook tests retain prompt and non-`agent` mode-guard coverage; delegation authorization tests belong to subagent direct/RPC seams.
 - No test requires registered schema mutation after a mode switch; static `agent` guidance must remain generic and target-free.
 - Verification runs focused modes and subagent ingress tests, repo extension tests, and `pnpm lint:typecheck`.

@@ -196,17 +196,14 @@ Partial access.`);
 
   it("parses delegation and nesting fields", () => {
     writeAgent("delegator", `---
-allow_delegation_to: Explore, Plan
-disallow_delegation_to: general-purpose
-allow_nesting: true
+delegation: +Explore, +Plan, -general-purpose
 ---
 
 Delegates.`);
 
     const result = loadCustomAgents(tmpDir);
     const agent = result.get("delegator")!;
-    expect(agent.allowDelegationTo).toEqual(["Explore", "Plan"]);
-    expect(agent.disallowDelegationTo).toEqual(["general-purpose"]);
+    expect(agent.delegationRules).toEqual([{ sign: "+", selector: "explore" }, { sign: "+", selector: "plan" }, { sign: "-", selector: "general-purpose" }]);
     expect(agent.allowNesting).toBe(true);
   });
 

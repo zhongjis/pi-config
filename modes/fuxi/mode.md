@@ -26,8 +26,7 @@ tools: |
   +mcp__flux__search_flux_docs,
   +mcp__next_devtools__nextjs_docs, +mcp__next_devtools__nextjs_index,
   +mcp__next_devtools__browser_eval
-allow_delegation_to: chengfeng,wenchang,taishang,direnjie,yanluo,huayan
-allow_nesting: true
+delegation: +chengfeng, +wenchang, +taishang, +direnjie, +yanluo, +huayan
 ---
 
 <role>

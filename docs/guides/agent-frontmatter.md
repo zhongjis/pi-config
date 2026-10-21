@@ -62,7 +62,7 @@ invalid file's errors are shown as notifications
 defines every field, its value format, and its default. Only include fields that
 differ from the default. Parsing rules worth knowing while authoring:
 
-- `extensions` and `tools` are signed rule lists; see [Access rules](#access-rules).
+- `extensions` and `tools` are signed rule lists; see [Access rules](#access-rules). `delegation` uses the same rule shape; see [Delegation](#delegation-fields).
 - Boolean flags are strict: only the literal `true` enables them.
 
 Fields whose purpose the code does not make obvious:
@@ -84,7 +84,7 @@ Thinking can be expressed as a model-spec suffix or the Subagent loader's `think
 ## Mode frontmatter
 
 A mode file uses the **same parser**, but [`parseModeAgentConfig`](../../extensions/modes/src/config-loader.ts) reads only
-`tools`, the delegation fields, `allow_nesting`, and `model`.
+`tools`, `delegation`, and `model`.
 Mode-specific differences:
 
 - The body becomes the `modes` system-prompt section; modes always run with project AGENTS.md present.
@@ -228,7 +228,7 @@ tool registered later by a granted extension is granted too.
 After the rules apply:
 
 - tools from trusted internal sources (`<inline:…>`, `<sdk:…>`) are always allowed;
-- nested subagent controls (`agent`, `get_agent_result`, `resolve_agent_graph_gate`, `steer_subagent`) require `allow_nesting: true`; Subagent sessions never receive them (see [Delegation fields](#delegation-fields));
+- nested subagent controls (`agent`, `get_agent_result`, `resolve_agent_graph_gate`, `steer_subagent`) require a `+` rule in `delegation`; Subagent sessions never receive them (see [Delegation](#delegation-fields));
 - goal tools require Goal access;
 - plan tools are granted only in Fu Xi.
 
@@ -289,20 +289,27 @@ for chain resolution and fallback semantics.
 
 ## Delegation fields
 
-`allow_delegation_to` / `disallow_delegation_to` govern which agent types a
-mode may spawn through the `agent` tool, or a Subagent through `delegate_research`.
+`delegation` governs which agent types a mode may spawn through the `agent`
+tool, or a Subagent through `delegate_research`.
 
-- The **allowlist is applied first**, then `disallow_delegation_to` removes entries
-  from that set.
+```yaml
+delegation: +chengfeng, +wenchang
+delegation: +@all, -juling
+```
+
+- Signed rules fold left to right from an empty set, like `tools`. Selectors are
+  `@all` (every available agent type) or an exact agent name, matched
+  case-insensitively. Globs and other `@` groups are errors; unknown names are dropped.
+- A `+` rule turns nesting on. Without one (field omitted, empty, or only `-`
+  rules) the agent cannot delegate, and a mode denies every delegation.
 - Blocked delegations return a descriptive reason listing permitted targets.
-- In modes, delegation also requires the nested subagent tools: granted in `tools`
-  and enabled by `allow_nesting: true`.
+- In modes, delegation also requires the nested subagent tools granted in `tools`.
 - Subagent sessions never receive the nested subagent tools: the runner excludes
   them ([`agent-runner.ts`](../../extensions/subagents/src/agent-runner.ts)).
-- In a Subagent, `allow_nesting: true` plus a non-empty `allow_delegation_to`
-  enable only `delegate_research` (never in an isolated run), which runs one read-only leaf target and
+- In a Subagent, a `+` rule enables only `delegate_research` (never in an isolated
+  run), which runs one read-only leaf target and
   returns its result to the calling Subagent only. The main session's mode
-  delegation policy still applies. An empty allowlist permits nothing. A target must be enabled, must not have `allow_nesting`, must not be
+  delegation policy still applies. A target must be enabled, must not have a `+` rule in its own `delegation`, must not be
   the agent's own type, and must not use `prompt_mode: append`. Its `tools` must
   grant no `edit`, `write`, or `powershell`, and `bash` only under the guarded
   read-only Bash ([`resolveNestedTargets`](../../extensions/subagents/src/delegation-policy.ts)).
@@ -325,6 +332,7 @@ prompt and no tools and shows the errors as notifications:
 - `builtin_tools`, `extension_tools` → `tools` rules.
 - `exclude_extensions`, `inherit_extensions`, boolean `extensions` → `extensions` rules.
 - `disallowed_tools`, `disallow_tools` → a `-name` rule in `tools`.
+- `allow_delegation_to`, `disallow_delegation_to`, `allow_nesting` → `delegation` rules.
 - `skills`, `inherit_skills` → split into `discover_skills` (catalog on/off) and
   `preload_skills` (eager-inject names).
 
@@ -384,13 +392,12 @@ inherit_context: false
 tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write, -tool_search
-allow_delegation_to: chengfeng,wenchang,xuannv,jintong,juling,yunu,guangguang,taishang,direnjie
-allow_nesting: true
+delegation: +chengfeng, +wenchang, +xuannv, +jintong, +juling, +yunu, +guangguang, +taishang, +direnjie
 ---
 ```
 
-`+@all` grants every registered tool except the subtracted ones, and `allow_nesting: true`
-lets the nested subagent tools through the hard gate, enabling delegation. `display_name`/`inherit_context` here are informational — the mode label
+`+@all` grants every registered tool except the subtracted ones, and the `+` rules
+in `delegation` let the nested subagent tools through the hard gate, enabling delegation. `display_name`/`inherit_context` here are informational — the mode label
 comes from `MODE_META` and `inherit_context` is inert for modes.
 
 ---

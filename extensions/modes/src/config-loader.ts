@@ -18,8 +18,7 @@ export function parseModeAgentConfig(content: string): ModeConfig | null {
   return {
     body: trimmedBody,
     toolRules: parsed.toolRules,
-    allowDelegationTo: parsed.allowDelegationTo,
-    disallowDelegationTo: parsed.disallowDelegationTo,
+    delegationRules: parsed.delegationRules,
     allowNesting: parsed.allowNesting,
     model: parsed.model,
   };
