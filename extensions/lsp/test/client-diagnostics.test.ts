@@ -111,4 +111,15 @@ describe('LspClient diagnostics settling after a change', () => {
     expect(diagnostics).toEqual([]);
     expect(elapsed).toBeLessThan(DIAGNOSTICS_SETTLE_MS);
   });
+
+  it('notifies diagnostics listeners of every accepted publish until unsubscribed', async () => {
+    const seen: string[][] = [];
+    const unsubscribe = client.onDiagnostics('a.ts', (d) => seen.push(d.map((x) => x.message)));
+    await change('LATE\n');
+    expect(seen).toEqual([[], ['late error']]);
+
+    unsubscribe();
+    await change('still clean\n');
+    expect(seen).toHaveLength(2);
+  });
 });

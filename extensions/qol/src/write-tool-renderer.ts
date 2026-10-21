@@ -28,6 +28,8 @@ type WriteToolArgs = {
 type ToolResult = {
   content?: Array<{ type?: string; text?: string }>;
   isError?: boolean;
+  /** `lsp` is attached by the lsp extension's edit/write hook when errors were found. */
+  details?: { lsp?: { errors: number; lines: string[] } };
 };
 
 type RenderResultOptions = {
@@ -110,8 +112,12 @@ export function installWriteToolVisual(pi: ExtensionAPI): void {
 
       const writtenContent =
         typeof context.args?.content === "string" ? context.args.content : text;
+      const lsp = result?.details?.lsp;
+      const lspLine = lsp
+        ? [`⚠ LSP ${lsp.errors} error${lsp.errors === 1 ? "" : "s"} · ${lsp.lines[0] ?? ""}`]
+        : [];
       return renderToolSummary(
-        ["status: written", `size: ${formatLineCount(countLines(writtenContent))}`],
+        ["status: written", `size: ${formatLineCount(countLines(writtenContent))}`, ...lspLine],
         theme,
         { expandable: true },
       );

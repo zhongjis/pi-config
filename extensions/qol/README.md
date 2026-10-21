@@ -38,4 +38,4 @@ After native retry and auto-compaction processing settles, QoL immediately reque
 
 ## Write Override
 
-The `write` registration preserves Pi's built-in metadata and delegates all five execution arguments unchanged. Its custom renderers show the target path, compact writing/success/error summaries, and exact raw built-in output when expanded.
+The `write` registration preserves Pi's built-in metadata and delegates all five execution arguments unchanged. Its custom renderers show the target path, compact writing/success/error summaries, an LSP error line when the lsp extension attached `details.lsp`, and exact raw built-in output when expanded.

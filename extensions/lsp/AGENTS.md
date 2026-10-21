@@ -1,6 +1,6 @@
 ## Purpose
 
-Expose language-server queries through the unified `lsp` tool and append LSP errors to successful `edit`/`write` results.
+Expose language-server queries through the unified `lsp` tool, append LSP errors to successful `edit`/`write` results, and deliver late errors once as a steer message.
 
 ## Ownership
 

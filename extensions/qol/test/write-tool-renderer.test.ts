@@ -120,6 +120,26 @@ describe("qol write tool rendering", () => {
     expectWidthSafe(component);
   });
 
+  it("adds the LSP error line before the expand hint when the result carries details.lsp", () => {
+    const tool = installTool();
+    const result = {
+      content: [{ type: "text" as const, text: "Successfully wrote 11 bytes to src/app.ts" }],
+      details: { lsp: { errors: 2, lines: ["L1 (2322) Type 'string' is not assignable", "L2 (2304) x"] } },
+    };
+
+    const component = tool.renderResult(result, { expanded: false, isPartial: false }, plainTheme, {
+      args: { content: "first\nsecond" },
+    });
+
+    expect(renderText(component)).toBe([
+      "├─ status: written",
+      "├─ size: 2 lines",
+      "├─ ⚠ LSP 2 errors · L1 (2322) Type 'string' is not assignable",
+      "└─ app.tools.expand to expand full result",
+    ].join("\n"));
+    expectWidthSafe(component);
+  });
+
   it("passes all five execute arguments through and preserves native result identity", async () => {
     const tool = installTool();
     const nativeResult = deepFreeze({

@@ -11,7 +11,7 @@
 
 import type { ExtensionAPI } from '@earendil-works/pi-coding-agent';
 import { Effect } from 'effect';
-import { basename, extname } from 'node:path';
+import { basename, extname, resolve } from 'node:path';
 
 import { LspClient } from './client';
 import { getGlobalClientPool } from './client-pool';
@@ -21,7 +21,14 @@ import {
   serversForExtension,
   type LoadedConfig,
 } from './config';
-import { editDiagnostics, EDIT_HOOK_TOOLS } from './edit-hook';
+import {
+  editDiagnostics,
+  EDIT_HOOK_TOOLS,
+  LATE_ERRORS_MESSAGE_TYPE,
+  type LspErrorDetails,
+  watchLateErrors,
+  withLspRow,
+} from './edit-hook';
 import { makeRuntimeLayer, type LspServices } from './effects/runtime';
 import { errorMessage } from './errors';
 import { registerLspTool, type ServerManagerService } from './tools';
@@ -50,6 +57,12 @@ export default function lspExtension(pi: ExtensionAPI) {
   const runtimeLayer = makeRuntimeLayer();
   /** File types already warned about this session. */
   const warnedFileTypes = new Set<string>();
+  /** Cancel functions for late-error watches, keyed by absolute file path. */
+  const lateWatches = new Map<string, () => void>();
+  function cancelLateWatches() {
+    for (const cancel of lateWatches.values()) cancel();
+    lateWatches.clear();
+  }
 
   function runLsp<A, E>(program: Effect.Effect<A, E, LspServices>): Promise<A> {
     return Effect.runPromise(program.pipe(Effect.provide(runtimeLayer)));
@@ -122,6 +135,7 @@ export default function lspExtension(pi: ExtensionAPI) {
     await shutdownAll();
     config = null;
     warnedFileTypes.clear();
+    cancelLateWatches();
     rootPath = ctx.cwd;
 
     const scaffolded = await runLsp(scaffoldGlobalConfigEffect(rootPath)).catch((err) => {
@@ -140,6 +154,7 @@ export default function lspExtension(pi: ExtensionAPI) {
   });
 
   pi.on('session_shutdown', async () => {
+    cancelLateWatches();
     await shutdownAll();
     config = null;
   });
@@ -151,6 +166,12 @@ export default function lspExtension(pi: ExtensionAPI) {
 
   // ── Diagnostics after edit/write ──────────────────────────────────────
 
+  // `write` shows its LSP line through qol's write renderer; only `edit` is wrapped.
+  pi.registerToolRenderer((toolName, next) => {
+    const base = next();
+    return toolName === 'edit' && base ? withLspRow(base) : base;
+  });
+
   pi.on('tool_result', async (event, ctx) => {
     if (event.isError || !EDIT_HOOK_TOOLS.has(event.toolName)) return;
     if (!config || config.globalDisabled) return;
@@ -158,6 +179,10 @@ export default function lspExtension(pi: ExtensionAPI) {
     // Virtual paths (local://, gh://) are not files a language server can see.
     if (typeof rawPath !== 'string' || rawPath.includes('://')) return;
     const filePath = rawPath.replace(/^@/, '');
+    // A new edit supersedes the previous result's late watch on this file.
+    const watchKey = resolve(rootPath, filePath);
+    lateWatches.get(watchKey)?.();
+    lateWatches.delete(watchKey);
 
     const fileType = extname(filePath) || basename(filePath);
     const warnOnce = (suffix = '') => {
@@ -169,16 +194,43 @@ export default function lspExtension(pi: ExtensionAPI) {
     const clients = serverManager.clientsForFile(filePath);
     if (clients.length === 0) return warnOnce();
 
-    const text = await editDiagnostics(clients, filePath).catch((err) => {
+    let failed = false;
+    const report = await editDiagnostics(clients, filePath).catch((err) => {
+      failed = true;
       warnOnce(`: ${errorMessage(err)}`);
       return null;
     });
     refreshStatus(ctx.ui, config);
-    if (!text) return;
-    return {
-      content: [...event.content, { type: 'text' as const, text }],
-      structuredContent: event.structuredContent,
-    };
+    if (report) {
+      const lsp: LspErrorDetails = { errors: report.errors, lines: report.lines };
+      const details =
+        typeof event.details === 'object' && event.details !== null ? event.details : {};
+      return {
+        content: [...event.content, { type: 'text' as const, text: report.text }],
+        // A returned `details` replaces the original; keep it (the edit diff lives there).
+        details: { ...details, lsp },
+        structuredContent: event.structuredContent,
+      };
+    }
+    if (failed) return;
+    lateWatches.set(
+      watchKey,
+      watchLateErrors(clients, filePath, (late) => {
+        lateWatches.delete(watchKey);
+        const lsp: LspErrorDetails = { errors: late.errors, lines: late.lines };
+        // Steer reaches a running agent before its next model call; when idle it is
+        // stored for the next prompt without starting a turn.
+        pi.sendMessage(
+          {
+            customType: LATE_ERRORS_MESSAGE_TYPE,
+            content: `LSP errors arrived after the ${event.toolName} result for ${filePath}:\n\n${late.text}`,
+            display: true,
+            details: { path: filePath, ...lsp },
+          },
+          { deliverAs: 'steer' },
+        );
+      }),
+    );
   });
 
   // ── Commands ──────────────────────────────────────────────────────────
@@ -218,6 +270,7 @@ export default function lspExtension(pi: ExtensionAPI) {
   pi.registerCommand('lsp-restart', {
     description: 'Restart LSP servers for this session',
     handler: async (_args, ctx) => {
+      cancelLateWatches();
       const released = await shutdownAll();
       config = null;
       rootPath = ctx.cwd;

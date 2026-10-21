@@ -154,6 +154,8 @@ export class LspClient {
   private invalidatedUris = new Set<string>();
   /** Running settle/quiet windows that will accept a URI's diagnostics as final. */
   private finalizeTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** Subscribers to every accepted publish, keyed by normalized URI. */
+  private diagnosticListeners = new Map<string, Set<(diagnostics: Diagnostic[]) => void>>();
   private serverCapabilities: Record<string, unknown> = {};
   private stderrLog: string[] = [];
   private initTimestamp = 0;
@@ -202,6 +204,8 @@ export class LspClient {
             setTimeout(() => this.markDiagnosticsFinal(normalized), DIAGNOSTICS_SETTLE_MS),
           );
         }
+        // After the waiters are settled, so a throwing listener cannot strand them.
+        for (const listener of this.diagnosticListeners.get(normalized) ?? []) listener(diagnostics);
       }
     });
 
@@ -388,6 +392,18 @@ export class LspClient {
     const uri = await this.openDocument(filePath);
     await this.waitForDiagnostics(uri, timeoutMs);
     return this.diagnosticStore.get(uri) ?? [];
+  }
+
+  /** Call `listener` with every accepted publish for `filePath` until unsubscribed. */
+  onDiagnostics(filePath: string, listener: (diagnostics: Diagnostic[]) => void): () => void {
+    const uri = normalizeUri(pathToUri(resolve(this.rootPath, filePath)));
+    const listeners = this.diagnosticListeners.get(uri) ?? new Set();
+    this.diagnosticListeners.set(uri, listeners);
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+      if (listeners.size === 0) this.diagnosticListeners.delete(uri);
+    };
   }
 
   /**

@@ -14,7 +14,7 @@ Language Server Protocol extension for Pi. Registers one `lsp` tool plus `/lsp` 
 ## Entry Points
 
 - `lsp` tool — diagnostics, hover, definitions, references, symbols, call hierarchy, and code actions.
-- Edit diagnostics — successful `edit`/`write` results get the changed file's LSP errors appended ([edit-hook.ts](edit-hook.ts) owns the budget and cap); file types without a configured server get one `LSP not available for filetype …` warning per session.
+- Edit diagnostics — successful `edit`/`write` results get the changed file's LSP errors appended, plus a `⚠ LSP` row under the result (the `edit` row comes from this extension's renderer wrapper, the `write` row from qol's write renderer). When a result reports no errors, the file is watched briefly and errors that arrive later are delivered once as an `lsp-diagnostics` steer message. [edit-hook.ts](edit-hook.ts) owns the budget, cap, and watch window; file types without a configured server get one `LSP not available for filetype …` warning per session.
 - `/lsp` — show configured servers and their status; `/lsp-restart` — reset this session's server leases.
 
 [index.ts](index.ts) and [tools.ts](tools.ts) register the full set of operations, commands, and hooks.
@@ -41,4 +41,4 @@ Clients are shared process-wide only when the canonical workspace root and full 
 
 ## Local Tweaks
 
-See `AGENTS.md` for the sync manifest. Current local changes include repo-local layout/provenance docs, managed `~/.pi/agent/lsp.json` config ownership, runtime fixes for diagnostics/process restart handling, diagnostics settle/quiet windows after `didChange` in [client.ts](client.ts), extension loading via `install.sh`, and keeping `effect` as an extension workspace dependency instead of a root dependency.
+See `AGENTS.md` for the sync manifest. Current local changes include repo-local layout/provenance docs, managed `~/.pi/agent/lsp.json` config ownership, runtime fixes for diagnostics/process restart handling, diagnostics settle/quiet windows after `didChange` in [client.ts](client.ts), edit/write LSP error hook and late-error watch ([edit-hook.ts](edit-hook.ts), `tool_result` hook and `edit` renderer wrapper in [index.ts](index.ts)) backed by the `onDiagnostics` publish listener in [client.ts](client.ts), extension loading via `install.sh`, and keeping `effect` as an extension workspace dependency instead of a root dependency.

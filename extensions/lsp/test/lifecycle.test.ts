@@ -71,6 +71,7 @@ function activateExtension() {
     registerCommand(name: string, command: { handler: (args: string, ctx: never) => unknown }) {
       commands.set(name, command);
     },
+    registerToolRenderer() {},
   };
   lspExtension(pi as never);
 
