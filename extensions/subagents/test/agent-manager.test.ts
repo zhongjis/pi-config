@@ -32,6 +32,25 @@ const scriptFor = (session: AgentSession | undefined) => {
 const resolvedRun = () => vi.mocked(openSession).mockImplementation(async () => opened(mockSession()));
 beforeEach(() => { vi.mocked(openSession).mockReset(); resolvedRun(); });
 
+describe("AgentManager — cleanup timer lifecycle", () => {
+  it("starts one cleanup timer on first use and clears it on disposal", async () => {
+    vi.useFakeTimers();
+    const manager = new AgentManager();
+    try {
+      expect(vi.getTimerCount()).toBe(0);
+      await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "first", { description: "first" });
+      expect(vi.getTimerCount()).toBe(1);
+      await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "second", { description: "second" });
+      expect(vi.getTimerCount()).toBe(1);
+      await manager.dispose();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      await manager.dispose();
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("AgentManager — Bug 1 race condition (resultConsumed vs onComplete)", () => {
   let manager: AgentManager;
 
@@ -772,10 +791,11 @@ describe("AgentManager — cleanup timer", () => {
     vi.useRealTimers();
   });
 
-  it("does not keep the process alive on its own", () => {
+  it("does not keep the process alive on its own after first use", async () => {
     manager = new AgentManager();
+    await manager.spawnAndWait(mockPi, mockCtx, "general-purpose", "test", { description: "test" });
 
-    expect((manager as any).cleanupInterval.hasRef()).toBe(false);
+    expect(manager["cleanupInterval"]?.hasRef()).toBe(false);
   });
 
   it("retains terminal foreground and background sessions for 15 minutes, then disposes them", async () => {

@@ -162,7 +162,7 @@ export function disposeChildSession(session: AgentSession): Promise<void> {
 export class AgentManager {
   private agents = new Map<string, AgentRecord>();
   private lifetimeCost = 0;
-  private cleanupInterval: ReturnType<typeof setInterval>;
+  private cleanupInterval?: ReturnType<typeof setInterval>;
   private onComplete?: OnAgentComplete;
   private onStart?: OnAgentStart;
   private onCompact?: OnAgentCompact;
@@ -204,9 +204,6 @@ export class AgentManager {
     this.onStart = onStart;
     this.onCompact = onCompact;
     this.maxConcurrent = maxConcurrent;
-    // Keep completed agent sessions available for resume until retention expires.
-    this.cleanupInterval = setInterval(() => this.cleanup(), 60_000);
-    this.cleanupInterval.unref();
   }
 
   /** Update the max concurrent background agents limit. */
@@ -367,6 +364,11 @@ export class AgentManager {
     };
     this.registerRun(record, options.graphRunId !== undefined ? undefined : options.isBackground ? "background" : foreground ? "foreground" : undefined);
     this.agents.set(id, record);
+    if (!this.cleanupInterval) {
+      // Keep completed agent sessions available for resume until retention expires.
+      this.cleanupInterval = setInterval(() => this.cleanup(), 60_000);
+      this.cleanupInterval.unref();
+    }
 
     try {
       // Registration must precede callbacks, queueing, and even synchronous startup.

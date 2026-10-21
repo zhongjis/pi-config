@@ -292,7 +292,7 @@ Terse command-style prompts produce shallow, generic work.
             (record.outputFile ? `Output file: ${record.outputFile}\n` : "") +
             "Continue non-overlapping work, then call get_agent_result with run_id and wait: true. Do not end your turn while this agent runs.", details,
           );
-          if (record.status === "error") return textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}${workNotesSuffix(record)}`, details);
+          if (record.status === "error") return { ...textResult(`Agent failed: ${record.error}${partialOutputSuffix(record)}${workNotesSuffix(record)}`, details), isError: true };
           return textResult((record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause) + workNotesSuffix(record), details);
         };
         const existing = manager.getRecord(resumeId);
@@ -324,7 +324,7 @@ Terse command-style prompts produce shallow, generic work.
           try {
             return resumedResult(await pending);
           } catch (err) {
-            return textResult(err instanceof Error ? err.message : String(err));
+            return { ...textResult(err instanceof Error ? err.message : String(err)), isError: true };
           }
         }
         if (!existing.session) return textResult(`Agent "${resumeId}" has no active session to resume.`);
@@ -412,7 +412,7 @@ Terse command-style prompts produce shallow, generic work.
             onSessionCreated,
           });
         } catch (err) {
-          return textResult(err instanceof Error ? err.message : String(err));
+          return { ...textResult(err instanceof Error ? err.message : String(err)), isError: true };
         }
         // Set transcript/join metadata before async session creation can run.
         const joinMode = resolveJoinMode(settings.defaultJoinMode, true);
@@ -512,7 +512,7 @@ Terse command-style prompts produce shallow, generic work.
         checkIn = fgResult.checkIn;
       } catch (err) {
         clearInterval(spinnerInterval);
-        return textResult(err instanceof Error ? err.message : String(err));
+        return { ...textResult(err instanceof Error ? err.message : String(err)), isError: true };
       }
       clearInterval(spinnerInterval);
       if (checkIn !== undefined && manager.hasPendingExecution(record.id)) return convertToBackground(record, checkIn, detailBase);
@@ -526,7 +526,7 @@ Terse command-style prompts produce shallow, generic work.
         : "";
       const foregroundAgentId = `Agent ID: ${record.id}\n`;
       if (record.status === "error") {
-        return textResult(`${fallbackNote}${foregroundAgentId}Agent failed: ${record.error}${partialOutputSuffix(record)}${workNotesSuffix(record)}`, details);
+        return { ...textResult(`${fallbackNote}${foregroundAgentId}Agent failed: ${record.error}${partialOutputSuffix(record)}${workNotesSuffix(record)}`, details), isError: true };
       }
       const durationMs = (record.completedAt ?? Date.now()) - record.startedAt;
       const statsParts = [`${record.toolUses} tool uses`];

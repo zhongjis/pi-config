@@ -81,11 +81,12 @@ describe("agent resume of an evicted, indexed run", () => {
     expect((await host.notification("evicted-1")).content).toContain("<tool-use-id>call</tool-use-id>");
   });
 
-  it("a refused restore returns its reason as the tool text", async () => {
+  it("a refused restore returns its reason as a tool error", async () => {
     const host = await bootIndexed(childFile(join(dir, "elsewhere", "child.jsonl")));
 
     const result = await resume(host);
 
+    expect(result).toMatchObject({ isError: true });
     expect(textOf(result)).toBe(`Agent "evicted-1" cannot be resumed: session file is outside this session's subagent session directories.`);
   });
 
