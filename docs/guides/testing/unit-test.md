@@ -38,7 +38,7 @@ extensions/modes/src/index.ts
 1. Module imports without error
 2. Default export is callable
 3. Extension registers ≥1 command, tool, provider, renderer, shortcut, widget, flag, or lifecycle hook
-4. Common lifecycle hooks (`session_start`, `session_switch`, `session_tree`, `session_shutdown`) fire without error
+4. Common lifecycle hooks (`session_start`, `session_tree`, `session_shutdown`) fire without error
 
 The smoke test is intentionally shallow and broad — it catches load regressions, not behavior bugs.
 

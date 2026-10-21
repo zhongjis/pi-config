@@ -309,10 +309,6 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		state.persistState();
 	});
 
-	pi.on("session_switch" as any, async (_event: any, ctx: ExtensionContext) => {
-		bindActiveSessionContext(ctx);
-	});
-
 	pi.on("session_tree" as any, async (_event: any, ctx: ExtensionContext) => {
 		bindActiveSessionContext(ctx);
 	});

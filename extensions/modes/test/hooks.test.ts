@@ -420,15 +420,15 @@ describe("mode hooks", () => {
 	});
 
 
-	it("rebinds activeCtx on session_switch and session_tree", async () => {
+	it("rebinds activeCtx on session_start and session_tree", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		registerModeHooks(mock.pi as never, state);
 
-		const switchCtx = { sessionManager: { getSessionId: () => "switch" } };
+		const switchCtx = { sessionManager: { getSessionId: () => "switch", getSessionFile: () => "/tmp/subagent-sessions/session.jsonl", getEntries: () => [] } };
 		const treeCtx = { sessionManager: { getSessionId: () => "tree" } };
 
-		await mock.fire("session_switch", { reason: "new" }, switchCtx);
+		await mock.fire("session_start", { reason: "new" }, switchCtx);
 		expect(state.activeCtx).toBe(switchCtx as never);
 
 		await mock.fire("session_tree", {}, treeCtx);

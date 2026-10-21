@@ -137,7 +137,6 @@ describe("extension entrypoints", () => {
       }
 
       await mock.fireLifecycle("session_start", {}, ctx);
-      await mock.fireLifecycle("session_switch", {}, ctx);
       await mock.fireLifecycle("session_tree", {}, ctx);
       await mock.fireLifecycle("session_shutdown", {}, ctx);
 

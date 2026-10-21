@@ -259,23 +259,12 @@ export function registerLifecycleEvents(pi: ExtensionAPI, runtime: TaskRuntime) 
     showPersistedTasks(runtime);
   });
 
-  pi.on("session_switch" as any, async (event: any, ctx: ExtensionContext) => {
+  pi.on("session_start", async (event, ctx) => {
     runtime.latestCtx = ctx;
     runtime.widget.setUICtx(ctx.ui as UICtx);
-
-    const isResume = event?.reason === "resume";
-    runtime.storeUpgraded = false;
-    runtime.persistedTasksShown = false;
-    runtime.currentTurn = 0;
-    runtime.lastTaskToolUseTurn = 0;
-    runtime.continuationCooldown.recordProgress();
-    runtime.reminderDue = false;
-    runtime.autoClear.reset();
-
-    if (!isResume && runtime.taskScope === "memory") {
-      runtime.store.clearAll();
-    }
-
+    // Same-session restarts (resume, reload, `pi -c` startup) keep completed tasks visible.
+    const isResume = event.reason === "resume" || event.reason === "reload" ||
+      (event.reason === "startup" && ctx.sessionManager.getEntries().some(entry => entry.type === "message"));
     upgradeStoreIfNeeded(runtime, ctx);
     showPersistedTasks(runtime, isResume);
   });

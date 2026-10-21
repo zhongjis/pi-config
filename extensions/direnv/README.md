@@ -13,7 +13,7 @@ Loads direnv environment variables on session start and auto-reloads on `.envrc`
 ## Entry Points
 
 - `/direnv` — manually reload direnv environment variables for the current session.
-- direnv activates on session start, session switch, and tree navigation. The command and hooks are registered in [`index.ts`](index.ts).
+- direnv activates on session start and tree navigation. The command and hooks are registered in [`index.ts`](index.ts).
 
 ## Settings / Configuration
 

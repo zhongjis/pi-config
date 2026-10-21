@@ -216,9 +216,6 @@ export default function (pi: ExtensionAPI) {
     activateSession(ctx);
   });
 
-  pi.on("session_switch" as "session_start", async (_event, ctx) => {
-    activateSession(ctx);
-  });
   pi.on("session_tree", async (_event, ctx) => {
     activateSession(ctx);
   });

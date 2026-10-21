@@ -125,15 +125,26 @@ describe("system-reminder delivery", () => {
     expect(runtime.reminderDue).toBe(false);
   });
 
-  it("session_switch clears a pending reminder", async () => {
+  it.each([
+    { reason: "resume", entries: [], retained: true },
+    { reason: "reload", entries: [], retained: true },
+    { reason: "startup", entries: [{ type: "message" }], retained: true },
+    { reason: "startup", entries: [{ type: "model_change" }], retained: false },
+    { reason: "new", entries: [], retained: false },
+    { reason: "fork", entries: [{ type: "message" }], retained: false },
+  ])("session_start $reason with $entries retains completed tasks: $retained", async ({ reason, entries, retained }) => {
     const { fire, runtime, ctx } = setup();
-    runtime.store.create("Task A", "desc");
+    const task = runtime.store.create("Completed task", "desc");
+    runtime.store.update(task.id, { status: "completed" });
+    const sessionCtx = {
+      ...ctx,
+      sessionManager: { ...ctx.sessionManager, getEntries: () => entries },
+    };
 
-    await advanceTurns(fire, ctx, REMINDER_INTERVAL + 1);
-    await fire("tool_result", { toolName: "read", content: [] });
-    expect(runtime.reminderDue).toBe(true);
+    await fire("session_start", { reason }, sessionCtx);
+    await fire("before_agent_start", {}, sessionCtx);
 
-    await fire("session_switch", { reason: "new" }, ctx);
-    expect(runtime.reminderDue).toBe(false);
+    expect(runtime.store.list().map(task => task.id)).toEqual(retained ? [task.id] : []);
+    expect(runtime.latestCtx).toBe(sessionCtx);
   });
 });

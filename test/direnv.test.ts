@@ -147,7 +147,7 @@ describe("direnv", () => {
     expect(oldCallback).toBeDefined();
 
     first.markStale();
-    await mock.fireLifecycle("session_switch", { reason: "new" }, second.ctx);
+    await mock.fireLifecycle("session_start", { reason: "new" }, second.ctx);
     expect(mockState.execCalls).toEqual(["/repo/one", "/repo/two"]);
 
     expect(() => oldCallback?.(null, '{"DIRENV_OLD":"1"}', "")).not.toThrow();
