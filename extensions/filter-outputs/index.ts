@@ -138,6 +138,9 @@ export default function (pi: ExtensionAPI) {
                 text: `[Contents of ${filePath} redacted for security]`,
               },
             ],
+            // read keeps truncated file text in details.truncation, which is persisted;
+            // pi ignores `details: undefined`, so replace it.
+            details: { redacted: true },
           };
         }
       }

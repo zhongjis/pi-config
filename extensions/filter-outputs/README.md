@@ -14,7 +14,7 @@ Hooks into `tool_result` events, including error results and nested calls from c
 
 Every text block of a result is redacted; images and other blocks keep their position. `structuredContent`, the machine-readable result that codemode scripts and JSON/RPC clients receive, is redacted string by string, so its shape stays intact.
 
-Additionally redacts entire file contents when a successful `read` accesses sensitive files:
+Additionally redacts entire file contents when a successful `read` accesses sensitive files, replacing the result's text and its `details` (which can hold truncated file text):
 - `.env` (but not `.env.example`), `.dev.vars`, `secrets.json`, `secret.yaml`
 - Credential stores matched by [`sensitiveFiles`](index.ts). Credential-related source and test paths remain readable with normal value redaction.
 

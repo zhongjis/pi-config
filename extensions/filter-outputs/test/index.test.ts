@@ -267,6 +267,7 @@ describe("filter-outputs tool_result", () => {
 
       expect(result).toStrictEqual({
         content: [text(`[Contents of ${path} redacted for security]`)],
+        details: { redacted: true },
       });
     });
 
@@ -281,9 +282,24 @@ describe("filter-outputs tool_result", () => {
 
       expect(result).toStrictEqual({
         content: [text("[Contents of /repo/.env redacted for security]")],
+        details: { redacted: true },
       });
       expect(notify).toHaveBeenCalledOnce();
       expect(notify).toHaveBeenCalledWith("🔒 Redacted contents of sensitive file: /repo/.env", "info");
+    });
+
+    it("replaces read details that carry truncated file text", async () => {
+      const { run } = setup();
+
+      const result = await run({
+        toolName: "read",
+        input: { path: "/repo/.env" },
+        content: [text("FOO=bar")],
+        details: { truncation: { content: "FOO=bar", truncated: true } },
+      });
+
+      expect(JSON.stringify(result)).not.toContain("FOO=bar");
+      expect(result).toHaveProperty("details", { redacted: true });
     });
 
     it("sends an isError .env read through the regex path only", async () => {
