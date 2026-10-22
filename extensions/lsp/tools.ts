@@ -327,7 +327,7 @@ export function registerLspTool(pi: ExtensionAPI, mgr: ServerManagerService) {
       'lsp `incomingCalls` and `outgoingCalls` automatically prepare the call hierarchy — no need to call `prepareCallHierarchy` first.',
       'lsp `workspaceSymbol` may return empty results while the LSP server is still indexing. If it returns nothing, wait a few seconds and retry.',
       'lsp `diagnostics` relies on server-pushed notifications which may be slow for some servers. For compiled languages (Rust, Go, C++), prefer running the compiler directly (e.g. `cargo check`, `go build`) for reliable error checking.',
-      'Use lsp for type info, macro-generated symbols, and cross-module navigation. Use rg for simple text search and file discovery — it is faster and needs no server.',
+      'Use lsp for symbol-precise facts: type info, definitions, references, implementations, macro-generated symbols, and diagnostics. Use codegraph_* (when indexed) for broad structure, call flow, and impact; rg for text; fd for file discovery.',
       'lsp servers are auto-detected by file extension. Use /lsp to check status.',
     ],
     parameters: Type.Object({

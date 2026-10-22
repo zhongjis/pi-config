@@ -1080,13 +1080,14 @@ export default function codegraphExtension(pi: ExtensionAPI): void {
     if (!findCodeGraphRoot(ctx.cwd)) return;
 
     const guidance = [
-      "For architecture, flow, where-is-symbol, impact, and codebase navigation questions, use CodeGraph (codegraph_* tools) directly before grep/read.",
+      "For architecture, flow, where-is-symbol, impact, and codebase navigation questions, use CodeGraph (codegraph_* tools) directly before rg/fd/read.",
       "First non-status CodeGraph query may initialize a cold worktree automatically if needed.",
       "Use codegraph_explore first for broad questions, codegraph_search for symbol-name lookup, codegraph_files for project structure, codegraph_node for a known symbol, and codegraph_callers/codegraph_impact for impact and flow analysis.",
-      "If codegraph_search returns no exact result, try codegraph_explore or codegraph_files/codegraph_node before falling back to grep/read; symbol search may miss literal constants or generated names that still exist in source text.",
-      "Do not re-verify a CodeGraph result with grep/read, and do not re-open files whose source codegraph_explore or codegraph_node already returned.",
+      "If codegraph_search returns no exact result, try codegraph_explore or codegraph_files/codegraph_node before falling back to rg/fd/read; symbol search may miss literal constants or generated names that still exist in source text.",
+      "Do not re-verify a CodeGraph result with rg/read, and do not re-open files whose source codegraph_explore or codegraph_node already returned.",
       "Do not loop codegraph_node over many symbols — use codegraph_impact or codegraph_callers for breadth, and codegraph_explore to read several at once.",
-      "Otherwise use grep/read only after CodeGraph is insufficient or when the user asks for literal text matching.",
+      "Use lsp for symbol-precise facts (definitions, references, hover/type, diagnostics) and lsp documentSymbol/workspaceSymbol alongside codegraph_search.",
+      "Fall back to rg (text), fd (files), read, and lsp when CodeGraph is insufficient, the files are not indexed, or the user asks for literal text matching.",
     ].join("\n");
 
     event.systemPromptOptions.sections.codegraph = guidance;
