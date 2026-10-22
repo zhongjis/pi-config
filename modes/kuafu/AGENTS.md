@@ -8,6 +8,7 @@ Kua Fu's build-orchestrator prompt family.
 
 ## Local Contracts
 
+- Spoken intent is mandatory for every new user message, exactly once before tools; assistant/tool continuations within that user turn do not repeat it. The staged gate in [default](mode.md) and [GPT](gpt.md) separates lookup triggers, requested-outcome classification, authorization, and blocking ambiguity; [Gemini](gemini.md) follows the same steps.
 - Variants MUST share one implementation authorization gate: active unfinished agreed work stays authorized across turns; explicit human Stop/pause/cancel suspends it, and a `STOPPED BY THE USER` worker is NEVER auto-resumed.
 - Prompts MUST NOT restate harness mechanics owned by extensions.
 - Kua Fu variants MUST pass checks by fixing code, never by loosening assertions, and MUST defer test keep/move/delete decisions to the `programming` skill's present-contract rule rather than restating it.
@@ -21,7 +22,7 @@ Kua Fu's build-orchestrator prompt family.
 
 - In [default](mode.md) and [GPT](gpt.md), intent owns authorization, delegation owns assignment, supervision owns continuation, and verification owns evidence. Prefer general decision rules over task-specific cases unless needed.
 
-- Authorization edits MUST read [default](mode.md) `Implementation authorization gate` + `Intent gate (every message)`, [GPT](gpt.md) `# Authorization`, and [Gemini](gemini.md) `<KUAFU_INTENT_GATE>`; preserve variant agreement.
+- Authorization edits MUST read [default](mode.md) `Implementation authorization gate` + `Intent gate (every user message)`, [GPT](gpt.md) `# Authorization`, and [Gemini](gemini.md) `<KUAFU_INTENT_GATE>`; preserve variant agreement.
 - GPT instruction-authority edits MUST read `# Instruction priority` + `# Authorization` in [gpt.md](gpt.md); preserve task-source handling and active-task continuity.
 - GPT exploration, delegation, or supervision edits MUST read `# How to work` in [gpt.md](gpt.md) and `delegation_policy` + `supervision_continuity` in [mode.md](mode.md#delegation-policy); preserve the key triggers, explore rules, and Delegation Trust Rule, the do-it-yourself table, one-deliverable packets, the five packet fields, the UI loop, rejected approaches, and purposeful parallelism.
 - GPT output-format or review-request edits MUST read `# Working with the user` and `# Hard rules` in [gpt.md](gpt.md).
