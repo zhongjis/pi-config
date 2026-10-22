@@ -46,7 +46,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_callers",
     label: "CodeGraph Callers",
-    description: "Find all functions or methods that call a specific symbol. Structural graph query — don't reconstruct with grep.",
+    description: "Find all functions or methods that call a specific symbol. Structural graph query.",
     parameters: Type.Object({
       symbol: Type.String(),
       limit: Type.Optional(Type.Number({ default: 20 })),
@@ -56,7 +56,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_callees",
     label: "CodeGraph Callees",
-    description: "Find all functions or methods that a specific symbol calls. Structural graph query — don't reconstruct with grep.",
+    description: "Find all functions or methods that a specific symbol calls. Structural graph query.",
     parameters: Type.Object({
       symbol: Type.String(),
       limit: Type.Optional(Type.Number({ default: 20 })),
@@ -66,7 +66,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_impact",
     label: "CodeGraph Impact",
-    description: "Analyze the impact radius of changing a symbol. Structural graph query — don't reconstruct with grep.",
+    description: "Analyze the impact radius of changing a symbol. Structural graph query.",
     parameters: Type.Object({
       symbol: Type.String(),
       depth: Type.Optional(Type.Number({ default: 2 })),
@@ -104,7 +104,7 @@ const ToolDefinitions = [
   {
     name: "codegraph_files",
     label: "CodeGraph Files",
-    description: "Project file structure from the CodeGraph index; prefer over ls/find for indexed repos.",
+    description: "Project file structure from the CodeGraph index.",
     parameters: Type.Object({
       path: Type.Optional(Type.String()),
       pattern: Type.Optional(Type.String()),
@@ -1080,14 +1080,12 @@ export default function codegraphExtension(pi: ExtensionAPI): void {
     if (!findCodeGraphRoot(ctx.cwd)) return;
 
     const guidance = [
-      "For architecture, flow, where-is-symbol, impact, and codebase navigation questions, use CodeGraph (codegraph_* tools) directly before rg/fd/read.",
+      "This project has a CodeGraph index. codegraph_* answers architecture, flow, where-is-symbol, impact, and codebase navigation questions.",
       "First non-status CodeGraph query may initialize a cold worktree automatically if needed.",
       "Use codegraph_explore first for broad questions, codegraph_search for symbol-name lookup, codegraph_files for project structure, codegraph_node for a known symbol, and codegraph_callers/codegraph_impact for impact and flow analysis.",
-      "If codegraph_search returns no exact result, try codegraph_explore or codegraph_files/codegraph_node before falling back to rg/fd/read; symbol search may miss literal constants or generated names that still exist in source text.",
-      "Do not re-verify a CodeGraph result with rg/read, and do not re-open files whose source codegraph_explore or codegraph_node already returned.",
+      "If codegraph_search returns no exact result, try codegraph_explore or codegraph_files/codegraph_node; symbol search may miss literal constants or generated names that still exist in source text.",
+      "codegraph_explore and codegraph_node return full source; do not re-open those files.",
       "Do not loop codegraph_node over many symbols — use codegraph_impact or codegraph_callers for breadth, and codegraph_explore to read several at once.",
-      "Use lsp for symbol-precise facts (definitions, references, hover/type, diagnostics) and lsp documentSymbol/workspaceSymbol alongside codegraph_search.",
-      "Fall back to rg (text), fd (files), read, and lsp when CodeGraph is insufficient, the files are not indexed, or the user asks for literal text matching.",
     ].join("\n");
 
     event.systemPromptOptions.sections.codegraph = guidance;

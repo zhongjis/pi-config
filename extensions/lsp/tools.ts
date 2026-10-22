@@ -320,14 +320,14 @@ export function registerLspTool(pi: ExtensionAPI, mgr: ServerManagerService) {
     promptSnippet:
       'Interact with LSP servers for code intelligence: definitions, references, hover, diagnostics, symbols, call hierarchy, code actions',
     promptGuidelines: [
-      'lsp line and character params are 1-indexed — use the values from the read tool or rg output directly.',
+      'lsp line and character params are 1-indexed.',
       'lsp `hover` is the fastest way to get a function signature, type params, and doc comment — prefer it over `goToDefinition` for quick type inspection.',
       'lsp `documentSymbol` returns line:column positions for each symbol — use those values directly for follow-up lsp operations.',
       'For lsp position-based operations, place the character in the **middle** of the symbol name, not at the first character.',
       'lsp `incomingCalls` and `outgoingCalls` automatically prepare the call hierarchy — no need to call `prepareCallHierarchy` first.',
       'lsp `workspaceSymbol` may return empty results while the LSP server is still indexing. If it returns nothing, wait a few seconds and retry.',
       'lsp `diagnostics` relies on server-pushed notifications which may be slow for some servers. For compiled languages (Rust, Go, C++), prefer running the compiler directly (e.g. `cargo check`, `go build`) for reliable error checking.',
-      'Use lsp for symbol-precise facts: type info, definitions, references, implementations, macro-generated symbols, and diagnostics. Use codegraph_* (when indexed) for broad structure, call flow, and impact; rg for text; fd for file discovery.',
+      'lsp answers symbol-precise facts: type info, definitions, references, implementations, macro-generated symbols, and diagnostics.',
       'lsp servers are auto-detected by file extension. Use /lsp to check status.',
     ],
     parameters: Type.Object({
