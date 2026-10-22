@@ -3,6 +3,7 @@ import { accessSync, constants } from "node:fs";
 import { basename, delimiter, dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createLogger, initDebugFromEnv } from "../lib/logger.js";
+import { resolveToolModelCandidates } from "../lib/tool-models.js";
 
 // Bound on the calls a turn waits for (`icm hook start` / `icm hook prompt`, ~40 ms when healthy).
 const HOOK_TIMEOUT_MS = 2000;
@@ -13,11 +14,18 @@ const ENQUEUE_TIMEOUT_MS = 10_000;
 const EXTRACT_EVERY = 10;
 const DRAIN_EVERY = 10;
 const NOISE_TOOLS = new Set(["edit", "write"]);
+// Native extraction: Pi's model stands in for icm's summarizer, which has no Pi provider.
+const EXTRACT_TOOL_KEY = "icm.extract";
+const EXTRACT_TIMEOUT_MS = 60_000;
+// `icm store` loads the embedding model per call.
+const STORE_TIMEOUT_MS = 30_000;
 
 interface SessionState {
 	icm: string;
 	sessionId: string;
 	wakeUp: Promise<string>;
+	/** Pi extracts natively when icm's summarizer is `auto`; otherwise icm's queue does. */
+	native: Promise<boolean>;
 	project?: Promise<string>;
 	toolCalls: number;
 	enqueues: number;
@@ -73,6 +81,99 @@ async function resolveProject(cwd: string): Promise<string> {
 	return basename(commonDir ? dirname(commonDir) : cwd) || "project";
 }
 
+/**
+ * True when `icm config` reports `[extraction] enabled = true` and `[extraction.summarizer] provider = auto`.
+ * ponytail: line-scans icm's printed config (no TOML dependency installed); replace with a
+ * machine-readable icm config query if icm ever exposes one.
+ */
+function isNativeProvider(config: string): boolean {
+	let section = "";
+	let enabled = false;
+	let provider = "";
+	for (const raw of config.split("\n")) {
+		const line = raw.trim();
+		const header = /^\[(.+)\]$/.exec(line);
+		if (header) {
+			section = header[1];
+			continue;
+		}
+		const [key, value] = line.split(/\s*=\s*/, 2);
+		if (section === "extraction" && key === "enabled") enabled = value === "true";
+		if (section === "extraction.summarizer" && key === "provider") provider = value.replace(/^"|"$/g, "");
+	}
+	return enabled && provider === "auto";
+}
+
+// ponytail: extractPrompt and parseFacts copy icm main.rs build_extract_prompt and reply_line (v0.11.5)
+// so native facts match icm-extracted ones; resync on icm bumps, or call icm if it ever exposes them.
+function extractPrompt(source: string, project: string, text: string): string {
+	return [
+		"From the tool outputs below, extract durable facts that an AI agent should remember across sessions: architecture decisions, resolved errors, user preferences, project-specific context.",
+		"",
+		"Output format: one fact per line, prefixed with `- `. Each fact must be a complete, standalone sentence — no pronouns referring to missing context. Skip routine noise (file listings, build progress, git status). If nothing durable is present, output exactly `- (none)`.",
+		"",
+		`=== tool=${source} project=${project} ===`,
+		text,
+	].join("\n");
+}
+
+const BULLET = /^(?:[-*•+–]\s|\d{1,3}[.)] )/;
+const NOTHING = /^(?:n\/a$|none(?:$|[ )—])|no durable|nothing durable|no facts|no new facts|nothing to extract|nothing worth|i don't see|i do not see)/;
+
+/** Facts from a reply: list items only, minus items saying nothing was found (icm main.rs reply_line). */
+function parseFacts(reply: string): string[] {
+	return reply.split("\n").flatMap((raw) => {
+		const line = raw.trim();
+		if (!BULLET.test(line)) return [];
+		const item = line.replace(BULLET, "").trim();
+		const plain = item.replace(/^[*`_(). ]+|[*`_(). ]+$/g, "").toLowerCase().replace(/[*`_]/g, "");
+		return !plain || NOTHING.test(plain) ? [] : [item];
+	});
+}
+
+/** Extract facts with Pi's model and store them with `icm store`; never touches icm's shared queue. */
+async function extractNative(state: SessionState, ctx: ExtensionContext, source: string, text: string): Promise<void> {
+	const cwd = ctx.cwd;
+	const { candidates, chain } = resolveToolModelCandidates(ctx, EXTRACT_TOOL_KEY);
+	state.project ??= resolveProject(cwd);
+	const project = await state.project;
+	const prompt = extractPrompt(source, project, text);
+	let reply: string | undefined;
+	for (const { model, thinkingLevel } of candidates) {
+		if (!ctx.modelRegistry.hasConfiguredAuth(model)) continue;
+		try {
+			const response = await ctx.modelRegistry.complete(
+				model,
+				{ messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }] },
+				{ reasoningEffort: thinkingLevel, signal: AbortSignal.timeout(EXTRACT_TIMEOUT_MS) },
+			);
+			if (response.stopReason !== "stop") throw new Error(response.errorMessage ?? `stopReason ${response.stopReason}`);
+			reply = response.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+			break;
+		} catch (error) {
+			const detail = error instanceof Error ? error.message : String(error);
+			debug(ctx, "native extract failed", `${model.provider}/${model.id}: ${detail}`);
+		}
+	}
+	if (reply === undefined) {
+		debug(ctx, "native extract skipped", `no usable model (tried: ${chain ?? "none"})`);
+		return;
+	}
+	// Sequential: each `icm store` writes the same SQLite store. The error names the fact in argv; keep it out of logs.
+	for (const fact of parseFacts(reply)) {
+		await run(state.icm, ["store", "-t", `context-${project}`, "-c", fact], cwd, "", STORE_TIMEOUT_MS).catch(() =>
+			debug(ctx, "store failed", `icm store -t context-${project}`),
+		);
+	}
+}
+
+/** Hand captured text to Pi's model (native) or icm's queue, off the turn path. */
+function capture(state: SessionState, ctx: ExtensionContext, source: string, text: string, drain: boolean): void {
+	void state.native
+		.then((native) => (native ? extractNative(state, ctx, source, text) : enqueue(state, ctx, text, drain)))
+		.catch((error) => debug(ctx, "capture failed", error));
+}
+
 /** Queue text for extraction without blocking the caller; optionally drain the queue detached. */
 function enqueue(state: SessionState, ctx: ExtensionContext, text: string, drain: boolean): void {
 	const cwd = ctx.cwd;
@@ -110,7 +211,13 @@ export default function icmExtension(pi: ExtensionAPI): void {
 			debug(ctx, "wake-up failed", error);
 			return "";
 		});
-		state = { icm, sessionId, wakeUp, toolCalls: 0, enqueues: 0 };
+		const native = run(icm, ["config"], ctx.cwd, "", HOOK_TIMEOUT_MS)
+			.then(isNativeProvider)
+			.catch((error) => {
+				debug(ctx, "config check failed", error);
+				return false;
+			});
+		state = { icm, sessionId, wakeUp, native, toolCalls: 0, enqueues: 0 };
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
@@ -148,7 +255,7 @@ export default function icmExtension(pi: ExtensionAPI): void {
 		state.enqueues++;
 		const drain = state.enqueues >= DRAIN_EVERY;
 		if (drain) state.enqueues = 0;
-		enqueue(state, ctx, output.slice(0, 8000), drain);
+		capture(state, ctx, event.toolName, output.slice(0, 8000), drain);
 	});
 
 	pi.on("session_before_compact", (event, ctx) => {
@@ -161,8 +268,8 @@ export default function icmExtension(pi: ExtensionAPI): void {
 			.join("\n")
 			.slice(-4000);
 		if (text.length < 50) return;
-		// Compaction is a natural flush point: queue the conversation slice and drain everything.
+		// Compaction is a natural flush point: capture the conversation slice (and drain icm's queue when not native).
 		state.enqueues = 0;
-		enqueue(state, ctx, text, true);
+		capture(state, ctx, "compaction", text, true);
 	});
 }

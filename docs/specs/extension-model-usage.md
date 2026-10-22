@@ -39,7 +39,7 @@ Rules:
 
 ## Built-in tool keys
 
-Each extension-owned call reads one tool key, named `<extension>.<purpose>`. The built-in keys and their roles are defined in [`tool-model-defaults.ts`](../../extensions/lib/tool-model-defaults.ts). The consumers are [`smart-sessions`](../../extensions/smart-sessions/index.ts), [`boomerang`](../../extensions/boomerang/commit.ts), [`smart-tool-guards`](../../extensions/smart-tool-guards/src/classifier.ts), [`multimodal-look`](../../extensions/multimodal-look/index.ts), and the `decision_gate` agent-graph node, which reads `subagents.decision_gate` through `resolveToolModelChain` in [`tool-models.ts`](../../extensions/lib/tool-models.ts).
+Each extension-owned call reads one tool key, named `<extension>.<purpose>`. The built-in keys and their roles are defined in [`tool-model-defaults.ts`](../../extensions/lib/tool-model-defaults.ts). The consumers are [`smart-sessions`](../../extensions/smart-sessions/index.ts), [`boomerang`](../../extensions/boomerang/commit.ts), [`smart-tool-guards`](../../extensions/smart-tool-guards/src/classifier.ts), [`multimodal-look`](../../extensions/multimodal-look/index.ts), [`icm`](../../extensions/icm/index.ts), and the `decision_gate` agent-graph node, which reads `subagents.decision_gate` through `resolveToolModelChain` in [`tool-models.ts`](../../extensions/lib/tool-models.ts).
 
 ## Extension behavior
 

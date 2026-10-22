@@ -12,6 +12,7 @@ export const BUILTIN_TOOL_MODELS_FILE = {
 	tools: {
 		"smart-sessions.summary": { role: "summary.session" },
 		"recap.generate": { role: "summary.session" },
+		"icm.extract": { role: "summary.session" },
 		"boomerang.commit": { role: "commit" },
 		"smart-tool-guards.classifier": { role: "guard.tool" },
 		"multimodal-look.inspect": { role: "vision.inspect" },

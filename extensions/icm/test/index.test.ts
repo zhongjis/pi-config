@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { delimiter, join } from "node:path";
+import { basename, delimiter, join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
@@ -18,10 +18,11 @@ printf '%s\\t%s\\n' "$*" "$(printf '%s' "$input" | tr '\\n' ' ')" >> "$FAKE_ICM_
 case "$1 $2" in
   "hook start") printf '# ICM Wake-up\\n- wake fact\\n' ;;
   "hook prompt") printf 'recalled: prompt fact\\n' ;;
+  "config ") printf '[extraction]\\n  enabled = %s\\n\\n[extraction.conversation]\\n  enabled = false\\n\\n[extraction.summarizer]\\n  provider = %s\\n\\n[consolidate.summarizer]\\n  provider = none\\n' "\${FAKE_ICM_EXTRACTION:-true}" "\${FAKE_ICM_PROVIDER:-none}" ;;
 esac
 `;
 
-const ENV_KEYS = ["PATH", "FAKE_ICM_LOG", "FAKE_ICM_SLOW_PROMPT", "FAKE_ICM_SLOW_ENQUEUE"] as const;
+const ENV_KEYS = ["PATH", "FAKE_ICM_LOG", "FAKE_ICM_SLOW_PROMPT", "FAKE_ICM_SLOW_ENQUEUE", "FAKE_ICM_PROVIDER", "FAKE_ICM_EXTRACTION"] as const;
 let bin: string;
 let dir: string;
 let savedEnv: Record<string, string | undefined>;
@@ -31,7 +32,7 @@ function calls(): string[] {
 	return existsSync(log) ? readFileSync(log, "utf8").trim().split("\n") : [];
 }
 
-async function setup(withIcm: boolean) {
+async function setup(withIcm: boolean, overrides: Record<string, unknown> = {}) {
 	if (withIcm) {
 		process.env.PATH = [bin, savedEnv.PATH].join(delimiter);
 	} else {
@@ -39,7 +40,7 @@ async function setup(withIcm: boolean) {
 	}
 	const mock = createMockPi();
 	icmExtension(mock.pi as never);
-	const ctx = { ...createMockContext(), cwd: dir };
+	const ctx = { ...createMockContext(), cwd: dir, ...overrides };
 	const handler = (name: string) => (mock.lifecycleHandlers.get(name) ?? [])[0];
 	await handler("session_start")({ type: "session_start", reason: "startup" }, ctx);
 	const beforeAgentStart = async (prompt: string) => {
@@ -147,5 +148,85 @@ describe("icm extension", () => {
 		expect(enqueued).toContain("CLI-only.");
 		expect(enqueued).toContain("never sends text to an LLM");
 		expect(enqueued).not.toContain("user words");
+	});
+
+	describe("with icm's summarizer set to auto", () => {
+		const REPLY = [
+			"Here are the durable facts:",
+			"- The api service retries uploads three times.",
+			"* (none)",
+			"2. Builds run with `pnpm turbo build`.",
+			"- No durable facts beyond these.",
+		].join("\n");
+
+		function modelRegistry(reply: string) {
+			const prompts: string[] = [];
+			const complete = vi.fn(async (_model: unknown, context: { messages: { content: { text: string }[] }[] }) => {
+				prompts.push(context.messages[0].content[0].text);
+				return { stopReason: "stop", content: [{ type: "text", text: reply }] };
+			});
+			return { prompts, complete, registry: { ...createMockContext().modelRegistry, hasConfiguredAuth: () => true, complete } };
+		}
+
+		const stores = () => calls().filter((line) => line.startsWith("store "));
+
+		beforeEach(() => {
+			process.env.FAKE_ICM_PROVIDER = "auto";
+		});
+
+		it("extracts tool output with Pi's model and stores each fact instead of queueing", async () => {
+			const { prompts, registry } = modelRegistry(REPLY);
+			const { toolResult } = await setup(true, { modelRegistry: registry });
+			for (let i = 0; i < 10; i++) toolResult(`tool output number ${i} is long enough`);
+
+			await vi.waitFor(() => expect(stores()).toHaveLength(2), { timeout: 5000 });
+			const topic = `context-${basename(dir)}`;
+			expect(stores().map((line) => line.trimEnd())).toStrictEqual([
+				`store -t ${topic} -c The api service retries uploads three times.`,
+				`store -t ${topic} -c Builds run with \`pnpm turbo build\`.`,
+			]);
+			expect(prompts).toHaveLength(1);
+			expect(prompts[0]).toContain(`=== tool=read project=${basename(dir)} ===\ntool output number 9 is long enough`);
+			expect(calls().some((line) => line.startsWith("extract"))).toBe(false);
+		});
+
+		it("extracts the compacted assistant text natively without draining icm's queue", async () => {
+			const { prompts, registry } = modelRegistry("- Pi extracts its own memories.");
+			const { compact } = await setup(true, { modelRegistry: registry });
+			compact([{ role: "assistant", content: [{ type: "text", text: "We decided Pi acts as the icm extraction provider for its own sessions." }] }]);
+
+			await vi.waitFor(() => expect(stores()).toHaveLength(1), { timeout: 5000 });
+			expect(prompts[0]).toContain("=== tool=compaction");
+			expect(calls().some((line) => line.startsWith("extract"))).toBe(false);
+		});
+
+		it("stores nothing for items saying nothing durable was found", async () => {
+			const { registry } = modelRegistry("- (none)\n- Marker fact proves the reply was stored.");
+			const { toolResult } = await setup(true, { modelRegistry: registry });
+			for (let i = 0; i < 10; i++) toolResult(`tool output number ${i} is long enough`);
+
+			await vi.waitFor(() => expect(stores()).toHaveLength(1), { timeout: 5000 });
+			expect(stores()[0]).toContain("-c Marker fact proves the reply was stored.");
+		});
+
+		it("skips models without configured auth", async () => {
+			const { complete, registry } = modelRegistry(REPLY);
+			const hasConfiguredAuth = vi.fn(() => false);
+			const { toolResult } = await setup(true, { modelRegistry: { ...registry, hasConfiguredAuth } });
+			for (let i = 0; i < 10; i++) toolResult(`tool output number ${i} is long enough`);
+
+			await vi.waitFor(() => expect(hasConfiguredAuth).toHaveBeenCalled(), { timeout: 5000 });
+			expect(complete).not.toHaveBeenCalled();
+		});
+
+		it("keeps queueing through icm when extraction is disabled", async () => {
+			process.env.FAKE_ICM_EXTRACTION = "false";
+			const { complete, registry } = modelRegistry(REPLY);
+			const { toolResult } = await setup(true, { modelRegistry: registry });
+			for (let i = 0; i < 10; i++) toolResult(`tool output number ${i} is long enough`);
+
+			await vi.waitFor(() => expect(calls().filter((line) => line.startsWith("extract --enqueue"))).toHaveLength(1), { timeout: 5000 });
+			expect(complete).not.toHaveBeenCalled();
+		});
 	});
 });
