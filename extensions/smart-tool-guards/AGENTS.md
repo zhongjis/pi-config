@@ -16,7 +16,9 @@ Authorize selected native bash calls through deterministic policy and model clas
 - Trusted policy MUST remain separate from untrusted command/context JSON.
 - Classifier verdicts MUST match the exact allow/block schema.
 - Denials MUST retain the stable envelope without raw provider errors.
-- [Lark policy](src/bash-policy.ts) MUST allow only exact direct literal document search/fetch and discovery forms after shell danger checks; other recognized Lark calls, including path and known-wrapper variants, MUST block without classifier fallback. Verified flags and required read selectors are code-owned; non-Lark classifier behavior MUST remain unchanged.
+- [Lark policy](src/bash-policy.ts) MUST allow only exact direct literal document search/fetch and discovery forms after shell danger checks; other recognized Lark calls, including path and known-wrapper variants, MUST block without classifier fallback. Verified flags and required read selectors are code-owned.
+- [Literal inspection](src/literal-inspection.ts) MUST run only after full danger checks and approve only direct, literal argv with every pipeline stage validated. Unknown options, wrappers, expansions, and general compound commands MUST defer or block; command discovery has one exact fallback exception.
+- Classifier policy MUST assess exact effects rather than treating executables, outside-repository reads, or shell composition as mutations; uncertain effects MUST block. Other safety restrictions remain in force.
 - This authorization guard is not a shell sandbox; allowed commands retain native power.
 
 ## Work Guidance

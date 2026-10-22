@@ -1,3 +1,5 @@
+import { isLiteralInspection, literalWords } from "./literal-inspection.js";
+
 export const BASH_DANGER_CODES = [
 	"filesystem-mutation",
 	"vcs-mutation",
@@ -299,26 +301,6 @@ function isExactAgentBrowserReadOnly(words: Word[]): boolean {
 	return false;
 }
 
-// Unlike the general hazard scanner, this literal-only parser preserves empty words.
-function literalLarkWords(command: string): string[] | undefined {
-	const words: string[] = [];
-	const literalWordPattern = /(?:[^\s'"\\$`*?[\]{}~#!();&|<>]|'[^']*'|"(?:[^"\\$`]|\\["\\$`])*"|\\[^\n\r])+/y;
-	let index = 0;
-	while (index < command.length) {
-		while (command[index] === " " || command[index] === "\t") index += 1;
-		if (index === command.length) break;
-		literalWordPattern.lastIndex = index;
-		const match = literalWordPattern.exec(command);
-		if (!match) return undefined;
-		words.push(match[0].replace(/'([^']*)'|"((?:[^"\\]|\\.)*)"|\\(.)/gs,
-			(_chunk, single: string | undefined, double: string | undefined, escaped: string | undefined) =>
-				single ?? (double === undefined ? escaped ?? "" : double.replace(/\\(["\\$`])/g, "$1"))));
-		index = literalWordPattern.lastIndex;
-		if (index < command.length && command[index] !== " " && command[index] !== "\t") return undefined;
-	}
-	return words;
-}
-
 const LARK_SEARCH_VALUES = new Set(["--query", "--filter", "--page-size", "--page-token", "--format", "--jq", "-q", "--as"]);
 const LARK_FETCH_VALUES = new Set([
 	"--doc", "--doc-format", "--detail", "--scope", "--start-block-id", "--end-block-id", "--keyword",
@@ -326,10 +308,11 @@ const LARK_FETCH_VALUES = new Set([
 ]);
 
 function isExactLarkReadOnly(command: string): boolean {
-	const words = literalLarkWords(command);
+	const words = literalWords(command);
 	if (!words || words[0] !== "lark-cli") return false;
 	const help = (word: string): boolean => word === "--help" || word === "-h";
 	if (words.length === 2 && (help(words[1]) || words[1] === "--version")) return true;
+	if (words.length === 3 && words[1] === "wiki" && words[2] === "--help") return true;
 	if (words[1] !== "docs") return false;
 	if (words.length === 3 && help(words[2])) return true;
 	const search = words[2] === "+search";
@@ -431,6 +414,6 @@ export function evaluateBashPolicy(input: BashPolicyInput): BashPolicyOutcome {
 	const findings = [...earliest].map(([code, position]) => ({ code, position })).sort((left, right) =>
 		left.position - right.position || BASH_DANGER_CODES.indexOf(left.code) - BASH_DANGER_CODES.indexOf(right.code));
 	if (findings.length > 0) return { kind: "block", findings };
-	if (exactLark || input.command.trim() === "pwd" || stages.length === 1 && isExactAgentBrowserReadOnly(stages[0])) return { kind: "allow" };
+	if (isLiteralInspection(input.command) || exactLark || input.command.trim() === "pwd" || stages.length === 1 && isExactAgentBrowserReadOnly(stages[0])) return { kind: "allow" };
 	return { kind: "defer" };
 }

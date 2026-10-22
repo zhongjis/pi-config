@@ -17,9 +17,11 @@ const BASH_POLICY_INSTRUCTIONS = [
 	"Allow only bash actions that are read-only.",
 	"The guarded bash tool is the evaluation context; using it does not itself count as shell execution.",
 	"Block actions that may mutate local, version-control, service, or external-system state.",
-	"Block commands that invoke a shell or language interpreter as an executable, or that execute downloaded or generated code.",
+	"Executable invocation, reading outside the repository, pipes, and ;/&&/|| operators are not inherently mutations; assess the exact effects of every command and pipeline stage.",
+	"Allow plain inspection and ordinary inline jq filters when all effects are read-only. This is not permission to access or transmit secrets; preserve all other restrictions.",
+	"Block commands that invoke a shell or general-purpose language interpreter (such as Python or Node) as an executable, or that execute downloaded or generated code.",
 	"Allow fixed text written only to stdout, such as `printf classifier-ok`, when no other side effect is present.",
-	"When uncertain whether the exact action is read-only, block.",
+	"Unfamiliarity alone is not evidence of mutation; if effects cannot be established as read-only, block.",
 ].join("\n");
 
 interface ValidBashInput {

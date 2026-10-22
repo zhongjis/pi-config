@@ -246,7 +246,44 @@ describe("aggregate bash danger policy", () => {
 	);
 
 	it.each([
-		"lark-cli --help", "lark-cli -h", "lark-cli --version", "lark-cli docs --help",
+		"rg --no-config 'pattern' file | head -20", "sha256sum file",
+		"command -v lark-cli || true", "command -v jq", "jq --version", "jq --help",
+		"cat '/outside repo/file' | nl | tail -n 5 | wc -l", "head -c 20 -- file",
+		"rg --no-config -n -e 'a|b' -g '*.ts' .", "rg --no-config --files .",
+		"fd --hidden -t f -e ts . src", "cat -- -filename",
+	])("allows only validated literal inspection stages: %s", (command) => {
+		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "allow" });
+	});
+
+	it.each([
+		"fd -x echo", "fd -X echo", "fd -xecho", "fd -Xecho", "fd --exec echo",
+		"fd --exec-batch echo", "fd --exec=echo", "fd --exec-batch=echo", "fd -Hx echo",
+		"rg pattern file", "rg --no-config --pre helper pattern file",
+		"rg --no-config --pre=helper pattern file", "rg --no-config --pre-glob '*.txt' pattern",
+		"rg --no-config --config config pattern", "rg --no-config --hostname-bin helper pattern",
+		"rg --no-config --hyperlink-format default pattern", "rg -- --no-config",
+		"rg -e --no-config pattern", "jq '.items' file", "jq -f program file", "jq -L modules '.'",
+		"X=x cat file", "env cat file", "command cat file", "nohup cat file", "rtk cat file",
+		"/bin/cat file", "'cat' file", "cat $FILE", 'cat "$FILE"', "cat *", "cat ~user/file",
+		"cat '' file", "head -n '' file", "cat file; cat other", "cat file && cat other",
+		"cat file || true", "command -v jq || echo fallback", "cat file | unknown",
+		"cat file | jq '.'", "cat file | cat --unknown", "head --unknown file", "tail -f file",
+		"wc --files0-from=paths", "sha256sum --unknown file", "cat file >/dev/null", "cat file <input",
+		"git status", "sed -n 1p file", "awk '{print}' file",
+	])("defers unsupported argv or shell syntax without fast approval: %s", (command) => {
+		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "defer" });
+	});
+
+	it.each([
+		"cat file | rm out", "cat file | head -20; touch out", "sha256sum file >out",
+		"cat $(printf file)", "cat `printf file`", "cat file | node -e 'process.exit()'",
+		"cat file | python3 script.py", "command -v jq || rm out", "gh run view 1",
+	])("keeps danger checks ahead of literal inspection: %s", (command) => {
+		expect(evaluateBashPolicy({ ...BASE_INPUT, command }).kind).toBe("block");
+	});
+
+	it.each([
+		"lark-cli wiki --help", "lark-cli --help", "lark-cli -h", "lark-cli --version", "lark-cli docs --help",
 		"lark-cli docs -h", "lark-cli docs +search --help", "lark-cli docs +fetch -h",
 		"lark-cli docs +search --query 'project plan'",
 		'lark-cli docs +search --query="project plan" --format=json --json --dry-run',
@@ -264,7 +301,7 @@ describe("aggregate bash danger policy", () => {
 	});
 
 	it.each([
-		"lark-cli", "lark-cli docs", "lark-cli docs +search", "lark-cli docs +fetch",
+		"lark-cli wiki", "lark-cli wiki list", "lark-cli wiki --help extra", "lark-cli", "lark-cli docs", "lark-cli docs +search", "lark-cli docs +fetch",
 		"lark-cli api get /docs", "lark-cli auth login", "lark-cli config set x y", "lark-cli update",
 		"lark-cli docs +create --help", "lark-cli docs +write --doc x", "lark-cli docs +revert --doc x",
 		"lark-cli docs +fetch --doc x --output out", "lark-cli docs +fetch --doc x --download out",
