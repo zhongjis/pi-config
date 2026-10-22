@@ -63,7 +63,7 @@ Diagnostics catch type errors only. After the change, exercise the real surface 
 
 ## 6. COMMITS
 
-Ultrawork counts as the explicit commit request: commit each verified increment using the `git-master` skill. Never push unless user requests. (except main)
+On a feature branch, ultrawork counts as the explicit commit request: commit each verified increment using the `git-master` skill. On the default branch (`main`/`master`), leave changes uncommitted and list them in the final message.
 
 ## 7. FINISH GATE
 
