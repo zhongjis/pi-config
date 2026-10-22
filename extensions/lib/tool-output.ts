@@ -39,7 +39,7 @@ function fitRenderedLines(lines: readonly string[], width: number): string[] {
   for (const line of lines) {
     const wrapped = visibleWidth(line) <= width ? [line] : wrapTextWithAnsi(line, width);
     for (const part of wrapped) {
-      fitted.push(visibleWidth(part) <= width ? part : truncateToWidth(part, width, ""));
+      fitted.push(keepRowBackground(visibleWidth(part) <= width ? part : truncateToWidth(part, width, "")));
     }
   }
   return fitted;
@@ -63,7 +63,7 @@ class WidthSafeSummary extends Text {
     if (safeWidth === 0) return [];
     return this.summaryText
       .split("\n")
-      .map((line) => truncateToWidth(line, safeWidth, "…"));
+      .map((line) => keepRowBackground(truncateToWidth(line, safeWidth, "…")));
   }
 }
 
@@ -82,6 +82,17 @@ function openingSequence(sample: string): string {
 
 function reopenAfterResets(line: string, resets: RegExp, opening: string): string {
   return opening ? line.replace(resets, reset => `${reset}${opening}`) : line;
+}
+
+// Pi's tool-row Box opens its background once per line, so a full reset (e.g. truncateToWidth's
+// `\x1b[0m` at a cut) clears it to the edge. Reset every attribute except background; 39 stays
+// separate so custom-message cards still re-open their text color after it.
+// ponytail: only bare `0m`/`m` resets are rewritten, and content that sets its own background keeps
+// it to the row end; delete once pi-tui's Box re-opens its background after child resets.
+const RESET_KEEP_BG = "\u001b[22;23;24;25;27;28;29m\u001b[39m";
+
+function keepRowBackground(line: string): string {
+  return line.replace(/\u001b\[0?m/g, RESET_KEEP_BG);
 }
 
 class ThemedCustomMessageContent implements Component {

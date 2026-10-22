@@ -409,6 +409,7 @@ Recommended behavior:
 - Truncate collapsed previews safely.
 - Wrap expanded values; do not silently ellipsize semantic content.
 - Keep ANSI styles line-local because TUI lines are rendered independently.
+- Return tool-row text through the [shared renderers](../../extensions/lib/tool-output.ts); raw `truncateToWidth` output ends in a full reset that clears Pi's row background.
 
 At extremely narrow widths, preserve state text before telemetry. `Failed` matters more
 than model name; `Running` matters more than token count.

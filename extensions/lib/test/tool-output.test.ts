@@ -1,5 +1,5 @@
 import type { MarkdownTheme } from "@earendil-works/pi-tui";
-import { Markdown, Text, visibleWidth } from "@earendil-works/pi-tui";
+import { Box, Markdown, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { describe, expect, it, vi } from "vitest";
 import {
   extractToolText,
@@ -131,6 +131,31 @@ describe("shared tool-output primitives", () => {
 
     expect(first).toContain(`a\u001b[0m${bgOn}${fgOn}…\u001b[0m${bgOn}${fgOn}`);
     expect(second).toContain(`b\u001b[m${bgOn}${fgOn} c\u001b[49m${bgOn} d\u001b[39m${fgOn} e`);
+  });
+
+  it("keeps Pi's tool-row background across truncation and embedded full resets", () => {
+    const bgOn = "\u001b[48;5;236m";
+    const row = new Box(1, 1, text => `${bgOn}${text}\u001b[49m`);
+    row.addChild(renderToolCall("ask", `${truncateToWidth("long subject ".repeat(8), 30, "…")} · 1 question`, plainTheme));
+    row.addChild(renderToolSummary(["x".repeat(200)], plainTheme));
+    row.addChild(renderToolExpanded("a \u001b[31mred\u001b[0m tail \u001b[1mbold\u001b[m"));
+
+    for (const line of row.render(60)) {
+      expect(line).not.toMatch(/\u001b\[0?m/);
+      expect(line.indexOf("\u001b[49m")).toBe(line.length - 5);
+    }
+  });
+
+  it("re-opens custom-message text color after a rewritten reset", () => {
+    const fgOn = "\u001b[38;5;250m";
+    const theme = {
+      fg: (_color: string, text: string) => `${fgOn}${text}\u001b[39m`,
+      bg: (_color: string, text: string) => `\u001b[48;5;236m${text}\u001b[49m`,
+      bold: (text: string) => text,
+    };
+    const lines = createCustomMessageCard("notification", renderToolSummary(["y".repeat(200)], plainTheme), theme).render(40);
+
+    expect(lines.join("\n")).toContain(`\u001b[39m${fgOn}…`);
   });
 
   it("renders expanded plain text with Text and markdown with Markdown", () => {
