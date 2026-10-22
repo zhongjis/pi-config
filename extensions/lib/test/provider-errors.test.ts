@@ -39,6 +39,47 @@ describe("getErrorText", () => {
 	});
 });
 
+describe("structured provider errors", () => {
+	it.each([
+		{ details: { errorCode: "usage_limit_reached" }, text: "Request failed", expected: [true, false, false] },
+		{ details: { status: 429, errorCode: "usage_not_included" }, text: "Rate limit", expected: [true, false, false] },
+		{ details: { status: 402, errorCode: "rate_limit_exceeded" }, text: "Quota exhausted", expected: [false, true, false] },
+		{ details: { status: 429, errorCode: "unknown" }, text: "Request failed", expected: [false, true, false] },
+		{ details: { status: 400, errorCode: "unknown" }, text: "Quota exhausted", expected: [true, false, false] },
+		{ details: { status: 403 }, text: "Credit exhausted", expected: [false, false, true] },
+		{ details: { errorType: "permission_error" }, text: "Request failed", expected: [false, false, true] },
+	])("classifies $details before wording", ({ details, text, expected }) => {
+		const error = {
+			errorMessage: text,
+			diagnostics: [{ type: "provider_response_failure", timestamp: 0, details }],
+		};
+		expect([isQuotaError(error), isRateLimitError(error), isAccessDeniedError(error)]).toEqual(expected);
+	});
+
+	it("ignores unrelated diagnostics", () => {
+		expect(isQuotaOrRateLimitError({
+			diagnostics: [{ type: "provider_transport_failure", details: { status: 429, errorCode: "usage_limit_reached" } }],
+		})).toBe(false);
+	});
+
+	it("uses the last terminal failure diagnostic", () => {
+		const error = {
+			diagnostics: [
+				{ type: "provider_response_failure", details: { errorCode: "usage_limit_reached" } },
+				{ type: "provider_response_failure", details: { status: 403 } },
+			],
+		};
+		expect([isQuotaError(error), isAccessDeniedError(error)]).toEqual([false, true]);
+	});
+
+	it.each([
+		{ code: "usage_limit_reached", message: "Request failed" },
+		{ error: { code: "usage_limit_reached" }, status: 429 },
+	])("recognizes structured thrown errors: %j", (error) => {
+		expect([isQuotaError(error), isRateLimitError(error)]).toEqual([true, false]);
+	});
+});
+
 describe("isQuotaError", () => {
 	it("detects HTTP 402", () => {
 		expect(isQuotaError({ status: 402 })).toBe(true);
@@ -51,6 +92,10 @@ describe("isQuotaError", () => {
 		expect(isQuotaError({ message: "No credit left" })).toBe(true);
 		expect(isQuotaError({ message: "Quota exceeded" })).toBe(true);
 		expect(isQuotaError({ message: "Spend limit reached" })).toBe(true);
+	});
+
+	it("detects usage-limit errors without an HTTP status", () => {
+		expect(isQuotaError({ errorMessage: "You have hit your ChatGPT usage limit." })).toBe(true);
 	});
 
 	it("is case-insensitive", () => {

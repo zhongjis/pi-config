@@ -43,21 +43,70 @@ function getStatus(err: unknown): number | undefined {
 	return undefined;
 }
 
+type ProviderErrorKind = "quota" | "rate-limit" | "access-denied";
+
+/** Only terminal provider-response diagnostics carry authoritative failure metadata. */
+function getFailureMetadata(err: object): object {
+	if ("diagnostics" in err && Array.isArray(err.diagnostics)) {
+		const diagnostics: readonly unknown[] = err.diagnostics;
+		for (let index = diagnostics.length - 1; index >= 0; index--) {
+			const diagnostic = diagnostics[index];
+			if (diagnostic && typeof diagnostic === "object"
+				&& "type" in diagnostic && diagnostic.type === "provider_response_failure"
+				&& "details" in diagnostic && diagnostic.details && typeof diagnostic.details === "object") {
+				return diagnostic.details;
+			}
+		}
+	}
+	return err;
+}
+
+/** Recognized provider codes outrank HTTP status; unknown metadata leaves text matching available. */
+function getStructuredErrorKind(err: object): ProviderErrorKind | undefined {
+	const metadata = getFailureMetadata(err);
+	const nested = "error" in metadata ? metadata.error : undefined;
+	for (const source of [metadata, nested]) {
+		if (!source || typeof source !== "object") continue;
+		const code = "errorCode" in source ? source.errorCode : "code" in source ? source.code : undefined;
+		const type = "errorType" in source ? source.errorType : "type" in source ? source.type : undefined;
+		for (const value of [code, type]) {
+			switch (typeof value === "string" ? value.toLowerCase() : undefined) {
+				case "usage_limit_reached":
+				case "usage_not_included": return "quota";
+				case "rate_limit_exceeded": return "rate-limit";
+				case "permission_error":
+				case "permission_denied":
+				case "access_denied": return "access-denied";
+				default: break;
+			}
+		}
+	}
+	switch (getStatus(metadata)) {
+		case 402: return "quota";
+		case 429: return "rate-limit";
+		case 403: return "access-denied";
+		default: return undefined;
+	}
+}
+
 /** 402 Payment Required, or message containing billing/credit/quota/spend keywords. */
 export function isQuotaError(err: unknown): boolean {
 	if (!err || typeof err !== "object") return false;
-	if (getStatus(err) === 402) return true;
+	const structured = getStructuredErrorKind(err);
+	if (structured) return structured === "quota";
 	const msg = getErrorText(err);
 	return msg.includes("billing")
 		|| msg.includes("credit")
 		|| msg.includes("spend limit")
+		|| msg.includes("usage limit")
 		|| msg.includes("quota");
 }
 
 /** 429 Too Many Requests, or message containing rate-limit keywords. */
 export function isRateLimitError(err: unknown): boolean {
 	if (!err || typeof err !== "object") return false;
-	if (getStatus(err) === 429) return true;
+	const structured = getStructuredErrorKind(err);
+	if (structured) return structured === "rate-limit";
 	const msg = getErrorText(err);
 	return msg.includes("rate limit")
 		|| msg.includes("rate-limit")
@@ -68,7 +117,8 @@ export function isRateLimitError(err: unknown): boolean {
 /** 403 Forbidden, or message containing permission/access-denied keywords. */
 export function isAccessDeniedError(err: unknown): boolean {
 	if (!err || typeof err !== "object") return false;
-	if (getStatus(err) === 403) return true;
+	const structured = getStructuredErrorKind(err);
+	if (structured) return structured === "access-denied";
 	return /\b403\b|forbidden|permission.?(?:error|denied)|access.?denied/.test(getErrorText(err));
 }
 

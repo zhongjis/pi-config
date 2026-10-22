@@ -130,6 +130,28 @@ describe("registerRuntimeModelFallback", () => {
 		expect(exhausted.selections).toEqual([MODELS[1], MODELS[2]]);
 	});
 
+	it("continues from structured provider metadata without matching error wording", async () => {
+		const harness = createHarness();
+		await harness.userInput();
+		await harness.fire("message_end", {
+			message: {
+				role: "assistant", stopReason: "error", errorMessage: "Request failed",
+				diagnostics: [{ type: "provider_response_failure", timestamp: 0, details: { errorCode: "usage_limit_reached" } }],
+			},
+		});
+		await harness.fire("agent_settled", { type: "agent_settled" });
+		expect(harness.selections).toEqual([MODELS[1]]);
+		expect(harness.continuations).toEqual([{ display: false, triggerTurn: true }]);
+	});
+
+	it("continues on the next model after a usage-limit error without an HTTP status", async () => {
+		const harness = createHarness();
+		await harness.userInput();
+		await settleQuota(harness, "You have hit your ChatGPT usage limit.");
+		expect(harness.selections).toEqual([MODELS[1]]);
+		expect(harness.continuations).toEqual([{ display: false, triggerTurn: true }]);
+	});
+
 	it("falls back after access-denied errors", async () => {
 		const harness = createHarness();
 		await harness.userInput();
