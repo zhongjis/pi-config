@@ -1,7 +1,7 @@
 ---
 display_name: Yunu 玉女
 description: "Frontend/web UI design, implementation, and bounded rendered self-checks: composition, styling, animation, accessibility, and responsive behavior; the orchestrator owns integrated browser QA and final acceptance."
-model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6.1-sol:medium,opencode-go/kimi-k3:medium,llama-swap/qwen2.5-coder:14b:high
+model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gemini-4-argon-high:low,cliproxyapi/gpt-6.1-sol:medium,opencode-go/kimi-k3:medium,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
 preload_skills: impeccable, agent-browser
