@@ -18,11 +18,11 @@ printf '%s\\t%s\\n' "$*" "$(printf '%s' "$input" | tr '\\n' ' ')" >> "$FAKE_ICM_
 case "$1 $2" in
   "hook start") printf '# ICM Wake-up\\n- wake fact\\n' ;;
   "hook prompt") printf 'recalled: prompt fact\\n' ;;
-  "config ") printf '[extraction]\\n  enabled = %s\\n\\n[extraction.conversation]\\n  enabled = false\\n\\n[extraction.summarizer]\\n  provider = %s\\n\\n[consolidate.summarizer]\\n  provider = none\\n' "\${FAKE_ICM_EXTRACTION:-true}" "\${FAKE_ICM_PROVIDER:-none}" ;;
+  "config ") printf '[extraction]\\n  enabled = %s\\n  extract_every = %s\\n\\n[extraction.conversation]\\n  enabled = false\\n\\n[extraction.summarizer]\\n  provider = %s\\n\\n[consolidate.summarizer]\\n  provider = none\\n' "\${FAKE_ICM_EXTRACTION:-true}" "\${FAKE_ICM_EVERY:-3}" "\${FAKE_ICM_PROVIDER:-none}" ;;
 esac
 `;
 
-const ENV_KEYS = ["PATH", "FAKE_ICM_LOG", "FAKE_ICM_SLOW_PROMPT", "FAKE_ICM_SLOW_ENQUEUE", "FAKE_ICM_PROVIDER", "FAKE_ICM_EXTRACTION"] as const;
+const ENV_KEYS = ["PATH", "FAKE_ICM_LOG", "FAKE_ICM_SLOW_PROMPT", "FAKE_ICM_SLOW_ENQUEUE", "FAKE_ICM_PROVIDER", "FAKE_ICM_EXTRACTION", "FAKE_ICM_EVERY"] as const;
 let bin: string;
 let dir: string;
 let savedEnv: Record<string, string | undefined>;
@@ -172,6 +172,48 @@ describe("icm extension", () => {
 
 		beforeEach(() => {
 			process.env.FAKE_ICM_PROVIDER = "auto";
+			process.env.FAKE_ICM_EVERY = "10";
+		});
+
+		it("samples tool output at icm's extract_every", async () => {
+			delete process.env.FAKE_ICM_EVERY;
+			const { prompts, registry } = modelRegistry(REPLY);
+			const { beforeAgentStart, toolResult } = await setup(true, { modelRegistry: registry });
+			await beforeAgentStart("go");
+			for (let i = 0; i < 6; i++) toolResult(`tool output number ${i} is long enough`);
+
+			await vi.waitFor(() => expect(prompts).toHaveLength(2), { timeout: 5000 });
+			expect(prompts[0]).toContain("tool output number 2 ");
+			expect(prompts[1]).toContain("tool output number 5 ");
+		});
+
+		it("keeps the tail of long tool output", async () => {
+			process.env.FAKE_ICM_EVERY = "1";
+			const { prompts, registry } = modelRegistry(REPLY);
+			const { beforeAgentStart, toolResult } = await setup(true, { modelRegistry: registry });
+			await beforeAgentStart("go");
+			toolResult(`HEAD-MARK ${"x".repeat(9000)} TAIL-MARK`);
+
+			await vi.waitFor(() => expect(prompts).toHaveLength(1), { timeout: 5000 });
+			expect(prompts[0]).toContain("TAIL-MARK");
+			expect(prompts[0]).not.toContain("HEAD-MARK");
+		});
+
+		it("runs one extraction at a time", async () => {
+			process.env.FAKE_ICM_EVERY = "1";
+			const storesSeenAtCall: number[] = [];
+			const { complete, registry } = modelRegistry("- One durable fact.");
+			complete.mockImplementation(async () => {
+				storesSeenAtCall.push(stores().length);
+				return { stopReason: "stop", content: [{ type: "text", text: "- One durable fact." }] };
+			});
+			const { beforeAgentStart, toolResult } = await setup(true, { modelRegistry: registry });
+			await beforeAgentStart("go");
+			toolResult("first tool output is long enough");
+			toolResult("second tool output is long enough");
+
+			await vi.waitFor(() => expect(stores()).toHaveLength(2), { timeout: 5000 });
+			expect(storesSeenAtCall).toStrictEqual([0, 1]);
 		});
 
 		it("extracts tool output with Pi's model and stores each fact instead of queueing", async () => {

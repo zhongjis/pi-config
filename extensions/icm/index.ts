@@ -10,7 +10,8 @@ const HOOK_TIMEOUT_MS = 2000;
 // Enqueue runs off the turn path; it only writes a queue row and never loads the embedding model.
 const ENQUEUE_TIMEOUT_MS = 10_000;
 // Mirrors rtk-ai/icm plugins/opencode-icm.ts: capture one tool output per EXTRACT_EVERY calls, and
-// drain the queue (one fastembed model load) once per DRAIN_EVERY enqueues.
+// drain the queue (one fastembed model load) once per DRAIN_EVERY enqueues. Native mode uses icm's
+// own `[extraction] extract_every` instead, the cadence its Claude Code hook samples at.
 const EXTRACT_EVERY = 10;
 const DRAIN_EVERY = 10;
 const NOISE_TOOLS = new Set(["edit", "write"]);
@@ -26,6 +27,10 @@ interface SessionState {
 	wakeUp: Promise<string>;
 	/** Pi extracts natively when icm's summarizer is `auto`; otherwise icm's queue does. */
 	native: Promise<boolean>;
+	/** Tool outputs per capture: EXTRACT_EVERY, or icm's `extract_every` once native mode is confirmed. */
+	extractEvery: number;
+	/** Tail of the native extraction chain; captures run one at a time. */
+	extracting: Promise<void>;
 	project?: Promise<string>;
 	toolCalls: number;
 	enqueues: number;
@@ -82,14 +87,16 @@ async function resolveProject(cwd: string): Promise<string> {
 }
 
 /**
- * True when `icm config` reports `[extraction] enabled = true` and `[extraction.summarizer] provider = auto`.
+ * Native cadence from `icm config`: its `[extraction] extract_every` when extraction is enabled and
+ * `[extraction.summarizer] provider = auto`, else undefined (icm's queue extracts).
  * ponytail: line-scans icm's printed config (no TOML dependency installed); replace with a
  * machine-readable icm config query if icm ever exposes one.
  */
-function isNativeProvider(config: string): boolean {
+function nativeExtractEvery(config: string): number | undefined {
 	let section = "";
 	let enabled = false;
 	let provider = "";
+	let every = Number.NaN;
 	for (const raw of config.split("\n")) {
 		const line = raw.trim();
 		const header = /^\[(.+)\]$/.exec(line);
@@ -99,9 +106,12 @@ function isNativeProvider(config: string): boolean {
 		}
 		const [key, value] = line.split(/\s*=\s*/, 2);
 		if (section === "extraction" && key === "enabled") enabled = value === "true";
+		if (section === "extraction" && key === "extract_every") every = Number(value);
 		if (section === "extraction.summarizer" && key === "provider") provider = value.replace(/^"|"$/g, "");
 	}
-	return enabled && provider === "auto";
+	if (!enabled || provider !== "auto") return undefined;
+	// icm config prints extract_every with its default applied; 3 is that default if a build omits it.
+	return Number.isInteger(every) && every > 0 ? every : 3;
 }
 
 // ponytail: extractPrompt and parseFacts copy icm main.rs build_extract_prompt and reply_line (v0.11.5)
@@ -167,10 +177,16 @@ async function extractNative(state: SessionState, ctx: ExtensionContext, source:
 	}
 }
 
-/** Hand captured text to Pi's model (native) or icm's queue, off the turn path. */
+/** Hand captured text to Pi's model (native, one capture at a time) or icm's queue, off the turn path. */
 function capture(state: SessionState, ctx: ExtensionContext, source: string, text: string, drain: boolean): void {
 	void state.native
-		.then((native) => (native ? extractNative(state, ctx, source, text) : enqueue(state, ctx, text, drain)))
+		.then((native) => {
+			if (!native) return enqueue(state, ctx, text, drain);
+			// Serial: each extraction ends in `icm store` calls that load the embedding model.
+			state.extracting = state.extracting
+				.then(() => extractNative(state, ctx, source, text))
+				.catch((error) => debug(ctx, "capture failed", error));
+		})
 		.catch((error) => debug(ctx, "capture failed", error));
 }
 
@@ -211,19 +227,34 @@ export default function icmExtension(pi: ExtensionAPI): void {
 			debug(ctx, "wake-up failed", error);
 			return "";
 		});
-		const native = run(icm, ["config"], ctx.cwd, "", HOOK_TIMEOUT_MS)
-			.then(isNativeProvider)
+		const next: SessionState = {
+			icm,
+			sessionId,
+			wakeUp,
+			native: Promise.resolve(false),
+			extractEvery: EXTRACT_EVERY,
+			extracting: Promise.resolve(),
+			toolCalls: 0,
+			enqueues: 0,
+		};
+		next.native = run(icm, ["config"], ctx.cwd, "", HOOK_TIMEOUT_MS)
+			.then((config) => {
+				const every = nativeExtractEvery(config);
+				if (every !== undefined) next.extractEvery = every;
+				return every !== undefined;
+			})
 			.catch((error) => {
 				debug(ctx, "config check failed", error);
 				return false;
 			});
-		state = { icm, sessionId, wakeUp, native, toolCalls: 0, enqueues: 0 };
+		state = next;
 	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const current = state;
 		if (!current) return;
-		const wakeUp = await current.wakeUp;
+		// Native mode also settles the capture cadence; both icm calls ran in parallel since session start.
+		const [wakeUp] = await Promise.all([current.wakeUp, current.native]);
 		if (wakeUp) event.systemPromptOptions.sections.icm = wakeUp;
 		if (event.messageType !== "user" || !event.prompt.trim()) return;
 
@@ -247,7 +278,7 @@ export default function icmExtension(pi: ExtensionAPI): void {
 		if (event.toolName === "bash" && /^\s*icm\b/.test(String(event.input.command ?? ""))) return;
 
 		state.toolCalls++;
-		if (state.toolCalls < EXTRACT_EVERY) return;
+		if (state.toolCalls < state.extractEvery) return;
 		state.toolCalls = 0;
 
 		const output = textOf(event.content);
@@ -255,7 +286,8 @@ export default function icmExtension(pi: ExtensionAPI): void {
 		state.enqueues++;
 		const drain = state.enqueues >= DRAIN_EVERY;
 		if (drain) state.enqueues = 0;
-		capture(state, ctx, event.toolName, output.slice(0, 8000), drain);
+		// Keep the tail, as icm's post hook does: test, build and error results land at the end.
+		capture(state, ctx, event.toolName, output.slice(-8000), drain);
 	});
 
 	pi.on("session_before_compact", (event, ctx) => {
