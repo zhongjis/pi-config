@@ -16,7 +16,6 @@ Repository-owned maintenance skills and their supporting references.
 
 ## Work Guidance
 
-- You MUST follow [system-prompts](skills/system-prompts/SKILL.md) when authoring prompts.
 - You SHOULD link authoritative references instead of copying their contracts.
 
 ## Verification
