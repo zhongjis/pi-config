@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import type { ThinkingLevel } from "../lib/thinking-level.js";
 import { resolveToolModelCandidates } from "../lib/tool-models.js";
 import { getHerdrContext, HERDR_OUTPUT_INSTRUCTIONS, parseHerdrSummary, renameHerdrTab } from "./herdr.js";
 
@@ -183,7 +184,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 	// -- Model selection -----------------------------------------------------
 
 	/** Resolve explicit legacy settings or the smart-sessions summary role. */
-	function resolveSummaryModel(ctx: ExtensionContext): { model?: any; error?: string; chain?: string } {
+	function resolveSummaryModel(ctx: ExtensionContext): { model?: any; thinkingLevel?: ThinkingLevel; error?: string; chain?: string } {
 		const explicitProvider = typeof config.provider === "string" ? config.provider.trim() : "";
 		const explicitModel = typeof config.model === "string" ? config.model.trim() : "";
 		if (explicitProvider && explicitModel) {
@@ -196,7 +197,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		const model = candidates[0]?.model;
 		if (model) {
 			resolvedModelName = `${model.provider}/${model.id}`;
-			return { model, chain };
+			return { model, thinkingLevel: candidates[0].thinkingLevel, chain };
 		}
 
 		resolvedModelName = "";
@@ -353,6 +354,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 			}],
 		}, {
 			maxTokens: config.maxTokens,
+			reasoningEffort: resolved.thinkingLevel,
 			sessionId: ctx.sessionManager.getSessionId(),
 			signal: summaryAbort.signal,
 		})

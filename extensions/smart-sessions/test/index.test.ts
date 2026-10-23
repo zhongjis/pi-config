@@ -145,7 +145,7 @@ describe("smart-sessions model selection", () => {
 			join(tempAgentDir, "tool_models.json"),
 			JSON.stringify({
 				version: 1,
-				roles: { "summary.session": "gemini-3-flash" },
+				roles: { "summary.session": "gemini-3-flash:off" },
 				tools: { "smart-sessions.summary": { role: "summary.session" } },
 			}),
 		);
@@ -158,7 +158,7 @@ describe("smart-sessions model selection", () => {
 		expect(mockedComplete).toHaveBeenCalledWith(
 			expect.objectContaining({ id: "gemini-3-flash", provider: "google" }),
 			expect.any(Object),
-			expect.any(Object),
+			expect.objectContaining({ reasoningEffort: "off" }),
 		);
 	});
 

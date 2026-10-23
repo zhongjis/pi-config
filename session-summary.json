@@ -2,7 +2,6 @@
   "provider": "",
   "model": "",
   "debounceSeconds": 120,
-  "maxTokens": 80,
   "resummarizeTokenThreshold": 40000,
   "showWidget": false,
   "verbose": false

@@ -11,7 +11,7 @@ Gives Pi the automatic memory lifecycle that [rtk-ai/icm](https://github.com/rtk
 
 In both cases, extraction runs in one of two ways:
 
-- **Pi as provider:** used when `icm config` reports `[extraction] enabled = true` and `[extraction.summarizer] provider = auto`. icm has no Pi provider, and from Pi, `auto` would fall back to the `claude` CLI. Instead, Pi's own model extracts the facts through the `icm.extract` tool key (role `summary.session`, see [tool-model-defaults.ts](../lib/tool-model-defaults.ts)). The extension uses icm's extraction prompt and stores each fact with `icm store -t context-<project>`. It never touches icm's shared queue. The captured text is sent to the resolved model provider unredacted.
+- **Pi as provider:** used when `icm config` reports `[extraction] enabled = true` and `[extraction.summarizer] provider = auto`. icm has no Pi provider, and from Pi, `auto` would fall back to the `claude` CLI. Instead, Pi's own model extracts the facts through the `icm.extract` tool key (role `memory.extract`, see [tool-model-defaults.ts](../lib/tool-model-defaults.ts)). The extension uses icm's extraction prompt and stores each fact with `icm store -t context-<project>`. It never touches icm's shared queue. The captured text is sent to the resolved model provider unredacted.
 - **icm's queue:** used for any other config. The extension queues the text with `icm extract --enqueue`. It drains the queue with a detached `icm extract-pending` after every tenth capture and after every compaction.
 
 The extension is a no-op when `icm` is not on `PATH`. Turn-path calls are bounded by a short timeout; an `icm` failure or timeout only drops that injection or capture.
