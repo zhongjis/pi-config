@@ -23,6 +23,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - Extension docs MUST follow the [README standard](../docs/specs/extensions.md): current state only, linking to registration code instead of copying inventories. `## Local Tweaks` sections list current upstream divergences, not change history.
 - [filter-outputs](filter-outputs/README.md) MUST redact credential stores as whole files while keeping credential-related source and test paths readable with normal value redaction; [owning code](filter-outputs/index.ts) defines store matching.
 - [ask](ask/dialog.ts) MUST always show question and Review tabs, including single-question dialogs.
+- [smart-sessions](smart-sessions/herdr.ts) MUST generate Herdr titles separately within the existing summary call, preserve Pi summaries, and rename only its own marked labels or positional numeric defaults after reading the current label. Removing the ownership marker opts out; no startup renames, additional model calls, or title persistence.
 - `thinking-steps` MUST preserve native assistant Markdown transformers (including Mermaid) and streaming state while retaining its custom thinking display. Messages without visible thinking MUST remain silent, without placeholder panels or extra spacing; real and redacted thinking remain visible.
 
 ## Work Guidance

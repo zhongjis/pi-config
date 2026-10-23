@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { resolveToolModelCandidates } from "../lib/tool-models.js";
+import { getHerdrContext, HERDR_OUTPUT_INSTRUCTIONS, parseHerdrSummary, renameHerdrTab } from "./herdr.js";
 
 // -- Configuration --------------------------------------------------------
 
@@ -334,12 +335,17 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 			].join("\n");
 		}
 
+		const herdr = getHerdrContext();
+		if (herdr) prompt += `\n\n${HERDR_OUTPUT_INSTRUCTIONS}`;
+
 		pendingLLMCall = true;
 		summaryAbort = new AbortController();
 
 		// Fire-and-forget: non-blocking async LLM call
 		ctx.modelRegistry.complete(model, {
-			systemPrompt: "You are a concise summarizer. Output a single line summary of a coding session.",
+			systemPrompt: herdr
+				? "You are a concise summarizer. Output JSON containing a session summary and a separate short tab title."
+				: "You are a concise summarizer. Output a single line summary of a coding session.",
 			messages: [{
 				role: "user" as const,
 				content: [{ type: "text" as const, text: prompt }],
@@ -350,7 +356,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 			sessionId: ctx.sessionManager.getSessionId(),
 			signal: summaryAbort.signal,
 		})
-			.then((response) => {
+			.then(async (response) => {
 			// Track usage/cost
 			if (response.usage) {
 				totalTokens.input += response.usage.input;
@@ -381,13 +387,13 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 					return; // don't update summary
 				}
 
-				const text = response.content
+				const output = response.content
 					.filter((c): c is { type: "text"; text: string } => c.type === "text")
 					.map((c) => c.text)
 					.join(" ")
-					.trim()
-					// Collapse to single line
-					.replace(/\n+/g, " ");
+					.trim();
+				const herdrSummary = herdr ? parseHerdrSummary(output) : undefined;
+				const text = (herdr ? herdrSummary?.summary ?? "" : output).replace(/\n+/g, " ");
 
 				if (text) {
 					const changed = text !== lastSummary;
@@ -398,6 +404,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 					lastError = "";
 					// Update session name so it shows in /resume
 					pi.setSessionName(lastSummary);
+					if (herdr && herdrSummary) await renameHerdrTab(pi, herdr, herdrSummary.title);
 					// Verbose notification (guard: ctx may be stale after session replacement/reload)
 					if (config.verbose && changed) {
 						try {
