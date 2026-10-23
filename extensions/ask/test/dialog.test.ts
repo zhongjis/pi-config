@@ -136,7 +136,7 @@ describe("ask dialog input and lifecycle", () => {
 	});
 	it("digit quickPick finalizes immediately without notes", () => {
 		const { feed, done, text } = setup();
-		expect(text()).not.toContain("Review");
+		expect(text()).toContain("□ Scope      Review");
 		expect(text()).not.toContain("Tab next");
 		expect(text()).toContain("↑↓ move · 1–2 pick · Enter submit · n/N note · Esc cancel");
 		feed("2");
@@ -280,15 +280,16 @@ describe("ask dialog preview and widths", () => {
 		expect(text(12).split("\n")[1]).not.toContain("answered");
 		expect(setup([question(), question({ id: "next" })]).text(40).split("\n")[1]).toMatch(/^ ask +0\/2 answered$/);
 	});
-	it("quick-pick without a title starts the prompt right under the rule; with a title it shows title and gap", () => {
+	it("single-select always shows tabs before the prompt, with or without a title", () => {
 		const bare = setup().text(60).split("\n");
 		expect(bare[0]).toBe("─".repeat(60));
-		expect(bare[1]).toBe(" Choose an approach");
+		expect(bare[1]).toBe(" □ Scope      Review ");
 		expect(bare[2]).toBe("");
-		expect(bare[3]).toMatch(/^ › 1 {2}Alpha$/);
+		expect(bare[3]).toBe(" Choose an approach");
+		expect(bare[5]).toMatch(/^ › 1 {2}Alpha$/);
 		expect(bare.at(-2)).toBe(" ↑↓ move · 1–2 pick · Enter submit · n/N note · Esc cancel");
 		const titled = setup(undefined, { title: "Plan" }).text(60).split("\n");
-		expect(titled.slice(0, 4)).toEqual(["─".repeat(60), " Plan", "", " Choose an approach"]);
+		expect(titled.slice(0, 6)).toEqual(["─".repeat(60), " Plan", "", " □ Scope      Review ", "", " Choose an approach"]);
 	});
 	it("caps the content area at 140 columns while the rules span the full width", () => {
 		const lines = setup([question(), question({ id: "next" })], { title: "Plan" }).text(320).split("\n");

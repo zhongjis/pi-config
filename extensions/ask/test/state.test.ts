@@ -29,9 +29,7 @@ describe("tabs and cursors", () => {
 		const s = make({ multi }, count);
 		expect(s.totalTabs).toBe(count + 1);
 		expect(s.quickPick).toBe(quickPick);
-		expect(s.hasTabBar).toBe(!quickPick);
 		s.enterTab(count);
-		expect(s.hasTabBar).toBe(true);
 		expect(s.getCurrentQuestion()).toBeUndefined();
 	});
 	it("starts on recommended without selecting and remembers each cursor", () => {

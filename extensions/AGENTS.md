@@ -22,6 +22,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - Vendored changes MUST preserve provenance and LICENSE; local deltas belong with the owning extension's documentation.
 - Extension docs MUST follow the [README standard](../docs/specs/extensions.md): current state only, linking to registration code instead of copying inventories. `## Local Tweaks` sections list current upstream divergences, not change history.
 - [filter-outputs](filter-outputs/README.md) MUST redact credential stores as whole files while keeping credential-related source and test paths readable with normal value redaction; [owning code](filter-outputs/index.ts) defines store matching.
+- [ask](ask/dialog.ts) MUST always show question and Review tabs, including single-question dialogs.
 - `thinking-steps` MUST preserve native assistant Markdown transformers (including Mermaid) and streaming state while retaining its custom thinking display. Messages without visible thinking MUST remain silent, without placeholder panels or extra spacing; real and redacted thinking remain visible.
 
 ## Work Guidance

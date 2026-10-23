@@ -251,7 +251,7 @@ export function createAskDialog({ questions, input, title, tui, theme, keybindin
 		const lines = [rule];
 		if (title !== undefined || questions.length > 1) lines.push(row(header(inner)), "");
 		// Tab cells carry their own padding, so the row starts in the gutter and glyphs share the body's left edge.
-		if (state.hasTabBar) lines.push(truncateToWidth(tabRow(), Math.max(0, area - 1)), "");
+		lines.push(truncateToWidth(tabRow(), Math.max(0, area - 1)), "");
 		return [...lines, ...(q ? questionLines(q, inner) : reviewLines(inner)).map(row), "", row(hints(inner)), rule];
 	}
 	signal?.addEventListener("abort", onAbort);

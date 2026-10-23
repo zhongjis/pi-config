@@ -52,10 +52,6 @@ export class AskState {
 		this.optionIndex = questions[0]?.recommended ?? 0;
 	}
 
-	get hasTabBar(): boolean {
-		return !this.quickPick || this.currentTab === this.questions.length;
-	}
-
 	get dirty(): boolean {
 		return this.questions.some((q) => this.isAnswered(q)) || this.notes.size > 0 || this.drafts.size > 0;
 	}
