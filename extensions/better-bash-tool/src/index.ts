@@ -129,7 +129,15 @@ export default function betterBashTool(pi: ExtensionAPI): void {
       const effectiveCwd = params.cwd ? resolve(ctx.cwd, params.cwd) : ctx.cwd;
       // Native execute prefers ctx.cwd; spawnHook runs after that resolution.
       const bashForCwd = createBashToolDefinition(effectiveCwd, {
-        spawnHook: (spawn) => ({ ...spawn, cwd: effectiveCwd }),
+        spawnHook: (spawn) => {
+          // ponytail: https://github.com/herdrdev/herdr/issues/2668 — remove only once installed Herdr
+          // isolates nested reporters and the regression is verified, not merely when the issue closes.
+          const env = { ...spawn.env };
+          delete env.HERDR_ENV;
+          delete env.HERDR_PANE_ID;
+          delete env.HERDR_SOCKET_PATH;
+          return { ...spawn, cwd: effectiveCwd, env };
+        },
       });
       return bashForCwd.execute(
         toolCallId,

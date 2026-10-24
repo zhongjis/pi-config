@@ -148,6 +148,20 @@ describe("better-bash-tool", () => {
       details: { cwd: resolvedCwd },
     });
 
+    const parentEnv = { ...process.env };
+    const env = { HERDR_ENV: "herdr", HERDR_PANE_ID: "pane-test", HERDR_SOCKET_PATH: "/tmp/test.sock", PATH: "/test/bin", PI_SESSION_ID: "session-test" };
+    const originalEnv = { ...env };
+    const base = deepFreeze({ command: "pwd", cwd: ctx.cwd, env });
+    const spawn = bashMockState.createOptions[1]?.spawnHook?.(base);
+    expect(spawn?.env).not.toHaveProperty("HERDR_ENV");
+    expect(spawn?.env).not.toHaveProperty("HERDR_PANE_ID");
+    expect(spawn?.env).not.toHaveProperty("HERDR_SOCKET_PATH");
+    expect(spawn?.env).toMatchObject({ PATH: env.PATH, PI_SESSION_ID: env.PI_SESSION_ID });
+    expect(spawn?.env).not.toBe(env);
+    expect(spawn).toMatchObject({ command: base.command, cwd: resolvedCwd });
+    expect(base).toEqual({ command: "pwd", cwd: ctx.cwd, env: originalEnv });
+    expect(process.env).toEqual(parentEnv);
+
     await tool.execute("call-2", { command: "pwd" }, undefined, onUpdate, ctx);
     expect(bashMockState.executeCalls[1]?.spawnCwd).toBe(ctx.cwd);
   });

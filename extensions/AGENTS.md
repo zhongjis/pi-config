@@ -14,6 +14,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 </system-conventions>
 
 - You MUST preserve behavior across localized refactors and extension boundaries.
+- [Better Bash](better-bash-tool/src/index.ts) isolates child Herdr reporter identity in a copied spawn environment while preserving cwd and unrelated environment; parent and input environments MUST remain untouched. Remove the workaround only after installed Herdr isolates nested reporters and the regression is verified.
 - You MUST follow [event/RPC conventions](CONVENTIONS.md) for channel names, envelopes, and listener cleanup.
 - Prompt text MUST be a named prompt section: in `before_agent_start`, set `event.systemPromptOptions.sections.<extension_id>` (snake_case, e.g. [session-local](session-local/index.ts)) on every prompt it applies; omit it to remove. NEVER return `systemPrompt`: it freezes the prompt and drops every section, including Pi's `mcp_servers`. Sole exception: [herdr-btw](herdr-btw/README.md) exact parent-prompt replay.
 - [Fast](fast/README.md) owns interactive command/status telemetry; [lib](lib/README.md#fast-request-helpers), [modes](modes/AGENTS.md), and [subagents](subagents/AGENTS.md) own recipes and policy contracts.
