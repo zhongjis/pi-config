@@ -343,7 +343,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		summaryAbort = new AbortController();
 
 		// Fire-and-forget: non-blocking async LLM call
-		ctx.modelRegistry.complete(model, {
+		ctx.modelRegistry.streamSimple(model, {
 			systemPrompt: herdr
 				? "You are a concise summarizer. Output JSON containing a session summary and a separate short tab title."
 				: "You are a concise summarizer. Output a single line summary of a coding session.",
@@ -354,10 +354,10 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 			}],
 		}, {
 			maxTokens: config.maxTokens,
-			reasoningEffort: resolved.thinkingLevel,
+			reasoning: resolved.thinkingLevel === "off" ? undefined : resolved.thinkingLevel,
 			sessionId: ctx.sessionManager.getSessionId(),
 			signal: summaryAbort.signal,
-		})
+		}).result()
 			.then(async (response) => {
 			// Track usage/cost
 			if (response.usage) {

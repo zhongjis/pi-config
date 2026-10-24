@@ -101,39 +101,39 @@ async function surface(insideHerdr: boolean) {
 	const mock = createMockPi();
 	const exec = cli();
 	const setSessionName = vi.fn();
-	const complete = vi.fn(async () => ({
+	const streamSimple = vi.fn(() => ({ result: async () => ({
 		stopReason: "stop", content: [{ type: "text", text: insideHerdr
 			? JSON.stringify({ summary, title: "railway issue" }) : summary }],
-	}));
+	}) }));
 	const base = createMockContext();
 	const ctx = {
 		...base, cwd: "/nonexistent-smart-sessions-test",
 		sessionManager: { ...base.sessionManager, getBranch: () => [{ type: "message", message: { role: "user", content: "Debug the railway deployment" } }] },
-		modelRegistry: { ...base.modelRegistry, find: () => base.model, hasConfiguredAuth: () => true, complete },
+		modelRegistry: { ...base.modelRegistry, find: () => base.model, hasConfiguredAuth: () => true, streamSimple },
 	};
 	Reflect.apply(sessionSummaryExtension, undefined, [{ ...mock.pi, exec, setSessionName, getSessionName: () => "" }]);
 	await mock.fireLifecycle("session_start", {}, ctx);
-	expect(complete).not.toHaveBeenCalled();
+	expect(streamSimple).not.toHaveBeenCalled();
 	expect(exec).not.toHaveBeenCalled();
 	await mock.fireLifecycle("agent_end", {}, ctx);
 	// Drain the fire-and-forget summary and mocked CLI microtasks without clock sleeps.
 	for (let i = 0; i < 20; i++) await Promise.resolve();
-	return { mock, ctx, exec, complete, setSessionName };
+	return { mock, ctx, exec, streamSimple, setSessionName };
 }
 
 describe("mocked lifecycle surface", () => {
 	it("updates Herdr and Pi separately in one existing call, retaining debounce", async () => {
-		const { mock, ctx, exec, complete, setSessionName } = await surface(true);
+		const { mock, ctx, exec, streamSimple, setSessionName } = await surface(true);
 		expect(setSessionName).toHaveBeenCalledWith(summary);
 		expect(exec).toHaveBeenLastCalledWith("herdr", ["tab", "rename", context.tabId, "[w] railway issue"], expect.any(Object));
 		await mock.fireLifecycle("agent_end", {}, ctx);
-		expect(complete).toHaveBeenCalledTimes(1);
+		expect(streamSimple).toHaveBeenCalledTimes(1);
 	});
 
 	it("preserves the plain summary path and never executes Herdr outside its context", async () => {
-		const { exec, complete, setSessionName } = await surface(false);
+		const { exec, streamSimple, setSessionName } = await surface(false);
 		expect(setSessionName).toHaveBeenCalledWith(summary);
-		expect(complete).toHaveBeenCalledTimes(1);
+		expect(streamSimple).toHaveBeenCalledTimes(1);
 		expect(exec).not.toHaveBeenCalled();
 		expect(getHerdrContext()).toBeUndefined();
 	});

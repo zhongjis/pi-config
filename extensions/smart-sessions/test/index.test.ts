@@ -1,3 +1,4 @@
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,11 +9,12 @@ import sessionSummaryExtension from "../index.js";
 
 type ModelEntry = { id: string; name?: string; provider: string };
 
-const mockedComplete = vi.fn(async () => ({
+const mockedResult = vi.fn(async () => ({
 	stopReason: "stop" as const,
 	usage: { input: 1, output: 1 },
 	content: [{ type: "text" as const, text: "focused session summary" }],
 }));
+const mockedStreamSimple = vi.fn((_model: unknown, _context: unknown, _options?: Parameters<ExtensionContext["modelRegistry"]["streamSimple"]>[2]) => ({ result: mockedResult }));
 
 let tempRoot = "";
 let tempAgentDir = "";
@@ -27,8 +29,9 @@ beforeEach(async () => {
 	await mkdir(tempCwd, { recursive: true });
 	originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 	process.env.PI_CODING_AGENT_DIR = tempAgentDir;
-	mockedComplete.mockClear();
-	mockedComplete.mockResolvedValue({
+	mockedStreamSimple.mockClear();
+	mockedResult.mockClear();
+	mockedResult.mockResolvedValue({
 		stopReason: "stop",
 		usage: { input: 1, output: 1 },
 		content: [{ type: "text", text: "focused session summary" }],
@@ -45,42 +48,30 @@ afterEach(async () => {
 });
 
 function createSummaryContext(models: ModelEntry[]) {
-	const ctx = createMockContext() as ReturnType<typeof createMockContext> & {
+	const base = createMockContext();
+	return {
+		...base,
+		cwd: tempCwd,
+		sessionManager: {
+			...base.sessionManager,
+			getBranch: vi.fn(() => [
+				{
+					type: "message",
+					message: { role: "user", content: "Please summarize this session." },
+				},
+			]),
+		},
 		modelRegistry: {
-			find: ReturnType<typeof vi.fn>;
-			hasConfiguredAuth: ReturnType<typeof vi.fn>;
-			complete: typeof mockedComplete;
-			getAvailable: ReturnType<typeof vi.fn>;
-		};
-		sessionManager: ReturnType<typeof createMockContext>["sessionManager"] & {
-			getBranch: ReturnType<typeof vi.fn>;
-		};
-		ui: ReturnType<typeof createMockContext>["ui"] & {
-			setWidget: ReturnType<typeof vi.fn>;
-		};
+			...base.modelRegistry,
+			find: vi.fn((provider: string, modelId: string) =>
+				models.find((model) => model.provider === provider && model.id === modelId),
+			),
+			hasConfiguredAuth: vi.fn(() => true),
+			streamSimple: mockedStreamSimple,
+			getAvailable: vi.fn(() => models),
+		},
+		ui: { ...base.ui, setWidget: vi.fn() },
 	};
-
-	ctx.cwd = tempCwd;
-	ctx.sessionManager = {
-		...ctx.sessionManager,
-		getBranch: vi.fn(() => [
-			{
-				type: "message",
-				message: { role: "user", content: "Please summarize this session." },
-			},
-		]),
-	};
-	ctx.modelRegistry = {
-		find: vi.fn((provider: string, modelId: string) =>
-			models.find((model) => model.provider === provider && model.id === modelId),
-		),
-		hasConfiguredAuth: vi.fn(() => true),
-		complete: mockedComplete,
-		getAvailable: vi.fn(() => models),
-	};
-	ctx.ui = { ...ctx.ui, setWidget: vi.fn() };
-
-	return ctx;
 }
 
 function registerExtension(models: ModelEntry[]) {
@@ -101,15 +92,31 @@ async function runSummary(models: ModelEntry[]) {
 }
 
 describe("smart-sessions model selection", () => {
-	it("sends the summary through modelRegistry.complete without caller auth", async () => {
+	it.each([["off", undefined], ["high", "high"]] as const)("uses provider-neutral reasoning for %s", async (thinking, expected) => {
+		await writeFile(
+			join(tempAgentDir, "tool_models.json"),
+			JSON.stringify({ version: 1, roles: { "summary.session": `test/summary-model:${thinking}` } }),
+		);
+		await runSummary([{ id: "summary-model", provider: "test" }]);
+
+		expect(mockedStreamSimple).toHaveBeenCalledWith(
+			expect.objectContaining({ id: "summary-model", provider: "test" }),
+			expect.any(Object),
+			expect.objectContaining({ reasoning: expected }),
+		);
+		expect(mockedStreamSimple.mock.calls[0]?.[2]).not.toHaveProperty("reasoningEffort");
+		expect(mockedResult).toHaveBeenCalledTimes(1);
+	});
+
+	it("sends the summary through modelRegistry.streamSimple without caller auth", async () => {
 		const model = { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" };
 		const { ctx } = await runSummary([model]);
-		expect(ctx.modelRegistry.complete).toHaveBeenCalledWith(
+		expect(ctx.modelRegistry.streamSimple).toHaveBeenCalledWith(
 			expect.objectContaining({ id: model.id, provider: model.provider }),
 			expect.any(Object),
 			expect.objectContaining({ maxTokens: 300, sessionId: "mock-session-id" }),
 		);
-		const options = ctx.modelRegistry.complete.mock.calls[0]?.[2];
+		const options = ctx.modelRegistry.streamSimple.mock.calls[0]?.[2];
 		expect(options).not.toHaveProperty("apiKey");
 		expect(options).not.toHaveProperty("headers");
 	});
@@ -117,7 +124,7 @@ describe("smart-sessions model selection", () => {
 	it("aborts the in-flight summary on session_shutdown", async () => {
 		const model = { id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" };
 		const { ctx, mock } = await runSummary([model]);
-		const signal = ctx.modelRegistry.complete.mock.calls[0]?.[2]?.signal as AbortSignal | undefined;
+		const signal = ctx.modelRegistry.streamSimple.mock.calls[0]?.[2]?.signal;
 		expect(signal?.aborted).toBe(false);
 		await mock.fireLifecycle("session_shutdown", {}, ctx);
 		expect(signal?.aborted).toBe(true);
@@ -129,7 +136,7 @@ describe("smart-sessions model selection", () => {
 	])("auto-detects the %s summary model", async (_label, model) => {
 		await runSummary([model]);
 
-		expect(mockedComplete).toHaveBeenCalledWith(
+		expect(mockedStreamSimple).toHaveBeenCalledWith(
 			expect.objectContaining({ id: model.id, provider: model.provider }),
 			expect.any(Object),
 			expect.any(Object),
@@ -155,10 +162,10 @@ describe("smart-sessions model selection", () => {
 			{ id: "gemini-3-flash", name: "Gemini 3 Flash", provider: "google" },
 		]);
 
-		expect(mockedComplete).toHaveBeenCalledWith(
+		expect(mockedStreamSimple).toHaveBeenCalledWith(
 			expect.objectContaining({ id: "gemini-3-flash", provider: "google" }),
 			expect.any(Object),
-			expect.objectContaining({ reasoningEffort: "off" }),
+			expect.objectContaining({ reasoning: undefined }),
 		);
 	});
 
@@ -182,7 +189,7 @@ describe("smart-sessions model selection", () => {
 			{ id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" },
 		]);
 
-		expect(mockedComplete).toHaveBeenCalledWith(
+		expect(mockedStreamSimple).toHaveBeenCalledWith(
 			expect.objectContaining({ id: "claude-haiku-4-5", provider: "anthropic" }),
 			expect.any(Object),
 			expect.any(Object),
@@ -198,7 +205,7 @@ describe("smart-sessions model selection", () => {
 			{ id: "qwen2.5-coder:14b", name: "Qwen2.5 Coder 14B", provider: "llama-swap" },
 		]);
 
-		expect(mockedComplete).not.toHaveBeenCalled();
+		expect(mockedStreamSimple).not.toHaveBeenCalled();
 		expect(ctx.modelRegistry.find).toHaveBeenCalledWith("anthropic", "missing-model");
 		expect(ctx.ui.setWidget).toHaveBeenCalledWith(
 			"session-summary",
@@ -215,7 +222,7 @@ describe("smart-sessions model selection", () => {
 			{ id: "some-unrelated-model", name: "Unrelated", provider: "other" },
 		]);
 
-		expect(mockedComplete).toHaveBeenCalledWith(
+		expect(mockedStreamSimple).toHaveBeenCalledWith(
 			expect.objectContaining({ id: "mock-model", provider: "mock" }),
 			expect.any(Object),
 			expect.any(Object),
