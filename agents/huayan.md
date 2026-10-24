@@ -6,7 +6,7 @@ discover_skills: false
 preload_skills: impeccable
 extensions: |
   +better-bash-tool, +rtk, +direnv, +filter-outputs,
-  +codegraph, +multimodal-look
+  +codegraph, +multimodal-look, +impeccable
 tools: |
   +@all,
   -@builtin, +read, +bash

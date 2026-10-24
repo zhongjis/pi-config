@@ -7,7 +7,7 @@ discover_skills: false
 preload_skills: impeccable, agent-browser
 extensions: |
   +better-bash-tool, +rtk, +direnv, +filter-outputs,
-  +codegraph, +lsp, +multimodal-look
+  +codegraph, +lsp, +multimodal-look, +impeccable
 tools: |
   +@all,
   -@builtin, +read, +bash, +edit, +write
