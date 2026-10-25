@@ -4,6 +4,7 @@ description: Complex non-UI implementation worker for tightly coupled changes wi
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:high,opencode-go/kimi-k3,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
+preload_skills: programming
 extensions: |
   +builtin:codemode,
   +better-bash-tool, +rtk, +direnv, +filter-outputs,

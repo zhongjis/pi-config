@@ -4,7 +4,7 @@ description: "Frontend/web UI design, implementation, and bounded rendered self-
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gemini-4-argon-high:low,cliproxyapi/gpt-6.1-sol:medium,opencode-go/kimi-k3:medium,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
-preload_skills: impeccable, agent-browser
+preload_skills: impeccable, agent-browser, programming
 extensions: |
   +better-bash-tool, +rtk, +direnv, +filter-outputs,
   +codegraph, +lsp, +multimodal-look, +impeccable

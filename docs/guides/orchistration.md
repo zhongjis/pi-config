@@ -110,10 +110,10 @@ A rejection leaves the gate in progress and unchecked. Hou Tu repairs the respon
 
 Kua Fu is the default workflow and remains in the current session.
 
-Every Kua Fu body shares one authorization gate ([`mode.md`](../../modes/kuafu/mode.md); GPT-family runs use [`gpt.md`](../../modes/kuafu/gpt.md), which restates it). An unfinished agreed implementation stays authorized through compatible follow-ups and repairs for failures it caused; standalone new explanation, investigation, comparison, or review requests and explicit pause or review-before-proceeding requests do not authorize edits, and canceled, superseded, or completed tasks do not revive authority.
+Every Kua Fu body shares one authorization gate ([`mode.md`](../../modes/kuafu/mode.md); GPT-family runs use [`gpt.md`](../../modes/kuafu/gpt.md), which restates it). Authorization is turn-local: the current message must request a change, approve Kua Fu's previous proposal, or resume named earlier work (`continue`). Questions or doubts about in-progress work, explanation, investigation, comparison, or review requests, and explicit pause or review-before-proceeding requests do not authorize edits; running workers continue unless you say stop. Canceled, superseded, or completed tasks do not revive authority.
 
 1. **Classify the active task and current message.** Kua Fu states its intent line on every reply. A direct implementation or fix request can begin work once scope and verification are clear.
-2. **Gather only needed context.** Kua Fu fires Chengfeng in the background when 2+ modules are involved and Wenchang when an external library or source comes up. It uses direct tools for known files and single searches, and never repeats a search it delegated ([explore rules](../../modes/kuafu/mode.md#tool-use-policy)).
+2. **Gather only needed context.** Kua Fu fires Chengfeng in the background when relevant locations across 2+ modules are unknown and Wenchang when an external library or source comes up. It uses direct tools for known files and single searches, and never repeats a search it delegated ([explore rules](../../modes/kuafu/mode.md#tool-use-policy)).
 3. **Plan at the right scale.** Non-trivial work becomes pi-tasks. When two viable decompositions remain and the choice matters, Kua Fu may ask Xuannv for a tactical plan and convert it into tasks. This does not switch modes or create a Hou Tu session.
 4. **Do it or delegate it.** Kua Fu does trivial and moderate single-domain work itself and delegates complex, specialist, or UI work, one deliverable per worker. Independent packets run in parallel; dependent work remains sequential.
 5. **Supervise continuity.** Kua Fu collects background results when notified, steers drifting work, and resumes salvageable sessions instead of duplicating them.
@@ -131,7 +131,7 @@ If Kua Fu discovers that the work needs a durable, user-approved plan and clean 
 | Plannotator is unavailable | Use the system-editor refinement option or another available approval-menu path. |
 | A Hou Tu task stays `in_progress` | Check the reported verification or dependency failure. Failed work remains active until repaired and parent-verified; it is not checked off from a worker summary. |
 | Work is running sequentially without an obvious reason | Hou Tu should name the blocking dependency, file conflict, or verification-state conflict. Independent implementation belongs in one foreground parallel batch. |
-| Kua Fu is analyzing instead of editing | Make the current message explicitly authorize the intended implementation or fix with a concrete scope, or send a compatible follow-up to an unfinished agreed implementation; standalone explanation, investigation, comparison, review, or an explicit pause/review-before-proceeding request does not authorize edits. |
+| Kua Fu is analyzing instead of editing | Make the current message request the implementation or fix with a concrete scope, approve Kua Fu's proposal, or say `continue` to resume earlier work; standalone explanation, investigation, comparison, review, or an explicit pause/review-before-proceeding request does not authorize edits. |
 | You expected a child execution session from Kua Fu | Kua Fu stays in the current session. Switch to `/mode fuxi` for the Fu Xi → Hou Tu plan-first flow. |
 
 ## Further reading

@@ -4,6 +4,7 @@ description: Quick implementation worker for mechanical, deterministic, low-risk
 model: github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,opencode-go/minimax-m3:max,llama-swap/qwen2.5-coder:7b:low
 prompt_mode: system_instructions
 discover_skills: false
+preload_skills: programming
 extensions: |
   +better-bash-tool, +rtk, +direnv, +filter-outputs,
   +lsp
