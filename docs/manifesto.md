@@ -128,11 +128,11 @@ See [README boundaries](../README.md) and the [extensions contract](../extension
 
 ## Same Rules, Model-Fit Prompts
 
-**Behavior is identical for every model family; only prompt style adapts.**
+**Shared contracts stay consistent; prompts fit each model.**
 
-Prompt style adapts to documented model quirks ([model families](../modes/MODEL-FAMILIES.md)). The default `mode.md` is canonical for behavior; family variants restate it in a style that fits the model ([parity rule](../modes/MODEL-FAMILIES.md#parity-rule)).
+Author model-family prompts against the [shared contracts](../modes/MODEL-FAMILIES.md#parity-rule), not by mechanically restating the default prompt.
 
-**Apply it:** Does this variant change what the agent does, or only how the instruction is phrased?
+**Apply it:** Does this prompt preserve shared contracts while improving execution for its model?
 
 ---
 

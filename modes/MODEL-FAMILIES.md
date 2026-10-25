@@ -7,13 +7,13 @@
 
 ## Models Are Developers
 
-Model families have distinct quirks that come from their training data and methods. Behavior stays the same across families; prompt style adapts to each family.
+Model families share task semantics, authorization, safety, specialist boundaries, and completion standards. Each family's prompt is authored for that model's execution characteristics.
 
 Shared instructions can serve several families. Check that they do not overconstrain GPT models: advice that helps one model can overconstrain another [2].
 
 ## Parity Rule
 
-`mode.md` is canonical for behavior. A family file restates it and differs only in style for documented quirks.
+`mode.md` supplies the default prompt, not a template that other families must restate. Family prompts may differ in structure, emphasis, workflow detail, and communication cadence while preserving shared contracts. Evaluate parity by outcomes, not matching wording or sections.
 
 ## Local Addition: GPT Overwork Habits
 
@@ -31,7 +31,7 @@ See [`model-family.ts`](../extensions/lib/model-family.ts) for the detection cod
 
 ## GPT Quirks
 
-A `gpt.md` may handle these quirks in style only:
+A `gpt.md` may adapt its instructions to these quirks:
 
 - **Softer emphasis.** Strong boundary language written for earlier models can stop GPT early [2].
 - **Explicit done criteria and safe autonomy.** State the result, audience, context, constraints, and what counts as done [1]. Name what may proceed independently and what needs approval, and which safe workflows run without repeated approval; GPT can be tentative about when to stop [1][2].
