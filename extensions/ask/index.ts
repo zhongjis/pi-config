@@ -1,5 +1,5 @@
 /**
- * ask — Structured user decisions, notes and clarification in Pi's TUI.
+ * ask — Structured user decisions, notes and clarification in Pi's TUI and RPC clients.
  *
  * Sources: badlogic/pi-mono (questionnaire.ts, question.ts), can1357/oh-my-pi
  * (ask lineage), and eko24ive/pi-ask (notes, previews and clarification).
@@ -13,6 +13,7 @@ import { createAskAutocompleteProvider } from "./autocomplete.js";
 import { createAskDialog, type AskDialogResult } from "./dialog.js";
 import { formatInvalidPayload, formatNonTuiQuestions, formatResultText, humanAnswer, humanNote } from "./format.js";
 import { buildInvalidDetails, normalizeQuestions, validateInput } from "./normalize.js";
+import { askViaDialogs } from "./rpc.js";
 import { AskParams, type Answer, type AskDetails, type AskIssue, type AskNote, type IncomingQuestion } from "./types.js";
 
 /** Pi's tool row width in an 80-column terminal (its Box pads one column per side). */
@@ -174,8 +175,15 @@ export default function ask(pi: ExtensionAPI) {
 			};
 			const questions = normalizeQuestions(input);
 			const emptyDetails: AskDetails = { title: params.title, questions: input, answers: [], notes: [], cancelled: true, mode: "submit" };
-			if (!isTui(ctx)) return { content: [{ type: "text", text: formatNonTuiQuestions(questions) }], details: emptyDetails };
+			if (!isTui(ctx) && !ctx.hasUI) return { content: [{ type: "text", text: formatNonTuiQuestions(questions) }], details: emptyDetails };
 			if (signal?.aborted) return { content: [{ type: "text", text: formatResultText(questions, emptyDetails, true) }], details: { ...emptyDetails, aborted: true } };
+
+			if (!isTui(ctx)) {
+				// RPC clients render only dialog methods; custom() would return undefined there.
+				pi.events.emit("user-prompted", { tool: "ask" });
+				const details = await askViaDialogs(ctx.ui, questions, input, params.title, signal);
+				return { content: [{ type: "text", text: formatResultText(questions, details, details.aborted === true) }], details };
+			}
 
 			pi.events.emit("user-prompted", { tool: "ask" });
 			// Herdr's agent-state integration counts blockers on this channel; the .finally()

@@ -1,6 +1,6 @@
 # ask
 
-Structured user decisions in Pi's interactive TUI, with single/multi-select choices, free text, notes, and option previews.
+Structured user decisions in Pi's interactive TUI and RPC clients, with single/multi-select choices, free text, notes, and option previews.
 
 ## Source
 
@@ -14,13 +14,15 @@ The tool's lineage includes [`questionnaire.ts` and `question.ts` from badlogic/
 - Review offers Submit, Elaborate, and Cancel. Submit accepts partial answers; unanswered required questions are flagged rather than blocking submission. Elaborate returns the user's notes for clarification while retaining their decisions.
 - A single single-select question submits on selection when there are no notes; with notes, it opens Review. Navigation and digit shortcuts use the [key resolver](keys.ts), including configured Pi selection bindings and matching hints.
 - Cancelling an editor preserves non-blank text as a draft. Dismissing a dirty dialog requires confirmation; explicit Review cancellation is immediate. An abort closes the dialog once.
-- Invalid input returns all [validation issues](normalize.ts) without opening a dialog. Outside interactive TUI mode, the tool returns a question list for asking the user directly.
+- Invalid input returns all [validation issues](normalize.ts) without opening a dialog.
+- In RPC mode (for example T3 Code), the [dialog driver](rpc.ts) asks through Pi's blocking `select`, `input`, and `editor` dialogs from the [RPC extension UI protocol](https://pi.dev/docs/latest/rpc-extension-ui) and returns the same answers and result text. Choices are numbered strings; previews open in a read-only editor; notes attach to questions, not options; Review appears after a quick pick only when a note exists. File and skill completion stays TUI-only.
+- JSON and print modes, which have no UI, return a question list for asking the user directly.
 
 ## Entry Points
 
 Use the `ask` tool when a decision depends on a user preference. [Registration and execution](index.ts) own the tool's agent guidance and integration; the [schema and result types](types.ts) define its input and structured output.
 
-[Result formatting](format.ts) produces answer lines, notes, clarification instructions, and non-TUI question lists.
+[Result formatting](format.ts) produces answer lines, notes, clarification instructions, and the no-UI question list.
 
 ## Integration
 

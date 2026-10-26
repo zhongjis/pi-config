@@ -25,8 +25,9 @@ function setup(keys: string[] = ["1"], mode = "tui", duringDialog?: (dialog: Dia
 			for (const key of keys) dialog.handleInput(key);
 		} finally { dialog.dispose(); }
 	}));
-	const execute = (questions = [question], signal?: AbortSignal, title?: string) => tool!.execute("call", { questions, title }, signal, undefined, { mode, cwd: process.cwd(), ui: { custom } });
-	return { execute, custom, emit, status };
+	const select = vi.fn(async (_title: string, options: string[]) => options[0]);
+	const execute = (questions = [question], signal?: AbortSignal, title?: string) => tool!.execute("call", { questions, title }, signal, undefined, { mode, hasUI: mode !== "print", cwd: process.cwd(), ui: { custom, select } });
+	return { execute, custom, select, emit, status };
 }
 
 describe("ask execution", () => {
@@ -52,6 +53,23 @@ describe("ask execution", () => {
 		expect(result.details).toMatchObject({ answers: [], notes: [], cancelled: true, mode: "submit" });
 		expect(result.details.aborted).toBeUndefined();
 		expect(custom).not.toHaveBeenCalled();
+	});
+	it("rpc mode answers through dialog methods without custom UI or Herdr blocking events", async () => {
+		const { execute, custom, select, emit } = setup([], "rpc");
+		const result = await execute(undefined, undefined, "Decisions");
+		expect(select).toHaveBeenCalledWith("Scope: Which scope?", ["1. Source — Source files", "Other…", "Add note…"], { signal: undefined });
+		expect(result.content[0].text).toBe("Decisions\nScope: user selected: 1. src");
+		expect(result.details).toMatchObject({ mode: "submit", cancelled: false, answers: [{ indices: [1] }] });
+		expect(custom).not.toHaveBeenCalled();
+		expect(emit.mock.calls).toEqual([["user-prompted", { tool: "ask" }]]);
+	});
+	it("pre-aborted rpc execution returns aborted without dialogs", async () => {
+		const { execute, select } = setup([], "rpc");
+		const controller = new AbortController();
+		controller.abort();
+		const result = await execute(undefined, controller.signal);
+		expect(result.details).toMatchObject({ cancelled: true, aborted: true });
+		expect(select).not.toHaveBeenCalled();
 	});
 	it("pre-aborted TUI execution returns aborted without UI or events", async () => {
 		const { execute, custom, emit } = setup();
