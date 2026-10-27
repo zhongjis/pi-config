@@ -1,3 +1,4 @@
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * fleet-wiring.test.ts — end-to-end wiring of the FleetView through the REAL
  * extension (src/index.ts), not the FleetList class in isolation.
@@ -88,6 +89,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     // async join → completion routes straight to sendIndividualNudge (no batch
     // debounce), so fleet.onAgentFinished fires synchronously on the result.
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false, defaultJoinMode: "async" }));
+    writeFixtureAgent(tmpDir);
     process.chdir(tmpDir);
     priorManager = Reflect.get(globalThis, MANAGER_KEY);
     Reflect.deleteProperty(globalThis, MANAGER_KEY);
@@ -127,7 +129,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
 
     const spawn = await tools.get("agent").execute(
       "tc",
-      { prompt: "go", description: "live one", subagent_type: "general-purpose", run_in_background: true },
+      { prompt: "go", description: "live one", subagent_type: "fixture", run_in_background: true },
       undefined,
       undefined,
       ctxWith(ui),

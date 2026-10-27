@@ -13,7 +13,7 @@ import type { AgentRecord } from "../src/types.js";
 function makeRecord(id: string, overrides: Partial<AgentRecord> = {}): AgentRecord {
   return {
     id,
-    type: "general-purpose",
+    type: "fixture",
     description: "test",
     status: "completed",
     toolUses: 0,

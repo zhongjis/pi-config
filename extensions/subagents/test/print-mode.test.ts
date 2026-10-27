@@ -1,3 +1,8 @@
+import { mkdtempSync as tempDir, rmSync as removeDir } from "node:fs";
+import { tmpdir as tempRoot } from "node:os";
+import { join as pathJoin } from "node:path";
+import { beforeEach as fixtureBefore, afterEach as fixtureAfter } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
@@ -79,7 +84,7 @@ describe("print mode background notifications", () => {
       {
         prompt: "reply done",
         description: "tiny child",
-        subagent_type: "general-purpose",
+        subagent_type: "fixture",
         run_in_background: true,
       },
       undefined,
@@ -94,4 +99,17 @@ describe("print mode background notifications", () => {
 
     await handlers.get("session_shutdown")?.({}, makeHeadlessCtx());
   });
+});
+
+let fixtureCwd: string;
+let originalCwd: string;
+fixtureBefore(() => {
+  originalCwd = process.cwd();
+  fixtureCwd = tempDir(pathJoin(tempRoot(), "subagent-fixture-"));
+  writeFixtureAgent(fixtureCwd);
+  process.chdir(fixtureCwd);
+});
+fixtureAfter(() => {
+  process.chdir(originalCwd);
+  removeDir(fixtureCwd, { recursive: true, force: true });
 });

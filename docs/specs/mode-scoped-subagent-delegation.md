@@ -17,7 +17,7 @@ Use the resolver in two layers:
 - **Affordance:** keep the registered `agent` description generic and non-stale; it advertises no global target list. Mode prompts supply routing guidance, while denial responses report the current permitted targets.
 - **Authority:** check the resolved policy at every spawn-capable ingress: direct `agent` execution, checked RPC requests, and the global manager bridge. No request may reach manager spawn/resume until the authoritative check passes.
 
-Modes do not authorize `agent` calls in `tool_call`. Subagent direct, checked RPC, and global manager-bridge spawn paths are sole authorities: they consume the latest persisted snapshot and validate before spawn or resume. Direct `agent` denial returns structured tool details; RPC retains its frozen `{ success: false, error: string }` envelope with `delegation_policy_denied:` as the stable machine-detectable prefix. Sessions with no active agent mode preserve existing unrestricted delegation; an identified active mode with unavailable config or no explicit delegation fields fails closed.
+Modes do not authorize `agent` calls in `tool_call`. Subagent direct, checked RPC, and global manager-bridge spawn paths are sole authorities: they consume the latest persisted snapshot and validate before spawn or resume. Direct `agent` denial returns structured tool details; RPC retains its frozen `{ success: false, error: string }` envelope with `delegation_policy_denied:` as the stable machine-detectable prefix. Sessions with no active agent mode permit delegation among loaded, enabled agents only; unknown or unloaded types are denied. An identified active mode with unavailable config or no explicit delegation fields fails closed.
 
 ## User Stories
 
@@ -43,7 +43,7 @@ Modes do not authorize `agent` calls in `tool_call`. Subagent direct, checked RP
 20. As a maintainer, I want RPC and global manager-bridge spawn handling to recheck policy authoritatively, so alternate manager access is not an authorization shortcut.
 21. As a maintainer, I want checked RPC transport covered for allowed and denied targets, so future transport changes cannot reopen the bypass.
 22. As a maintainer, I want policy resolution independent of spawning and UI state, so that precedence and edge cases are cheap to unit test.
-23. As a maintainer, I want sessions with no active agent mode to preserve current unrestricted delegation, while an identified mode with missing or invalid policy fails closed, so that compatibility is preserved without widening access after configuration failure.
+23. As a maintainer, I want sessions with no active agent mode to permit all loaded, enabled agents and deny unknown types, while an identified mode with missing or invalid policy fails closed, so that compatibility is preserved without widening access after configuration failure.
 24. As a maintainer, I want denied requests to expose a stable error category without starting an agent, so that policy failures are diagnosable without false lifecycle records.
 25. As an extension consumer, I want existing successful RPC result contracts preserved, so this change remains backward-compatible for allowed requests.
 26. As an extension consumer, I want denied requests use one stable error category across ingresses, so that callers can handle policy failures uniformly.
@@ -57,7 +57,7 @@ Modes do not authorize `agent` calls in `tool_call`. Subagent direct, checked RP
 - The canonical mode parser persists a versioned delegation-policy snapshot in each `agent-mode` entry. Subagent resolves the latest snapshot with the available agent registry; no ingress reparses mode frontmatter or consults modes runtime state.
 - Shared frontmatter parsing is authoritative for `delegation` rules; the persisted rule snapshot is consumed by the delegation-policy helpers rather than reimplemented at each ingress.
 - Rules fold left to right from an empty set: `@all` adds every available type, names add or remove one type. Unknown or unavailable targets are never added to the permitted set.
-- The resolver distinguishes no active agent mode from an identified mode whose persisted policy is missing, invalid, or contains no `+` delegation rule. No active mode preserves existing unrestricted delegation; an unresolved identified mode fails closed.
+- The resolver distinguishes no active agent mode from an identified mode whose persisted policy is missing, invalid, or contains no `+` delegation rule. No active mode permits all loaded, enabled agents; unknown or unavailable types are denied, and an unresolved identified mode fails closed.
 - Registered Pi tool schemas cannot refresh safely after mode switches. The `agent` description and `subagent_type` schema therefore stay generic and advertise no target list. Mode prompts provide routing; current permitted targets appear in policy denial output.
 - Modes `tool_call` hooks retain non-`agent` mode guards only; they do not duplicate delegation authorization.
 - Direct `agent` execution performs an authoritative snapshot check immediately before any new spawn or resume manager operation. Foreground and background calls share this check; denial remains a structured tool observation.
@@ -65,7 +65,7 @@ Modes do not authorize `agent` calls in `tool_call`. Subagent direct, checked RP
 - Resume requests must not become a policy bypass. Authorization resolves the resumed record's agent type and applies current active-mode policy before manager continuation.
 - Direct `agent` denial returns structured details with `category`, `activeMode`, `requestedType`, and `permittedTypes`. RPC denial preserves the frozen error-only envelope and starts `error` with `delegation_policy_denied:`. Denial creates no child session, background record, spawn lifecycle event, or manager spawn/resume call.
 - Allowed requests retain existing spawn, prompt, supervision, lifecycle, result, and restoration behavior.
-- Policy context passed to RPC must come from authoritative runtime session state, not caller-supplied mode text that can be forged. Absence of an active mode preserves current unrestricted behavior; an unresolved identified mode is denied.
+- Policy context passed to RPC must come from authoritative runtime session state, not caller-supplied mode text that can be forged. Absence of an active mode permits loaded, enabled agents only; an unresolved identified mode is denied.
 - No new public event or RPC envelope field is introduced. RPC denial remains `{ success: false, error: string }`; stable policy classification is the `delegation_policy_denied:` prefix.
 
 ## Testing Decisions

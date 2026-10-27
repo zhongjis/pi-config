@@ -1,3 +1,5 @@
+import { registerAgents } from "../src/agent-types.js";
+import { fixtureAgent } from "./helpers/fixture-agent.js";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, initTheme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
@@ -90,6 +92,7 @@ beforeAll(() => {
     sendMessage: vi.fn(),
   };
   subagentsExtension(pi as unknown as ExtensionAPI);
+  registerAgents(new Map([[fixtureAgent.name, fixtureAgent]]));
 });
 
 afterAll(async () => {
@@ -99,7 +102,7 @@ afterAll(async () => {
 describe("subagent tool rendering migration", () => {
   it("preserves Agent description and skills call preview and width safety", () => {
     const call = requireTool("agent").renderCall({
-      subagent_type: "Explore", description: "Review 界面 boundary fix",
+      subagent_type: "fixture", description: "Review 界面 boundary fix",
       skills: ["codebase-design", "typescript-best-practices", "react-best-practices", "diagnosing-bugs"],
     }, theme);
     expect(rawText(call)).toBe("▸ Agent · Review 界面 boundary fix · skills: 4 · codebase-design, typescript-best-practices, react-best-practices, diagnosing-bugs");
@@ -109,7 +112,7 @@ describe("subagent tool rendering migration", () => {
   it("keeps Agent call headers identical across delivery modes except for the background tag", () => {
     const tool = requireTool("agent");
     const args = {
-      subagent_type: "Explore",
+      subagent_type: "fixture",
       description: "Audit tool rendering",
       skills: ["codebase-design", "typescript-best-practices"],
     };
@@ -138,7 +141,7 @@ describe("subagent tool rendering migration", () => {
   });
   const answer = "**Decisive answer**\n\n- 界面 🚀 é\n\n```ts\nconst complete = true;\n```\n\n" + "Complete retained line.\n".repeat(60);
   const base: AgentDetails = {
-    displayName: "Explore", description: "Review", subagentType: "Explore",
+    displayName: "fixture", description: "Review", subagentType: "fixture",
     status: "completed", result: answer, modelName: "provider/model", thinking: "off",
     turnCount: 2, maxTurns: 1, toolUses: 0, tokens: "488.9k token", durationMs: 12000,
     outputFile: "/tmp/完整路径/agent.output", agentId: "actual-id",
@@ -332,7 +335,7 @@ describe("subagent tool rendering migration", () => {
 
   it.each(["agent", "get_agent_result"])("B03 %s shows exact denial", (name) => {
     const tool = requireTool(name);
-    const reason = "Delegation denied: only Explore is permitted.";
+    const reason = "Delegation denied: only fixture is permitted.";
     const denied = Object.freeze({ content: [{ type: "text" as const, text: reason }], isError: true, details: {
       ...base, status: "error" as const, category: "delegation_policy_denied" as const, result: "", error: reason,
     } });

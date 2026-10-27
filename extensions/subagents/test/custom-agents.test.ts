@@ -196,14 +196,14 @@ Partial access.`);
 
   it("parses delegation rules", () => {
     writeAgent("delegator", `---
-delegation: +Explore, +Plan, -general-purpose
+delegation: +Scout, +planner, -fixture
 ---
 
 Delegates.`);
 
     const result = loadCustomAgents(tmpDir);
     const agent = result.get("delegator")!;
-    expect(agent.delegationRules).toEqual([{ sign: "+", selector: "explore" }, { sign: "+", selector: "plan" }, { sign: "-", selector: "general-purpose" }]);
+    expect(agent.delegationRules).toEqual([{ sign: "+", selector: "scout" }, { sign: "+", selector: "planner" }, { sign: "-", selector: "fixture" }]);
   });
 
   it("passes through thinking level as-is (no validation)", () => {
@@ -216,17 +216,6 @@ Any thinking.`);
     const result = loadCustomAgents(tmpDir);
     // Pi validates at session creation — the loader just passes the raw string through.
     expect(result.get("anythink")!.thinking).toBe("turbo");
-  });
-
-  it("handles prompt_mode: append", () => {
-    writeAgent("appender", `---
-prompt_mode: append
----
-
-Extra instructions.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.get("appender")!.promptMode).toBe("append");
   });
 
   it("handles prompt_mode: system_instructions", () => {
@@ -300,23 +289,6 @@ Real.`);
     expect(result.has("real")).toBe(true);
   });
 
-  it("allows agents with names matching defaults (overrides them)", () => {
-    writeAgent("Explore", `---
-description: Custom Explore
----
-
-Custom explore agent.`);
-    writeAgent("custom", `---
-description: Custom Agent
----
-
-Should be loaded.`);
-
-    const result = loadCustomAgents(tmpDir);
-    expect(result.has("Explore")).toBe(true);
-    expect(result.get("Explore")!.description).toBe("Custom Explore");
-    expect(result.has("custom")).toBe(true);
-  });
 
   it("handles empty body with frontmatter", () => {
     writeAgent("nobody", `---
@@ -360,7 +332,7 @@ Unsigned rule.`);
 
     const result = loadCustomAgentsWithDiagnostics(tmpDir);
     expect(result.agents.has("unsigned")).toBe(false);
-    expect(result.diagnostics).toMatchObject([
+    expect(result.diagnostics.filter(diagnostic => diagnostic.severity === "error")).toMatchObject([
       {
         file,
         agentName: "unsigned",
@@ -378,7 +350,7 @@ tools: read, grep
 Two unsigned rules.`);
 
     const result = loadCustomAgentsWithDiagnostics(tmpDir);
-    expect(result.diagnostics.map((d) => d.message)).toEqual([
+    expect(result.diagnostics.filter(diagnostic => diagnostic.severity === "error").map((d) => d.message)).toEqual([
       'unsigned entry "read": prefix + to grant or - to remove, e.g. "+read"',
       'unsigned entry "grep": prefix + to grant or - to remove, e.g. "+grep"',
     ]);
@@ -412,7 +384,7 @@ extensions: false
 Boolean extensions.`);
 
     const result = loadCustomAgentsWithDiagnostics(tmpDir);
-    expect({ loaded: result.agents.has("boolean-extensions"), diagnostics: result.diagnostics.map((d) => [d.field, d.severity]) })
+    expect({ loaded: result.agents.has("boolean-extensions"), diagnostics: result.diagnostics.filter(diagnostic => diagnostic.severity === "error").map((d) => [d.field, d.severity]) })
       .toEqual({ loaded: false, diagnostics: [["extensions", "error"]] });
   });
 

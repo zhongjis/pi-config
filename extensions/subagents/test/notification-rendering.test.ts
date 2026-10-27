@@ -1,3 +1,4 @@
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -150,6 +151,7 @@ beforeAll(() => {
     join(tmpDir, ".pi", "subagents.json"),
     JSON.stringify({ defaultJoinMode: "async", outputTranscript: false }),
   );
+  writeFixtureAgent(tmpDir);
   process.chdir(tmpDir);
   subagentsExtension(pi as unknown as ExtensionAPI);
 });
@@ -368,7 +370,7 @@ describe("subagent notification rendering migration", () => {
     const result = "界".repeat(resultLength);
     const record: AgentRecord = {
       id: "agent-full-output",
-      type: "general-purpose",
+      type: "fixture",
       description: "Full output route",
       status: "completed",
       result,
@@ -419,7 +421,7 @@ describe("subagent notification rendering migration", () => {
       {
         prompt: "verify delivery",
         description: "Delivery regression",
-        subagent_type: "general-purpose",
+        subagent_type: "fixture",
         run_in_background: true,
       },
       undefined,

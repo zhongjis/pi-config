@@ -1,3 +1,8 @@
+import { mkdtempSync as tempDir, rmSync as removeDir } from "node:fs";
+import { tmpdir as tempRoot } from "node:os";
+import { join as pathJoin } from "node:path";
+import { beforeEach as fixtureBefore, afterEach as fixtureAfter } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * status-note-wiring.test.ts — proves the status note actually reaches the
  * PARENT through the real tool handlers, not just that getStatusNote() returns
@@ -102,7 +107,7 @@ describe("status note reaches the parent through the real handlers", () => {
 
     const res = await tools.get("agent").execute(
       "tc1",
-      { prompt: "go", description: "d", subagent_type: "general-purpose" },
+      { prompt: "go", description: "d", subagent_type: "fixture" },
       undefined, undefined, ctx(),
     );
 
@@ -132,7 +137,7 @@ describe("status note reaches the parent through the real handlers", () => {
     const parent = new AbortController();
     const call = tools.get("agent").execute(
       "tc-stop",
-      { prompt: "go", description: "d", subagent_type: "general-purpose" },
+      { prompt: "go", description: "d", subagent_type: "fixture" },
       parent.signal, undefined, ctx(),
     );
 
@@ -165,7 +170,7 @@ describe("status note reaches the parent through the real handlers", () => {
 
     const spawn = await tools.get("agent").execute(
       "tc2",
-      { prompt: "go", description: "d", subagent_type: "general-purpose", run_in_background: true },
+      { prompt: "go", description: "d", subagent_type: "fixture", run_in_background: true },
       undefined, undefined, ctx(),
     );
     const id = textOf(spawn).match(/Agent ID: (\S+)/)?.[1];
@@ -192,4 +197,17 @@ describe("status note reaches the parent through the real handlers", () => {
     release?.();
     await lifecycle.get("session_shutdown")?.({}, ctx());
   });
+});
+
+let fixtureCwd: string;
+let originalCwd: string;
+fixtureBefore(() => {
+  originalCwd = process.cwd();
+  fixtureCwd = tempDir(pathJoin(tempRoot(), "subagent-fixture-"));
+  writeFixtureAgent(fixtureCwd);
+  process.chdir(fixtureCwd);
+});
+fixtureAfter(() => {
+  process.chdir(originalCwd);
+  removeDir(fixtureCwd, { recursive: true, force: true });
 });

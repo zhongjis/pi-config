@@ -37,13 +37,14 @@ import {
 } from "../../lib/active-tools.js";
 import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
+import { getModePromptSource } from "../../lib/model-family.js";
+import { selectPromptBody } from "../../lib/prompt-variants.js";
 import sessionLocalTools from "../../session-local/index.js";
 import { getSessionLocalPath, seedSessionLocalScope } from "../../session-local/storage.js";
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import { installExtensionToolScope } from "./agent-tool-scope.js";
 import { getAgentConfig, getConfig, resolveType } from "./agent-types.js";
 import { buildParentContext, extractText } from "./context.js";
-import { DEFAULT_AGENTS } from "./default-agents.js";
 import { detectEnv } from "./env.js";
 import type { OpenedSession, ToolActivity } from "./execution.js";
 import type { CompiledSchema } from "./graph/json-schema.js";
@@ -195,7 +196,7 @@ export interface OpenSessionOptions {
   structuredOutput?: CompiledSchema;
   /** ExtensionAPI instance — used for pi.exec() instead of execSync. */
   pi: ExtensionAPI;
-  /** Manager-assigned id; suffixes session name to disambiguate parallel spawns (e.g. `Explore#a1b2c3d4`). */
+  /** Manager-assigned id; suffixes session name to disambiguate parallel spawns (e.g. `worker#a1b2c3d4`). */
   agentId?: string;
   /** Internal unregistered definition replacing every registry lookup; never reachable from tool or RPC options. */
   agentConfig?: AgentConfig;
@@ -323,7 +324,7 @@ export async function openSession(
   type: SubagentType,
   options: OpenSessionOptions,
 ): Promise<OpenedSession> {
-  // An internal definition replaces registry lookup, including the general-purpose fallback.
+  // An internal definition replaces registry lookup.
   const override = options.agentConfig;
   const canonicalType = override?.name ?? resolveType(type) ?? type;
   const guardBash = isGuardedBashType(canonicalType);
@@ -363,9 +364,6 @@ export async function openSession(
 
   const env = await detectEnv(options.pi, effectiveCwd);
 
-  // Get parent system prompt for append-mode agents
-  const parentSystemPrompt = ctx.getSystemPrompt();
-
   // Build prompt extras (skill preloading)
   const extras: PromptExtras = {};
 
@@ -388,16 +386,8 @@ export async function openSession(
   }
 
   // Build system prompt from agent config
-  let systemPrompt: string;
-  if (agentConfig) {
-    systemPrompt = buildAgentPrompt(agentConfig, effectiveCwd, env, parentSystemPrompt, extras);
-  } else {
-    // Unknown type fallback: spread the canonical general-purpose config (defensive —
-    // unreachable in practice since index.ts resolves unknown types before opening a session).
-    const fallback = DEFAULT_AGENTS.get("general-purpose");
-    if (!fallback) throw new Error(`No fallback config available for unknown type "${type}"`);
-    systemPrompt = buildAgentPrompt({ ...fallback, name: type }, effectiveCwd, env, parentSystemPrompt, extras);
-  }
+  if (!agentConfig) throw new Error(`Unknown agent type "${type}"`);
+  let promptSuffix = "";
 
   // Built-in grants are name-only, so they resolve before the session exists.
   const grantedBuiltinSet = resolveToolAccess(toolRules, BUILTIN_TOOL_NAMES.map((name) => ({ name, extensionIds: [] })), gates).allowed;
@@ -405,18 +395,23 @@ export async function openSession(
   // Writing agents own one notes file in the shared Agent-tree `local://` root;
   // isolated agents load no session-local, and graph children return typed output.
   if (options.agentId && !isolated && !options.graphRun && (grantedBuiltinSet.has("write") || grantedBuiltinSet.has("edit"))) {
-    systemPrompt += `\n\n${workNotesSection(options.agentId)}`;
+    promptSuffix += `\n\n${workNotesSection(options.agentId)}`;
     if (ctx.sessionManager) options.onNotesFile?.(getSessionLocalPath(ctx, workNotesRelativePath(options.agentId)));
   }
 
   if (options.graphRun && !options.structuredOutput) {
-    systemPrompt += `
+    promptSuffix += `
 
 <graph_run_child>
 Your final message IS the return value of this task. An agent graph run captures it and passes it to the next stage.
 Return only the answer, in exactly the shape the prompt asks for — no preamble, no summary of what you did, no offer to continue.
 </graph_run_child>`;
   }
+
+  const promptFor = (promptModel: { provider: string; id: string } | undefined): string => {
+    const systemPrompt = selectPromptBody(agentConfig.systemPrompt, agentConfig.promptVariants ?? {}, promptModel ? getModePromptSource(promptModel) : "default");
+    return buildAgentPrompt({ ...agentConfig, systemPrompt }, effectiveCwd, env, extras) + promptSuffix;
+  };
 
   // noSkills is driven only by discoverSkills; preloaded skills (if any) are already
   // injected into the prompt and are independent of the on-demand skill catalog.
@@ -446,9 +441,8 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
   //
   // Suppress AGENTS.md/CLAUDE.md and APPEND_SYSTEM.md — upstream's
   // buildSystemPrompt() re-appends both AFTER systemPromptOverride, which
-  // would defeat prompt_mode: replace and isolated: true. Parent context, if
-  // wanted, reaches the subagent via prompt_mode: append (parentSystemPrompt
-  // is embedded in systemPromptOverride) or inherit_context (conversation).
+  // would defeat prompt_mode: replace and isolated: true. Conversation context
+  // can be inherited through inherit_context.
   const noExtensions = !extensionRules.some((rule) => rule.sign === "+");
   // Pre-pass over Pi's built-in extensions so unselected factories never run;
   // its diagnostics are ignored (the override reports the full resolution).
@@ -499,17 +493,22 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
       {
         name: "subagent-model-fallback",
         hidden: true,
-        factory: (extensionPi: ExtensionAPI) => registerRuntimeModelFallback(extensionPi, {
-          chain: () => selected.modelInput ?? agentConfig?.model,
-          validate: (candidate, childCtx) => { if (candidate.fast) assertFastSupported(candidate.model, childCtx.modelRegistry.isUsingOAuth(candidate.model)); },
-          apply: (candidate, childCtx) => {
-            fastPolicy.enabled = candidate.fast === true;
-            fastPolicy.usingOAuth = childCtx.modelRegistry.isUsingOAuth(candidate.model);
-            const level = agentConfig?.thinking ?? candidate.thinkingLevel
-              ?? (selected.thinkingLevel === undefined ? options.thinkingLevel : undefined);
-            if (level) extensionPi.setThinkingLevel(level);
-          },
-        }),
+        factory: (extensionPi: ExtensionAPI) => {
+          extensionPi.on("before_agent_start", (event, childCtx) => {
+            event.systemPromptOptions.customPrompt = promptFor(childCtx.model);
+          });
+          registerRuntimeModelFallback(extensionPi, {
+            chain: () => selected.modelInput ?? agentConfig?.model,
+            validate: (candidate, childCtx) => { if (candidate.fast) assertFastSupported(candidate.model, childCtx.modelRegistry.isUsingOAuth(candidate.model)); },
+            apply: (candidate, childCtx) => {
+              fastPolicy.enabled = candidate.fast === true;
+              fastPolicy.usingOAuth = childCtx.modelRegistry.isUsingOAuth(candidate.model);
+              const level = agentConfig?.thinking ?? candidate.thinkingLevel
+                ?? (selected.thinkingLevel === undefined ? options.thinkingLevel : undefined);
+              if (level) extensionPi.setThinkingLevel(level);
+            },
+          });
+        },
       },
       {
         name: "subagent-fast",
@@ -583,7 +582,7 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
     noPromptTemplates: true,
     noThemes: true,
     noContextFiles: !inheritContextFiles,
-    systemPromptOverride: () => systemPrompt,
+    systemPromptOverride: () => promptFor(model),
     appendSystemPromptOverride: () => [],
   });
   await loader.reload();

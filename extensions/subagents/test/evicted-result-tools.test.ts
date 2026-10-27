@@ -62,7 +62,7 @@ describe("tools on an evicted, indexed agent", () => {
   function entry(sessionFile: string, overrides: Partial<EvictedAgent> = {}): EvictedAgent {
     return {
       id: "evicted-1",
-      type: "general-purpose",
+      type: "fixture",
       description: "evicted review",
       status: "completed",
       startedAt: 1_000,

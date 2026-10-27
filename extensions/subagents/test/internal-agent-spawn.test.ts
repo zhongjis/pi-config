@@ -86,7 +86,7 @@ function userAgent(name: string, overrides: Partial<AgentConfig> = {}): AgentCon
     preloadSkills: [],
     model: "fixture/user-model",
     systemPrompt: "USER AGENT PROMPT",
-    promptMode: "append",
+    promptMode: "replace",
     inheritContext: true,
     ...overrides,
   };
@@ -123,7 +123,7 @@ describe("loadGraphClassifierAgent", () => {
     ["tools", `${validFrontmatter}\ntools: +read`],
     ["extensions", `${validFrontmatter}\nextensions: +@all`],
     ["isolation", "prompt_mode: replace\ndiscover_skills: false"],
-    ["prompt mode", "prompt_mode: append\nisolated: true"],
+    ["prompt mode", "prompt_mode: system_instructions\nisolated: true\ndiscover_skills: false"],
     ["inherited context", `${validFrontmatter}\ninherit_context: true`],
     ["invalid field", `${validFrontmatter}\nskills: none`],
   ])("fails closed on %s", (_label, frontmatter) => {

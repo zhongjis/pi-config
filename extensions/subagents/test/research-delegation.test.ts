@@ -186,7 +186,6 @@ describe("delegate_research bridge", () => {
     ["an unguarded Bash target", [PARENT, agent("leaf", { toolRules: parseAccessRules("tools", "+read, +bash").rules })], "leaf"],
     ["an unknown target", [PARENT], "leaf"],
     ["a disabled target", [PARENT, agent("leaf", { enabled: false })], "leaf"],
-    ["an append-mode target", [PARENT, agent("leaf", { promptMode: "append" })], "leaf"],
   ])("denies %s without spawning", async (_label, configs, target) => {
     setAgents(...configs);
     scriptRuns({ parent: (options) => delegate(options, target) });

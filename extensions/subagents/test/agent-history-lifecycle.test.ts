@@ -21,7 +21,7 @@ describe("independent agent history lifecycle", () => {
     await host.tools.get("agent")!.execute("call", {
       prompt: "SECRET_PROMPT",
       description: "history review",
-      subagent_type: "general-purpose",
+      subagent_type: "fixture",
       run_in_background: true,
     }, undefined, undefined, host.ctx);
     const historyPath = join(dir, "global", "local", "parent", "agent-history.json");

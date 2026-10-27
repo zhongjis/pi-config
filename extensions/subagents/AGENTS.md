@@ -23,6 +23,11 @@ Run isolated Agent sessions with foreground results and background supervision. 
 
 ## Local Contracts
 
+- Agent calls MUST use the [delegation allowlist](src/delegation-policy.ts) as their sole target gate: canonicalize against loaded, enabled definitions and deny unknown or unavailable names, including without an active mode. The registry contains user definitions only; internal graph classifiers remain separate.
+- [Agent-definition navigation](src/ui/agents-menu.ts) MUST be read-only: list, view access rules/definition, and open running conversations. Definition authoring stays outside the menu; viewing uses the loader-selected definition path.
+- [Prompt construction](src/prompts.ts) uses the agent's own body; [frontmatter](../lib/agent-frontmatter.ts) supports replacement with or without project context, never parent-system-prompt inheritance.
+- [Definition loading](src/custom-agents.ts) MUST follow the [discovery order and resolution contract](README.md#custom-agents). Preserve field diagnostics and notify once per fallback/unavailable warning; only directories containing `default.md` are candidates. Other agent-directory files are ignored.
+- [Prompt variants](../lib/prompt-variants.ts) MUST be loaded with the definition, selected from the child's actual model at spawn and every run, and written to `systemPromptOptions.customPrompt` without replacing the full system prompt. Keep work-note side effects outside per-run prompt selection; internal built-in definitions stay flat and default-only.
 - Every Execution uses only the hidden [turn ceiling](src/turn-ceiling.ts); configuration and invocation carry no turn budget. Activity and reports retain the ceiling display.
 - Only orchestrator-owned Executions (no `graphRunId`, no `parentAgentId`) check in, once, at the [check-in threshold](src/turn-ceiling.ts). The check-in goes to the orchestrator, never the subagent, and is edge-triggered: waiters active at it wake; with none, a tracked execution gets one held follow-up notification.
 - [src/prompts.ts](src/prompts.ts) owns the shared parent/subagent communication contract; every child prompt mode and every [agent tool description mode](src/agent-tool.ts) MUST include it.

@@ -61,13 +61,6 @@ export function createSettingsMenu(
         values: ["on", "off"],
       },
       {
-        id: "disableDefaultAgents",
-        label: "Disable defaults",
-        description: "Hide built-in agents (general-purpose, Explore, Plan) — custom agents are unaffected",
-        currentValue: settings.disableDefaultAgents ? "on" : "off",
-        values: ["on", "off"],
-      },
-      {
         id: "outputTranscript",
         label: "Output transcript",
         description: "Write each subagent's .output transcript by default. A custom agent's output_transcript frontmatter overrides this.",

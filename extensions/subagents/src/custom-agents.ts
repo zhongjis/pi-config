@@ -6,6 +6,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { type ParsedAgentFrontmatter, parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
+import { type PromptVariants, readPromptVariantDir } from "../../lib/prompt-variants.js";
 import { normalizeThinkingLevel } from "./thinking-level.js";
 import type {
   AgentConfig,
@@ -13,77 +14,82 @@ import type {
   CustomAgentsLoadResult,
 } from "./types.js";
 
-/**
- * Scan for custom agent .md files from multiple locations.
- * Discovery hierarchy (higher priority wins):
- *   1. Project:   <cwd>/.pi/agents/*.md (authoritative — also where /agents writes)
- *   2. Workspace: <cwd>/.agents/agents/*.md (shared cross-tool .agents workspace, read-only)
- *   3. Global:    $PI_CODING_AGENT_DIR/agents/*.md (default: ~/.pi/agent/agents/*.md)
- *
- * Project-level agents override global ones with the same name. On a name clash
- * between the two project locations, .pi/agents wins — .pi stays the project
- * authority; .agents/agents is an additional read location.
- * Any name is allowed — names matching defaults (e.g. "Explore") override them.
- */
+/** Load flat .md and directory default.md agent definitions from the configured locations. */
 export function loadCustomAgents(cwd: string): Map<string, AgentConfig> {
   return loadCustomAgentsWithDiagnostics(cwd).agents;
 }
 
-/** Scan for custom agents and return structured frontmatter diagnostics. */
+interface DefinitionCandidate {
+  readonly path: string;
+  readonly directory?: string;
+  readonly source: "project" | "global";
+}
+
+/** Scan names first, then resolve each name from its highest-priority valid definition. */
 export function loadCustomAgentsWithDiagnostics(cwd: string): CustomAgentsLoadResult {
-  const globalDir = join(getAgentDir(), "agents");
-  const workspaceProjectDir = join(cwd, ".agents", "agents");
-  const projectDir = join(cwd, ".pi", "agents");
+  const candidates = new Map<string, DefinitionCandidate[]>();
+  for (const [dir, source] of [
+    [join(cwd, ".pi", "agents"), "project"],
+    [join(cwd, ".agents", "agents"), "project"],
+    [join(getAgentDir(), "agents"), "global"],
+  ] as const) {
+    let files: string[];
+    try {
+      files = readdirSync(dir).filter(file => file !== "AGENTS.md");
+    } catch (error) {
+      if (!(error instanceof Error) || !("code" in error) || (error.code !== "ENOENT" && error.code !== "ENOTDIR")) throw error;
+      continue;
+    }
+    const names = new Set(files.map(file => file.endsWith(".md") ? basename(file, ".md") : file));
+    for (const name of names) {
+      const entries = candidates.get(name) ?? [];
+      const directory = join(dir, name);
+      const defaultPath = join(directory, "default.md");
+      if (existsSync(defaultPath)) entries.push({ path: defaultPath, directory, source });
+      const flatPath = join(dir, `${name}.md`);
+      if (existsSync(flatPath)) entries.push({ path: flatPath, source });
+      if (entries.length > 0) candidates.set(name, entries);
+    }
+  }
 
   const agents = new Map<string, AgentConfig>();
   const diagnostics: AgentDefinitionDiagnostic[] = [];
-  loadFromDir(globalDir, agents, diagnostics, "global");            // lowest priority
-  loadFromDir(workspaceProjectDir, agents, diagnostics, "project"); // shared workspace
-  loadFromDir(projectDir, agents, diagnostics, "project");          // highest priority (overwrites)
+  for (const [name, entries] of candidates) {
+    const invalidPaths: string[] = [];
+    let usedPath: string | undefined;
+    for (const candidate of entries) {
+      try {
+        const definition = candidate.directory
+          ? readPromptVariantDir(candidate.directory)
+          : { defaultContent: readFileSync(candidate.path, "utf-8"), variants: undefined };
+        if (!definition) {
+          diagnostics.push({ file: candidate.path, agentName: name, field: "definition", severity: "error", message: "Cannot read definition." });
+        } else {
+          const parsed = parseAgentMarkdown(definition.defaultContent);
+          diagnostics.push(...parsed.diagnostics.map(diagnostic => ({ file: candidate.path, agentName: name, ...diagnostic })));
+          if (parsed.invalidFields.length === 0) {
+            agents.set(name, { ...toAgentConfig(name, parsed, candidate.source, definition.variants), definitionPath: candidate.path });
+            usedPath = candidate.path;
+            break;
+          }
+        }
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        diagnostics.push({ file: candidate.path, agentName: name, field: "definition", severity: "error", message: error.message });
+      }
+      invalidPaths.push(candidate.path);
+    }
+    if (usedPath) {
+      for (const file of invalidPaths) diagnostics.push({ file, agentName: name, severity: "warning", message: `invalid definition; using ${usedPath}` });
+    } else {
+      diagnostics.push({ agentName: name, severity: "warning", message: "no valid definition; agent unavailable" });
+    }
+  }
   return { agents, diagnostics };
 }
 
-/** Load agent configs from a directory into the map. */
-function loadFromDir(
-  dir: string,
-  agents: Map<string, AgentConfig>,
-  diagnostics: AgentDefinitionDiagnostic[],
-  source: "project" | "global",
-): void {
-  if (!existsSync(dir)) return;
-
-  let files: string[];
-  try {
-    files = readdirSync(dir).filter(f => f.endsWith(".md") && f !== "AGENTS.md");
-  } catch {
-    return;
-  }
-
-  for (const file of files) {
-    const name = basename(file, ".md");
-    const filePath = join(dir, file);
-
-    let content: string;
-    try {
-      content = readFileSync(filePath, "utf-8");
-    } catch {
-      continue;
-    }
-
-    const parsed = parseAgentMarkdown(content);
-    for (const d of parsed.diagnostics) {
-      diagnostics.push({ file: filePath, agentName: name, field: d.field, severity: d.severity, message: d.message });
-    }
-    // Any error diagnostic invalidates the definition: skip it rather than run
-    // a worker under a misread access contract.
-    if (parsed.invalidFields.length > 0) continue;
-
-    agents.set(name, toAgentConfig(name, parsed, source));
-  }
-}
-
 /** Convert a valid parsed definition into its runtime agent config. */
-export function toAgentConfig(name: string, parsed: ParsedAgentFrontmatter, source: AgentConfig["source"]): AgentConfig {
+export function toAgentConfig(name: string, parsed: ParsedAgentFrontmatter, source: AgentConfig["source"], promptVariants?: PromptVariants): AgentConfig {
   // NEW-local fields the shared schema does not model. Parsed directly from
   // the raw frontmatter. `thinking` is normalized (legacy "none" -> "off")
   // via the shared thinking-level helper.
@@ -103,6 +109,7 @@ export function toAgentConfig(name: string, parsed: ParsedAgentFrontmatter, sour
     outputTranscript: fm.output_transcript != null ? fm.output_transcript !== false : undefined,
     sessionDir: str(fm.session_dir),
     systemPrompt: parsed.body.trim(),
+    promptVariants,
     promptMode: parsed.promptMode,
     inheritContext: parsed.inheritContext,
     runInBackground: parsed.runInBackground,

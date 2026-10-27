@@ -1,3 +1,4 @@
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * foreground-result-retrieval.test.ts — issue #174, via the REAL Agent,
  * get_agent_result, and resume paths.
@@ -88,7 +89,7 @@ async function runForegroundSteeredAgent(tools: Map<string, any>) {
     {
       prompt: "Perform a very thorough read-only codebase exploration.",
       description: "Locate organization-scope changes",
-      subagent_type: "Explore",
+      subagent_type: "fixture",
     },
     undefined,
     undefined,
@@ -121,6 +122,7 @@ describe("issue #174: foreground agent that hits the turn ceiling", () => {
     prevCwd = process.cwd();
     mkdirSync(join(tmpDir, ".pi"), { recursive: true });
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false, outputTranscript: false }));
+    writeFixtureAgent(tmpDir);
     process.chdir(tmpDir);
   });
 
@@ -167,7 +169,7 @@ describe("issue #174: foreground agent that hits the turn ceiling", () => {
       {
         prompt: "Continue from the previous result.",
         description: "Continue organization-scope changes",
-        subagent_type: "Explore",
+        subagent_type: "fixture",
         resume: id,
       },
       undefined,

@@ -6,7 +6,7 @@ import type { AgentRecord } from "../src/types.js";
 function record(id: string): AgentRecord {
   return {
     id,
-    type: "general-purpose",
+    type: "fixture",
     description: id,
     status: "completed",
     result: `${id} done`,

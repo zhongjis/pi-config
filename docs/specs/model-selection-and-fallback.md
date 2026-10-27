@@ -151,9 +151,9 @@ chain resolves nothing through `getAvailable()`, it retries each
 availability filter. Only then does it fall back to the parent model with a
 `[subagent] Could not resolve any model … Falling back to parent model` warning.
 
-Built-in agent-type model defaults live in [`agent-types.ts`](../../extensions/subagents/src/agent-types.ts).
-User `.md` agents with the same name override these defaults. An unknown or
-disabled agent type falls back to `general-purpose`.
+Agent-type model defaults come from each agent definition's `model:` frontmatter,
+loaded by [`custom-agents.ts`](../../extensions/subagents/src/custom-agents.ts).
+An unknown or disabled agent type is denied by the delegation gate.
 
 ---
 

@@ -1,4 +1,4 @@
-import { realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { boot, dir, required } from "./graph-run-registration.fixture.js";
@@ -50,16 +50,36 @@ describe("user-only delegation diagnostics", () => {
 
     expect(host.ui.notify.mock.calls).toEqual([
       [expect.stringContaining(`Agent broken (${brokenPath}) skills:`), "error"],
+      ["Agent broken: no valid definition; agent unavailable", "warning"],
       [expect.stringContaining(`Agent later (${laterPath}) delegation:`), "error"],
+      ["Agent later: no valid definition; agent unavailable", "warning"],
     ]);
     expect(result.content.some((part) => part.text?.includes(brokenPath) || part.text?.includes(laterPath))).toBe(false);
     expect(host.api.sendMessage).not.toHaveBeenCalled();
   });
 
+  it("shows a fallback warning once without adding duplicate diagnostic prefixes", async () => {
+    const directory = join(dir, ".pi", "agents", "fixture");
+    mkdirSync(directory);
+    writeFileSync(join(directory, "default.md"), "---\ntools: read\n---\nINVALID_BODY");
+    const host = boot();
+    await host.lifecycle("session_start");
+    const agent = required(host.tools.get("agent"));
+
+    const result = await agent.execute("first", params, undefined, undefined, host.ctx);
+    await agent.execute("second", params, undefined, undefined, host.ctx);
+
+    expect(host.ui.notify.mock.calls).toEqual([
+      [expect.stringContaining(`Agent fixture (${realpathSync(join(directory, "default.md"))}) tools:`), "error"],
+      [`Agent fixture (${realpathSync(join(directory, "default.md"))}): invalid definition; using ${realpathSync(join(dir, ".pi", "agents", "fixture.md"))}`, "warning"],
+    ]);
+    expect(result.content.some(part => part.text?.includes("invalid definition"))).toBe(false);
+  });
+
   it("exposes live signed-rule resolution over enabled registry entries through the bridge", async () => {
     writeAgent("leaf", "tools: +read");
     writeAgent("disabled", "enabled: false");
-    const host = boot({ disableDefaultAgents: true });
+    const host = boot();
     await host.lifecycle("session_start");
     const bridge: unknown = Reflect.get(globalThis, Symbol.for("pi-subagents:manager"));
     if (typeof bridge !== "object" || bridge === null || !("resolveDelegationTargets" in bridge) || typeof bridge.resolveDelegationTargets !== "function") {

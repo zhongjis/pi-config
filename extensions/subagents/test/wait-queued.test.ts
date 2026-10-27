@@ -1,3 +1,8 @@
+import { mkdtempSync as tempDir, rmSync as removeDir } from "node:fs";
+import { tmpdir as tempRoot } from "node:os";
+import { join as pathJoin } from "node:path";
+import { beforeEach as fixtureBefore, afterEach as fixtureAfter } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * wait-queued.test.ts — get_agent_result(wait: true) lifecycle behavior.
  *
@@ -74,7 +79,7 @@ function deferredRuns() {
 async function spawnBackground(tools: Map<string, any>): Promise<{ id: string; queued: boolean }> {
   const r = await tools.get("agent").execute(
     "tc-spawn",
-    { prompt: "go", description: "queued-wait test agent", subagent_type: "general-purpose", run_in_background: true },
+    { prompt: "go", description: "queued-wait test agent", subagent_type: "fixture", run_in_background: true },
     undefined,
     undefined,
     ctx(),
@@ -262,4 +267,17 @@ describe("get_agent_result wait:true on a queued agent", () => {
     expect(outcome).toBe("AbortError");
     expect(textOf(completedResult)).toContain("THE-RESULT-PAYLOAD");
   });
+});
+
+let fixtureCwd: string;
+let originalCwd: string;
+fixtureBefore(() => {
+  originalCwd = process.cwd();
+  fixtureCwd = tempDir(pathJoin(tempRoot(), "subagent-fixture-"));
+  writeFixtureAgent(fixtureCwd);
+  process.chdir(fixtureCwd);
+});
+fixtureAfter(() => {
+  process.chdir(originalCwd);
+  removeDir(fixtureCwd, { recursive: true, force: true });
 });

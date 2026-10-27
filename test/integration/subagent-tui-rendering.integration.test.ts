@@ -66,7 +66,7 @@ function agentResult(status: string, overrides: Record<string, unknown> = {}) {
 		details: {
 			displayName: "Agent",
 			description: "render probe",
-			subagentType: "general-purpose",
+			subagentType: "fixture",
 			toolUses: 1,
 			tokens: "󰾆 42",
 			durationMs: 125,

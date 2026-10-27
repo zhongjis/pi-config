@@ -17,7 +17,7 @@ const FIXTURE = [
 function historyRecord(sessionFile: string): AgentRecord {
   return {
     id: "hist-1",
-    type: "general-purpose",
+    type: "fixture",
     description: "history review",
     status: "running",
     toolUses: 0,

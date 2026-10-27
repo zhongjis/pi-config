@@ -43,13 +43,6 @@ export interface SubagentsSettings {
    */
   scopeModels?: boolean;
   /**
-   * When true, the three built-in default agents (general-purpose, Explore, Plan)
-   * are not registered at startup. User-defined agents from project/global custom
-   * agent dirs are completely unaffected — only the hardcoded DEFAULT_AGENTS are suppressed.
-   * Defaults to false.
-   */
-  disableDefaultAgents?: boolean;
-  /**
    * Which `agent` tool description the LLM sees. "full" (default) is the rich
    * Claude Code-style prompt; "compact" is a ~75% smaller version (one-line
    * agent type list, terse usage notes) for small/local models where tool-spec
@@ -84,7 +77,6 @@ export interface SettingsAppliers {
   setDecisionGateMinConfidence?: (n: number) => void;
   setDefaultJoinMode: (mode: JoinMode) => void;
   setScopeModels: (enabled: boolean) => void;
-  setDisableDefaultAgents: (b: boolean) => void;
   setToolDescriptionMode: (mode: ToolDescriptionMode) => void;
   setOutputTranscript: (b: boolean) => void;
 }
@@ -128,9 +120,6 @@ function sanitize(raw: unknown): SubagentsSettings {
   }
   if (typeof r.scopeModels === "boolean") {
     out.scopeModels = r.scopeModels;
-  }
-  if (typeof r.disableDefaultAgents === "boolean") {
-    out.disableDefaultAgents = r.disableDefaultAgents;
   }
   if (typeof r.toolDescriptionMode === "string" && VALID_TOOL_DESCRIPTION_MODES.has(r.toolDescriptionMode)) {
     out.toolDescriptionMode = r.toolDescriptionMode as ToolDescriptionMode;
@@ -196,7 +185,6 @@ export function applySettings(s: SubagentsSettings, appliers: SettingsAppliers):
   if (typeof s.maxConcurrent === "number") appliers.setMaxConcurrent(s.maxConcurrent);
   if (s.defaultJoinMode) appliers.setDefaultJoinMode(s.defaultJoinMode);
   if (typeof s.scopeModels === "boolean") appliers.setScopeModels(s.scopeModels);
-  if (typeof s.disableDefaultAgents === "boolean") appliers.setDisableDefaultAgents(s.disableDefaultAgents);
   if (s.toolDescriptionMode) appliers.setToolDescriptionMode(s.toolDescriptionMode);
   if (typeof s.outputTranscript === "boolean") appliers.setOutputTranscript(s.outputTranscript);
 }

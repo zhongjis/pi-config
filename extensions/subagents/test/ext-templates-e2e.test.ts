@@ -62,9 +62,6 @@ const SCENARIOS = readdirSync(TEMPLATES_DIR)
     };
   });
 
-/** Distinctive marker for the parent system prompt (prompt_mode: append asserts it leaks in). */
-const PARENT_PROMPT = "PARENT_PROMPT_MARKER";
-
 describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, headless)", () => {
   let prevAgentDir: string | undefined;
   let prevHome: string | undefined;
@@ -108,9 +105,7 @@ describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, he
     ]);
     const { model, modelRegistry } = fauxRuntime;
     // cwd = fixtures dir so the templates' extension ids name its discovered extensions.
-    // getSystemPrompt returns a distinctive marker so prompt_mode: append can be
-    // proven to inherit the parent prompt.
-    const ctx: any = { cwd: FIXTURES_DIR, getSystemPrompt: () => PARENT_PROMPT, model, modelRegistry };
+    const ctx: any = { cwd: FIXTURES_DIR, getSystemPrompt: () => "Parent fixture", model, modelRegistry };
     const pi: any = { exec: async () => ({ code: 1, stdout: "", stderr: "" }) };
 
     // Mirror production: the caller resolves frontmatter-locked fields (isolated,
@@ -148,8 +143,7 @@ describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, he
     for (const s of SCENARIOS) {
       // Each declares at least one tool expectation, so no scenario is a no-op.
       expect(s.present.length + s.absent.length).toBeGreaterThan(0);
-      // Each loaded as ITS OWN agent — guards against openSession silently falling
-      // back to general-purpose when a template fails to parse/register.
+      // Each template loads as its own configured agent.
       const cfg = getAgentConfig(s.name);
       expect(cfg, `template "${s.name}" did not register (parse error or name mismatch?)`).toBeDefined();
       expect(cfg?.name).toBe(s.name);
@@ -164,16 +158,6 @@ describe("extensions: / tools: scoping — template-driven e2e (real pi-mono, he
       for (const tool of absent) expect(declared, `${name}: expected "${tool}" NOT declared`).not.toContain(tool);
     },
   );
-
-  it("preserves append and replace prompt transport", async () => {
-    const append = await runScenario("prompt-mode-append");
-    expect(append.prompt.startsWith(PARENT_PROMPT)).toBe(true);
-    expect(append.prompt).toContain("APPEND_BODY_MARKER");
-
-    const replace = await runScenario("prompt-mode-replace");
-    expect(replace.prompt).toContain("REPLACE_BODY_MARKER");
-    expect(replace.prompt).not.toContain(PARENT_PROMPT);
-  });
 
   it("preloads the configured skill payload", async () => {
     const { prompt } = await runScenario("skills-preload");

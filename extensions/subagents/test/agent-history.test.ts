@@ -16,7 +16,7 @@ const SESSION_JSONL = [
 function record(sessionFile: string, overrides: Partial<AgentRecord> = {}): AgentRecord {
   return {
     id: "agent-1",
-    type: "Explore",
+    type: "Scout",
     description: "review",
     status: "completed",
     toolUses: 2,
@@ -79,8 +79,8 @@ describe("independent agent history", () => {
     await writeFile(historyPath("session-a"), JSON.stringify({
       version: 1,
       runs: [
-        { id: "gone", type: "Explore", description: "gone", status: "running", startedAt: 42, toolUses: 0, lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, sessionFile: missing },
-        { id: "queued", type: "Explore", description: "queued", status: "queued", startedAt: 7, toolUses: 1, lifetimeUsage: { input: 1, output: 0, cacheWrite: 0 }, sessionFile: missing },
+        { id: "gone", type: "Scout", description: "gone", status: "running", startedAt: 42, toolUses: 0, lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, sessionFile: missing },
+        { id: "queued", type: "Scout", description: "queued", status: "queued", startedAt: 7, toolUses: 1, lifetimeUsage: { input: 1, output: 0, cacheWrite: 0 }, sessionFile: missing },
       ],
     }));
     const interrupted = await AgentHistoryStore.load("session-a");
@@ -97,7 +97,7 @@ describe("independent agent history", () => {
     await store.flush();
     const path = historyPath("session-a");
     const saved = JSON.parse(await readFile(path, "utf8"));
-    saved.runs.push({ id: "bad", type: "Explore", description: "bad", status: "completed", startedAt: "nope", toolUses: 0, lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, sessionFile });
+    saved.runs.push({ id: "bad", type: "Scout", description: "bad", status: "completed", startedAt: "nope", toolUses: 0, lifetimeUsage: { input: 0, output: 0, cacheWrite: 0 }, sessionFile });
     await writeFile(path, JSON.stringify(saved));
     expect((await AgentHistoryStore.load("session-a")).runs).toEqual(store.runs);
   });
@@ -105,13 +105,13 @@ describe("independent agent history", () => {
   it("keeps 50 newest runs and sanitizes description and type", async () => {
     const store = await AgentHistoryStore.load("session-a");
     for (let index = 0; index < 51; index++) {
-      store.capture(record(sessionFile, { id: `id-${index}`, startedAt: index, description: "d".repeat(200), type: `Explore\n\u001b[31m${index}\u001b[0m` }));
+      store.capture(record(sessionFile, { id: `id-${index}`, startedAt: index, description: "d".repeat(200), type: `Scout\n\u001b[31m${index}\u001b[0m` }));
     }
     expect(store.runs).toHaveLength(50);
     expect(store.runs[0].id).toBe("id-50");
     expect(store.runs.some(run => run.id === "id-0")).toBe(false);
     expect(store.runs[0].description).toHaveLength(160);
-    expect(store.runs[0].type).toBe("Explore 50");
+    expect(store.runs[0].type).toBe("Scout 50");
     await store.flush();
     expect(JSON.stringify(await readFile(historyPath("session-a"), "utf8"))).not.toContain("SECRET_");
   });
@@ -164,11 +164,11 @@ describe("independent agent history", () => {
     const live = record(sessionFile, { id: "live", description: "live copy" });
     const merged = mergeAgentHistory([live], [
       {
-        id: "live", type: "Explore", description: "stale", status: "completed", startedAt: 1, completedAt: 2,
+        id: "live", type: "Scout", description: "stale", status: "completed", startedAt: 1, completedAt: 2,
         toolUses: 1, lifetimeUsage: { input: 1, output: 1, cacheWrite: 1 }, sessionFile,
       },
       {
-        id: "hist", type: "Plan", description: "from disk", status: "stopped", startedAt: 3, completedAt: 4,
+        id: "hist", type: "planner", description: "from disk", status: "stopped", startedAt: 3, completedAt: 4,
         toolUses: 0, lifetimeUsage: { input: 8, output: 9, cacheWrite: 10 }, sessionFile,
       },
     ]);

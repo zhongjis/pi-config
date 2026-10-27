@@ -1,3 +1,4 @@
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -69,6 +70,7 @@ describe("output_transcript agent wiring", () => {
     mkdirSync(join(cwd, ".pi"), { recursive: true });
     writeFileSync(join(cwd, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false }));
     mkdirSync(join(agentDir, "agents"), { recursive: true });
+    writeFixtureAgent(cwd);
     process.chdir(cwd);
     vi.mocked(openSession).mockImplementation(async () => opened(fakeSession(() => "done")));
   });
@@ -128,7 +130,7 @@ describe("output_transcript agent wiring", () => {
 
     await tools.get("agent").execute(
       "tool-call",
-      { prompt: "ordinary work", description: "Do ordinary work", subagent_type: "general-purpose" },
+      { prompt: "ordinary work", description: "Do ordinary work", subagent_type: "fixture" },
       undefined,
       undefined,
       makeCtx(cwd),
@@ -148,7 +150,7 @@ describe("output_transcript agent wiring", () => {
 
     await tools.get("agent").execute(
       "tool-call",
-      { prompt: "ordinary work", description: "Do ordinary work", subagent_type: "general-purpose" },
+      { prompt: "ordinary work", description: "Do ordinary work", subagent_type: "fixture" },
       undefined,
       undefined,
       makeCtx(cwd),

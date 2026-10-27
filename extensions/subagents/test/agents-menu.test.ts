@@ -1,11 +1,11 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { parseAccessRules } from "../../lib/active-tools.js";
-import { parseAgentMarkdown } from "../../lib/agent-frontmatter.js";
 import { AgentManager } from "../src/agent-manager.js";
 import { registerAgents } from "../src/agent-types.js";
+import { loadCustomAgents } from "../src/custom-agents.js";
 import type { AgentConfig } from "../src/types.js";
 import { createAgentsMenu } from "../src/ui/agents-menu.js";
 
@@ -73,27 +73,38 @@ describe("agents menu access rules", () => {
       },
     );
     await menu.showAgentsMenu({ ui } as never);
-    return titles;
+    return { titles, ui };
   }
 
   it("shows the agent's rules and the tools they resolve to in this session", async () => {
-    const titles = await openDetail("probe", "Back");
+    const { titles, ui } = await openDetail("probe", "Back");
+
+    expect(ui.select.mock.calls.find(([title]) => title.startsWith("probe\n"))?.[1]).toEqual(["View definition", "Back"]);
 
     expect(titles).toContain("probe\nextensions: +matrix\ntools: +read, +@matrix\ndelegation: +@all, -writer\nresolves here to: read, matrix_a");
   });
 
-  it("ejects normalized access and delegation rules", async () => {
-    registerAgents(new Map([["probe", { ...probe, isDefault: true }]]));
+  it("views the selected directory definition instead of a leftover flat file", async () => {
+    const directory = join(root, "project", ".pi", "agents", "probe");
+    const definition = "---\ndescription: probe\n---\nDIRECTORY_BODY";
+    mkdirSync(directory, { recursive: true });
+    writeFileSync(join(directory, "default.md"), definition);
+    writeFileSync(join(root, "project", ".pi", "agents", "probe.md"), "FLAT_BODY");
+    registerAgents(loadCustomAgents(join(root, "project")));
 
-    await openDetail("probe", "Eject (export as .md)", {
-      "Choose location": (options) => options[1],
-    });
+    const { titles } = await openDetail("probe", "View definition");
 
-    const ejected = readFileSync(join(root, "agent-dir", "agents", "probe.md"), "utf-8");
-    const parsed = parseAgentMarkdown(ejected);
-    expect(parsed.invalidFields).toEqual([]);
-    expect(parsed.extensionRules).toEqual(probe.extensionRules);
-    expect(parsed.toolRules).toEqual(probe.toolRules);
-    expect(parsed.delegationRules).toEqual([{ sign: "+", selector: "@all" }, { sign: "-", selector: "writer" }]);
+    expect(titles).toContain(`probe definition\n\n${definition}`);
+  });
+
+  it("views the loaded definition without an editor or write action", async () => {
+    const definition = "---\ndescription: probe\n---\nSynthetic definition body";
+    mkdirSync(join(root, "project", ".pi", "agents"), { recursive: true });
+    writeFileSync(join(root, "project", ".pi", "agents", "probe.md"), definition);
+    registerAgents(loadCustomAgents(join(root, "project")));
+
+    const { titles } = await openDetail("probe", "View definition");
+
+    expect(titles).toContain(`probe definition\n\n${definition}`);
   });
 });

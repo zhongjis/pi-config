@@ -1,3 +1,4 @@
+import { fixtureAgent } from "./helpers/fixture-agent.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,7 +69,7 @@ function configureAgent(config: AgentConfig | undefined): void {
 let manager: AgentManager;
 beforeEach(() => {
   vi.restoreAllMocks();
-  agentTypes.registerAgents(new Map());
+  agentTypes.registerAgents(new Map([[fixtureAgent.name, fixtureAgent]]));
 });
 afterEach(() => {
   manager?.dispose();
@@ -96,7 +97,7 @@ describe("createNodeHost", () => {
   it("maps a completed agent record to a NodeSpawnResult", async () => {
     const { host } = setup("hello");
     const result = await host.spawnAgent(
-      { nodeId: "a", attempt: 1, agentType: "general-purpose", prompt: "task" },
+      { nodeId: "a", attempt: 1, agentType: "fixture", prompt: "task" },
       new AbortController().signal,
     );
     expect(result.ok).toBe(true);
@@ -108,7 +109,7 @@ describe("createNodeHost", () => {
     const { host } = setup();
     manager.setPolicyChecker(() => 'delegation_policy_denied: Agent "kuafu" cannot delegate to "yanluo".');
     const result = await host.spawnAgent(
-      { nodeId: "review", attempt: 1, agentType: "general-purpose", prompt: "task" },
+      { nodeId: "review", attempt: 1, agentType: "fixture", prompt: "task" },
       new AbortController().signal,
     );
     expect(result.ok).toBe(false);
@@ -129,8 +130,8 @@ describe("createNodeHost", () => {
     const { host } = setup("out");
     const graph: AgentGraph = {
       nodes: {
-        a: { type: "agent", agent: "general-purpose", prompt: "a" },
-        b: { type: "agent", agent: "general-purpose", prompt: "b" },
+        a: { type: "agent", agent: "fixture", prompt: "a" },
+        b: { type: "agent", agent: "fixture", prompt: "b" },
       },
       edges: [{ from: "a", to: "b" }],
       outputs: { r: { node: "b", path: "$" } },
@@ -182,7 +183,7 @@ describe("createNodeHost", () => {
 it("returns authoritative lifetime USD cost, independently of token counts", async () => {
   const { host } = setup();
   vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => ({ text: "done", usage: { input: 7, output: 3, cost: 0.125 } }))));
-  const result = await host.spawnAgent({ nodeId: "paid", attempt: 1, agentType: "general-purpose", prompt: "task" }, new AbortController().signal);
+  const result = await host.spawnAgent({ nodeId: "paid", attempt: 1, agentType: "fixture", prompt: "task" }, new AbortController().signal);
   expect(manager.listAgents()[0]?.lifetimeCost).toBe(0.125);
   expect(result.costUsd).toBe(0.125);
   await host.dispose();
@@ -199,7 +200,7 @@ it("uses the registered history index alias for graph transcript paths and entri
   const host = createNodeHost({ pi: pi as ExtensionAPI, ctx, manager, graphRunId: "run-id", nodeIndex });
   const child = fakeSession(() => "done");
   vi.mocked(openSession).mockResolvedValue(opened(child));
-  await host.spawnAgent({ nodeId: "private-binding", attempt: 1, agentType: "general-purpose", prompt: "FIXTURE" }, new AbortController().signal);
+  await host.spawnAgent({ nodeId: "private-binding", attempt: 1, agentType: "fixture", prompt: "FIXTURE" }, new AbortController().signal);
   const alias = graphRunNodeArtifactId("run-id", 17);
   expect(nodeIndex).toHaveBeenCalledWith("private-binding");
   expect(path).toHaveBeenCalledWith(ctx.cwd, alias, "parent");

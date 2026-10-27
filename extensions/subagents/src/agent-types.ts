@@ -1,42 +1,23 @@
 /**
  * agent-types.ts — Unified agent type registry.
  *
- * Merges embedded default agents with user-defined agents from .pi/agents/*.md, .agents/agents/*.md, and global agents.
- * User agents override defaults with the same name. Disabled agents are kept but excluded from spawning.
+ * Registers flat and directory agent definitions from project, workspace, and global locations.
+ * Disabled agents are kept but excluded from spawning.
  */
 
-import { type AccessRule, parseAccessRules } from "../../lib/active-tools.js";
-import { DEFAULT_AGENTS } from "./default-agents.js";
+import type { AccessRule } from "../../lib/active-tools.js";
 import type { AgentConfig } from "./types.js";
 
-/** Unified runtime registry of all agents (defaults + user-defined). */
+/** Unified runtime registry of all agents (user-defined). */
 const agents = new Map<string, AgentConfig>();
-
-/** When true, DEFAULT_AGENTS are skipped during registration. */
-let disableDefaults = false;
-
-/** Check whether default agents are disabled. */
-export function isDefaultsDisabled(): boolean { return disableDefaults; }
-
-/** Set whether default agents are disabled. */
-export function setDefaultsDisabled(b: boolean): void { disableDefaults = b; }
 
 /**
  * Register agents into the unified registry.
- * Starts with DEFAULT_AGENTS, then overlays user agents (overrides defaults with same name).
  * Disabled agents (enabled === false) are kept in the registry but excluded from spawning.
  */
 export function registerAgents(userAgents: Map<string, AgentConfig>): void {
   agents.clear();
 
-  // Start with defaults (unless disabled via settings)
-  if (!disableDefaults) {
-    for (const [name, config] of DEFAULT_AGENTS) {
-      agents.set(name, config);
-    }
-  }
-
-  // Overlay user agents (overrides defaults with same name)
   for (const [name, config] of userAgents) {
     agents.set(name, config);
   }
@@ -75,20 +56,6 @@ export function getAllTypes(): string[] {
   return [...agents.keys()];
 }
 
-/** Get names of default agents currently in the registry. */
-export function getDefaultAgentNames(): string[] {
-  return [...agents.entries()]
-    .filter(([_, config]) => config.isDefault === true)
-    .map(([name]) => name);
-}
-
-/** Get names of user-defined agents (non-defaults) currently in the registry. */
-export function getUserAgentNames(): string[] {
-  return [...agents.entries()]
-    .filter(([_, config]) => config.isDefault !== true)
-    .map(([name]) => name);
-}
-
 /** Check if a type is valid and enabled (case-insensitive). */
 export function isValidType(type: string): boolean {
   const key = resolveKey(type);
@@ -96,7 +63,7 @@ export function isValidType(type: string): boolean {
   return agents.get(key)?.enabled !== false;
 }
 
-/** Get config for a type (case-insensitive, returns a SubagentTypeConfig-compatible object). Falls back to general-purpose. */
+/** Get config for a type (case-insensitive, returns a SubagentTypeConfig-compatible object). Throws for unknown or disabled types. */
 export function getConfig(type: string): {
   displayName: string;
   description: string;
@@ -104,7 +71,7 @@ export function getConfig(type: string): {
   toolRules: AccessRule[];
   discoverSkills: boolean;
   preloadSkills: string[];
-  promptMode: "replace" | "append" | "system_instructions";
+  promptMode: "replace" | "system_instructions";
 } {
   const key = resolveKey(type);
   const config = key ? agents.get(key) : undefined;
@@ -120,29 +87,5 @@ export function getConfig(type: string): {
     };
   }
 
-  // Fallback for unknown/disabled types — general-purpose config
-  const gp = agents.get("general-purpose");
-  if (gp && gp.enabled !== false) {
-    return {
-      displayName: gp.displayName ?? gp.name,
-      description: gp.description,
-      extensionRules: gp.extensionRules,
-      toolRules: gp.toolRules,
-      discoverSkills: gp.discoverSkills,
-      preloadSkills: gp.preloadSkills,
-      promptMode: gp.promptMode,
-    };
-  }
-
-  // Absolute fallback (should never happen)
-  return {
-    displayName: "Agent",
-    description: "General-purpose agent for complex, multi-step tasks",
-    extensionRules: parseAccessRules("extensions", "+@all, -@builtin").rules,
-    toolRules: parseAccessRules("tools", "+@all").rules,
-    discoverSkills: true,
-    preloadSkills: [],
-    promptMode: "append",
-  };
+  throw new Error(`Unknown or disabled agent type "${type}"`);
 }
-

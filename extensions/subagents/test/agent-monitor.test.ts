@@ -63,7 +63,7 @@ function bodyLines(lines: readonly string[]): string[] {
 function makeRecord(over: Partial<AgentRecord> = {}): AgentRecord {
   return {
     id: "a1",
-    type: "general-purpose",
+    type: "fixture",
     description: "Sleep then report 1",
     status: "running",
     toolUses: 0,

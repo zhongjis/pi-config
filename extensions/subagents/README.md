@@ -20,7 +20,7 @@ Derived from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)
 - **Session resume** — pick up where an agent left off, preserving full conversation context. Every independent agent session is persisted. A terminal Agent record stays in memory for 15 minutes within the current parent session; after it is evicted (retention, session switch, reload, or a Pi restart followed by `/resume` of the same parent session), `agent({resume: id})` reopens the persisted session file and continues the conversation under the current agent config and delegation policy. The resumed run appends to the agent's existing `.output` transcript when transcripts are enabled. `get_agent_result` on an evicted id reads the result from the file without reviving the agent.
 - **Work notes** — a non-isolated, non-graph agent granted `write` or `edit` is told to keep its own `local://notes/<agent-id>.md` current while it works ([work-notes.ts](src/work-notes.ts)). Once the file exists, foreground, resume, and `get_agent_result` results end with a `Work notes:` line and completion notifications carry `<work-notes>`. Notes are self-reported context, not verification evidence
 - **Hidden turn ceiling** — every Execution, including resumes, gets a friendly wrap-up reminder at a turn ceiling far above normal work, producing clean results instead of cut-off output
-- **Case-insensitive agent types** — `"explore"`, `"Explore"`, `"EXPLORE"` all work. Unknown types fall back to general-purpose with a note
+- **Delegation gate** — requests are canonicalized against loaded, enabled agents and checked against the current delegation allowlist. With no active mode, all loaded, enabled agents are permitted; unknown and unavailable types are denied. See [delegation-policy.ts](src/delegation-policy.ts).
 - **Fuzzy model selection** — specify models by name (`"haiku"`, `"sonnet"`) instead of full IDs, with automatic filtering to only available/configured models
 - **Context inheritance** — optionally fork the parent conversation into a sub-agent so it knows what's been discussed
 - **Persistent agent memory** — three scopes (project, local, user) with automatic read-only fallback for agents without write tools
@@ -42,7 +42,7 @@ The parent agent spawns sub-agents using the `agent` tool:
 
 ```
 agent({
-  subagent_type: "Explore",
+  subagent_type: "chengfeng",
   prompt: "Find all files that handle authentication",
   description: "Find auth files",
   run_in_background: true,
@@ -57,7 +57,7 @@ Add a `schedule` field to register the agent to fire later instead of running no
 
 ```
 agent({
-  subagent_type: "Explore",
+  subagent_type: "chengfeng",
   prompt: "Look at recent commits and summarize what changed since last week",
   description: "Weekly commit review",
   schedule: "0 0 9 * * 1",   // 9am every Monday (6-field cron)
@@ -84,6 +84,10 @@ Restrictions:
 - **Headless `pi -p` doesn't wait for scheduled subagents.**
 
 ## UI
+
+### Agent definitions
+
+[The `/agents` menu](src/ui/agents-menu.ts) lists configured definitions and shows their access rules and definition text read-only. Author definitions in your editor. Running agents open the conversation viewer; runtime Settings and Graph runs have separate navigation entries.
 
 ### FleetView
 
@@ -140,31 +144,21 @@ By default, foreground and background agents each stream their full conversation
 
 Expanding a notification shows each agent's full retained result and its transcript path. The LLM receives structured `<task-notification>` XML for parsing, while the user sees the themed visual.
 
-## Default Agent Types
-
-| Type | Tools | Model | Prompt Mode | Description |
-|------|-------|-------|-------------|-------------|
-| `general-purpose` | all 7 | inherit | `append` (parent twin) | Inherits the parent's full system prompt — same rules, CLAUDE.md, project conventions |
-| `Explore` | read, bash, grep, find, ls | haiku (must be available) | `replace` (standalone) | Fast codebase exploration (read-only) |
-| `Plan` | read, bash, grep, find, ls | inherit | `replace` (standalone) | Software architect for implementation planning (read-only) |
-
-The `general-purpose` agent is a **parent twin** — it receives the parent's entire system prompt plus a sub-agent context bridge, so it follows the same rules the parent does. Explore and Plan use standalone prompts tailored to their read-only roles.
-
-Default agents can be **ejected** (`/agents` → select agent → Eject) to export them as `.md` files for customization, **overridden** by creating a `.md` file with the same name (e.g. `.pi/agents/general-purpose.md`), or **disabled** per-project with `enabled: false` frontmatter.
-
 ## Custom Agents
 
-Define custom agent types by creating `.md` files. The filename becomes the agent type name. Any name is allowed — using a default agent's name overrides it.
+Define an agent as `<name>/default.md` (frontmatter and default body), with optional body-only `gpt.md` and `gemini.md`, or as a flat `<name>.md` default-only definition. The directory or file stem is the callable name. Other files inside an agent directory are ignored. [Discovery](src/custom-agents.ts) and the [shared variant helper](../lib/prompt-variants.ts) own resolution.
 
 Agents are discovered from three locations (higher priority wins):
 
 | Priority | Location | Scope |
 |----------|----------|-------|
-| 1 (highest) | `.pi/agents/<name>.md` | Project — pi's config dir; authoritative, and where `/agents` writes |
-| 2 | `.agents/agents/<name>.md` | Project — the shared cross-tool `.agents` workspace (same convention as `.agents/skills/`) |
-| 3 | `$PI_CODING_AGENT_DIR/agents/<name>.md` (default `~/.pi/agent/agents/<name>.md`) | Global — available everywhere |
+| 1 (highest) | `.pi/agents/` | Project — pi's authoritative config dir |
+| 2 | `.agents/agents/` | Project — the shared cross-tool `.agents` workspace (same convention as `.agents/skills/`) |
+| 3 | `$PI_CODING_AGENT_DIR/agents/` (default `~/.pi/agent/agents/`) | Global — available everywhere |
 
-Project-level agents override global ones with the same name, so you can customize a global agent for a specific project. If both project locations define the same name, **`.pi/agents/` wins** — `.pi` stays the project authority; `.agents/agents/` is an additional read location for projects that keep their agent assets in the `.agents` workspace. The global location follows Pi's `PI_CODING_AGENT_DIR` env var — set it to relocate all pi-coding-agent state (agents, skills, settings) to a custom directory.
+For each name, the first valid candidate wins: project directory, project flat file, workspace directory, workspace flat file, global directory, global flat file. A directory is a candidate only when it contains `default.md`; a valid directory silently takes precedence over its same-location flat file. Invalid candidates retain their field diagnostics and warn with the definition used instead. If every candidate is invalid, the agent is unavailable and a warning says so. Warnings use the session's deduplicated user-notification path, never model-visible output.
+
+[The runner](src/agent-runner.ts) selects a body from the child's actual model at spawn and before every run, including model fallback and resume. GPT bodies replace the default body; Gemini bodies overlay it using the shared helper's insertion rules. Missing or empty variants use the default body. With no configured model, selection follows the inherited parent model. Runtime prompt refresh updates only the custom-prompt preamble, preserving project context, skills, work notes, and graph-run instructions.
 
 ### Example: `.pi/agents/auditor.md`
 
@@ -185,7 +179,7 @@ You are a security auditor. Review code for vulnerabilities including:
 Report findings with file paths, line numbers, severity, and remediation advice.
 ```
 
-Then spawn it like any built-in type:
+Then spawn the configured type:
 
 ```
 agent({ subagent_type: "auditor", prompt: "Review the auth module", description: "Security audit" })
@@ -283,7 +277,7 @@ The agent-graph skill (`skills/agent-graphs/SKILL.md`) is discovered via `resour
 
 [src/index.ts](src/index.ts) registers the commands:
 
-- `/agents` opens the management menu: running agents (open the conversation viewer, steer with `Enter`, stop with `x` twice), agent types (eject, edit, disable/enable, reset, delete), create a new agent (manual wizard or AI-generated), and settings. Agent type rows show source (`•` project, `◦` global, `✕` disabled) and model, flagging `(unavailable)` chains and `(→ provider/id)` resolutions.
+- `/agents` lists agent types and views the selected definition read-only, opens running-agent conversations, and provides Settings and Graph runs navigation. Agent type rows show source (`•` project, `◦` global, `✕` disabled) and model, flagging `(unavailable)` chains and `(→ provider/id)` resolutions.
 - `/agent-monitor` opens the Agent Monitor.
 - `/agent-graph-replay <runId> <graph>` replays a current-session run trace through a saved or file graph's planner without model calls and shows a display-only diff.
 
@@ -361,13 +355,12 @@ Usage reporting includes cache reads because they are billed on every request. T
 
 The custom QoL footer retains its live accounting: parent assistant-message cost plus the manager's subagent cost. It does not add native tool-result usage a second time. Native session totals may lag the live footer until a tool result reports pending spend. `showCost` affects presentation only; zero/unpriced costs are omitted rather than described as free.
 
-**Disable defaults** (`disableDefaultAgents`, default `false`): when on, the three built-in agents (general-purpose, Explore, Plan) are not registered — only your project/global custom agents are advertised and spawnable. User-defined agents are unaffected, including ones that override a default by name. The `agent` tool's type list updates on the next pi session (the tool schema is registered at startup).
 
 **Decision gate confidence** (`decisionGateMinConfidence`, default `0.8`, range [0, 1]): the run-wide threshold below which a `decision_gate` answer escalates to the orchestrator. A node's own `minConfidence` wins.
 
 **Output transcript** (`outputTranscript`, default `true`): the project/global default for writing each subagent's `.output` transcript. Toggle via `/agents → Settings → Output transcript`, or set `false` in `subagents.json` to make transcripts opt-in project-wide — useful when run transcripts shouldn't sit on disk for backup or DLP tooling to pick up. A custom agent's `output_transcript` frontmatter overrides this per agent. Applied live at spawn time. Governs only the transcript, not the persisted session or memory files.
 
-**Tool description** (`toolDescriptionMode`, default `"full"`): which `agent` tool description the LLM sees. `"full"` is the rich Claude Code-style prompt (~1,400 tokens with the default agents); `"compact"` is ~75% smaller — one-line configured-agent list, terse usage notes — for small/local models where tool-spec tokens are expensive. The `subagent_type` parameter points to this roster without repeating agent names. Applies on the next pi session.
+**Tool description** (`toolDescriptionMode`, default `"full"`): which `agent` tool description the LLM sees. `"full"` is the rich Claude Code-style prompt (size depends on configured agents); `"compact"` is ~75% smaller — one-line configured-agent list, terse usage notes — for small/local models where tool-spec tokens are expensive. The `subagent_type` parameter points to this roster without repeating agent names. Applies on the next pi session.
 
 The configured roster is capability metadata, not delegation authority. While the `agent` tool is active, the extension adds one replaceable system-prompt hint containing the current mode's permitted target names. It derives from the same persisted delegation policy as runtime enforcement, stays byte-stable while the mode is unchanged, and replaces the prior hint after a mode or branch change instead of accumulating stale messages.
 

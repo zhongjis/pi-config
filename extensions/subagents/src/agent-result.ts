@@ -1,5 +1,5 @@
 import type { AgentRecord } from "./types.js";
-import { type AgentActivity, type AgentDetails, buildInvocationTags, describeActivity, formatTokens, getPromptModeLabel } from "./ui/agent-format.js";
+import { type AgentActivity, type AgentDetails, buildInvocationTags, describeActivity, formatTokens } from "./ui/agent-format.js";
 import { getLifetimeTotal, type LifetimeUsage } from "./usage.js";
 
 /** Tool execute return value for a text response. */
@@ -43,7 +43,6 @@ export function createAgentResultBuilder(showCost: () => boolean) {
       ...buildInvocationTags(invocation),
       tags: [...new Set([
         ...(base.tags ?? []).filter((tag) => !tag.startsWith("thinking:")),
-        ...[getPromptModeLabel(base.subagentType)].filter((tag): tag is string => Boolean(tag)),
         ...buildInvocationTags(invocation).tags,
       ])],
       thinking: invocation.thinking,

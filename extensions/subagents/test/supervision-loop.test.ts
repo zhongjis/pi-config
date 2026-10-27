@@ -14,7 +14,7 @@ const mockPi = {} as unknown as ExtensionAPI;
 function makeRecord(startedAt: number): AgentRecord {
   return {
     id: "a1",
-    type: "general-purpose",
+    type: "fixture",
     description: "worker",
     status: "running",
     toolUses: 0,

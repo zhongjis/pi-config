@@ -59,6 +59,7 @@ Vendored packages record upstream `repository` metadata in their `package.json`;
 | [mode-prompt-parity.md](specs/mode-prompt-parity.md) | Upstream baseline and local mode prompt invariants |
 | [mode-prompt-audit-checklist.md](specs/mode-prompt-audit-checklist.md) | Prompt audit procedure |
 | [mode-scoped-subagent-delegation.md](specs/mode-scoped-subagent-delegation.md) | Mode-scoped subagent delegation policy |
+| [agent-prompt-variants.md](specs/agent-prompt-variants.md) | Model-family prompt variants for agents and modes |
 | [subagent-tool-output-presentation.md](specs/subagent-tool-output-presentation.md) | Subagent tool-row presentation contract |
 | [herdr-agent-graph-presentation.md](specs/herdr-agent-graph-presentation.md) | Hierarchy-first presentation for the Herdr agent-graph panel |
 | [dynamic-agent-graph-expansion.md](specs/dynamic-agent-graph-expansion.md) | Awaited typed fanout, all-settled collection, persistence, and dynamic monitor |

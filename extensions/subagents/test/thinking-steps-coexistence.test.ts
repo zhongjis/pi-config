@@ -111,7 +111,7 @@ describe("subagents + thinking-steps presentation coexistence", () => {
       details: {
         displayName: "Agent",
         description: "coexistence probe",
-        subagentType: "general-purpose",
+        subagentType: "fixture",
         toolUses: 1,
         tokens: "42 tokens",
         durationMs: 125,

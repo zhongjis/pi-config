@@ -70,7 +70,7 @@ describe("Packet B actual SDK metadata", () => {
     try {
       mkdirSync(join(cwd, ".pi", "agents"), { recursive: true });
       const config = join(cwd, ".pi", "agents", "metadata.md");
-      writeFileSync(config, "---\ndescription: Metadata\nthinking: high\nprompt_mode: append\nextensions: +unused-extension\n---\nReport.\n");
+      writeFileSync(config, "---\ndescription: Metadata\nthinking: high\nprompt_mode: replace\nextensions: +unused-extension\n---\nReport.\n");
       let phase = 0;
       run = await runPrintMode({ cwd, prompt: "Delegate.", respond: routeBySession({
         parentInitial: agentCall({ subagent_type: "metadata", prompt: "Report.", description: "metadata", run_in_background: background }),
@@ -82,7 +82,7 @@ describe("Packet B actual SDK metadata", () => {
           if (phase++ === 0) return { type: "toolCall", id: "retrieve", name: "get_agent_result", arguments: { run_id: id, wait: true, verbose: true } };
           if (phase === 2) {
             // Resume must describe the retained session, not unrelated current configuration.
-            writeFileSync(config, "---\ndescription: Metadata\nmodel: missing/changed\nprompt_mode: append\nthinking: low\n---\nReport.\n");
+            writeFileSync(config, "---\ndescription: Metadata\nmodel: missing/changed\nprompt_mode: replace\nthinking: low\n---\nReport.\n");
             return agentCall({ subagent_type: "metadata", prompt: "Continue.", description: "resume", resume: id }, { id: "resume" });
           }
           return "Done";
@@ -103,7 +103,6 @@ describe("Packet B actual SDK metadata", () => {
         const details = result.details as Record<string, unknown>;
         expect(details.modelName).toBe("faux/faux-1");
         expect(details.thinking).toBe("off");
-        expect(details.tags).toContain("twin");
         expect(details.tags).not.toContain("thinking: high");
         expect(details.result).toContain("ACTUAL_ANSWER");
         expect(details.outputFile).toBe(record.outputFile);

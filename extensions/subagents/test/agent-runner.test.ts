@@ -113,8 +113,8 @@ vi.mock("@earendil-works/pi-coding-agent", () => ({
 
 vi.mock("../src/agent-types.js", () => ({
   getConfig: vi.fn(() => ({
-    displayName: "Explore",
-    description: "Explore",
+    displayName: "Scout",
+    description: "Scout",
     extensionRules: [],
     toolRules: [{ sign: "+", selector: "read" }],
     discoverSkills: true,
@@ -122,13 +122,13 @@ vi.mock("../src/agent-types.js", () => ({
     promptMode: "replace",
   })),
   getAgentConfig: vi.fn(() => ({
-    name: "Explore",
-    description: "Explore",
+    name: "Scout",
+    description: "Scout",
     extensionRules: [],
     toolRules: [{ sign: "+", selector: "read" }],
     discoverSkills: true,
     preloadSkills: [],
-    systemPrompt: "You are Explore.",
+    systemPrompt: "You are Scout.",
     promptMode: "replace",
     inheritContext: false,
     runInBackground: false,
@@ -140,10 +140,6 @@ vi.mock("../src/agent-types.js", () => ({
 
 vi.mock("../src/env.js", () => ({
   detectEnv: vi.fn(async () => ({ isGitRepo: false, branch: "", platform: "linux" })),
-}));
-
-vi.mock("../src/prompts.js", () => ({
-  buildAgentPrompt: vi.fn(() => "system prompt"),
 }));
 
 vi.mock("../src/skill-loader.js", () => ({
@@ -272,7 +268,7 @@ describe("openSession construction", () => {
     const { session } = createSession("DONE");
     createAgentSession.mockResolvedValue({ session });
     const activities: Array<{ type: string; toolName: string }> = [];
-    await openSession(ctx, "Explore", { pi, onToolActivity: (activity) => activities.push(activity) });
+    await openSession(ctx, "Scout", { pi, onToolActivity: (activity) => activities.push(activity) });
     expect(activities.filter((activity) => activity.type === "end")).toEqual([]);
     expect(activities.some((activity) => activity.type === "diagnostic" && activity.toolName.startsWith("tools-warning:"))).toBe(true);
   });
@@ -281,7 +277,7 @@ describe("openSession construction", () => {
     const { session } = createSession("BOUND");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect(session.bindExtensions).toHaveBeenCalledTimes(1);
     expect(session.bindExtensions).toHaveBeenCalledWith(
@@ -295,7 +291,7 @@ describe("openSession construction", () => {
     const { session } = createSession("CONFIGURED");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, cwd: "/tmp/worktree" });
+    await openSession(ctx, "Scout", { pi, cwd: "/tmp/worktree" });
 
     expect(getAgentDir).toHaveBeenCalledTimes(1);
     expect(defaultResourceLoaderCtor).toHaveBeenCalledWith(expect.objectContaining({
@@ -316,7 +312,7 @@ describe("openSession construction", () => {
     const model = { provider: "faux", id: "selected", name: "Selected" };
     const context = { ...ctx, model, modelRegistry: { find: () => model, getAll: () => [model], getAvailable: () => [model] } };
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: modelConfig }));
-    await openSession(context, "Explore", { pi: { ...pi, getThinkingLevel: () => "high" } });
+    await openSession(context, "Scout", { pi: { ...pi, getThinkingLevel: () => "high" } });
     expect(createAgentSession.mock.calls[0][0]).not.toHaveProperty("thinkingLevel");
   });
 
@@ -326,23 +322,23 @@ describe("openSession construction", () => {
     const model = { provider: "faux", id: "selected", name: "Selected" };
     const context = { ...ctx, modelRegistry: { find: () => model, getAll: () => [model], getAvailable: () => [model] } };
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope,faux/selected:high" }));
-    await openSession(context, "Explore", { pi });
+    await openSession(context, "Scout", { pi });
     expect(createAgentSession.mock.calls[0][0].model).toBe(model);
     expect(createAgentSession.mock.calls[0][0].thinkingLevel).toBe("high");
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope" }));
     const override = createAgentSession.mock.calls[0][0].model;
-    await expect(openSession(context, "Explore", { pi, model: override, thinkingLevel: "low" })).rejects.toThrow("No available model");
+    await expect(openSession(context, "Scout", { pi, model: override, thinkingLevel: "low" })).rejects.toThrow("No available model");
     expect(createAgentSession).toHaveBeenCalledTimes(1);
   });
 
   it("A02 direct runner rejects exhausted configuration and inherits only when absent", async () => {
     vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: "missing/nope" }));
-    await expect(openSession(ctx, "Explore", { pi })).rejects.toThrow("No available model in configured chain");
+    await expect(openSession(ctx, "Scout", { pi })).rejects.toThrow("No available model in configured chain");
     expect(createAgentSession).not.toHaveBeenCalled();
     const { session } = createSession("DONE");
     createAgentSession.mockResolvedValue({ session });
     const parent = { provider: "parent", id: "parent" };
-    await openSession({ ...ctx, model: parent }, "Explore", { pi });
+    await openSession({ ...ctx, model: parent }, "Scout", { pi });
     expect(createAgentSession.mock.calls[0][0].model).toBe(parent);
   });
 
@@ -355,7 +351,7 @@ describe("openSession construction", () => {
       modelRegistry: { ...ctx.modelRegistry, runtime: modelRuntime },
     };
 
-    await openSession(context, "Explore", { pi });
+    await openSession(context, "Scout", { pi });
 
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
       modelRuntime,
@@ -366,7 +362,7 @@ describe("openSession construction", () => {
     const { session } = createSession("ISOLATED");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     // noContextFiles skips AGENTS.md/CLAUDE.md at the loader source;
     // appendSystemPromptOverride suppresses APPEND_SYSTEM.md (no flag equivalent).
@@ -389,7 +385,7 @@ describe("openSession construction", () => {
     const { session } = createSession("CTX");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect(defaultResourceLoaderCtor).toHaveBeenCalledWith(
       expect.objectContaining({ noContextFiles: false }),
@@ -404,7 +400,7 @@ describe("openSession construction", () => {
     const { session } = createSession("CTX");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, isolated: true });
+    await openSession(ctx, "Scout", { pi, isolated: true });
 
     expect(defaultResourceLoaderCtor).toHaveBeenCalledWith(
       expect.objectContaining({ noContextFiles: true }),
@@ -415,9 +411,9 @@ describe("openSession construction", () => {
     const { session } = createSession("NAMED");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
-    expect(session.setSessionName).toHaveBeenCalledWith("Explore");
+    expect(session.setSessionName).toHaveBeenCalledWith("Scout");
     const setOrder = session.setSessionName.mock.invocationCallOrder[0];
     const bindOrder = session.bindExtensions.mock.invocationCallOrder[0];
     expect(setOrder).toBeLessThan(bindOrder);
@@ -427,9 +423,9 @@ describe("openSession construction", () => {
     const { session } = createSession("NAMED");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, agentId: "a1b2c3d4e5f6" });
+    await openSession(ctx, "Scout", { pi, agentId: "a1b2c3d4e5f6" });
 
-    expect(session.setSessionName).toHaveBeenCalledWith("Explore#a1b2c3d4");
+    expect(session.setSessionName).toHaveBeenCalledWith("Scout#a1b2c3d4");
   });
 });
 
@@ -642,8 +638,9 @@ function lastToolsPassed(): string[] {
     registerTool: (tool: ReturnType<typeof createToolCeilingTool>) => { ceiling = tool; },
   });
   if (!ceiling) throw new Error("Runner did not register its tool ceiling");
+  const parameters = ceiling.parameters;
   const declared = active.map((name) => ({
-    name, label: name, description: "fixture tool", parameters: ceiling.parameters,
+    name, label: name, description: "fixture tool", parameters,
     execute: async () => ({ content: [], details: {} }),
   }));
   const hidden = new Set(ceiling.prepareLoadout?.({
@@ -670,7 +667,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect(sessionManagerInMemory).not.toHaveBeenCalled();
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({
@@ -684,7 +681,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/normal/pi/sessions", undefined);
   });
@@ -695,7 +692,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, cwd: "/repo" });
+    await openSession(ctx, "Scout", { pi, cwd: "/repo" });
 
     expect(sessionManagerCreate).toHaveBeenCalledWith("/repo", "/repo/.seams/pi-sessions/seam-plan-reviewer", undefined);
   });
@@ -706,7 +703,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, parentSessionId: "P" });
+    await openSession(ctx, "Scout", { pi, parentSessionId: "P" });
 
     expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", join("/mock/agent-dir", "subagent-sessions", "P"), undefined);
   });
@@ -716,7 +713,7 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, parentSessionId: "P", cwd: "/repo" });
+    await openSession(ctx, "Scout", { pi, parentSessionId: "P", cwd: "/repo" });
 
     expect(sessionManagerCreate).toHaveBeenCalledWith("/repo", "/explicit/session/path", undefined);
   });
@@ -729,7 +726,7 @@ describe("agent-runner session persistence", () => {
     await openSession({
       ...ctx,
       sessionManager: { ...ctx.sessionManager, getSessionFile: () => "/tmp/parent.jsonl" },
-    }, "Explore", { pi });
+    }, "Scout", { pi });
     expect(sessionManagerCreate).toHaveBeenCalledWith("/tmp", "/normal/pi/sessions", { parentSession: "/tmp/parent.jsonl" });
   });
 
@@ -737,10 +734,10 @@ describe("agent-runner session persistence", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, agentId: "agent-1", isolated: true, skills: ["call-skill"] });
+    await openSession(ctx, "Scout", { pi, agentId: "agent-1", isolated: true, skills: ["call-skill"] });
 
     expect(sessionManagerAppendCustomEntry).toHaveBeenCalledWith(SUBAGENT_LAUNCH_ENTRY, {
-      version: 1, agentId: "agent-1", type: "explore", isolated: true, skills: ["call-skill"],
+      version: 1, agentId: "agent-1", type: "scout", isolated: true, skills: ["call-skill"],
     });
   });
 });
@@ -768,7 +765,7 @@ describe("agent-runner session reopen", () => {
       getEntries: () => [{
         type: "custom",
         customType: SUBAGENT_LAUNCH_ENTRY,
-        data: { version: 1, agentId: "agent-1", type: "explore", ...launch },
+        data: { version: 1, agentId: "agent-1", type: "scout", ...launch },
       }],
       getSessionId: () => "child-session",
       getBranch: () => [],
@@ -784,7 +781,7 @@ describe("agent-runner session reopen", () => {
     createAgentSession.mockResolvedValue({ session });
     const options = { pi, agentId: "agent-1", resumeSessionFile: file };
 
-    await openSession(ctx, "Explore", options);
+    await openSession(ctx, "Scout", options);
 
     expect(createAgentSession).toHaveBeenCalledWith(expect.objectContaining({ sessionManager: reopened }));
     expect(sessionManagerCreate).not.toHaveBeenCalled();
@@ -795,7 +792,7 @@ describe("agent-runner session reopen", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file });
+    await openSession(ctx, "Scout", { pi, agentId: "agent-1", resumeSessionFile: file });
 
     expect([createAgentSession.mock.calls[0][0].cwd, lastLoaderOpts().cwd]).toEqual([childCwd, "/tmp"]);
   });
@@ -806,7 +803,7 @@ describe("agent-runner session reopen", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file, isolated: false });
+    await openSession(ctx, "Scout", { pi, agentId: "agent-1", resumeSessionFile: file, isolated: false });
 
     expect(lastLoaderOpts().noExtensions).toBe(true);
   });
@@ -816,7 +813,7 @@ describe("agent-runner session reopen", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file, skills: ["call-skill"] });
+    await openSession(ctx, "Scout", { pi, agentId: "agent-1", resumeSessionFile: file, skills: ["call-skill"] });
 
     expect(_preloadSkills).toHaveBeenLastCalledWith(["launch-skill"], "/tmp");
   });
@@ -833,7 +830,7 @@ describe("agent-runner session reopen", () => {
       },
     };
 
-    await openSession(context, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file });
+    await openSession(context, "Scout", { pi, agentId: "agent-1", resumeSessionFile: file });
 
     expect(reopened.appendCustomEntry).toHaveBeenCalledWith("session-local:scope", { version: 1, rootScopeId: "root-session" });
   });
@@ -850,7 +847,7 @@ describe("agent-runner session reopen", () => {
       },
     };
 
-    const opened = await openSession(context, "Explore", { pi, agentId: "agent-1", resumeSessionFile: file, inheritContext: true });
+    const opened = await openSession(context, "Scout", { pi, agentId: "agent-1", resumeSessionFile: file, inheritContext: true });
 
     expect(opened.promptPrefix).toBeUndefined();
     expect(session.prompt).not.toHaveBeenCalled();
@@ -873,7 +870,7 @@ describe("agent-runner session-local Agent-tree scope", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(context, "Explore", { pi });
+    await openSession(context, "Scout", { pi });
 
     expect(sessionManagerAppendCustomEntry).toHaveBeenNthCalledWith(
       1,
@@ -888,7 +885,7 @@ describe("agent-runner session-local Agent-tree scope", () => {
   it("later turns do not reseed the existing session scope", async () => {
     const { session, listeners } = createSession("RESUMED");
     createAgentSession.mockResolvedValue({ session });
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
     sessionManagerAppendCustomEntry.mockClear();
     for (const listener of listeners) listener({ type: "turn_end" });
     expect(sessionManagerAppendCustomEntry).not.toHaveBeenCalled();
@@ -911,7 +908,7 @@ describe("agent-runner trusted session-local binding", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const inline = trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
@@ -933,7 +930,7 @@ describe("agent-runner trusted session-local binding", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, isolated: true });
+    await openSession(ctx, "Scout", { pi, isolated: true });
 
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
@@ -955,7 +952,7 @@ describe("agent-runner trusted session-local binding", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await openSession(ctx, "Explore", { pi, onToolActivity });
+    await openSession(ctx, "Scout", { pi, onToolActivity });
 
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
@@ -979,7 +976,7 @@ describe("agent-runner trusted session-local binding", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     trustedFactory();
     expect(loaderExtensionsRef.current.extensions.map((extension) => extension.path)).toEqual([
@@ -1131,7 +1128,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     // `tools: +@all` grants grep/find/ls too, but Pi only auto-activates its
     // four default built-ins — no `tools:` rule can turn on a default-off tool.
@@ -1148,7 +1145,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("tool_a");
@@ -1161,7 +1158,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).not.toContain("mcp");     // not granted
@@ -1178,7 +1175,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).not.toContain("agent");
@@ -1192,7 +1189,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect(lastToolsPassed()).toEqual(["read", "grep", "find", "ls"]);
   });
@@ -1203,7 +1200,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     // Allowlist unset so async tools (e.g. MCP on session_start) can register;
     // scope is a denylist of our orchestration tools (every built-in is granted).
@@ -1228,7 +1225,7 @@ describe("agent-runner master tool allowlist", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect(new Set(createAgentSession.mock.calls[0][0].excludeTools)).toEqual(new Set([
       ...Object.values(SUBAGENT_TOOL_NAMES),
@@ -1264,7 +1261,7 @@ describe("agent-runner async extension tool registration", () => {
       registerLate("/ext/mcp.ts", "mcp_search");
     });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect(lastToolsPassed()).toContain("mcp_search");
   });
@@ -1275,7 +1272,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session, listeners } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
     expect(session.getActiveToolNames()).not.toContain("mcp_search");
 
     // A lazy MCP server connects mid-conversation (context-mode registers at
@@ -1292,7 +1289,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session, listeners } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     registerLate("/ext/foo.ts", "foo_late");
     registerLate("/ext/bar.ts", "bar_late");
@@ -1317,7 +1314,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session, listeners } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     registerLate("/ext/foo.ts", "foo_late");
     registerLate("/ext/bar.ts", "bar_late");
@@ -1337,7 +1334,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     await expect(
       session.agent.beforeToolCall?.({ toolCall: { name: "bar_tool" } }),
@@ -1355,7 +1352,7 @@ describe("agent-runner async extension tool registration", () => {
     session.agent.beforeToolCall = prior;
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
     await session.agent.beforeToolCall?.({ toolCall: { name: "foo_tool" } });
 
     expect(prior).toHaveBeenCalledTimes(1);
@@ -1368,7 +1365,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session, listeners } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     registerLate("/ext/foo.ts", "foo_late");
     registerLate("/ext/bar.ts", "bar_late");
@@ -1389,7 +1386,7 @@ describe("agent-runner async extension tool registration", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, isolated: true });
+    await openSession(ctx, "Scout", { pi, isolated: true });
 
     // A hard registry gate is the right boundary here: nothing can register
     // asynchronously, so there is no active-set narrowing to maintain.
@@ -1420,7 +1417,7 @@ describe("agent-runner extension rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("mcp");
@@ -1446,7 +1443,7 @@ describe("agent-runner extension rules", () => {
       const { session } = createSession("OK");
       createAgentSession.mockResolvedValue({ session });
 
-      await openSession(ctx, "Explore", { pi });
+      await openSession(ctx, "Scout", { pi });
 
       expect(lastToolsPassed()).toContain("pkg_tool");
     } finally {
@@ -1464,7 +1461,7 @@ describe("agent-runner extension rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await openSession(ctx, "Explore", { pi, onToolActivity });
+    await openSession(ctx, "Scout", { pi, onToolActivity });
 
     const tools = lastToolsPassed();
     expect(tools).not.toContain("notify_send");
@@ -1479,7 +1476,7 @@ describe("agent-runner extension rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await openSession(ctx, "Explore", { pi, onToolActivity });
+    await openSession(ctx, "Scout", { pi, onToolActivity });
 
     expect(diagnosticsOf(onToolActivity, "extension-")).toEqual([]);
     expect(lastToolsPassed()).toContain("mcp_tool");
@@ -1492,11 +1489,11 @@ describe("agent-runner extension rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    const result = await openSession(ctx, "Explore", { pi, onToolActivity });
+    const result = await openSession(ctx, "Scout", { pi, onToolActivity });
 
     expect(result.session).toBe(session);
     expect(diagnosticsOf(onToolActivity, "extension-")).toEqual([
-      'extension-warning:"typo" matches no extension (agent "Explore")',
+      'extension-warning:"typo" matches no extension (agent "Scout")',
     ]);
   });
 
@@ -1505,7 +1502,7 @@ describe("agent-runner extension rules", () => {
     withExtensions({ "/a/twin.ts": [], "/b/twin/index.ts": [] });
     createAgentSession.mockResolvedValue(createSession("OK"));
 
-    await expect(openSession(ctx, "Explore", { pi })).rejects.toThrow(/Agent "Explore" extensions: "twin" is ambiguous/);
+    await expect(openSession(ctx, "Scout", { pi })).rejects.toThrow(/Agent "Scout" extensions: "twin" is ambiguous/);
     expect(createAgentSession).not.toHaveBeenCalled();
   });
 
@@ -1514,7 +1511,7 @@ describe("agent-runner extension rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect((lastLoaderOpts().extensionFactories as Array<Record<string, unknown>>).filter(({ builtin }) => builtin)).toEqual([
       expect.objectContaining({ name: "codemode", builtin: true, replaceable: true }),
@@ -1529,7 +1526,7 @@ describe("agent-runner extension rules", () => {
     createAgentSession.mockResolvedValue({ session });
     createCodemodeExtension.mockClear();
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect({ names: builtinFactoryNames(), options: createCodemodeExtension.mock.calls }).toEqual({
       names: ["codemode"],
@@ -1542,7 +1539,7 @@ describe("agent-runner extension rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect(builtinFactoryNames()).toEqual([]);
   });
@@ -1553,7 +1550,7 @@ describe("agent-runner extension rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect({ noExtensions: lastLoaderOpts().noExtensions, builtins: builtinFactoryNames() })
       .toEqual({ noExtensions: true, builtins: [] });
@@ -1571,7 +1568,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("foo_tool");
@@ -1586,7 +1583,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect([...lastToolsPassed()].sort()).toEqual(["foo_a", "foo_c"]);
   });
@@ -1596,7 +1593,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const factory = (lastLoaderOpts().extensionFactories as Array<{ name: string; hidden?: boolean; factory(pi: unknown): void }>)
       .find(({ name }) => name === "subagent-nested-tool-scope");
@@ -1622,7 +1619,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const factory = (lastLoaderOpts().extensionFactories as Array<{ name: string; factory(pi: unknown): void }>)
       .find(({ name }) => name === "subagent-nested-tool-scope");
@@ -1644,7 +1641,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     expect((lastLoaderOpts().extensionFactories as Array<{ name: string }>).map(({ name }) => name))
       .not.toContain("subagent-nested-tool-scope");
@@ -1656,7 +1653,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("read");
@@ -1669,7 +1666,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("foo_a");
@@ -1684,7 +1681,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi });
+    await openSession(ctx, "Scout", { pi });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("Bar");
@@ -1697,7 +1694,7 @@ describe("agent-runner tool rules", () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, "Explore", { pi, isolated: true });
+    await openSession(ctx, "Scout", { pi, isolated: true });
 
     const tools = lastToolsPassed();
     expect(tools).toContain("read");
@@ -1711,7 +1708,7 @@ describe("agent-runner tool rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await openSession(ctx, "Explore", { pi, onToolActivity });
+    await openSession(ctx, "Scout", { pi, onToolActivity });
 
     expect(diagnosticsOf(onToolActivity, "tools-")).toEqual([]);
   });
@@ -1723,10 +1720,10 @@ describe("agent-runner tool rules", () => {
     createAgentSession.mockResolvedValue({ session });
     const onToolActivity = vi.fn();
 
-    await openSession(ctx, "Explore", { pi, onToolActivity });
+    await openSession(ctx, "Scout", { pi, onToolActivity });
     for (const l of listeners) l({ type: "turn_end", message: { role: "assistant", stopReason: "stop", content: [] }, toolResults: [] });
 
-    expect(diagnosticsOf(onToolActivity, "tools-")).toEqual(['tools-warning:"@nope" matches no tool (agent "Explore")']);
+    expect(diagnosticsOf(onToolActivity, "tools-")).toEqual(['tools-warning:"@nope" matches no tool (agent "Scout")']);
   });
 });
 
@@ -1757,7 +1754,7 @@ describe("agent-runner MCP excludes", () => {
     createAgentSession.mockResolvedValue({ session });
     const getAllTools = () => parentTools.map((name) => ({ name, sourceInfo: { path: "builtin:mcp" } }));
 
-    await openSession(ctx, "Explore", { pi: { ...pi, getAllTools }, cwd: dir });
+    await openSession(ctx, "Scout", { pi: { ...pi, getAllTools }, cwd: dir });
 
     return createAgentSession.mock.calls[0][0].excludeTools;
   }
@@ -1896,7 +1893,7 @@ it("retains the previously selected candidate when availability changes before t
   vi.mocked(getAgentConfig).mockReturnValueOnce(makeAgentConfig({ model: modelInput }));
   const find = vi.fn();
   const context = { ...ctx, modelRegistry: { find, getAll: () => [], getAvailable: () => [], isUsingOAuth: () => false } };
-  await openSession(context, "Explore", { pi, selectedModel: { model, fast: false, modelInput } });
+  await openSession(context, "Scout", { pi, selectedModel: { model, fast: false, modelInput } });
   expect(find).not.toHaveBeenCalled();
   expect(createAgentSession.mock.calls[0][0].model).toBe(model);
 });
@@ -1914,7 +1911,7 @@ describe("graph run structured output", () => {
   it("injects StructuredOutput into the static allowlist before session creation", async () => {
     const { session } = createSession("prose");
     createAgentSession.mockResolvedValue({ session });
-    await openSession(ctx, "Explore", { pi, graphRun: true, structuredOutput: schema });
+    await openSession(ctx, "Scout", { pi, graphRun: true, structuredOutput: schema });
     expect(createAgentSession.mock.calls[0][0].tools).toContain("StructuredOutput");
   });
 
@@ -1922,7 +1919,7 @@ describe("graph run structured output", () => {
     setupRules("+@all, -@builtin", "+@builtin");
     const { session, listeners } = createSession("prose");
     createAgentSession.mockResolvedValue({ session });
-    await openSession(ctx, "Explore", { pi, graphRun: true, structuredOutput: schema });
+    await openSession(ctx, "Scout", { pi, graphRun: true, structuredOutput: schema });
     expect(createAgentSession.mock.calls[0][0].customTools.map((tool: { name: string }) => tool.name)).toContain("StructuredOutput");
     expect(session.getActiveToolNames()).toContain("StructuredOutput");
     expect(createAgentSession.mock.calls[0][0].excludeTools).toContain("agent_graph");
@@ -1959,7 +1956,7 @@ describe("delegate_research bridge loading", () => {
     setupRules("+@all, -@builtin", "+read", bridge);
     createAgentSession.mockResolvedValue(createSession("OK"));
 
-    await openSession(ctx, "Explore", { pi, nestedSpawn });
+    await openSession(ctx, "Scout", { pi, nestedSpawn });
 
     expect(registeredResearchTools()).toEqual(["delegate_research"]);
   });
@@ -1974,7 +1971,7 @@ describe("delegate_research bridge loading", () => {
     setupRules("+@all, -@builtin", "+read", overrides);
     createAgentSession.mockResolvedValue(createSession("OK"));
 
-    await openSession(ctx, "Explore", { pi, nestedSpawn, ...callOptions });
+    await openSession(ctx, "Scout", { pi, nestedSpawn, ...callOptions });
 
     expect(registeredResearchTools()).toEqual([]);
     expect(lastToolsPassed() ?? []).not.toContain("delegate_research");
@@ -1986,8 +1983,62 @@ describe("delegate_research bridge loading", () => {
     setupRules("", "+read", bridge);
     createAgentSession.mockResolvedValue(createSession("OK"));
 
-    await openSession(ctx, "Explore", { pi, nestedSpawn });
+    await openSession(ctx, "Scout", { pi, nestedSpawn });
 
     expect(lastToolsPassed()).toEqual(["read", "delegate_research"]);
+  });
+});
+
+
+describe("agent prompt variants", () => {
+  it.each([false, true])("selects the spawn model and reselects every run (isolated=%s)", async (isolated) => {
+    setupRules("", isolated ? "+read" : "+write", {
+      systemPrompt: "DEFAULT_BODY\n<critical>RULES</critical>",
+      promptVariants: { gpt: "GPT_BODY", gemini: "GEMINI_BODY" },
+      model: isolated ? "fixture/gpt-child" : undefined,
+    });
+    createAgentSession.mockResolvedValue(createSession("OK"));
+    const childModel = { provider: "fixture", id: "gpt-child" };
+    const context = {
+      ...ctx, model: isolated ? { provider: "fixture", id: "claude-parent" } : childModel,
+      modelRegistry: { find: () => childModel, getAvailable: () => [childModel] },
+    };
+
+    const onNotesFile = vi.fn();
+    await openSession(context, "Scout", { pi, isolated, agentId: "variant-worker", onNotesFile });
+
+    const options: {
+      systemPromptOverride(): string;
+      extensionFactories: Array<{ name: string; factory: (api: unknown) => void }>;
+    } = defaultResourceLoaderCtor.mock.calls[0]?.[0];
+    expect(options.systemPromptOverride()).toContain("GPT_BODY");
+    expect(options.systemPromptOverride()).not.toContain("DEFAULT_BODY");
+    type PromptEvent = { systemPromptOptions: { customPrompt: string; sections: Record<string, string> } };
+    type PromptHook = (event: PromptEvent, context: { model: { provider: string; id: string } | undefined }) => unknown;
+    const hooks = new Map<string, PromptHook>();
+    const factory = options.extensionFactories.find(input => input.name === "subagent-model-fallback");
+    if (!factory) throw new Error("Prompt hook factory missing");
+    factory.factory({ on: (name: string, handler: PromptHook) => hooks.set(name, handler) });
+    const hook = hooks.get("before_agent_start");
+    if (!hook) throw new Error("Prompt hook missing");
+
+    const initialPrompt = options.systemPromptOverride();
+    const notesStart = initialPrompt.indexOf("local://notes/variant-worker.md");
+    const notesSuffix = notesStart >= 0 ? initialPrompt.slice(notesStart) : undefined;
+    if (!isolated) expect(notesSuffix).toBeDefined();
+    for (const [model, body] of [
+      [{ provider: "fixture", id: "claude-child" }, "DEFAULT_BODY\n<critical>RULES</critical>"],
+      [childModel, "GPT_BODY"],
+      [{ provider: "google", id: "gemini-child" }, "DEFAULT_BODY\nGEMINI_BODY\n\n<critical>RULES</critical>"],
+      [undefined, "DEFAULT_BODY\n<critical>RULES</critical>"],
+    ] as const) {
+      const event = { systemPromptOptions: { customPrompt: "STALE_BODY", sections: { project: "PROJECT_BODY", skills: "SKILL_BODY" } } };
+      expect(hook(event, { model })).toBeUndefined();
+      expect(event.systemPromptOptions.customPrompt).toContain(body);
+      expect(event.systemPromptOptions.customPrompt).not.toContain("STALE_BODY");
+      expect(event.systemPromptOptions.sections).toEqual({ project: "PROJECT_BODY", skills: "SKILL_BODY" });
+      if (notesSuffix) expect(event.systemPromptOptions.customPrompt.endsWith(notesSuffix)).toBe(true);
+    }
+    expect(onNotesFile).toHaveBeenCalledTimes(isolated ? 0 : 1);
   });
 });

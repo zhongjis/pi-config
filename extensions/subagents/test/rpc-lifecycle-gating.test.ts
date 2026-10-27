@@ -1,3 +1,4 @@
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * rpc-lifecycle-gating.test.ts — issue #142.
  *
@@ -89,6 +90,7 @@ describe("issue #142: RPC handlers + subagents:ready are gated on session_start"
     prevCwd = process.cwd();
     mkdirSync(join(tmpDir, ".pi"), { recursive: true });
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false }));
+    writeFixtureAgent(tmpDir);
     process.chdir(tmpDir);
     priorManager = Reflect.get(globalThis, MANAGER_KEY);
     Reflect.deleteProperty(globalThis, MANAGER_KEY);
@@ -141,7 +143,7 @@ describe("issue #142: RPC handlers + subagents:ready are gated on session_start"
     const requestId = "req-142";
     await busHandlers.get("subagents:rpc:spawn")!({
       requestId,
-      type: "general-purpose",
+      type: "fixture",
       prompt: "go",
       options: { description: "rpc gating test" },
     });

@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from "vitest";
-import { getAgentConfig, registerAgents } from "../src/agent-types.js";
+import { fixtureAgent } from "./helpers/fixture-agent.js";
+import { describe, expect, it } from "vitest";
 import { buildAgentPrompt, SUBAGENT_COMMUNICATION_CONTRACT } from "../src/prompts.js";
 import type { AgentConfig, EnvInfo } from "../src/types.js";
 
@@ -15,17 +15,8 @@ const envNoGit: EnvInfo = {
   platform: "linux",
 };
 
-// Initialize default agents
-beforeEach(() => {
-  registerAgents(new Map());
-});
-
-function getDefaultConfig(name: string): AgentConfig {
-  return getAgentConfig(name)!;
-}
-
 describe("buildAgentPrompt", () => {
-  it.each(["append", "replace", "system_instructions"] as const)("injects the shared communication contract in %s mode with and without skills", (promptMode) => {
+  it.each(["replace", "system_instructions"] as const)("injects the shared communication contract in %s mode with and without skills", (promptMode) => {
     const config: AgentConfig = {
       name: "fixture",
       description: "Fixture",
@@ -39,19 +30,16 @@ describe("buildAgentPrompt", () => {
       runInBackground: false,
       isolated: false,
     };
-    const parent = "fixture parent prefix";
     for (const extras of [undefined, { skillBlocks: [{ name: "fixture-skill", content: "fixture skill content" }] }]) {
-      const prompt = buildAgentPrompt(config, "/workspace", env, parent, extras);
+      const prompt = buildAgentPrompt(config, "/workspace", env, extras);
       expect(prompt.split(SUBAGENT_COMMUNICATION_CONTRACT)).toHaveLength(2);
       expect(prompt.indexOf(SUBAGENT_COMMUNICATION_CONTRACT)).toBeGreaterThan(prompt.indexOf(config.systemPrompt));
-      if (promptMode === "append") expect(prompt.startsWith(parent)).toBe(true);
-      else expect(prompt).not.toContain(parent);
       if (extras) expect(prompt).toContain(extras.skillBlocks[0].content);
     }
   });
 
   it("includes cwd and git info", () => {
-    const config = getDefaultConfig("general-purpose");
+    const config = fixtureAgent;
     const prompt = buildAgentPrompt(config, "/workspace", env);
     expect(prompt).toContain("/workspace");
     expect(prompt).toContain("Branch: main");
@@ -59,96 +47,11 @@ describe("buildAgentPrompt", () => {
   });
 
   it("omits branch transport for non-git repos", () => {
-    const config = getDefaultConfig("Explore");
+    const config = fixtureAgent;
     const prompt = buildAgentPrompt(config, "/workspace", envNoGit);
     expect(prompt).toContain("/workspace");
     expect(prompt).toContain("linux");
     expect(prompt).not.toContain("Branch:");
-  });
-
-  it("general-purpose uses append mode (parent twin)", () => {
-    const config = getDefaultConfig("general-purpose");
-    const parentPrompt = "You are a parent coding agent with full powers.";
-    const prompt = buildAgentPrompt(config, "/workspace", env, parentPrompt);
-    expect(prompt.startsWith(parentPrompt)).toBe(true);
-    expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).not.toContain("<inherited_system_prompt>");
-    expect(prompt).not.toContain("<agent_instructions>");
-  });
-
-  it("general-purpose without parent prompt keeps protocol and environment transport", () => {
-    const config = getDefaultConfig("general-purpose");
-    const prompt = buildAgentPrompt(config, "/workspace", env);
-    expect(prompt).toContain("/workspace");
-    expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).toContain('<active_agent name="general-purpose"/>');
-  });
-
-  it("append mode with parent prompt includes parent + custom instructions", () => {
-    const config: AgentConfig = {
-      name: "appender",
-      description: "Appender",
-      extensionRules: [],
-      toolRules: [],
-      discoverSkills: true,
-      preloadSkills: [],
-      systemPrompt: "Extra custom instructions here.",
-      promptMode: "append",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const parentPrompt = "You are a parent coding agent with special powers.";
-    const prompt = buildAgentPrompt(config, "/workspace", env, parentPrompt);
-    expect(prompt.startsWith(parentPrompt)).toBe(true);
-    expect(prompt).toContain("/workspace");
-    expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).not.toContain("<inherited_system_prompt>");
-    expect(prompt).toContain("<agent_instructions>");
-    expect(prompt).toContain("Extra custom instructions here.");
-  });
-
-  it("append mode without parent prompt transports custom instructions", () => {
-    const config: AgentConfig = {
-      name: "appender",
-      description: "Appender",
-      extensionRules: [],
-      toolRules: [],
-      discoverSkills: true,
-      preloadSkills: [],
-      systemPrompt: "Extra custom instructions here.",
-      promptMode: "append",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const prompt = buildAgentPrompt(config, "/workspace", env);
-    expect(prompt).toContain("/workspace");
-    expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).toContain("<agent_instructions>");
-    expect(prompt).toContain("Extra custom instructions here.");
-  });
-
-  it("append mode with empty systemPrompt is a pure parent clone", () => {
-    const config: AgentConfig = {
-      name: "clone",
-      description: "Clone",
-      extensionRules: [],
-      toolRules: [],
-      discoverSkills: true,
-      preloadSkills: [],
-      systemPrompt: "",
-      promptMode: "append",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const parentPrompt = "You are a parent coding agent.";
-    const prompt = buildAgentPrompt(config, "/workspace", env, parentPrompt);
-    expect(prompt.startsWith(parentPrompt)).toBe(true);
-    expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).not.toContain("<inherited_system_prompt>");
-    expect(prompt).not.toContain("<agent_instructions>");
   });
 
   it("replace mode uses config systemPrompt directly", () => {
@@ -168,48 +71,6 @@ describe("buildAgentPrompt", () => {
     const prompt = buildAgentPrompt(config, "/workspace", env);
     expect(prompt).toContain("You are a specialized agent.");
     expect(prompt).toContain("/workspace");
-  });
-
-  it("replace mode ignores parent prompt", () => {
-    const config: AgentConfig = {
-      name: "standalone",
-      description: "Standalone",
-      extensionRules: [],
-      toolRules: [],
-      discoverSkills: true,
-      preloadSkills: [],
-      systemPrompt: "You are a standalone agent.",
-      promptMode: "replace",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const prompt = buildAgentPrompt(config, "/workspace", env, "SECRET parent prompt content");
-    expect(prompt).toContain("You are a standalone agent.");
-    expect(prompt).not.toContain("SECRET parent prompt content");
-    expect(prompt).not.toContain("<sub_agent_context>");
-  });
-
-
-  it("append mode without parent prompt still has bridge", () => {
-    const config: AgentConfig = {
-      name: "no-parent",
-      description: "No parent",
-      extensionRules: [],
-      toolRules: [],
-      discoverSkills: true,
-      preloadSkills: [],
-      systemPrompt: "Extra stuff.",
-      promptMode: "append",
-      inheritContext: false,
-      runInBackground: false,
-      isolated: false,
-    };
-    const prompt = buildAgentPrompt(config, "/workspace", env);
-    expect(prompt).toContain("<sub_agent_context>");
-    expect(prompt).not.toContain("<inherited_system_prompt>");
-    expect(prompt).toContain("<agent_instructions>");
-    expect(prompt).toContain("Extra stuff.");
   });
 
   it("injects preloaded skill blocks", () => {
@@ -232,7 +93,7 @@ describe("buildAgentPrompt", () => {
         { name: "error-handling", content: "Handle errors gracefully." },
       ],
     };
-    const prompt = buildAgentPrompt(config, "/workspace", env, undefined, extras);
+    const prompt = buildAgentPrompt(config, "/workspace", env, extras);
     expect(prompt).toContain("api-conventions");
     expect(prompt).toContain("Use REST endpoints.");
     expect(prompt).toContain("error-handling");
@@ -259,30 +120,6 @@ describe("buildAgentPrompt", () => {
       expect(prompt).toMatch(/^<active_agent name="my-agent"\/>/);
     });
 
-    it("tag follows the cacheable inherited prefix in append mode", () => {
-      const config: AgentConfig = {
-        name: "my-agent",
-        description: "Test",
-        extensionRules: [],
-        toolRules: [],
-        discoverSkills: true,
-        preloadSkills: [],
-        systemPrompt: "Custom instructions.",
-        promptMode: "append",
-        inheritContext: false,
-        runInBackground: false,
-        isolated: false,
-      };
-      const prompt = buildAgentPrompt(config, "/workspace", env, "Parent prompt.");
-      // Parent prompt must form the verbatim, cacheable byte prefix.
-      expect(prompt.startsWith("Parent prompt.")).toBe(true);
-      // The varying tag follows the static <sub_agent_context> bridge.
-      const ctxIdx = prompt.indexOf("<sub_agent_context>");
-      const tagIdx = prompt.indexOf('<active_agent name="my-agent"/>');
-      expect(ctxIdx).toBeGreaterThan(-1);
-      expect(tagIdx).toBeGreaterThan(ctxIdx);
-    });
-
     it("tag uses agent name verbatim", () => {
       const config: AgentConfig = {
         name: "Some Agent With Spaces",
@@ -302,7 +139,7 @@ describe("buildAgentPrompt", () => {
     });
 
     it("tag appears before the env block in both modes", () => {
-      for (const promptMode of ["replace", "append"] as const) {
+      for (const promptMode of ["replace", "system_instructions"] as const) {
         const config: AgentConfig = {
           name: "test-agent",
           description: "Test",
@@ -316,7 +153,7 @@ describe("buildAgentPrompt", () => {
           runInBackground: false,
           isolated: false,
         };
-        const prompt = buildAgentPrompt(config, "/workspace", env, "Parent.");
+        const prompt = buildAgentPrompt(config, "/workspace", env);
         const tagIndex = prompt.indexOf('<active_agent name="test-agent"/>');
         const cwdIndex = prompt.indexOf("/workspace");
         expect(tagIndex).toBeLessThan(cwdIndex);

@@ -35,12 +35,12 @@
  *
  * ONE PARAMETERIZED RUNNER
  * ------------------------
- * The same `runPrintMode()` covers built-in agent types, `.pi/agents/*.md` /
+ * The same `runPrintMode()` covers `.pi/agents/*.md` /
  * `.agents/agents/*.md` frontmatter agents, and inline-instruction agents — the difference is purely
  * what you register in `beforeRun` and which `subagent_type` the `agent` call
  * names. See `test/subagents-print-mode-e2e.test.ts` for usage.
  */
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -170,7 +170,7 @@ export interface PrintModeRun {
 
 /**
  * Build an `agent` tool call for a faux assistant turn. `subagent_type` defaults
- * to "general-purpose"; everything else is passed straight through as tool args.
+ * to "fixture"; everything else is passed straight through as tool args.
  */
 export function agentCall(
   args: {
@@ -182,7 +182,7 @@ export function agentCall(
   },
   opts?: { id?: string },
 ): ToolCall {
-  return fauxToolCall("agent", { subagent_type: "general-purpose", ...args }, opts);
+  return fauxToolCall("agent", { subagent_type: "fixture", ...args }, opts);
 }
 
 function resolveReply(
@@ -267,6 +267,9 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
     hermeticDir = mkdtempSync(join(tmpdir(), "subagents-print-home-"));
     process.env.PI_CODING_AGENT_DIR = hermeticDir;
     process.env.HOME = hermeticDir;
+    const agentsDir = join(hermeticDir, "agents");
+    mkdirSync(agentsDir);
+    writeFileSync(join(agentsDir, "fixture.md"), "---\ndescription: Test agent\n---\nFixture instructions\n");
   }
 
   // --- model backend ---

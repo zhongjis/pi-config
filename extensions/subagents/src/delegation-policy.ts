@@ -62,7 +62,7 @@ export function resolveNestedTargets(
 	const builtins = BUILTIN_TOOL_NAMES.map((name) => ({ name, extensionIds: [] }));
 	return getPermittedDelegationTypes({ rules: parent.delegationRules ?? [] }, configs.map((config) => config.name)).filter((type) => {
 		const target = byName.get(type.toLowerCase());
-		if (!target || target.enabled === false || hasPositiveDelegationRule(target.delegationRules ?? []) || target.promptMode === "append") return false;
+		if (!target || target.enabled === false || hasPositiveDelegationRule(target.delegationRules ?? [])) return false;
 		if (type.toLowerCase() === parent.name.toLowerCase()) return false;
 		const granted = resolveToolAccess(target.toolRules, builtins).allowed;
 		if (MUTATING_BUILTIN_TOOLS.some((name) => granted.has(name))) return false;
@@ -136,7 +136,7 @@ function resolveDelegationDecision(
 ): ResolvedDelegationPolicy {
 	const canonicalRequestedType =
 		resolveCanonicalType(requestedType, buildCanonicalTypeMap(availableTypes)) ?? requestedType;
-	const allowed = context.status === "unrestricted" || context.permittedTypes.some(
+	const allowed = context.permittedTypes.some(
 		(type) => type.toLowerCase() === canonicalRequestedType.toLowerCase(),
 	);
 	return {
@@ -241,6 +241,9 @@ export function formatDelegationPolicyDenial(
 	const mode = policy.activeMode ?? "unknown";
 	if (policy.status === "unresolved") {
 		return `${DELEGATION_POLICY_DENIED}: Active mode "${mode}" delegation policy is unavailable. No delegation targets are permitted.`;
+	}
+	if (policy.status === "unrestricted") {
+		return `${DELEGATION_POLICY_DENIED}: Unknown or unavailable agent type "${requestedType}". Available targets: ${policy.permittedTypes.join(", ") || "none"}.`;
 	}
 	return `${DELEGATION_POLICY_DENIED}: ${buildDelegationBlockedMessage(mode, requestedType, policy.decision.requestedType, policy.permittedTypes)}`;
 }

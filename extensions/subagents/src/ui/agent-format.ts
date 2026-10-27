@@ -2,7 +2,7 @@
  * agent-format.ts — Shared agent presentation helpers and types.
  */
 
-import { getConfig } from "../agent-types.js";
+import { getAgentConfig } from "../agent-types.js";
 import type { AgentInvocation, AgentRecord, SubagentType } from "../types.js";
 
 // ---- Constants ----
@@ -132,18 +132,13 @@ export function formatDuration(startedAt: number, completedAt?: number): string 
   return `${formatMs(Date.now() - startedAt)} (running)`;
 }
 
-/** Get display name for any agent type (built-in or custom). */
+/** Use the configured display name, retaining the type for unloaded history records. */
 export function getDisplayName(type: SubagentType): string {
-  return getConfig(type).displayName;
+  const config = getAgentConfig(type);
+  return config?.displayName ?? config?.name ?? type;
 }
 
-/** Short label for prompt mode: "twin" for append, nothing for replace (the default). */
-export function getPromptModeLabel(type: SubagentType): string | undefined {
-  const config = getConfig(type);
-  return config.promptMode === "append" ? "twin" : undefined;
-}
-
-/** Mode label is not included — callers add it where they want it. */
+/** Build invocation metadata tags. */
 export function buildInvocationTags(
   invocation: AgentInvocation | undefined,
 ): { modelName?: string; tags: string[] } {

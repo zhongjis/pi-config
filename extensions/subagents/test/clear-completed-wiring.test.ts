@@ -1,3 +1,4 @@
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * clear-completed-wiring.test.ts — reproduces issue #108 end-to-end through the
  * REAL session lifecycle handlers + the REAL get_agent_result tool.
@@ -71,7 +72,7 @@ async function spawnCompletedBackgroundAgent(tools: Map<string, any>): Promise<s
   vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => "THE-RESULT-PAYLOAD")));
   const spawn = await tools.get("agent").execute(
     "tc-spawn",
-    { prompt: "go", description: "Review monero_en.rs in depth", subagent_type: "general-purpose", run_in_background: true },
+    { prompt: "go", description: "Review monero_en.rs in depth", subagent_type: "fixture", run_in_background: true },
     undefined,
     undefined,
     ctx(),
@@ -101,6 +102,7 @@ describe("issue #108: unread completed background agents survive session events"
     prevCwd = process.cwd();
     mkdirSync(join(tmpDir, ".pi"), { recursive: true });
     writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify({ schedulingEnabled: false }));
+    writeFixtureAgent(tmpDir);
     process.chdir(tmpDir);
   });
 

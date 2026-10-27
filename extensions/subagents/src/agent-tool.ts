@@ -7,7 +7,7 @@ import { SPINNER } from "../../lib/widget-style.js";
 import type { AgentManager } from "./agent-manager.js";
 import { createAgentResultBuilder, formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
 import { SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
-import { getAgentConfig, getAvailableTypes, resolveType } from "./agent-types.js";
+import { getAgentConfig, getAvailableTypes } from "./agent-types.js";
 import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ResolvedDelegationPolicy } from "./delegation-policy.js";
 import { prepareAgentInvocation, resolveJoinMode } from "./invocation-config.js";
 import type { AgentPresentation, createNotificationCoordinator } from "./notification-coordinator.js";
@@ -18,10 +18,10 @@ import { getForegroundOutcomeNote } from "./status-note.js";
 import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js";
 import { turnCheckInNotice } from "./turn-ceiling.js";
 import type { AgentConfig, AgentInvocation, AgentRecord, SubagentType } from "./types.js";
-import { type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName, getPromptModeLabel } from "./ui/agent-format.js";
+import { type AgentDetails, buildInvocationTags, describeActivity, formatMs, getDisplayName } from "./ui/agent-format.js";
 import { workNotesSuffix } from "./work-notes.js";
 
-/** Shared by the tool description and agent-authoring menus. */
+/** Supported thinking-level values. */
 export const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 const BACKGROUND_GUIDANCE = "Do not end your turn while this agent runs: continue non-overlapping work, then call get_agent_result with run_id and wait: true.\n" +
@@ -237,16 +237,14 @@ Terse command-style prompts produce shallow, generic work.
     execute: async (toolCallId, params, signal, onUpdate, ctx) => {
       reloadCustomAgents(ctx);
       const rawType = params.subagent_type as SubagentType;
-      const resolved = resolveType(rawType);
-      const subagentType = resolved ?? "general-purpose";
-      const fellBack = resolved === undefined;
-      const delegation = resolveDelegation(ctx, subagentType);
+      const delegation = resolveDelegation(ctx, rawType);
       if (!delegation.decision.allowed) {
         return textResult(
           formatDelegationPolicyDenial(delegation, rawType),
           buildDelegationPolicyDenialDetails(delegation, rawType, params.description),
         );
       }
+      const subagentType = delegation.decision.requestedType;
       const displayName = getDisplayName(subagentType);
       const trackBackground = (record: AgentRecord) => {
         record.joinMode = resolveJoinMode(settings.defaultJoinMode, true);
@@ -382,9 +380,7 @@ Terse command-style prompts produce shallow, generic work.
         inheritContext,
         runInBackground,
       };
-      const modeLabel = getPromptModeLabel(subagentType);
-      const { tags: invocationTags } = buildInvocationTags(agentInvocation);
-      const agentTags = modeLabel ? [modeLabel, ...invocationTags] : invocationTags;
+      const { tags: agentTags } = buildInvocationTags(agentInvocation);
       const detailBase = {
         displayName,
         description: params.description,
@@ -521,18 +517,15 @@ Terse command-style prompts produce shallow, generic work.
       }
       const tokenText = formatLifetimeTokens(record);
       const details = buildDetails(detailBase, record, { activity: record.activity, overrides: { tokens: tokenText } });
-      const fallbackNote = fellBack
-        ? `Note: Unknown agent type "${rawType}" — using ${resolveType("general-purpose") ? "general-purpose" : "the fallback agent config"}.\n\n`
-        : "";
       const foregroundAgentId = `Agent ID: ${record.id}\n`;
       if (record.status === "error") {
-        return { ...textResult(`${fallbackNote}${foregroundAgentId}Agent failed: ${record.error}${partialOutputSuffix(record)}${workNotesSuffix(record)}`, details), isError: true };
+        return { ...textResult(`${foregroundAgentId}Agent failed: ${record.error}${partialOutputSuffix(record)}${workNotesSuffix(record)}`, details), isError: true };
       }
       const durationMs = (record.completedAt ?? Date.now()) - record.startedAt;
       const statsParts = [`${record.toolUses} tool uses`];
       if (tokenText) statsParts.push(tokenText);
       return textResult(
-        `${fallbackNote}${foregroundAgentId}Agent ${record.status === "completed" || record.status === "force_steered" ? "completed" : "interrupted"} in ${formatMs(durationMs)} (${statsParts.join(", ")}).\n\n` +
+        `${foregroundAgentId}Agent ${record.status === "completed" || record.status === "force_steered" ? "completed" : "interrupted"} in ${formatMs(durationMs)} (${statsParts.join(", ")}).\n\n` +
         (record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause) + workNotesSuffix(record),
         details,
       );

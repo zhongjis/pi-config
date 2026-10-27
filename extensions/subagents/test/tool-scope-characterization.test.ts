@@ -56,7 +56,6 @@ vi.mock("../src/context.js", () => ({
   buildParentContext: vi.fn(() => undefined),
   extractText: vi.fn(() => ""),
 }));
-vi.mock("../src/default-agents.js", () => ({ DEFAULT_AGENTS: new Map() }));
 vi.mock("../src/env.js", () => ({
   detectEnv: vi.fn(async () => ({ isGitRepo: false, branch: "", platform: "linux" })),
 }));

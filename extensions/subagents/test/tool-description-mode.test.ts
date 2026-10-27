@@ -1,3 +1,4 @@
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 // End-to-end test for `toolDescriptionMode` (#91): settings file → sanitize →
 // applier → registration-time description pick. Instantiates the real extension
 // with a mock pi (same pattern as print-mode.test.ts) inside a temp cwd, then
@@ -67,6 +68,7 @@ describe("toolDescriptionMode", () => {
     if (settings) {
       writeFileSync(join(tmpDir, ".pi", "subagents.json"), JSON.stringify(settings));
     }
+    writeFixtureAgent(tmpDir);
     beforeInstantiate?.();
     process.chdir(tmpDir);
 
@@ -113,7 +115,7 @@ describe("toolDescriptionMode", () => {
     ];
     const tools = setup({ toolDescriptionMode: mode }, () => {
       const dir = join(tmpDir, ".pi", "agents");
-      mkdirSync(dir);
+      mkdirSync(dir, { recursive: true });
       for (const fixture of fixtures) {
         writeFileSync(join(dir, `${fixture.name}.md`), `---\ndescription: Fixture researcher. Further details.\n${fixture.fields}\n---\nResearch only.\n`);
       }
@@ -143,7 +145,7 @@ describe("toolDescriptionMode", () => {
   ])("sets the subagents prompt section for mode policy: $name", async ({ data, active, present, absent }) => {
     setup({ toolDescriptionMode: "full" }, () => {
       const dir = join(tmpDir, ".pi", "agents");
-      mkdirSync(dir);
+      mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, "alpha.md"), "---\ndescription: Alpha worker.\n---\nAlpha.\n");
       writeFileSync(join(dir, "beta.md"), "---\ndescription: Beta worker.\n---\nBeta.\n");
     });
@@ -211,7 +213,7 @@ describe("toolDescriptionMode", () => {
     });
     const desc: string = tools.get("agent").description;
     expect(desc).toContain("My agents:");
-    expect(desc).toContain("- general-purpose:");
+    expect(desc).toContain("- fixture:");
     expect(desc).toContain(`Global dir: ${hermeticAgentDir}`);
     expect(desc).toContain("Unknown: {{nope}}");
     expect(desc).toContain("Cost: $& stays literal");
@@ -224,7 +226,7 @@ describe("toolDescriptionMode", () => {
     const desc: string = tools.get("agent").description;
     expect(desc).toContain("GLOBAL CUSTOM");
     expect(desc).not.toContain("{{compactTypeList}}");
-    expect(desc).toContain("general-purpose");
+    expect(desc).toContain("fixture");
   });
 
 

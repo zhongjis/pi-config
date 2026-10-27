@@ -1,3 +1,4 @@
+import { fixtureAgent } from "./helpers/fixture-agent.js";
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 import { Editor, visibleWidth } from "@earendil-works/pi-tui";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -31,7 +32,7 @@ const FAKE_SESSION = { subscribe: () => () => {}, messages: [] };
 function makeRecord(over: Partial<AgentRecord> = {}): AgentRecord {
   return {
     id: "a1",
-    type: "general-purpose",
+    type: "fixture",
     description: "Sleep then report 1",
     status: "running",
     toolUses: 0,
@@ -309,7 +310,7 @@ describe("FleetList rendering", () => {
     expect(lines.find(l => l.includes("main"))).toContain("●"); // main selected by default
     const agentLine = lines.find(l => l.includes("Sleep then report 1"))!;
     expect(agentLine).toContain("○");
-    expect(agentLine).toContain(getDisplayName("general-purpose"));
+    expect(agentLine).toContain(getDisplayName("fixture"));
     expect(agentLine).toContain("↓ 13.1k tokens");
     expect(agentLine).toMatch(/↓ 13\.1k tokens · \d+s/);
   });
@@ -447,9 +448,8 @@ function makeActivity(overrides: Partial<AgentActivity> = {}): AgentActivity {
 }
 
 function cjkNames(): void {
-  const config = agentTypes.getConfig("general-purpose");
-  vi.spyOn(agentTypes, "getConfig").mockImplementation(type => ({
-    ...config, displayName: type === "jintong" ? "Jintong 金童" : "Wen Chang 文昌",
+  vi.spyOn(agentTypes, "getAgentConfig").mockImplementation(type => ({
+    ...fixtureAgent, displayName: type === "jintong" ? "Jintong 金童" : "Wen Chang 文昌",
   }));
 }
 

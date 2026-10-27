@@ -26,7 +26,7 @@ import { AgentHistoryStore, mergeAgentHistory } from "./agent-history.js";
 import { AgentManager } from "./agent-manager.js";
 import { registerAgentPolicyDenialResultHook } from "./agent-policy-denial-result.js";
 import { isGuardedBashType, SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
-import { getAgentConfig, getAvailableTypes, isDefaultsDisabled, registerAgents, setDefaultsDisabled } from "./agent-types.js";
+import { getAgentConfig, getAvailableTypes, registerAgents } from "./agent-types.js";
 import { type RpcHandle, registerRpcHandlers } from "./cross-extension-rpc.js";
 import { loadCustomAgentsWithDiagnostics } from "./custom-agents.js";
 import { renderDelegationPolicyHint } from "./delegation-hint.js";
@@ -130,14 +130,14 @@ export default function (pi: ExtensionAPI) {
   // ---- Register custom notification renderer ----
   registerSubagentNotificationRenderer(pi);
 
-  /** Reload agents from project/global custom agent dirs and merge with defaults (called on init and each `agent` invocation). */
+  /** Reload agents from project/global custom agent definitions (called on init and each `agent` invocation). */
   const notifiedDiagnostics = new Set<string>();
   const reloadCustomAgents = (ctx?: ExtensionContext) => {
     const loaded = loadCustomAgentsWithDiagnostics(process.cwd());
     registerAgents(loaded.agents);
     if (!ctx || !ownsManagerRegistry) return;
     const diagnostics = loaded.diagnostics.map((diagnostic) => ({
-      message: `Agent ${diagnostic.agentName} (${diagnostic.file}) ${diagnostic.field}: ${diagnostic.message}`,
+      message: `Agent ${diagnostic.agentName}${diagnostic.file ? ` (${diagnostic.file})` : ""}${diagnostic.field ? ` ${diagnostic.field}` : ""}: ${diagnostic.message}`,
       severity: diagnostic.severity,
     }));
     for (const type of getAvailableTypes()) {
@@ -466,18 +466,6 @@ export default function (pi: ExtensionAPI) {
   function isScopeModelsEnabled(): boolean { return scopeModelsEnabled; }
   function setScopeModelsEnabled(enabled: boolean): void { scopeModelsEnabled = enabled; }
 
-  // ---- Disable default agents configuration ----
-  // When enabled, the three hardcoded default agents (general-purpose, Explore,
-  // Plan) are not registered. User-defined agents from project/global custom
-  // agent dirs are completely unaffected — only DEFAULT_AGENTS are suppressed.
-  // Defaults to false; opt-in via `/agents → Settings` or subagents.json.
-  // State lives in agent-types.ts (isDefaultsDisabled) because registerAgents
-  // needs it; this wrapper just re-registers after flipping it.
-  function setDisableDefaultAgents(b: boolean): void {
-    setDefaultsDisabled(b);
-    reloadCustomAgents(); // re-register with new setting
-  }
-
   // ---- agent tool description mode ----
   // "full" (default) keeps the rich Claude Code-style description; "compact"
   // swaps in a ~75% smaller one for small/local models (#91). Read once at
@@ -504,7 +492,6 @@ export default function (pi: ExtensionAPI) {
       setDecisionGateMinConfidence,
       setDefaultJoinMode,
       setScopeModels: setScopeModelsEnabled,
-      setDisableDefaultAgents: setDisableDefaultAgents,
       setToolDescriptionMode: setToolDescriptionMode,
       setOutputTranscript: setOutputTranscript,
     },
@@ -579,7 +566,6 @@ export default function (pi: ExtensionAPI) {
       decisionGateMinConfidence,
       defaultJoinMode: getDefaultJoinMode(),
       scopeModels: isScopeModelsEnabled(),
-      disableDefaultAgents: isDefaultsDisabled(),
       toolDescriptionMode: getToolDescriptionMode(),
       outputTranscript: getOutputTranscriptDefault(),
     };
@@ -614,10 +600,6 @@ export default function (pi: ExtensionAPI) {
       const enabled = value === "on";
       setScopeModelsEnabled(enabled);
       notifyApplied(ctx, `Scope models ${enabled ? "enabled" : "disabled"}`);
-    } else if (id === "disableDefaultAgents") {
-      const enabled = value === "on";
-      setDisableDefaultAgents(enabled);
-      notifyApplied(ctx, `Default agents ${enabled ? "disabled" : "enabled"}. Tool spec change takes effect on next pi session.`);
     } else if (id === "outputTranscript") {
       const enabled = value === "on";
       setOutputTranscript(enabled);

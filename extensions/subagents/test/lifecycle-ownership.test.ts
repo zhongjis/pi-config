@@ -132,6 +132,7 @@ describe("manager registry lifecycle ownership", () => {
 
     expect(parentCtx.ui.notify.mock.calls).toEqual([
       [expect.stringContaining("Agent broken ("), "error"],
+      ["Agent broken: no valid definition; agent unavailable", "warning"],
       ["Agent nester delegation: no valid read-only targets; nesting disabled.", "warning"],
     ]);
     expect(childCtx.ui.notify).not.toHaveBeenCalled();

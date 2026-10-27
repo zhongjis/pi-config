@@ -1,3 +1,8 @@
+import { mkdtempSync as tempDir, rmSync as removeDir } from "node:fs";
+import { tmpdir as tempRoot } from "node:os";
+import { join as pathJoin } from "node:path";
+import { beforeEach as fixtureBefore, afterEach as fixtureAfter } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * manager-registry-guard.test.ts — the Symbol.for("pi-subagents:manager")
  * global registry across multiple activations in one process.
@@ -63,7 +68,7 @@ async function spawnBackground(tools: Map<string, any>): Promise<string> {
   });
   const r = await tools.get("agent").execute(
     "tc-spawn",
-    { prompt: "go", description: "registry test agent", subagent_type: "general-purpose", run_in_background: true },
+    { prompt: "go", description: "registry test agent", subagent_type: "fixture", run_in_background: true },
     undefined,
     undefined,
     ctx(),
@@ -133,7 +138,7 @@ describe("owner session_shutdown ordering (/new, /resume, quit)", () => {
       })))
       .mockImplementationOnce(async () => opened(fakeSession(() => lingering.promise)));
     const spawn = async (description: string) => /Agent ID: (\S+)/.exec(textOf(await root.tools.get("agent").execute(
-      "tc", { prompt: "go", description, subagent_type: "general-purpose", run_in_background: true }, undefined, undefined, ctx())))![1];
+      "tc", { prompt: "go", description, subagent_type: "fixture", run_in_background: true }, undefined, undefined, ctx())))![1];
     const ids = [await spawn("settles on abort"), await spawn("ignores abort")];
     await new Promise(resolve => setImmediate(resolve));
     const records = ids.map(id => entry.getRecord(id));
@@ -165,4 +170,17 @@ describe("Symbol.for manager registry — getLifetimeCost bridge", () => {
     // cleanup
     await root.lifecycle.get("session_shutdown")?.();
   });
+});
+
+let fixtureCwd: string;
+let originalCwd: string;
+fixtureBefore(() => {
+  originalCwd = process.cwd();
+  fixtureCwd = tempDir(pathJoin(tempRoot(), "subagent-fixture-"));
+  writeFixtureAgent(fixtureCwd);
+  process.chdir(fixtureCwd);
+});
+fixtureAfter(() => {
+  process.chdir(originalCwd);
+  removeDir(fixtureCwd, { recursive: true, force: true });
 });

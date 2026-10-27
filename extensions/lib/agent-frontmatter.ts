@@ -1,7 +1,7 @@
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { type AccessRule, parseAccessRules } from "./active-tools.js";
 
-export type PromptMode = "replace" | "append" | "system_instructions";
+export type PromptMode = "replace" | "system_instructions";
 
 export interface FrontmatterDiagnostic {
   field: string;
@@ -139,7 +139,6 @@ function parseDiscoverSkills(val: unknown): boolean {
 }
 
 function parsePromptMode(val: unknown): PromptMode {
-  if (val === "append") return "append";
   if (val === "system_instructions") return "system_instructions";
   return "replace";
 }

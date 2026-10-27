@@ -11,7 +11,7 @@ import { extractText } from "../context.js";
 import type { AgentRecord } from "../types.js";
 import { getLifetimeTotal, getSessionContextPercent } from "../usage.js";
 import { agentStatusWord, statusMark } from "./agent-monitor.js";
-import { type AgentActivity, buildInvocationTags, describeActivity, fgPreservingNestedStyles, formatMs, formatSessionTokens, formatTokens, getDisplayName, getPromptModeLabel } from "./agent-format.js";
+import { type AgentActivity, buildInvocationTags, describeActivity, fgPreservingNestedStyles, formatMs, formatSessionTokens, formatTokens, getDisplayName } from "./agent-format.js";
 import { frameOverlay, type OverlayTheme } from "./graph-run-card.js";
 import { createViewerKeys, type ViewerKeybindings, type ViewerKeys } from "./viewer-keys.js";
 
@@ -477,8 +477,6 @@ export class ConversationViewer implements Component {
   private headerRow(): string {
     const th = this.theme;
     const name = getDisplayName(this.record.type);
-    const modeLabel = getPromptModeLabel(this.record.type);
-    const modeTag = modeLabel ? ` ${th.fg("dim", `(${modeLabel})`)}` : "";
     const mark = statusMark(this.record);
     const glyph = th.fg(mark.color, mark.glyph);
     const word = th.fg(mark.color, agentStatusWord(this.record.status));
@@ -497,7 +495,7 @@ export class ConversationViewer implements Component {
     const statParts = parts.length > 0
       ? ` ${th.fg("dim", "·")} ${fgPreservingNestedStyles(th, "dim", parts.join(" · "))}`
       : "";
-    return `${glyph} ${word}  ${th.bold(name)}${modeTag}  ${desc}${statParts}`;
+    return `${glyph} ${word}  ${th.bold(name)}  ${desc}${statParts}`;
   }
 
   private countCompactions(): number {

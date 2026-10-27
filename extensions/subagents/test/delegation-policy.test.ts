@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseAccessRules } from "../../lib/active-tools.js";
 import {
-  buildDelegationBlockedMessage,
   getPermittedDelegationTypes,
   hasDelegationPolicy,
   resolveDelegationPolicy,
@@ -174,16 +173,15 @@ describe("delegation-policy", () => {
     });
   });
 
-	it("formats a blocked delegation message with fallback info", () => {
-		expect(
-			buildDelegationBlockedMessage(
-				"fuxi",
-				"unknown-agent",
-				"general-purpose",
-				["chengfeng", "wenchang"],
-			),
-		).toContain('"unknown-agent" (resolved to "general-purpose")');
-	});
+  it.each([undefined, "mode"]) ("denies unknown types with mode %s", (activeMode) => {
+    const result = resolveDelegationPolicy({ activeMode, policy: { rules: [{ sign: "+", selector: "@all" }] }, availableTypes: ["Fixture"], requestedType: "missing" });
+    expect(result.decision).toEqual({ allowed: false, category: "delegation_policy_denied", requestedType: "missing" });
+  });
+
+  it("canonicalizes loaded types without an active mode", () => {
+    expect(resolveDelegationPolicy({ activeMode: undefined, availableTypes: ["Fixture"], requestedType: " fixture " }).decision).toMatchObject({ allowed: true, requestedType: "Fixture" });
+  });
+
 });
 
 describe("resolveNestedTargets", () => {
@@ -217,7 +215,6 @@ describe("resolveNestedTargets", () => {
     ["disabled target", { enabled: false }, {}],
     ["nesting target with an unknown rule", { delegationRules: [{ sign: "+", selector: "missing" }] }, {}],
     ["nesting target with a subtracted rule", { delegationRules: [{ sign: "+", selector: "other" }, { sign: "-", selector: "other" }] }, {}],
-    ["append-mode target", { promptMode: "append" }, {}],
     ["edit grant", { toolRules: parseAccessRules("tools", "+read, +edit").rules }, {}],
     ["write grant", { toolRules: parseAccessRules("tools", "+@builtin, -edit").rules }, {}],
   ])("denies a %s", (_label, leaf, policy) => {

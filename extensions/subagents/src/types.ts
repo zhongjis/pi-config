@@ -4,22 +4,20 @@
 
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AccessRule } from "../../lib/active-tools.js";
+import type { PromptVariants } from "../../lib/prompt-variants.js";
 import type { GraphRunEntryData } from "./graph/entry.js";
 import type { LifetimeUsage, SessionLike } from "./usage.js";
 
 export type ThinkingLevel = AgentSession["thinkingLevel"];
 
-/** Agent type: any string name (built-in defaults or user-defined). */
+/** Agent type: a user-defined name. */
 export type SubagentType = string;
-
-/** Names of the three embedded default agents. */
-export const DEFAULT_AGENT_NAMES = ["general-purpose", "Explore", "Plan"] as const;
 
 /** Structured diagnostic emitted while loading agent frontmatter. */
 export interface AgentDefinitionDiagnostic {
-  file: string;
+  file?: string;
   agentName: string;
-  field: string;
+  field?: string;
   severity: "warning" | "error";
   message: string;
 }
@@ -30,7 +28,7 @@ export interface CustomAgentsLoadResult {
   diagnostics: AgentDefinitionDiagnostic[];
 }
 
-/** Unified agent configuration — used for both default and user-defined agents. */
+/** Agent definition used for registered and runtime-internal agents. */
 export interface AgentConfig {
   name: string;
   displayName?: string;
@@ -52,19 +50,20 @@ export interface AgentConfig {
   /** Session file directory override; when set it always wins over the default subagent session location. */
   sessionDir?: string;
   systemPrompt: string;
-  promptMode: "replace" | "append" | "system_instructions";
+  promptVariants?: PromptVariants;
+  promptMode: "replace" | "system_instructions";
   /** Default for spawn: fork parent conversation. undefined = caller decides. */
   inheritContext?: boolean;
   /** Default for spawn: run in background. undefined = caller decides. */
   runInBackground?: boolean;
   /** Default for spawn: no extension tools. undefined = caller decides. */
   isolated?: boolean;
-  /** true = this is an embedded default agent (informational) */
-  isDefault?: boolean;
   /** false = agent is hidden from the registry */
   enabled?: boolean;
   /** Where this agent was loaded from */
   source?: "default" | "project" | "global";
+  /** Selected definition file, when loaded from disk. */
+  readonly definitionPath?: string;
 }
 
 export type JoinMode = 'async' | 'group' | 'smart';

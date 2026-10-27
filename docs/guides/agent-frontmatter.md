@@ -1,7 +1,7 @@
 # Agent and Mode Frontmatter Guide
 
 Practical reference for authoring the YAML frontmatter that configures **subagents**
-(`agents/*.md`) and **mode personas** (`modes/<mode>/mode.md`).
+(`agents/<name>/default.md` or `agents/<name>.md`) and **mode personas** (`modes/<mode>/default.md`).
 
 Both file types are parsed by one shared schema in
 [`extensions/lib/agent-frontmatter.ts`](../../extensions/lib/agent-frontmatter.ts),
@@ -49,8 +49,8 @@ invalid file's errors are shown as notifications
 
 | Type | Repo source | Installed / runtime path | Discovery |
 |------|-------------|--------------------------|-----------|
-| Subagent | `agents/<name>.md` | `~/.pi/agent/agents/<name>.md` | Global `$PI_CODING_AGENT_DIR/agents/*.md` (default `~/.pi/agent/agents/`) + project `<cwd>/.pi/agents/*.md`. Project overrides global by name. `AGENTS.md` is skipped. |
-| Mode | `modes/<mode>/mode.md` | `~/.pi/agent/modes/<mode>/mode.md` | Loaded per active mode from `~/.pi/agent/modes/<mode>/`. |
+| Subagent | `agents/<name>/default.md` or `agents/<name>.md` | Same layout under `~/.pi/agent/agents/` | See [discovery order and resolution](../../extensions/subagents/README.md#custom-agents). |
+| Mode | `modes/<mode>/default.md` | `~/.pi/agent/modes/<mode>/default.md` | Loaded per active mode from `~/.pi/agent/modes/<mode>/`. |
 
 `install.sh` symlinks the `agents/` and `modes/` directories into `~/.pi/agent/`.
 
@@ -94,7 +94,7 @@ Mode-specific differences:
 
 ### Inert-for-modes fields
 
-These commonly appear in `mode.md` frontmatter for parity/documentation but are
+These commonly appear in `default.md` frontmatter for parity/documentation but are
 **not consumed** by the modes loader:
 
 - `display_name`, `description` — the mode label comes from `MODE_META` in
@@ -112,13 +112,23 @@ A mode directory holds a matrix of prompt files by model family:
 
 | File | Role |
 |------|------|
-| `mode.md` | Canonical frontmatter **plus** the default prompt body. Frontmatter lives **only** here. |
-| `gpt.md` | Body-only replacement for GPT-family models. Inherits `mode.md` frontmatter; must be self-contained. |
+| `default.md` | Canonical frontmatter **plus** the default prompt body. Frontmatter lives **only** here. |
+| `gpt.md` | Body-only replacement for GPT-family models. Inherits `default.md` frontmatter; must be self-contained. |
 | `gemini.md` | Body-only corrective overlay appended for Gemini-family models. |
 
 `gpt.md` and `gemini.md` have **no frontmatter** — the loader reads them as raw
-body text and reuses `mode.md`'s parsed config. Family is detected at runtime from
+body text and reuses `default.md`'s parsed config. Family is detected at runtime from
 the active model id.
+
+---
+
+## Subagent prompt variants
+
+A directory definition uses `default.md` for frontmatter and its default body, plus optional body-only `gpt.md` and `gemini.md`. Flat `<name>.md` files hold only a default body. [The shared helper](../../extensions/lib/prompt-variants.ts) reads optional non-empty bodies and selects GPT replacement, Gemini overlay, or default text. Other files in the agent directory are ignored.
+
+[Definition resolution and candidate order](../../extensions/subagents/README.md#custom-agents) are owned by the Subagents README. A directory without `default.md` is not a candidate. Invalid candidates keep their field errors and warn which definition is used instead; exhausting candidates warns that the agent is unavailable. Notifications are deduplicated per message for the session.
+
+[The runner](../../extensions/subagents/src/agent-runner.ts) chooses the variant from the child's resolved model at spawn and its current model before every run. Model fallback can therefore switch families without reloading definitions; project context and skill sections remain intact.
 
 ---
 
@@ -129,13 +139,11 @@ the active model id.
 | Value | Behavior |
 |-------|----------|
 | `replace` (default) | Body **is** the full system prompt. No parent identity, no AGENTS.md. |
-| `append` | Body appended to the parent system prompt (parent identity **and** AGENTS.md preserved). |
 | `system_instructions` | Body is the full system prompt (no parent identity bleed), but pi auto-injects AGENTS.md as a `# Project Context` block after the body. |
 
 Guidance for subagents:
 
 - `replace` — fully custom agents with their own personality and zero parent context.
-- `append` — keep the parent/default prompt and add specialization on top.
 - `system_instructions` — own personality with **no** parent identity bleed, but
   still inherit project AGENTS.md guardrails. **Recommended for implementation/edit workers**
   (e.g. `jintong`, `juling`, `guangguang`, `yunu`).
@@ -315,7 +323,7 @@ delegation: +@all, -juling
   run), and only when at least one read-only leaf target resolves. The tool runs one target and
   returns its result to the calling Subagent only. The main session's mode
   delegation policy still applies. A target must be enabled, must not have a `+` rule in its own `delegation`, must not be
-  the agent's own type, and must not use `prompt_mode: append`. Its `tools` must
+  the agent's own type. Its `tools` must
   grant no `edit`, `write`, or `powershell`, and `bash` only under the guarded
   read-only Bash ([`resolveNestedTargets`](../../extensions/subagents/src/delegation-policy.ts)).
   The tool is trusted, so `tools` rules cannot grant or remove it. See the
