@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { type ExtensionCommandContext, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, type ExtensionCommandContext, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
 import { formatAccessRules, resolveToolAccess, toolCandidates } from "../../../lib/active-tools.js";
 import { type ModelRegistry, parseModelChain, resolveFirstAvailable } from "../../../lib/model-selection.js";
@@ -115,10 +115,12 @@ export function createAgentsMenu(
         () => done(undefined),
       );
       const container = new Container();
+      container.addChild(new DynamicBorder());
       container.addChild(new Text("Agent types", 0, 0));
       if (legendParts.length) container.addChild(new Text(slTheme.hint(legendParts.join("  ")), 0, 0));
       container.addChild(new Spacer(1));
       container.addChild(list);
+      container.addChild(new DynamicBorder());
       return {
         render: (w: number) => container.render(w),
         invalidate: () => container.invalidate(),

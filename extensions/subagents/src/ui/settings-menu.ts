@@ -1,4 +1,4 @@
-import { type ExtensionCommandContext, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
+import { DynamicBorder, type ExtensionCommandContext, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, Key, matchesKey, type SettingItem, SettingsList, Spacer, Text } from "@earendil-works/pi-tui";
 import type { SubagentsSettings } from "../settings.js";
 
@@ -93,9 +93,11 @@ export function createSettingsMenu(
         () => done(undefined as undefined),
       );
       const container = new Container();
+      container.addChild(new DynamicBorder());
       container.addChild(new Text("⚙  Subagent Settings", 0, 0));
       container.addChild(new Spacer(1));
       container.addChild(list);
+      container.addChild(new DynamicBorder());
       return {
         render: (w: number) => container.render(w),
         invalidate: () => container.invalidate(),
