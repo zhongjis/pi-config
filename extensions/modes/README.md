@@ -32,6 +32,8 @@ Mode prompts live in `modes/<mode>/default.md` and use the shared agent frontmat
 - `delegation` — signed rule list of permitted agent types ([delegation](../../docs/guides/agent-frontmatter.md#delegation-fields)); nested subagent tools are permitted only when `tools` grants them and the rules resolve to an available agent through the subagents bridge; otherwise the user is warned once
 - `model` — same schema as custom subagents. The mode body is published as the keyed `modes` prompt section (Gemini overlays injected into it), so it replaces the previous mode's text; `prompt_mode` has no effect on modes.
 
+A `{{agentRoster}}` in the family-resolved body expands each run to the mode-permitted agent roster from the [subagents bridge](../subagents/README.md#persistent-settings), which then omits its delegation hint and the `agent` tool's type list for that run; without the bridge it renders empty ([src/agent-roster.ts](src/agent-roster.ts)). Other `{{...}}` text stays verbatim.
+
 [Goal access](../goal/src/goal/access.ts) decides which Goal tools Goal itself activates; modes only gate permission over that set, never activation. Fresh Goal declarations require ULW or explicit `/goal`; restored unfinished Goals keep permitted management tools.
 
 Obsolete tool fields are rejected with rewrite hints; see the [frontmatter guide](../../docs/guides/agent-frontmatter.md#invalid--obsolete-fields).

@@ -364,6 +364,8 @@ The custom QoL footer retains its live accounting: parent assistant-message cost
 
 The configured roster is capability metadata, not delegation authority. While the `agent` tool is active, the extension adds one replaceable system-prompt hint containing the current mode's permitted target names. It derives from the same persisted delegation policy as runtime enforcement, stays byte-stable while the mode is unchanged, and replaces the prior hint after a mode or branch change instead of accumulating stale messages.
 
+A mode prompt containing `{{agentRoster}}` takes the roster instead ([modes](../modes/README.md#mode-frontmatter)): for that run, the placeholder expands to the mode-permitted agents in the type-list format (compact rows in `"compact"` mode), the hint is omitted, and the `agent` tool description drops its type list (`{{typeList}}` and `{{compactTypeList}}` render empty in `"custom"` mode). Runs without the placeholder keep the listed description and the hint.
+
 `"custom"` registers your own description from `<cwd>/.pi/agent-tool-description.md` (project) or `<agentDir>/agent-tool-description.md` (global; project wins). The file is read once at tool registration, so edits also apply on the next pi session. Dynamic parts stay live via placeholders — a static configured-agent list would go stale the moment you add a custom agent:
 
 ```markdown

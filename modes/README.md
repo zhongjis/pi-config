@@ -7,6 +7,7 @@ Prompt construction:
 - GPT family uses `gpt.md` as a body-only replacement when present; it retains `default.md` frontmatter and must be self-contained. A mode without a `gpt.md` inherits the `default.md` body for GPT runs.
 - Gemini family uses `gemini.md` as a body-only corrective overlay on the `default.md` body. A mode without a `gemini.md` uses the `default.md` body for Gemini runs.
 - [`prompt-variants.ts`](../extensions/lib/prompt-variants.ts) owns variant loading and selection, shared with [directory-form agents](../agents/AGENTS.md).
+- A body MAY contain `{{agentRoster}}`; the [modes runtime](../extensions/modes/README.md#mode-frontmatter) expands it to the mode-permitted agent roster and the `agent` tool then omits its type list. Placement follows each variant's own body.
 - Mode-owned skills live under `modes/<mode>/skills/*/SKILL.md`. Runtime discovers only the active mode's existing skill directory; full content loads on demand.
 
 Fu Xi architecture:

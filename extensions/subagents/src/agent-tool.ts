@@ -64,20 +64,57 @@ function buildDelegationPolicyDenialDetails(
 const formatToolsSuffix = (cfg: AgentConfig | undefined): string =>
   `(tools: ${formatAccessRules(cfg?.toolRules ?? []) || "none"})${cfg?.isolated ? " (isolated: built-in tools only)" : ""}`;
 
-const buildTypeListText = () => getAvailableTypes().map((name) => {
-  const cfg = getAgentConfig(name);
-  return `- ${name}: ${cfg?.description ?? name} ${formatToolsSuffix(cfg)}`;
-}).join("\n");
-
 const firstSentence = (text: string): string => {
   const match = text.match(/^.*?[.!?](?=\s|$)/s);
   return (match ? match[0] : text).replace(/\s+/g, " ").trim();
 };
 
-const buildCompactTypeListText = () => getAvailableTypes().map((name) => {
+/** One roster line per agent type; compact keeps each description's first sentence. */
+export const formatTypeList = (types: readonly string[], compact: boolean): string => types.map((name) => {
   const cfg = getAgentConfig(name);
-  return `- ${name}: ${firstSentence(cfg?.description ?? name)} ${formatToolsSuffix(cfg)}`;
+  const description = cfg?.description ?? name;
+  return `- ${name}: ${compact ? firstSentence(description) : description} ${formatToolsSuffix(cfg)}`;
 }).join("\n");
+
+/** Where the agent roster appears: the `agent` tool description, or the mode prompt. */
+export type RosterPlacement = "tool" | "prompt";
+
+const agentToolParameters = (subagentTypeGuidance: string) => Type.Object({
+  prompt: Type.String({
+    description: "The task for the agent to perform.",
+  }),
+  description: Type.String({
+    description: "A short (3-5 word) description of the task (shown in UI).",
+  }),
+  subagent_type: Type.String({
+    description: subagentTypeGuidance,
+  }),
+  run_in_background: Type.Optional(
+    Type.Boolean({
+      description: "Set to true to run in background. Returns agent ID immediately; collect with get_agent_result (wait: true once no other work remains).",
+    }),
+  ),
+  resume: Type.Optional(
+    Type.String({
+      description: "Optional agent ID to resume from. Continues from previous context.",
+    }),
+  ),
+  isolated: Type.Optional(
+    Type.Boolean({
+      description: "If true, agent gets no extension/MCP tools — only built-in tools.",
+    }),
+  ),
+  inherit_context: Type.Optional(
+    Type.Boolean({
+      description: "If true, fork parent conversation into the agent. Default: false (fresh context).",
+    }),
+  ),
+  skills: Type.Optional(
+    Type.Array(Type.String(), {
+      description: "Skill names to inject into the agent for this call only. Unioned with the agent type's frontmatter preload_skills (deduped). Only applies to fresh spawns; ignored on resume and when isolated: true.",
+    }),
+  ),
+});
 
 // allow: SIZE_OK — one complete tool definition keeps its schema, description, and execution paths together.
 export function createAgentTool(
@@ -89,8 +126,10 @@ export function createAgentTool(
   const { fleet } = presentation;
   const buildDetails = createAgentResultBuilder(() => settings.showCost);
 
-  const compactAgentToolDescription = `Launch an autonomous agent for complex, multi-step tasks. Configured agent types (current mode may permit only a subset):
-${buildCompactTypeListText()}
+  // Read once at registration; flipping the setting applies on the next pi session.
+  const descriptionMode = settings.toolDescriptionMode;
+  const compactAgentToolDescription = (listed: boolean) => `Launch an autonomous agent for complex, multi-step tasks. ${listed ? `Configured agent types (current mode may permit only a subset):
+${formatTypeList(getAvailableTypes(), true)}` : "Permitted agent types are listed in the system prompt."}
 
 Runtime access also depends on extension loading, authentication, and permissions.
 
@@ -103,10 +142,10 @@ Notes:
 - The result is not shown to the user — summarize it for them. Verify an agent's claimed code changes before reporting work done.
 - resume continues a previous agent by ID; steer_subagent messages a running one.`;
 
-  const fullAgentToolDescription = `Launch a new agent to handle complex, multi-step tasks autonomously.
+  const fullAgentToolDescription = (listed: boolean) => `Launch a new agent to handle complex, multi-step tasks autonomously.
 
-Configured agent types and defaults (not invocation overrides; current mode may permit only a subset). Runtime access also depends on extension loading, authentication, and permissions:
-${buildTypeListText()}
+${listed ? `Configured agent types and defaults (not invocation overrides; current mode may permit only a subset). Runtime access also depends on extension loading, authentication, and permissions:
+${formatTypeList(getAvailableTypes(), false)}` : "Permitted agent types are listed in the system prompt. Runtime access also depends on extension loading, authentication, and permissions."}
 
 Custom agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.
 
@@ -143,10 +182,10 @@ Terse command-style prompts produce shallow, generic work.
 
 **Never delegate understanding.** Don't write "based on your findings, fix the bug" or "based on the research, implement it." Those phrases push synthesis onto the agent instead of doing it yourself. Write prompts that prove you understood: include file paths, line numbers, what specifically to change.`;
 
-  const renderToolDescriptionTemplate = (template: string): string => {
+  const renderToolDescriptionTemplate = (template: string, listed: boolean): string => {
     const vars: Record<string, () => string> = {
-      typeList: buildTypeListText,
-      compactTypeList: buildCompactTypeListText,
+      typeList: () => listed ? formatTypeList(getAvailableTypes(), false) : "",
+      compactTypeList: () => listed ? formatTypeList(getAvailableTypes(), true) : "",
       agentDir: getAgentDir,
     };
     return template.replace(/\{\{(\w+)\}\}/g, (raw, name: string) => {
@@ -155,7 +194,7 @@ Terse command-style prompts produce shallow, generic work.
       return raw;
     });
   };
-  const loadCustomToolDescription = (): string | undefined => {
+  const loadCustomToolTemplate = (): string | undefined => {
     for (const path of [
       join(process.cwd(), ".pi", "agent-tool-description.md"),
       join(getAgentDir(), "agent-tool-description.md"),
@@ -163,7 +202,7 @@ Terse command-style prompts produce shallow, generic work.
       try {
         if (!existsSync(path)) continue;
         const text = readFileSync(path, "utf-8").trim();
-        if (text) return renderToolDescriptionTemplate(text);
+        if (text) return text;
         console.warn(`[pi-subagents] ${path} is empty — ignoring`);
       } catch (err) {
         console.warn(`[pi-subagents] failed to read ${path}: ${err instanceof Error ? err.message : String(err)}`);
@@ -171,63 +210,27 @@ Terse command-style prompts produce shallow, generic work.
     }
     return undefined;
   };
-  const agentToolDescription = (() => {
-    const mode = settings.toolDescriptionMode;
-    if (mode === "compact") return compactAgentToolDescription;
-    if (mode === "custom") {
-      const custom = loadCustomToolDescription();
-      if (custom) return custom;
-      console.warn('[pi-subagents] toolDescriptionMode is "custom" but no agent-tool-description.md found — using "full"');
-    }
-    return fullAgentToolDescription;
-  })();
+  const customTemplate = descriptionMode === "custom" ? loadCustomToolTemplate() : undefined;
+  if (descriptionMode === "custom" && customTemplate === undefined) {
+    console.warn('[pi-subagents] toolDescriptionMode is "custom" but no agent-tool-description.md found — using "full"');
+  }
+  /** `listed: false` omits the agent type list: the mode prompt carries the roster. */
+  const agentToolDescription = (listed: boolean): string => {
+    if (customTemplate !== undefined) return renderToolDescriptionTemplate(customTemplate, listed);
+    return descriptionMode === "compact" ? compactAgentToolDescription(listed) : fullAgentToolDescription(listed);
+  };
 
-  return defineTool({
+  const tool = defineTool({
     name: SUBAGENT_TOOL_NAMES.AGENT,
     label: "Agent",
-    description: agentToolDescription + "\n\n" + SUBAGENT_COMMUNICATION_CONTRACT,
+    description: agentToolDescription(true) + "\n\n" + SUBAGENT_COMMUNICATION_CONTRACT,
     promptSnippet: "Launch autonomous sub-agents for complex multi-step tasks",
     promptGuidelines: [
       "Use `agent` when the task matches a listed agent type — to parallelize independent work or keep bulky results out of your context. Don't redo work you delegated.",
       "While any background agent runs, never end your turn: do non-overlapping work, then call get_agent_result with run_id and wait: true on each running agent. Never loop wait:false checks or sleep.",
       "Trust but verify: a summary is intent, not outcome. Re-check an agent's file edits before reporting the work done.",
     ],
-    parameters: Type.Object({
-      prompt: Type.String({
-        description: "The task for the agent to perform.",
-      }),
-      description: Type.String({
-        description: "A short (3-5 word) description of the task (shown in UI).",
-      }),
-      subagent_type: Type.String({
-        description: "Select a configured agent type from this tool's configured roster. The current delegation policy may permit only a subset.",
-      }),
-      run_in_background: Type.Optional(
-        Type.Boolean({
-          description: "Set to true to run in background. Returns agent ID immediately; collect with get_agent_result (wait: true once no other work remains).",
-        }),
-      ),
-      resume: Type.Optional(
-        Type.String({
-          description: "Optional agent ID to resume from. Continues from previous context.",
-        }),
-      ),
-      isolated: Type.Optional(
-        Type.Boolean({
-          description: "If true, agent gets no extension/MCP tools — only built-in tools.",
-        }),
-      ),
-      inherit_context: Type.Optional(
-        Type.Boolean({
-          description: "If true, fork parent conversation into the agent. Default: false (fresh context).",
-        }),
-      ),
-      skills: Type.Optional(
-        Type.Array(Type.String(), {
-          description: "Skill names to inject into the agent for this call only. Unioned with the agent type's frontmatter preload_skills (deduped). Only applies to fresh spawns; ignored on resume and when isolated: true.",
-        }),
-      ),
-    }),
+    parameters: agentToolParameters("Select a configured agent type from this tool's configured roster. The current delegation policy may permit only a subset."),
     renderCall(args, theme) {
       return renderAgentToolCall(args, theme);
     },
@@ -531,4 +534,11 @@ Terse command-style prompts produce shallow, generic work.
       );
     },
   });
+  // Built on first use so sessions that never place the roster in the prompt render the description once.
+  let promptRosterTool: typeof tool | undefined;
+  return (placement: RosterPlacement): typeof tool => placement === "tool" ? tool : promptRosterTool ??= {
+    ...tool,
+    description: agentToolDescription(false) + "\n\n" + SUBAGENT_COMMUNICATION_CONTRACT,
+    parameters: agentToolParameters("Select an agent type from the agent roster in the system prompt."),
+  };
 }

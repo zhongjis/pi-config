@@ -13,6 +13,7 @@ import {
 import { derivePlanTitleFromMarkdown, hydratePlanState, getLocalDraftPath, getLocalPlanPath, readLocalPlanFile } from "./plan-storage.js";
 import { recoverPlanReview } from "./plannotator.js";
 import { LOCAL_DRAFT_URI, LOCAL_PLAN_URI, MODES, MODE_ALIASES, MODE_TOOL_CEILING_NAME } from "./constants.js";
+import { expandAgentRoster } from "./agent-roster.js";
 import { getModeSkillPaths } from "./mode-skills.js";
 import type { ModeStateManager } from "./mode-state.js";
 import type { Mode, ModeState } from "./types.js";
@@ -231,7 +232,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		const config = state.loadConfig(state.currentMode, state.resolvedFamily);
 
 		if (config.body) {
-			event.systemPromptOptions.sections.modes = config.body;
+			event.systemPromptOptions.sections.modes = expandAgentRoster(config.body, ctx, event.systemPromptOptions);
 		}
 	});
 

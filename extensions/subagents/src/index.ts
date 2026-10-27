@@ -1,5 +1,5 @@
 import { createAgentResultBuilder } from "./agent-result.js";
-import { createAgentTool } from "./agent-tool.js";
+import { createAgentTool, formatTypeList, type RosterPlacement } from "./agent-tool.js";
 import { createBackgroundStop } from "./background-stop.js";
 import { createGraphRuntime } from "./graph/graph-runtime.js";
 import { runReplayCommand } from "./graph/replay-command.js";
@@ -298,8 +298,26 @@ export default function (pi: ExtensionAPI) {
   };
   manager.setPolicyChecker((ctx, type) => delegationDenial(ctx, type));
 
+  // Roster placement: a mode prompt that renders the roster (via the bridge's
+  // renderAgentRoster) owns it for that run, so the hint is skipped and the
+  // `agent` tool is re-registered without its type list. Re-registration (not a
+  // prepareLoadout description) lets codemode's per-tool annotation compose on top.
+  // The run is identified by its systemPromptOptions object, which Pi shares across
+  // every before_agent_start handler of one run, so either handler order converges.
+  let promptRosterRun: object | undefined;
+  let rosterPlacement: RosterPlacement = "tool";
+  // Captured with the tool description at registration so both use one row style.
+  let rosterCompact = false;
+  const placeRoster = (placement: RosterPlacement): void => {
+    if (placement === rosterPlacement) return;
+    rosterPlacement = placement;
+    pi.registerTool(agentTool(placement));
+  };
+
   pi.on("before_agent_start", (event, ctx) => {
-    if (!pi.getActiveTools().includes(SUBAGENT_TOOL_NAMES.AGENT)) return;
+    const rosterInPrompt = promptRosterRun === event.systemPromptOptions;
+    placeRoster(rosterInPrompt ? "prompt" : "tool");
+    if (rosterInPrompt || !pi.getActiveTools().includes(SUBAGENT_TOOL_NAMES.AGENT)) return;
     const policy = resolvePersistedDelegationPolicyContext({
       entries: readModeEntries(ctx),
       availableTypes: getAvailableTypes(),
@@ -325,6 +343,18 @@ export default function (pi: ExtensionAPI) {
     getRecord: (id: string) => manager.getRecord(id),
     getLifetimeCost: () => manager.getLifetimeCost(),
     resolveDelegationTargets: (rules: AccessRule[]): string[] => getPermittedDelegationTypes({ rules }, getAvailableTypes()),
+    /**
+     * Mode-permitted roster for a mode prompt's `{{agentRoster}}`; empty while `agent` is inactive.
+     * Claims this run's roster: drops this run's delegation hint and the tool's type list.
+     */
+    renderAgentRoster: (ctx: ExtensionContext, options: { readonly sections: Record<string, string> }): string => {
+      if (!pi.getActiveTools().includes(SUBAGENT_TOOL_NAMES.AGENT)) return "";
+      const policy = resolvePersistedDelegationPolicyContext({ entries: readModeEntries(ctx), availableTypes: getAvailableTypes() });
+      promptRosterRun = options;
+      delete options.sections.subagents;
+      placeRoster("prompt");
+      return formatTypeList(policy.permittedTypes, rosterCompact);
+    },
   };
   const ownsManagerRegistry = (globalThis as any)[MANAGER_KEY] === undefined;
   if (ownsManagerRegistry) {
@@ -498,7 +528,7 @@ export default function (pi: ExtensionAPI) {
     (event, payload) => pi.events.emit(event, payload),
   );
 
-  pi.registerTool(createAgentTool(
+  const agentTool = createAgentTool(
     {
       pi, manager, reloadCustomAgents, resolveDelegation,
       settings: {
@@ -511,7 +541,9 @@ export default function (pi: ExtensionAPI) {
     },
     { activity: agentActivity, fleet },
     notifications,
-  ));
+  );
+  rosterCompact = getToolDescriptionMode() === "compact";
+  pi.registerTool(agentTool(rosterPlacement));
 
   const graphRuntime = createGraphRuntime(
     { pi, manager, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial,

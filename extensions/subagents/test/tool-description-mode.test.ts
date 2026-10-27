@@ -160,6 +160,76 @@ describe("toolDescriptionMode", () => {
     for (const name of absent) expect(sections.subagents).not.toContain(name);
   });
 
+  describe("mode prompt roster placement", () => {
+    const rosterCtx = { sessionManager: { getEntries: () => [{ type: "custom", customType: "agent-mode", data: policy("kuafu", ["alpha", "beta"]) }] } };
+    const bridge = () => ({
+      renderAgentRoster(ctx: unknown, options: { sections: Record<string, string> }): string {
+        const entry: unknown = Reflect.get(globalThis, Symbol.for("pi-subagents:manager"));
+        if (typeof entry !== "object" || entry === null || !("renderAgentRoster" in entry) || typeof entry.renderAgentRoster !== "function") {
+          throw new Error("renderAgentRoster bridge was not published");
+        }
+        const roster: unknown = entry.renderAgentRoster(ctx, options);
+        if (typeof roster !== "string") throw new Error("renderAgentRoster returned a non-string roster");
+        return roster;
+      },
+    });
+    const run = (sections: Record<string, string> = {}) => ({ systemPrompt: "BASE", systemPromptOptions: { sections } });
+    const rosterRows = (text: string) => text.split("\n").filter((line) => /^- (alpha|beta|gamma):/.test(line)).map((line) => line.split(":")[0]);
+    function setupRoster(mode: string) {
+      return setup({ toolDescriptionMode: mode }, () => {
+        const dir = join(tmpDir, ".pi", "agents");
+        mkdirSync(dir, { recursive: true });
+        for (const name of ["alpha", "beta", "gamma"]) writeFileSync(join(dir, `${name}.md`), `---\ndescription: ${name} worker. Extra detail.\n---\nWork.\n`);
+        if (mode === "custom") writeFileSync(join(tmpDir, ".pi", "agent-tool-description.md"), "{{typeList}}\nCOMPACT\n{{compactTypeList}}");
+      });
+    }
+
+    it.each(["full", "compact", "custom"])("moves the permitted roster into the mode prompt and restores the listed tool in %s mode", async (mode) => {
+      const tools = setupRoster(mode);
+      const listed: string = tools.get("agent").description;
+      expect(rosterRows(listed)).toEqual(mode === "custom" ? ["- alpha", "- beta", "- gamma", "- alpha", "- beta", "- gamma"] : ["- alpha", "- beta", "- gamma"]);
+
+      const rosterRun = run({ subagents: "stale hint" });
+      const roster = bridge().renderAgentRoster(rosterCtx, rosterRun.systemPromptOptions);
+      await currentHandlers.get("before_agent_start")(rosterRun, rosterCtx);
+      expect(rosterRows(roster)).toEqual(["- alpha", "- beta"]);
+      expect(roster.includes("Extra detail.")).toBe(mode !== "compact");
+      expect(rosterRun.systemPromptOptions.sections.subagents).toBeUndefined();
+      const rosterless: string = tools.get("agent").description;
+      expect(rosterRows(rosterless)).toEqual([]);
+      expect(rosterless.endsWith("\n\n" + SUBAGENT_COMMUNICATION_CONTRACT)).toBe(true);
+      if (mode === "custom") expect(rosterless.startsWith("\nCOMPACT\n\n\n")).toBe(true);
+
+      const plainRun = run();
+      await currentHandlers.get("before_agent_start")(plainRun, rosterCtx);
+      expect(plainRun.systemPromptOptions.sections.subagents).toContain("alpha, beta");
+      expect(tools.get("agent").description).toBe(listed);
+    });
+
+    it("converges to the same prompt and tool when the subagents handler runs before the roster render", async () => {
+      const tools = setupRoster("full");
+      const modesFirst = run();
+      bridge().renderAgentRoster(rosterCtx, modesFirst.systemPromptOptions);
+      await currentHandlers.get("before_agent_start")(modesFirst, rosterCtx);
+      const modesFirstDescription: string = tools.get("agent").description;
+      await currentHandlers.get("before_agent_start")(run(), rosterCtx);
+
+      const subagentsFirst = run();
+      await currentHandlers.get("before_agent_start")(subagentsFirst, rosterCtx);
+      bridge().renderAgentRoster(rosterCtx, subagentsFirst.systemPromptOptions);
+      expect(subagentsFirst.systemPromptOptions.sections).toEqual(modesFirst.systemPromptOptions.sections);
+      expect(tools.get("agent").description).toBe(modesFirstDescription);
+    });
+
+    it("renders an empty roster and keeps the listed tool while the agent tool is inactive", () => {
+      const tools = setupRoster("full");
+      const listed: string = tools.get("agent").description;
+      currentActiveTools.length = 0;
+      expect(bridge().renderAgentRoster(rosterCtx, run().systemPromptOptions)).toBe("");
+      expect(tools.get("agent").description).toBe(listed);
+    });
+  });
+
   it("defaults to the explicit full mode output", async () => {
     const tools = setup();
     const defaultDescription: string = tools.get("agent").description;

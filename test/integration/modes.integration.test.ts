@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getCurrentSystemMessage, getCurrentTools, type TranscriptContext } from "@earendil-works/pi-ai";
 import {
 	createTestSession,
 	when,
@@ -7,10 +8,13 @@ import {
 	type TestSession,
 } from "./helpers/faux-session.js";
 import * as path from "node:path";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 
 const PROJECT_ROOT = path.resolve(__dirname, "../..");
 const EXTENSION = path.resolve(PROJECT_ROOT, "extensions/modes/src/index.ts");
+const SUBAGENTS_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/subagents/src/index.ts");
 const INLINE_SKILLS_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/inline-skills/index.ts");
 const SMART_TOOL_GUARDS_EXTENSION = path.resolve(PROJECT_ROOT, "extensions/smart-tool-guards/index.ts");
 
@@ -399,5 +403,86 @@ describe("modes extension — integration", () => {
 
 		expect(result.content[0].text).not.toContain("blocked");
 		expect(result.details.variant).toBe("post-gap-review");
+	});
+});
+
+describe("modes + subagents agent roster — integration", () => {
+	const previousEnv = { HOME: process.env.HOME, PI_CODING_AGENT_DIR: process.env.PI_CODING_AGENT_DIR };
+	let home: string;
+	let agentDir: string;
+	let t: TestSession | undefined;
+
+	beforeEach(() => {
+		home = mkdtempSync(path.join(tmpdir(), "pi-roster-home-"));
+		agentDir = path.join(home, ".pi", "agent");
+		const writeMode = (mode: string, body: string) => {
+			mkdirSync(path.join(agentDir, "modes", mode), { recursive: true });
+			writeFileSync(path.join(agentDir, "modes", mode, "default.md"), `---\ntools: +@all\ndelegation: +alpha, +beta\n---\n\n${body}\n`);
+		};
+		writeMode("kuafu", "Kua Fu fixture.\n\nRoster:\n{{agentRoster}}");
+		writeMode("fuxi", "Fu Xi fixture without a roster.");
+		mkdirSync(path.join(agentDir, "agents"), { recursive: true });
+		for (const name of ["alpha", "beta", "gamma"]) {
+			writeFileSync(path.join(agentDir, "agents", `${name}.md`), `---\ndescription: ${name} worker. Extra detail.\n---\nWork.\n`);
+		}
+		// Mode prompts load from homedir(); subagent definitions and settings from the agent dir.
+		process.env.HOME = home;
+		process.env.PI_CODING_AGENT_DIR = agentDir;
+	});
+
+	afterEach(async () => {
+		// Release the root manager bridge before the next session claims it.
+		const runner = t?.session.extensionRunner;
+		if (runner?.hasHandlers("session_shutdown")) await runner.emit({ type: "session_shutdown" });
+		t?.dispose();
+		t = undefined;
+		for (const [key, value] of Object.entries(previousEnv)) {
+			if (value === undefined) delete process.env[key];
+			else process.env[key] = value;
+		}
+		rmSync(home, { recursive: true, force: true });
+	});
+
+	const rosterRows = (text: string | null | undefined) =>
+		(text ?? "").split("\n").filter((line) => /^- (alpha|beta|gamma):/.test(line)).map((line) => line.split(":")[0]);
+
+	it.each(["full", "compact", "custom"].flatMap((descriptionMode) => [
+		{ descriptionMode, order: "modes first", extensions: [EXTENSION, SUBAGENTS_EXTENSION] },
+		{ descriptionMode, order: "subagents first", extensions: [SUBAGENTS_EXTENSION, EXTENSION] },
+	]))("places the mode-permitted roster per mode across switches ($descriptionMode, $order)", async ({ descriptionMode, extensions }) => {
+		writeFileSync(path.join(agentDir, "subagents.json"), JSON.stringify({ toolDescriptionMode: descriptionMode }));
+		writeFileSync(path.join(agentDir, "agent-tool-description.md"), "Agents:\n{{typeList}}\nCompact:\n{{compactTypeList}}");
+		const requests: Array<{ sections: Record<string, string | null>; agentDescription: string | undefined }> = [];
+		const capture = (context: TranscriptContext) => {
+			requests.push({
+				sections: getCurrentSystemMessage(context.messages)?.sections ?? {},
+				agentDescription: getCurrentTools(context.messages).find((tool) => tool.name === "agent")?.description,
+			});
+			return undefined;
+		};
+		t = await createTestSession({ extensions, fauxResponseRouter: capture });
+		const listedDescription: string = t.session.extensionRunner.getToolDefinition("agent").description;
+		expect(rosterRows(listedDescription).length).toBeGreaterThan(0);
+
+		await t.run(when("Roster mode", [says("Done.")]));
+		await switchMode(t, "fuxi");
+		await t.run(when("Hint mode", [says("Done.")]));
+		await switchMode(t, "kuafu");
+		await t.run(when("Roster mode again", [says("Done.")]));
+
+		const [kuafu, fuxi, kuafuAgain] = requests;
+		expect(rosterRows(kuafu?.sections.modes)).toEqual(["- alpha", "- beta"]);
+		expect(kuafu?.sections.modes).not.toContain("{{agentRoster}}");
+		expect(kuafu?.sections.subagents ?? null).toBeNull();
+		expect(kuafu?.agentDescription).toBeDefined();
+		expect(rosterRows(kuafu?.agentDescription)).toEqual([]);
+
+		expect(fuxi?.sections.modes).toContain("Fu Xi fixture without a roster.");
+		expect(fuxi?.sections.subagents).toContain("alpha, beta");
+		expect(fuxi?.agentDescription).toBe(listedDescription);
+
+		expect(kuafuAgain?.sections.modes).toBe(kuafu?.sections.modes);
+		expect(kuafuAgain?.sections.subagents ?? null).toBeNull();
+		expect(kuafuAgain?.agentDescription).toBe(kuafu?.agentDescription);
 	});
 });

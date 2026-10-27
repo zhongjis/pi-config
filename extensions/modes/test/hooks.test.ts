@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	evaluateGuardScope,
 	registerGuardCapability,
@@ -621,6 +621,56 @@ describe("mode hooks", () => {
 		const [result] = await mock.fire("before_agent_start", event, { hasUI: false });
 		expect(result).toBeUndefined();
 		expect(event.systemPromptOptions.sections.modes).toBe("GPT variant body");
+	});
+
+	describe("agent roster placeholder", () => {
+		const managerKey = Symbol.for("pi-subagents:manager");
+		const priorBridge = Reflect.get(globalThis, managerKey);
+		afterEach(() => {
+			if (priorBridge === undefined) Reflect.deleteProperty(globalThis, managerKey);
+			else Reflect.set(globalThis, managerKey, priorBridge);
+		});
+
+		async function startRun(bodies: { default: string; gpt?: string }, family: "default" | "gpt" = "default") {
+			const mock = createMockPi();
+			const state = new ModeStateManager(mock.pi as never);
+			state.cachedConfigs["kuafu:default"] = { body: bodies.default, toolRules: [] };
+			if (bodies.gpt) state.cachedConfigs["kuafu:gpt"] = { body: bodies.gpt, toolRules: [] };
+			state.resolvedFamily = family;
+			registerModeHooks(mock.pi as never, state);
+			const event = beforeAgentStartEvent("Base");
+			const ctx = { hasUI: false };
+			await mock.fire("before_agent_start", event, ctx);
+			return { event, ctx };
+		}
+
+		it("expands every placeholder with the bridge roster for this run's prompt options", async () => {
+			const renderAgentRoster = vi.fn((_ctx: unknown, _options: unknown) => "- alpha: costs $& more");
+			Reflect.set(globalThis, managerKey, { renderAgentRoster });
+			const { event, ctx } = await startRun({ default: "Team:\n{{agentRoster}}\nAgain: {{agentRoster}}" });
+			expect(event.systemPromptOptions.sections.modes).toBe("Team:\n- alpha: costs $& more\nAgain: - alpha: costs $& more");
+			expect(renderAgentRoster).toHaveBeenCalledOnce();
+			const [call] = renderAgentRoster.mock.calls;
+			expect(call?.[0]).toBe(ctx);
+			expect(call?.[1]).toBe(event.systemPromptOptions);
+		});
+
+		it("renders the placeholder empty without the subagents bridge", async () => {
+			Reflect.deleteProperty(globalThis, managerKey);
+			const { event } = await startRun({ default: "Before[{{agentRoster}}]After" });
+			expect(event.systemPromptOptions.sections.modes).toBe("Before[]After");
+		});
+
+		it.each([
+			{ name: "only the resolved variant has it", bodies: { default: "plain {{other}}", gpt: "gpt {{agentRoster}}" }, family: "gpt" as const, modes: "gpt R", calls: 1 },
+			{ name: "only the unselected variant has it", bodies: { default: "default {{agentRoster}}", gpt: "gpt {{other}}" }, family: "gpt" as const, modes: "gpt {{other}}", calls: 0 },
+		])("decides from the family-resolved body when $name", async ({ bodies, family, modes, calls }: { bodies: { default: string; gpt: string }; family: "gpt"; modes: string; calls: number }) => {
+			const renderAgentRoster = vi.fn(() => "R");
+			Reflect.set(globalThis, managerKey, { renderAgentRoster });
+			const { event } = await startRun(bodies, family);
+			expect(event.systemPromptOptions.sections.modes).toBe(modes);
+			expect(renderAgentRoster).toHaveBeenCalledTimes(calls);
+		});
 	});
 
 
