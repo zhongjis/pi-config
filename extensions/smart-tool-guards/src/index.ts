@@ -117,7 +117,7 @@ function formatDenial(
 		block: true,
 		reason: [
 			`[Smart Guard][${category}][source=${source}][profile=${BASH_POLICY_ID}][scope=${scopeIds.join(",") || "none"}]`,
-			`Bash not run: ${terminatedDetail}${activation ? ` Guard active: ${activation}` : ""}`,
+			`Bash not run: ${terminatedDetail}${activation ? ` Guard active: ${activation}` : ""} Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.`,
 		].join("\n"),
 	};
 }

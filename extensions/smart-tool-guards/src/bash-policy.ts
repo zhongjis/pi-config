@@ -1,4 +1,6 @@
 import { isLiteralInspection, literalWords } from "./literal-inspection.js";
+import { isDiagnosticInspection } from "./diagnostic-inspection.js";
+import { scan, unwrap, subcommand, basename, optionName, type Word } from "./bash-syntax.js";
 
 export const BASH_DANGER_CODES = [
 	"filesystem-mutation",
@@ -30,10 +32,6 @@ export type BashPolicyOutcome =
 	| { readonly kind: "allow" }
 	| { readonly kind: "block"; readonly findings: readonly BashDangerFinding[] }
 	| { readonly kind: "defer" };
-
-type Word = { text: string; start: number; quoted: boolean };
-type Boundary = { kind: "separator" | "pipe"; start: number; text: string };
-type Lexeme = Word & { kind: "word" } | Boundary;
 
 const FILESYSTEM_COMMANDS = new Set([
 	"rm", "mv", "cp", "touch", "mkdir", "rmdir", "chmod", "chown", "ln", "truncate", "dd", "tee",
@@ -77,184 +75,6 @@ const KUBERNETES_DANGEROUS_OPTIONS = new Set([
 	"--raw", "--profile", "--profile-output", "--cache-dir", "-w", "--watch", "--watch-only", "-f", "--follow",
 ]);
 const GIT_VALUE_OPTIONS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix"]);
-const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/;
-
-function basename(value: string): string {
-	return (value.split(/[\\/]/).pop() ?? value).toLowerCase();
-}
-
-function optionName(value: string): string {
-	return value.split("=", 1)[0];
-}
-
-function scan(command: string, add: (code: BashDangerCode, position: number) => void): Lexeme[] {
-	const lexemes: Lexeme[] = [];
-	let text = "";
-	let start = 0;
-	let quoted = false;
-	let quote: "single" | "double" | undefined;
-
-	const flush = (): void => {
-		if (!text) return;
-		lexemes.push({ kind: "word", text, start, quoted });
-		text = "";
-		quoted = false;
-	};
-	const begin = (position: number): void => {
-		if (!text) start = position;
-	};
-
-	for (let index = 0; index < command.length; index += 1) {
-		const char = command[index];
-		const next = command[index + 1];
-		if (quote === "single") {
-			if (char === "'") quote = undefined;
-			else text += char;
-			continue;
-		}
-		if (quote === "double") {
-			if (char === '"') {
-				quote = undefined;
-				continue;
-			}
-			if (char === "`" || char === "$" && (next === "(" || next === "{")) {
-				add("uninspectable-shell-syntax", index);
-			}
-			if (char === "\\" && next !== undefined) {
-				text += next;
-				index += 1;
-			} else text += char;
-			continue;
-		}
-		if (char === "'" || char === '"') {
-			begin(index);
-			quoted = true;
-			quote = char === "'" ? "single" : "double";
-			continue;
-		}
-		if (char === "`" || char === "$" && (next === "(" || next === "{")) {
-			add("uninspectable-shell-syntax", index);
-			begin(index);
-			text += char;
-			continue;
-		}
-		if ((char === "<" || char === ">") && next === "(") {
-			add("uninspectable-shell-syntax", index);
-			flush();
-			continue;
-		}
-		if (char === "<" && next === "<") {
-			add("uninspectable-shell-syntax", index);
-			flush();
-			while (command[index + 1] === "<") index += 1;
-			continue;
-		}
-		if (char === "\\") {
-			begin(index);
-			if (next === undefined || next === "\n") add("uninspectable-shell-syntax", index);
-			else {
-				text += next;
-				index += 1;
-			}
-			continue;
-		}
-		if (/\s/.test(char)) {
-			flush();
-			if (char === "\n" || char === "\r") lexemes.push({ kind: "separator", start: index, text: char });
-			continue;
-		}
-		if (char === ";" || char === "|" || char === "&") {
-			if (char === "&" && next === ">") {
-				flush();
-				const target = readRedirectionTarget(command, index + 2);
-				if (!target.exactNullSink) add("output-redirection", index);
-				index = target.end - 1;
-				continue;
-			}
-			flush();
-			let operator = char;
-			if ((char === "|" || char === "&") && next === char) {
-				operator += next;
-				index += 1;
-			}
-			if (char === "&" && operator === "&") add("uninspectable-shell-syntax", index);
-			lexemes.push({ kind: char === "|" && operator === "|" ? "pipe" : "separator", start: index - operator.length + 1, text: operator });
-			continue;
-		}
-		if (char === ">") {
-			if (/^\d+$/.test(text) && start + text.length === index) text = "";
-			flush();
-			let offset = index + 1;
-			if (command[offset] === ">" || command[offset] === "|") offset += 1;
-			const target = readRedirectionTarget(command, offset);
-			if (!target.exactNullSink) add("output-redirection", index);
-			index = target.end - 1;
-			continue;
-		}
-		begin(index);
-		text += char;
-	}
-	flush();
-	if (quote) add("uninspectable-shell-syntax", command.length - 1);
-	return lexemes;
-}
-
-function readRedirectionTarget(command: string, offset: number): { exactNullSink: boolean; end: number } {
-	let index = offset;
-	while (command[index] === " " || command[index] === "\t") index += 1;
-	const start = index;
-	while (index < command.length && !/[\s;&|<>]/.test(command[index])) index += 1;
-	return { exactNullSink: command.slice(start, index) === "/dev/null", end: Math.max(index, offset) };
-}
-
-function unwrap(words: Word[]): Word[] {
-	let index = 0;
-	while (ASSIGNMENT.test(words[index]?.text ?? "")) index += 1;
-	for (;;) {
-		const name = basename(words[index]?.text ?? "");
-		if (name === "env") {
-			index += 1;
-			while (index < words.length) {
-				const value = words[index].text;
-				if (value === "--") { index += 1; break; }
-				if (value === "-u" || value === "--unset" || value === "-C" || value === "--chdir") index += 2;
-				else if (value.startsWith("-") || ASSIGNMENT.test(value)) index += 1;
-				else break;
-			}
-			continue;
-		}
-		if (name === "command") {
-			index += 1;
-			if (["-v", "-V"].includes(words[index]?.text ?? "")) return [];
-			while (words[index]?.text === "-p" || words[index]?.text === "--") index += 1;
-			continue;
-		}
-		if (name === "nohup") {
-			index += 1;
-			while (words[index]?.text.startsWith("-") && words[index]?.text !== "--") index += 1;
-			if (words[index]?.text === "--") index += 1;
-			continue;
-		}
-		break;
-	}
-	return words.slice(index);
-}
-
-function subcommand(words: Word[], valueOptions: Set<string>, booleanOptions: Set<string> = new Set()): Word | undefined {
-	for (let index = 1; index < words.length; index += 1) {
-		const value = words[index].text;
-		const option = optionName(value);
-		if (booleanOptions.has(option)) continue;
-		if (valueOptions.has(option)) {
-			if (!value.includes("=")) index += 1;
-			continue;
-		}
-		if (value.startsWith("-")) continue;
-		return words[index];
-	}
-	return undefined;
-}
-
 function isExactAgentBrowserReadOnly(words: Word[]): boolean {
 	const keyword = (index: number, value: string): boolean => words[index]?.text === value && !words[index]?.quoted;
 	const value = (index: number): boolean => words[index] !== undefined && !words[index].text.startsWith("-");
@@ -340,16 +160,16 @@ function isExactLarkReadOnly(command: string): boolean {
 	return selector || wantsHelp;
 }
 
-function inspectCommand(words: Word[], add: (code: BashDangerCode, position: number) => void, exactLark: boolean): { name: string; position: number } | undefined {
+function inspectCommand(words: Word[], add: (code: BashDangerCode, position: number) => void, exactReads: { readonly lark: boolean; readonly diagnostic: boolean }): { name: string; position: number } | undefined {
 	const argv = unwrap(words);
 	const executable = argv[0];
 	if (!executable) return undefined;
 	const name = basename(executable.text);
-	if (name === "lark-cli" && !exactLark) add("external-system-mutation", executable.start);
+	if (name === "lark-cli" && !exactReads.lark) add("external-system-mutation", executable.start);
 	if (FILESYSTEM_COMMANDS.has(name)) add("filesystem-mutation", executable.start);
 	if (SHELL_COMMANDS.has(name)) add("dynamic-shell-execution", executable.start);
 	if (INTERPRETERS.has(name)) add("interpreter-execution", executable.start);
-	if (PRIVILEGE_COMMANDS.has(name)) add("privilege-or-system-control", executable.start);
+	if (PRIVILEGE_COMMANDS.has(name) && !(name === "systemctl" && exactReads.diagnostic)) add("privilege-or-system-control", executable.start);
 
 	if (name === "git") {
 		const action = subcommand(argv, GIT_VALUE_OPTIONS);
@@ -405,7 +225,7 @@ export function evaluateBashPolicy(input: BashPolicyInput): BashPolicyOutcome {
 		}
 	});
 	const exactLark = isExactLarkReadOnly(input.command);
-	const commands = stages.map((stage) => inspectCommand(stage, add, exactLark));
+	const commands = stages.map((stage) => inspectCommand(stage, add, { lark: exactLark, diagnostic: isDiagnosticInspection(input.command) }));
 	for (const indexes of pipelineGroups) {
 		const downloader = indexes.map((index) => commands[index]).find((command) => command && ["curl", "wget"].includes(command.name));
 		const executor = indexes.map((index) => commands[index]).find((command) => command && (SHELL_COMMANDS.has(command.name) || INTERPRETERS.has(command.name)));
@@ -414,6 +234,6 @@ export function evaluateBashPolicy(input: BashPolicyInput): BashPolicyOutcome {
 	const findings = [...earliest].map(([code, position]) => ({ code, position })).sort((left, right) =>
 		left.position - right.position || BASH_DANGER_CODES.indexOf(left.code) - BASH_DANGER_CODES.indexOf(right.code));
 	if (findings.length > 0) return { kind: "block", findings };
-	if (isLiteralInspection(input.command) || exactLark || input.command.trim() === "pwd" || stages.length === 1 && isExactAgentBrowserReadOnly(stages[0])) return { kind: "allow" };
+	if (isDiagnosticInspection(input.command) || isLiteralInspection(input.command) || exactLark || input.command.trim() === "pwd" || stages.length === 1 && isExactAgentBrowserReadOnly(stages[0])) return { kind: "allow" };
 	return { kind: "defer" };
 }

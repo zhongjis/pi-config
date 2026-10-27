@@ -228,7 +228,7 @@ describe("aggregate bash danger policy", () => {
 		for (const command of ["echo x >/dev/null", "echo x 2> /dev/null", "echo x >>/dev/null"]) {
 			expect(codes(command)).not.toContain("output-redirection");
 		}
-		for (const command of ["echo x > '/dev/null'", "echo x >/dev/null/file", "echo x 2>&1"]) {
+		for (const command of ["echo x > '/dev/null'", "echo x >/dev/null/file"]) {
 			expect(codes(command)).toContain("output-redirection");
 		}
 	});

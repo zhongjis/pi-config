@@ -113,7 +113,7 @@ describe("smart-tool-guards bash hook", () => {
 			block: true,
 			reason: [
 				"[Smart Guard][ERROR][source=scope][profile=bash-read-only-v1][scope=active,broken]",
-				"Bash not run: Scope evaluation failed for providers: broken; guard failed closed. Guard active: Active reason.",
+				"Bash not run: Scope evaluation failed for providers: broken; guard failed closed. Guard active: Active reason. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.",
 			].join("\n"),
 		});
 		expect(classifyMock).not.toHaveBeenCalled();
@@ -128,7 +128,7 @@ describe("smart-tool-guards bash hook", () => {
 			block: true,
 			reason: [
 				"[Smart Guard][ERROR][source=scope][profile=bash-read-only-v1][scope=broken]",
-				"Bash not run: Scope evaluation failed for providers: broken; guard failed closed.",
+				"Bash not run: Scope evaluation failed for providers: broken; guard failed closed. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.",
 			].join("\n"),
 		});
 	});
@@ -149,7 +149,7 @@ describe("smart-tool-guards bash hook", () => {
 			block: true,
 			reason: [
 				"[Smart Guard][ERROR][source=input][profile=bash-read-only-v1][scope=scope]",
-				"Bash not run: Malformed tool input. Guard active: Guard reason.",
+				"Bash not run: Malformed tool input. Guard active: Guard reason. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.",
 			].join("\n"),
 		});
 		expect(classifyMock).not.toHaveBeenCalled();
@@ -173,7 +173,8 @@ describe("smart-tool-guards bash hook", () => {
 
 	it.each([
 		"rg --no-config 'pattern' file | head -20", "sha256sum file",
-		"command -v lark-cli || true", "jq --version", "lark-cli wiki --help",
+		"command -v lark-cli || true", "jq --version", "lark-cli wiki --help", "journalctl --user -u sample.service --no-pager -n 80", "systemctl --user status sample.service --no-pager",
+		"systemctl --user show sample.service -p ExecStart --no-pager", `sqlite3 -batch -readonly -init /dev/null 'file:/snapshot.db?mode=ro&immutable=1' "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name;"`,
 	])("allows literal inspection with classifier unavailable and native input intact: %s", async (command) => {
 		const { pi, handlers } = makeRuntime();
 		guard(pi);
@@ -200,18 +201,18 @@ describe("smart-tool-guards bash hook", () => {
 			block: true,
 			reason: [
 				"[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=a-scope,z-scope]",
-				"Bash not run: Read-only policy matched: filesystem-mutation, vcs-mutation. Guard active: First activation. Second activation.",
+				"Bash not run: Read-only policy matched: filesystem-mutation, vcs-mutation. Guard active: First activation. Second activation. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.",
 			].join("\n"),
 		});
 		expect((result as { reason: string }).reason).not.toMatch(/dangerous/i);
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
 
-	it("classifies deferred commands with exact requested values and resolved cwd", async () => {
+	it.each(["git status", "journalctl --user -u sample.service --no-pager -n 80 2>&1 | sed -E 's/token/redacted/g'"])("classifies deferred commands with exact requested values and resolved cwd: %s", async (command) => {
 		const { pi, handlers } = makeRuntime();
 		guard(pi);
 		smartToolGuards(pi);
-		const input = Object.freeze({ command: "git status", cwd: "packages/../app", timeout: 12.5 });
+		const input = Object.freeze({ command, cwd: "packages/../app", timeout: 12.5 });
 
 		expect(await handlers[0](bashEvent(input), context("/repo/worktree"))).toBeUndefined();
 		expect(classifyMock).toHaveBeenCalledWith({
@@ -219,7 +220,7 @@ describe("smart-tool-guards bash hook", () => {
 			policyInstructions: expect.any(String),
 			target: "bash",
 			action: {
-				command: "git status",
+				command,
 				requestedCwd: "packages/../app",
 				requestedTimeout: 12.5,
 			},
@@ -236,7 +237,7 @@ describe("smart-tool-guards bash hook", () => {
 			block: true,
 			reason: [
 				"[Smart Guard][BLOCK][source=classifier][profile=bash-read-only-v1][scope=scope]",
-				"Bash not run: Not read-only. Guard active: Guard reason.",
+				"Bash not run: Not read-only. Guard active: Guard reason. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.",
 			].join("\n"),
 		});
 		classifyMock.mockResolvedValueOnce({ kind: "unavailable", reason: "secret\nprovider failure" });
@@ -244,7 +245,7 @@ describe("smart-tool-guards bash hook", () => {
 			block: true,
 			reason: [
 				"[Smart Guard][ERROR][source=classifier][profile=bash-read-only-v1][scope=scope]",
-				"Bash not run: Classifier unavailable; guard failed closed. Guard active: Guard reason.",
+				"Bash not run: Classifier unavailable; guard failed closed. Guard active: Guard reason. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.",
 			].join("\n"),
 		});
 	});
@@ -263,7 +264,7 @@ describe("smart-tool-guards bash hook", () => {
 			block: true,
 			reason: [
 				"[Smart Guard][BLOCK][source=classifier][profile=bash-read-only-v1][scope=scope]",
-				`Bash not run: ${expected} Guard active: Guard reason.`,
+				`Bash not run: ${expected} Guard active: Guard reason. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.`,
 			].join("\n"),
 		});
 	});
@@ -365,7 +366,7 @@ describe("smart-tool-guards bash hook", () => {
 			block: true,
 			reason: [
 				"[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=scope]",
-				"Bash not run: Read-only policy matched: vcs-mutation. Guard active: Guard reason.",
+				"Bash not run: Read-only policy matched: vcs-mutation. Guard active: Guard reason. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.",
 			].join("\n"),
 		});
 		expect(event.input).toBe(input);

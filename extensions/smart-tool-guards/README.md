@@ -19,8 +19,10 @@ Every guarded denial has this two-line envelope:
 
 ```text
 [Smart Guard][BLOCK|ERROR][source=<source>][profile=bash-read-only-v1][scope=<sorted provider IDs>]
-Bash not run: <detail>[ Guard active: <successful provider activation reason(s)>]
+Bash not run: <detail>[ Guard active: <successful provider activation reason(s)>] <agent capability restriction and reporting guidance>
 ```
+
+[Central denial formatting](src/index.ts) identifies the restriction as the current agent's capability scope, confirms no execution, and asks the agent to report that limitation rather than infer project-wide lack of access.
 
 `scope=none` is used only when no provider ID is available. `Guard active:` is appended only for successfully active provider scopes, so a scope-only error relies on its fail-closed detail. Dynamic classifier and provider reason whitespace is normalized to one line. `smart-tool-guards` alone formats messages; providers supply structured scope and activation reasons.
 
@@ -35,7 +37,10 @@ Guarded calls use this precedence:
 3. The [Lark policy](src/bash-policy.ts) allows exact direct literal document search/fetch forms and syntax-discovery help/version queries, including wiki help, using only verified read flags and required selectors. Other recognized Lark calls block without classifier fallback, including path and known-wrapper variants; compounds, pipelines, environment overrides, expansions, output/download flags, and unknown operations are not allowed.
 4. Exact trimmed `pwd` and exact single-command, read-only `agent-browser` forms allow without a classifier call. The browser allowlist covers page inspection, runtime and metadata reads, documented output-only flags and filters, and help/version queries; URL reads, effectful waits, mutating siblings, wrappers, pipelines, and compound commands are excluded.
 5. [Bounded literal inspection](src/literal-inspection.ts) allows selected direct readers, hashing, config-free search, file discovery, and syntax discovery, including pipelines only when every stage validates. Its code owns the supported argv; unknown options, wrappers, expansions, and general compound commands are excluded. Arbitrary jq filters defer rather than entering this fast path.
-6. Every other command defers to the classifier, which assesses the exact effects of every command. Executables, outside-repository reads, and shell composition are not inherently mutations; ordinary inline jq inspection can be read-only. General-purpose interpreters remain blocked, and uncertain effects fail closed. Read access does not authorize secret access or transmission.
+6. [Diagnostic inspection](src/diagnostic-inspection.ts) allows bounded, direct no-pager journal reads, selected service-property/status reads, and one fixed SQLite schema query. Its code owns the accepted argv. SQLite requires disabled initialization and an immutable read-only file URI: use only offline snapshots, because immutable reads ignore live writers/WAL and cannot establish current production state. Missing databases fail rather than being created. Plain database paths, arbitrary SQL, dot commands, startup scripts, and extra options do not receive fast approval.
+7. Every other command defers to the classifier, which assesses the exact effects of every command. Executables, outside-repository reads, and shell composition are not inherently mutations; ordinary inline jq inspection can be read-only. General-purpose interpreters remain blocked, and uncertain effects fail closed. Read access does not authorize secret access or transmission.
+
+[Shell scanning](src/bash-syntax.ts) recognizes only exact stderr-to-stdout descriptor duplication as distinct from file output. Other output redirections retain their checks. Descriptor duplication alone does not grant fast approval: an unrecognized pipeline stage, including sed, still requires classifier evaluation when no independent hazard blocks first.
 
 The guard evaluates the model-issued command recorded at assistant `message_end`, and falls back to the current input when no record exists. `tool_call` input mutations by other extensions (for example `rtk`) are trusted and not re-evaluated. The guard itself never rewrites input. Allowed calls continue through Pi's native `bash` executor with the current input, requested `cwd`, and requested `timeout`. Classifier context includes the evaluated command, the requested cwd and timeout, and an effective cwd resolved from the session cwd; omitted timeout remains omitted. Caller cancellation and the classifier's own five-second decision deadline both abort the nested model request, independently of native execution timeout.
 

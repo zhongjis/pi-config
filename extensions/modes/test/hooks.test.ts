@@ -385,7 +385,7 @@ describe("mode hooks", () => {
 				block: true,
 				reason: [
 					"[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=modes:fuxi]",
-					"Bash not run: Read-only policy matched: filesystem-mutation. Guard active: Fuxi plan mode requires read-only Bash.",
+					"Bash not run: Read-only policy matched: filesystem-mutation. Guard active: Fuxi plan mode requires read-only Bash. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.",
 				].join("\n"),
 			}]);
 
