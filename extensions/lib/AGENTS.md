@@ -23,6 +23,7 @@ Provide shared extension utilities and integration primitives.
 - `active-tools.ts` owns the shared `extensions:`/`tools:`/`delegation:` access policy: rule parsing (`delegation:` parsing only, accepting `@all` or exact agent names), last-match-wins evaluation, groups, extension identity, and the ceiling tool. Mode and subagent loadout, blocking, nested guards, roster, and menu MUST use it.
 - Hard gates MUST apply after rules: trusted `<inline:…>`/`<sdk:…>` sources always allowed; nested controls (including `agent_graph`, result retrieval, and graph-gate resolution) require the caller-computed `allowNesting` gate (true only when `delegation` rules resolve to a valid target), and `tools` rules NEVER override `allowNesting: false`; goal tools require Goal access; plan tools only where the plan gate grants them.
 - `BUILTIN_TOOL_NAMES` is a copy of Pi's built-in tool list; update it when Pi adds a built-in tool.
+- [Prompt variants](prompt-variants.ts) owns shared directory reading and body selection; callers parse default-file frontmatter and retain lifecycle/state ownership. Only missing prompt files are optional; other read failures propagate to callers.
 
 ## Work Guidance
 

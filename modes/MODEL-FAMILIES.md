@@ -13,11 +13,11 @@ Shared instructions can serve several families. Check that they do not overconst
 
 ## Parity Rule
 
-`mode.md` supplies the default prompt, not a template that other families must restate. Family prompts may differ in structure, emphasis, workflow detail, and communication cadence while preserving shared contracts. Evaluate parity by outcomes, not matching wording or sections.
+`default.md` supplies the default prompt, not a template that other families must restate. Family prompts may differ in structure, emphasis, workflow detail, and communication cadence while preserving shared contracts. Evaluate parity by outcomes, not matching wording or sections.
 
 ## Local Addition: GPT Overwork Habits
 
-Local observation from an A/B eval of real Kua Fu tasks on `gpt-6.1-sol`: under the old prompts, GPT delegated small work, added ceremony (notepads, task lists, extra subagents) to small tasks, re-ran passing checks, handed one worker a whole UI for 25+ minutes, wrote tests for prototypes, and gave long answers. [`modes/kuafu/gpt.md`](kuafu/gpt.md) names these habits so the model can catch them; the behavior it asks for is the same as `mode.md`.
+Local observation from an A/B eval of real Kua Fu tasks on `gpt-6.1-sol`: under the old prompts, GPT delegated small work, added ceremony (notepads, task lists, extra subagents) to small tasks, re-ran passing checks, handed one worker a whole UI for 25+ minutes, wrote tests for prototypes, and gave long answers. [`modes/kuafu/gpt.md`](kuafu/gpt.md) names these habits so the model can catch them; the behavior it asks for is the same as `default.md`.
 
 ## The Three Families
 
@@ -52,7 +52,7 @@ Short, forceful overlays maintain context while mitigating these known weaknesse
 
 ## Our Mode Mapping
 
-[`modes/README.md`](README.md) owns the active mode set and how each family's prompt file is built. Each mode's `mode.md` frontmatter owns its default model.
+[`modes/README.md`](README.md) owns the active mode set and how each family's prompt file is built. Each mode's `default.md` frontmatter owns its default model. Directory-form agents use the same families and files ([agents/AGENTS.md](../agents/AGENTS.md)).
 
 ## Local Addition: Small Models as Corrective
 

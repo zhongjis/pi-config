@@ -14,7 +14,7 @@ Three modes with distinct agent personas:
 
 Saved modes that are unknown or malformed fall back to clean `kuafu`, discarding their model override and planning/review state. Valid saved state still restores when `--mode` is absent or explicitly `kuafu`; other CLI values retain their existing precedence.
 
-Each mode reads its prompt from `modes/<mode>/mode.md`. Global AGENTS.md rules stay active in all modes.
+Each mode reads its prompt from `modes/<mode>/default.md`. Global AGENTS.md rules stay active in all modes.
 
 ### Plan flow (Fu Xi mode)
 
@@ -25,7 +25,7 @@ Each mode reads its prompt from `modes/<mode>/mode.md`. Global AGENTS.md rules s
 
 ### Mode frontmatter
 
-Mode prompts live in `modes/<mode>/mode.md` and use the shared agent frontmatter schema:
+Mode prompts live in `modes/<mode>/default.md` and use the shared agent frontmatter schema:
 
 - `tools` — signed rule list deciding which tools the model may see and call in this mode ([access rules](../../docs/guides/agent-frontmatter.md#access-rules)); omitted or empty permits none. This is permission only, never activation: Pi and owning extensions decide what's active. The always-active, model-only `mode_tool_ceiling` hides declared-but-unpermitted tools, and the `tool_call` guard blocks every unpermitted call, top-level and nested. The codemode and `tool_search` catalogs and Pi's `mcp_servers` prompt section may still list unpermitted tools and servers; only the guard stops those calls, because Pi has no runtime tool-exclusion API for a mode to set.
 - `extensions` — rejected; the main session cannot unload extensions
@@ -49,7 +49,7 @@ Configured model chains (or the active `/mode-model` override) use the shared
 
 ## Model Override
 
-Each mode selects its model from the `model` frontmatter chain in `modes/<mode>/mode.md`. A `/mode-model` override, or a manual model or thinking-level pick mid-session, persists in the session, survives `/reload`, and wins over the frontmatter until `/mode-model --reset`. It never rewrites frontmatter.
+Each mode selects its model from the `model` frontmatter chain in `modes/<mode>/default.md`. A `/mode-model` override, or a manual model or thinking-level pick mid-session, persists in the session, survives `/reload`, and wins over the frontmatter until `/mode-model --reset`. It never rewrites frontmatter.
 
 ### Fast defaults
 

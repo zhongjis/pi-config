@@ -154,42 +154,7 @@ function toolRules(text: string) {
 	return parseAccessRules("tools", text).rules;
 }
 
-type PromptFamily = "default" | "gpt" | "gemini";
 type TestMode = "kuafu" | "fuxi" | "houtu";
-
-type PromptConfig = {
-	body: string;
-	overlays?: string;
-};
-
-async function renderInjectedPrompt({
-	mode,
-	family = "default",
-	basePrompt = "Base prompt",
-	defaultConfig = { body: "Default body" },
-	familyConfig,
-}: {
-	mode: TestMode;
-	family?: PromptFamily;
-	basePrompt?: string;
-	defaultConfig?: PromptConfig;
-	familyConfig?: PromptConfig;
-}): Promise<string | undefined> {
-	const mock = createMockPi();
-	const state = new ModeStateManager(mock.pi as never);
-	state.currentMode = mode;
-	state.resolvedFamily = family;
-	state.cachedConfigs[`${mode}:default`] = { ...defaultConfig, toolRules: [] };
-	if (family !== "default") {
-		state.cachedConfigs[`${mode}:${family}`] = { ...(familyConfig ?? { body: `${family} body` }), toolRules: [] };
-	}
-
-	registerModeHooks(mock.pi as never, state);
-	const event = beforeAgentStartEvent(basePrompt);
-	const [result] = await mock.fire("before_agent_start", event, { hasUI: false });
-	expect(result).toBeUndefined();
-	return event.systemPromptOptions.sections.modes;
-}
 
 function beforeAgentStartEvent(systemPrompt: string, sections: Record<string, string> = {}) {
 	return { type: "before_agent_start", prompt: "", systemPrompt, systemPromptOptions: { sections } };
@@ -658,58 +623,7 @@ describe("mode hooks", () => {
 		expect(event.systemPromptOptions.sections.modes).toBe("GPT variant body");
 	});
 
-	it("injects gemini overlays before <critical> when resolvedFamily is gemini", async () => {
-		const mock = createMockPi();
-		const state = new ModeStateManager(mock.pi as never);
-		state.currentMode = "kuafu";
-		state.cachedConfigs["kuafu:gemini"] = {
-			body: "before\n\n<critical>\nafter",
-			toolRules: [],
-			overlays: "<GEMINI_INTENT_GATE>must classify</GEMINI_INTENT_GATE>",
-		};
-		state.cachedConfigs["kuafu:default"] = { body: "before\n\n<critical>\nafter", toolRules: [] };
-		state.resolvedFamily = "gemini";
 
-		registerModeHooks(mock.pi as never, state);
-
-		const event = beforeAgentStartEvent("");
-		const [result] = await mock.fire("before_agent_start", event, { hasUI: false });
-		expect(result).toBeUndefined();
-		const sp = event.systemPromptOptions.sections.modes ?? "";
-		expect(sp).toContain("<GEMINI_INTENT_GATE>must classify</GEMINI_INTENT_GATE>");
-		const overlayPos = sp.indexOf("<GEMINI_INTENT_GATE>");
-		const criticalPos = sp.indexOf("<critical>");
-		expect(overlayPos).toBeLessThan(criticalPos);
-	});
-
-	it("injects gemini overlays after </role> when no <critical> anchor exists", async () => {
-		const overlay = "<GEMINI_ROLE_FALLBACK>after role</GEMINI_ROLE_FALLBACK>";
-		const prompt = (await renderInjectedPrompt({
-			mode: "kuafu",
-			family: "gemini",
-			defaultConfig: { body: "<role>\nRole only\n</role>\n\nBody" },
-			familyConfig: {
-				body: "<role>\nRole only\n</role>\n\nBody",
-				overlays: overlay,
-			},
-		})) ?? "";
-
-		expect(prompt.indexOf(overlay)).toBeGreaterThan(prompt.indexOf("</role>"));
-		expect(prompt.indexOf(overlay)).toBeLessThan(prompt.indexOf("Body"));
-	});
-
-	it("appends gemini overlays when no <critical> or </role> anchors exist", async () => {
-		const overlay = "<GEMINI_APPEND_FALLBACK>append</GEMINI_APPEND_FALLBACK>";
-		const prompt = (await renderInjectedPrompt({
-			mode: "kuafu",
-			family: "gemini",
-			defaultConfig: { body: "Plain body" },
-			familyConfig: { body: "Plain body", overlays: overlay },
-		})) ?? "";
-
-		expect(prompt.indexOf(overlay)).toBeGreaterThan(prompt.indexOf("Plain body"));
-		expect(prompt.endsWith(overlay)).toBe(true);
-	});
 });
 
 describe("mode runtime model fallback", () => {

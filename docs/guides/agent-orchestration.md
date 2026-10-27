@@ -58,8 +58,8 @@ Roles and tool posture are defined in each `agents/<name>.md`; see
 ## Delegation matrix
 
 Each mode's `delegation` frontmatter defines
-which subagents it may delegate to: [`kuafu`](../../modes/kuafu/mode.md),
-[`fuxi`](../../modes/fuxi/mode.md), [`houtu`](../../modes/houtu/mode.md).
+which subagents it may delegate to: [`kuafu`](../../modes/kuafu/default.md),
+[`fuxi`](../../modes/fuxi/default.md), [`houtu`](../../modes/houtu/default.md).
 
 Routing intent: `fuxi` excludes `cangjie`; Fu Xi owns plan prose and allows `huayan` only for visual-review input, never implementation. `yanluo` is fuxi-only
 and `xuannv` is kuafu-only. Kua Fu and Hou Tu allow `wenchang`, `chengfeng` and `simaqian` so saved agent graphs

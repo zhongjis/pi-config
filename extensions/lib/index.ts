@@ -16,6 +16,7 @@ export * from "./model-selection.js";
 export * from "./runtime-model-fallback.js";
 export * from "./fast.js";
 export * from "./model-family.js";
+export * from "./prompt-variants.js";
 export * from "./thinking-level.js";
 export * from "./active-tools.js";
 export * from "./agent-frontmatter.js";

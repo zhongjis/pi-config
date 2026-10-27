@@ -3,18 +3,19 @@
 Per-model-family prompt variants for mode agents.
 
 Prompt construction:
-- Default family uses `mode.md` frontmatter + body.
-- GPT family uses `gpt.md` as a body-only replacement when present; it retains `mode.md` frontmatter and must be self-contained. A mode without a `gpt.md` inherits the default `mode.md` body for GPT runs.
-- Gemini family uses `gemini.md` as a body-only corrective overlay on the default `mode.md` body.
+- Default family uses `default.md` frontmatter + body.
+- GPT family uses `gpt.md` as a body-only replacement when present; it retains `default.md` frontmatter and must be self-contained. A mode without a `gpt.md` inherits the `default.md` body for GPT runs.
+- Gemini family uses `gemini.md` as a body-only corrective overlay on the `default.md` body. A mode without a `gemini.md` uses the `default.md` body for Gemini runs.
+- [`prompt-variants.ts`](../extensions/lib/prompt-variants.ts) owns variant loading and selection, shared with [directory-form agents](../agents/AGENTS.md).
 - Mode-owned skills live under `modes/<mode>/skills/*/SKILL.md`. Runtime discovers only the active mode's existing skill directory; full content loads on demand.
 
 Fu Xi architecture:
 - Fu Xi prompt files are a thin Prometheus family.
-- Fu Xi ships no dedicated `gpt.md`; GPT-family runs inherit the default `mode.md` body.
+- Fu Xi ships no dedicated `gpt.md`; GPT-family runs inherit the `default.md` body.
 - Active planner policy lives in `modes/fuxi/skills/ulw-plan/SKILL.md`; Fu Xi prompts require loading it before planning, and its `references/*` files resolve relative to the skill base dir.
 - Fu Xi’s planning stages are authoritative in `modes/fuxi/skills/ulw-plan/SKILL.md`; do not duplicate them here.
 
-The active modes are the directories here that contain a `mode.md`; which of `gpt.md` and `gemini.md` each mode ships is visible in its directory.
+The active modes are the directories here that contain a `default.md`; which of `gpt.md` and `gemini.md` each mode ships is visible in its directory.
 
 Prompt audits must review the final injected prompt, not only source files, and preserve locked family anchors plus the final injected session audit requirement. See `../docs/specs/mode-prompt-audit-checklist.md`.
 

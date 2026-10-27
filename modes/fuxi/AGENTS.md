@@ -4,7 +4,7 @@ Fu Xi's thin planner prompt family and authoritative planning skill.
 
 ## Ownership
 
-- This document owns `mode.md`, `gemini.md`, and the entire `skills/` subtree.
+- This document owns `default.md`, `gemini.md`, and the entire `skills/` subtree.
 - [ulw-plan](skills/ulw-plan/SKILL.md) owns planning policy and upstream adaptation provenance.
 - Its relative references resolve from the skill directory.
 
@@ -12,7 +12,7 @@ Fu Xi's thin planner prompt family and authoritative planning skill.
 
 - You MUST keep prompt bodies thin; MUST NOT inline planning stages.
 - Fu Xi MUST load `ulw-plan` before planning.
-- GPT-family runs inherit `mode.md`; no dedicated GPT variant ships here.
+- GPT-family runs inherit `default.md`; no dedicated GPT variant ships here.
 - Planning approval never authorizes implementation or implementation by proxy.
 - The user starts execution through the separate worker-session handoff.
 - The plan MUST leave no judgment calls to Hou Tu or implementation workers; Fu Xi owns resolving implementation decisions before handoff.

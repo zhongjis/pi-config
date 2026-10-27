@@ -10,7 +10,7 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 ## Local Tweaks
 
 - Both variants copy upstream [GPT](https://github.com/code-yeongyu/oh-my-openagent/blob/b7a702362ec21ba79c353c4783848ea1d589c5c4/packages/prompts-core/prompts/ultrawork/gpt.md) wording for scenario sizing, the WHEN TO STOP line, test decisions, the manual-QA table, and stop rules. They share behavior; [default](prompts/default.md) is canonical and [GPT](prompts/gpt.md) restates it in GPT style.
-- Both variants add only what the Kua Fu body lacks; delegation, packets, verification, and output rules live in [mode.md](../../modes/kuafu/mode.md) and [gpt.md](../../modes/kuafu/gpt.md). Ultrawork authorizes per-increment commits through `git-master` and runs the [gate-review](../../modes/kuafu/skills/gate-review/SKILL.md) finish gate for larger or riskier changes.
+- Both variants add only what the Kua Fu body lacks; delegation, packets, verification, and output rules live in [default.md](../../modes/kuafu/default.md) and [gpt.md](../../modes/kuafu/gpt.md). Ultrawork authorizes per-increment commits through `git-master` and runs the [gate-review](../../modes/kuafu/skills/gate-review/SKILL.md) finish gate for larger or riskier changes.
 - Notepads use exact-replacement `edit` operations and Agent-tree-shared `local://` storage; requested deliverables retain their required destinations.
 
 ## What It Does

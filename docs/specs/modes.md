@@ -49,7 +49,7 @@ The override is persisted in the session JSONL as `modelOverride` and survives `
 
 ## Mode Configuration
 
-Each mode reads its prompt and settings from `~/.pi/agent/modes/<mode>/mode.md` (repo source `modes/<mode>/mode.md`). The file uses YAML frontmatter for configuration and a markdown body for the system prompt injection. Model-family variants (`gpt.md`, `gemini.md`) live beside it and reuse the `mode.md` frontmatter.
+Each mode reads its prompt and settings from `~/.pi/agent/modes/<mode>/default.md` (repo source `modes/<mode>/default.md`). The file uses YAML frontmatter for configuration and a markdown body for the system prompt injection. Model-family variants (`gpt.md`, `gemini.md`) live beside it and reuse the `default.md` frontmatter.
 
 ### Frontmatter Fields
 

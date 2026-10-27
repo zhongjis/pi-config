@@ -74,24 +74,6 @@ async function refreshPlanStateFromLocalPlan(ctx: Parameters<typeof readLocalPla
 	state.planTitleSource = title ? "content-h1" : undefined;
 }
 
-function injectOverlays(body: string, overlays: string): string {
-	// Inject overlays BEFORE <critical> section (lost-in-the-middle fix)
-	const anchor = "<critical>";
-	const idx = body.indexOf(anchor);
-	if (idx !== -1) {
-		return `${body.slice(0, idx)}${overlays}\n\n${body.slice(idx)}`;
-	}
-	// Fallback: inject AFTER </role> if no <critical> found
-	const roleClose = "</role>";
-	const roleIdx = body.indexOf(roleClose);
-	if (roleIdx !== -1) {
-		const insertAt = roleIdx + roleClose.length;
-		return `${body.slice(0, insertAt)}\n\n${overlays}${body.slice(insertAt)}`;
-	}
-	// Last resort: append at end
-	return `${body}\n\n${overlays}`;
-}
-
 // ─── Session start sub-steps ─────────────────────────────────────────────────
 
 function setupModeEditor(ctx: ExtensionContext, state: ModeStateManager): void {
@@ -249,7 +231,7 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		const config = state.loadConfig(state.currentMode, state.resolvedFamily);
 
 		if (config.body) {
-			event.systemPromptOptions.sections.modes = config.overlays ? injectOverlays(config.body, config.overlays) : config.body;
+			event.systemPromptOptions.sections.modes = config.body;
 		}
 	});
 

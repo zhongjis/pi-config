@@ -1,10 +1,7 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import * as fs from "node:fs";
-
-vi.mock("node:fs", async () => {
-	const actual = await vi.importActual<typeof fs>("node:fs");
-	return { ...actual, existsSync: vi.fn(), readFileSync: vi.fn() };
-});
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 
 import { loadAgentConfig, parseModeAgentConfig } from "../src/config-loader.js";
 import { derivePlanTitleFromMarkdown } from "../src/plan-storage.js";
@@ -34,7 +31,7 @@ Mode prompt.`);
 
 	it("grants no tools when tools frontmatter is omitted", () => {
 		const config = parseModeAgentConfig(`---
-prompt_mode: append
+prompt_mode: replace
 ---
 
 Prompt only.`);
@@ -103,35 +100,37 @@ model: anthropic/claude-sonnet-4-6:medium
 
 Base mode body.`;
 
+	let home: string;
 	function stubFiles(files: Record<string, string>): void {
-		vi.mocked(fs.existsSync).mockImplementation((p) =>
-			Object.keys(files).some((suffix) => String(p).endsWith(suffix)));
-		vi.mocked(fs.readFileSync).mockImplementation(((p: unknown) => {
-			const suffix = Object.keys(files).find((s) => String(p).endsWith(s));
-			if (suffix === undefined) throw new Error(`unexpected read: ${String(p)}`);
-			return files[suffix];
-		}) as unknown as typeof fs.readFileSync);
+		for (const [name, content] of Object.entries(files)) {
+			const path = join(home, ".pi/agent/modes", name.includes("/") ? name : `kuafu/${name}`);
+			mkdirSync(dirname(path), { recursive: true });
+			writeFileSync(path, content);
+		}
 	}
 
 	beforeEach(() => {
-		vi.mocked(fs.existsSync).mockReset();
-		vi.mocked(fs.readFileSync).mockReset();
+		home = mkdtempSync(join(tmpdir(), "mode-config-"));
+		vi.stubEnv("HOME", home);
+	});
+	afterEach(() => {
+		vi.unstubAllEnvs();
+		rmSync(home, { recursive: true, force: true });
 	});
 
-	it("reads base config from modes/{mode}/mode.md", () => {
-		stubFiles({ "mode.md": MODE_MD });
+	it("reads base config from modes/{mode}/default.md", () => {
+		stubFiles({ "default.md": MODE_MD });
 		const config = loadAgentConfig("kuafu");
 		expect(config?.body).toBe("Base mode body.");
 		expect(config?.model).toBe("anthropic/claude-sonnet-4-6:medium");
 	});
 
-	it("returns null when mode.md does not exist", () => {
-		vi.mocked(fs.existsSync).mockReturnValue(false);
+	it("returns null when default.md does not exist", () => {
 		expect(loadAgentConfig("kuafu")).toBeNull();
 	});
 
-	it("an invalid mode.md keeps the errors config over a gpt.md body", () => {
-		stubFiles({ "mode.md": "---\nbuiltin_tools: read\n---\n\nBase mode body.", "gpt.md": "GPT body override.\n" });
+	it("an invalid default.md keeps the errors config over a gpt.md body", () => {
+		stubFiles({ "default.md": "---\nbuiltin_tools: read\n---\n\nBase mode body.", "gpt.md": "GPT body override.\n" });
 		expect(loadAgentConfig("kuafu", "gpt")).toEqual({
 			body: "",
 			toolRules: [],
@@ -139,32 +138,30 @@ Base mode body.`;
 		});
 	});
 
-	it("gpt family replaces body from gpt.md, keeping mode.md frontmatter", () => {
-		stubFiles({ "mode.md": MODE_MD, "gpt.md": "GPT body override.\n" });
+	it("gpt family replaces body from gpt.md, keeping default.md frontmatter", () => {
+		stubFiles({ "default.md": MODE_MD, "gpt.md": "GPT body override.\n" });
 		const config = loadAgentConfig("kuafu", "gpt");
 		expect(config?.body).toBe("GPT body override.");
 		expect(config?.model).toBe("anthropic/claude-sonnet-4-6:medium");
 	});
 
 	it("gpt family falls back to base body when gpt.md is absent", () => {
-		stubFiles({ "mode.md": MODE_MD });
+		stubFiles({ "default.md": MODE_MD });
 		const config = loadAgentConfig("kuafu", "gpt");
 		expect(config?.body).toBe("Base mode body.");
-		expect(config?.overlays).toBeUndefined();
 	});
 
-	it("gemini family loads gemini.md into overlays", () => {
-		stubFiles({ "mode.md": MODE_MD, "gemini.md": "Gemini overlay fragment.\n" });
+	it("gemini family injects gemini.md into the body", () => {
+		stubFiles({ "default.md": MODE_MD, "gemini.md": "Gemini overlay fragment.\n" });
 		const config = loadAgentConfig("kuafu", "gemini");
-		expect(config?.overlays).toBe("Gemini overlay fragment.");
-		expect(config?.body).toBe("Base mode body.");
+		expect(config?.body).toBe("Base mode body.\n\nGemini overlay fragment.");
 		expect(config?.model).toBe("anthropic/claude-sonnet-4-6:medium");
 	});
 
 	it("reads retained mode GPT/Gemini variant files when present", () => {
 		for (const mode of ["kuafu", "fuxi", "houtu"] as const) {
 			stubFiles({
-				[`${mode}/mode.md`]: `---
+				[`${mode}/default.md`]: `---
 prompt_mode: replace
 model: anthropic/claude-sonnet-4-6:medium
 ---
@@ -176,33 +173,22 @@ ${mode} base body.`,
 
 			const gptConfig = loadAgentConfig(mode, "gpt");
 			expect(gptConfig?.body).toBe(`${mode} GPT body.`);
-			expect(gptConfig?.overlays).toBeUndefined();
 
 			const geminiConfig = loadAgentConfig(mode, "gemini");
-			expect(geminiConfig?.body).toBe(`${mode} base body.`);
-			expect(geminiConfig?.overlays).toBe(`${mode} Gemini overlay.`);
+			expect(geminiConfig?.body).toBe(`${mode} base body.\n\n${mode} Gemini overlay.`);
 		}
 	});
 
 	it("gemini family falls back to base config when gemini.md is absent", () => {
-		stubFiles({ "mode.md": MODE_MD });
+		stubFiles({ "default.md": MODE_MD });
 		const config = loadAgentConfig("kuafu", "gemini");
-		expect(config?.overlays).toBeUndefined();
 		expect(config?.body).toBe("Base mode body.");
 	});
 
-	it("default family returns the mode.md body unchanged", () => {
-		stubFiles({ "mode.md": MODE_MD });
+	it("default family returns the default.md body unchanged", () => {
+		stubFiles({ "default.md": MODE_MD });
 		const config = loadAgentConfig("kuafu", "default");
 		expect(config?.body).toBe("Base mode body.");
-		expect(config?.overlays).toBeUndefined();
 	});
 
-	it("unsupported runtime family returns the mode.md body unchanged", () => {
-		stubFiles({ "mode.md": MODE_MD, "gpt.md": "GPT body override.\n", "gemini.md": "Gemini overlay fragment.\n" });
-		const config = loadAgentConfig("kuafu", "opus" as never);
-		expect(config?.body).toBe("Base mode body.");
-		expect(config?.overlays).toBeUndefined();
-	});
 });
-

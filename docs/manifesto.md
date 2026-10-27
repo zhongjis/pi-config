@@ -30,8 +30,8 @@ Everything else is a harness defect, with its fix:
 
 Existing mechanisms:
 
-- The [Kua Fu intent gate](../modes/kuafu/mode.md) exhausts repo context before it asks one precise question.
-- [Kua Fu recovery](../modes/kuafu/mode.md) tries a materially different hypothesis and consults Taishang before a third attempt.
+- The [Kua Fu intent gate](../modes/kuafu/default.md) exhausts repo context before it asks one precise question.
+- [Kua Fu recovery](../modes/kuafu/default.md) tries a materially different hypothesis and consults Taishang before a third attempt.
 - Decision gates ask a classifier first and escalate only when it is unsure ([ADR 0005](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md)).
 - Fu Xi turns intent into an approved plan; Hou Tu runs it ([orchestration guide](guides/orchistration.md)).
 
@@ -53,9 +53,9 @@ Panda Harness fits one person's work ([README](../README.md), [root AGENTS.md](.
 
 **Delegation does not replace verification.**
 
-- A worker's report is a claim. The parent reads the changed files, reviews the diff against the request, and runs integration checks and QA itself ([Kua Fu](../modes/kuafu/mode.md); Hou Tu in the [orchestration guide](guides/orchistration.md)).
+- A worker's report is a claim. The parent reads the changed files, reviews the diff against the request, and runs integration checks and QA itself ([Kua Fu](../modes/kuafu/default.md); Hou Tu in the [orchestration guide](guides/orchistration.md)).
 - Kua Fu's finish gate adds independent Spec and Standards review for refactors, migrations, security changes, and larger ultrawork changes; the parent keeps acceptance ([ADR 0006](adr/0006-kuafu-finish-gate-uses-two-isolated-review-axes.md)).
-- Research follows the same rule. Claims need opened, cited sources, and the parent checks every cited URL against the researcher's source trace ([Wenchang](../agents/wenchang.md), [Kua Fu](../modes/kuafu/mode.md)).
+- Research follows the same rule. Claims need opened, cited sources, and the parent checks every cited URL against the researcher's source trace ([Wenchang](../agents/wenchang.md), [Kua Fu](../modes/kuafu/default.md)).
 
 **Apply it:** Before this agent reports done, what evidence has it opened or run itself?
 
@@ -108,7 +108,7 @@ See [README boundaries](../README.md) and the [extensions contract](../extension
 - Do small work directly when that is cheaper than delegating.
 - Add an agent only when it cuts elapsed time or adds distinct coverage.
 - Send quick, mechanical work to a fast worker.
-- Stop research once the evidence is enough to decide ([Kua Fu](../modes/kuafu/mode.md)).
+- Stop research once the evidence is enough to decide ([Kua Fu](../modes/kuafu/default.md)).
 
 **Apply it:** What evidence or progress does this action buy, and is there a cheaper way to get it?
 
@@ -173,12 +173,12 @@ Author model-family prompts against the [shared contracts](../modes/MODEL-FAMILI
 
 | Principle                        | Where it lives                                                                                                                                                                                                                                                                       |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Intervention is a failure signal | [Kua Fu](../modes/kuafu/mode.md), [ADR 0005](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md), [orchestration guide](guides/orchistration.md)                                                                                                                |
+| Intervention is a failure signal | [Kua Fu](../modes/kuafu/default.md), [ADR 0005](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md), [orchestration guide](guides/orchistration.md)                                                                                                                |
 | Personal by design               | [README](../README.md), [root AGENTS.md](../AGENTS.md)                                                                                                                                                                                                                               |
-| No evidence, no done             | [Kua Fu](../modes/kuafu/mode.md), [Wenchang](../agents/wenchang.md)                                                                                                                                                                                                                  |
+| No evidence, no done             | [Kua Fu](../modes/kuafu/default.md), [Wenchang](../agents/wenchang.md)                                                                                                                                                                                                                  |
 | Specialists, one owner           | [agent orchestration](guides/agent-orchestration.md), [mode-scoped delegation](specs/mode-scoped-subagent-delegation.md), [agent frontmatter](guides/agent-frontmatter.md), [agent contracts](../agents/AGENTS.md), [communication contract](../extensions/subagents/src/prompts.ts) |
 | Smallest correct change          | [README](../README.md), [extensions contract](../extensions/AGENTS.md)                                                                                                                                                                                                               |
-| Tokens buy evidence              | [subagents.json](../subagents.json), [Kua Fu](../modes/kuafu/mode.md)                                                                                                                                                                                                                |
+| Tokens buy evidence              | [subagents.json](../subagents.json), [Kua Fu](../modes/kuafu/default.md)                                                                                                                                                                                                                |
 | Work survives interruptions      | [tasks](../extensions/tasks/README.md), [goal](../extensions/goal/README.md), [session-local](../extensions/session-local/README.md), [ulw](../extensions/ulw/README.md), [subagents](../extensions/subagents/README.md)                                                             |
 | Same rules, model-fit prompts    | [model families](../modes/MODEL-FAMILIES.md), [parity rule](../modes/MODEL-FAMILIES.md#parity-rule)                                                                                                                                                                                  |
 | Code is truth                    | [bounded feedback](specs/agent-graph-bounded-feedback.md), [GLOSSARY.md](../GLOSSARY.md), [prompt parity](specs/mode-prompt-parity.md), [ADR 0001](adr/0001-orchestration-sizing-follows-upstream-omo.md)                                                                            |

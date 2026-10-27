@@ -13,7 +13,6 @@ export interface ModeConfig {
   errors?: string[];
   delegationRules?: AccessRule[];
   model?: string;
-  overlays?: string;
 }
 
 export type PlanTitleSource = "content-h1" | "explicit-exit" | "cached-state";

@@ -23,7 +23,7 @@ Inject the opt-in ultrawork prompt in Kua Fu mode when a message contains a bare
 
 ## Work Guidance
 
-- Fidelity review and UI QA policy live in the Kua Fu body's UI work and verification sections ([mode.md](../../modes/kuafu/mode.md), [gpt.md](../../modes/kuafu/gpt.md)); the ULW manual-QA table only names the real surface per change type.
+- Fidelity review and UI QA policy live in the Kua Fu body's UI work and verification sections ([default.md](../../modes/kuafu/default.md), [gpt.md](../../modes/kuafu/gpt.md)); the ULW manual-QA table only names the real surface per change type.
 
 ## Verification
 

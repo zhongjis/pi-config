@@ -35,9 +35,9 @@ Audit-only findings for [`agents/yanluo.md`](../../agents/yanluo.md) and [`modes
 
 ## Local Construction Semantics
 
-- `mode.md`: default body. Frontmatter + body parsed. Default/unknown family uses this body unchanged.
-- `gpt.md`: body-only replacement. If present and non-empty, it replaces the `mode.md` body while retaining parsed frontmatter config from `mode.md`. A mode without a `gpt.md` uses the default `mode.md` body for GPT-family runs.
-- `gemini.md`: body-only overlay. If present and non-empty, it is injected into the default `mode.md` body before `<critical>`, else after `</role>`, else appended.
+- `default.md`: default body. Frontmatter + body parsed. Default/unknown family uses this body unchanged.
+- `gpt.md`: body-only replacement. If present and non-empty, it replaces the `default.md` body while retaining parsed frontmatter config from `default.md`. A mode without a `gpt.md` uses the `default.md` body for GPT-family runs.
+- `gemini.md`: body-only overlay. If present and non-empty, it is injected into the `default.md` body before `<critical>`, else after `</role>`, else appended.
 - Hook behavior: resolved model family is applied before prompt injection. The active mode body becomes the `modes` system-prompt section, so switching modes replaces it.
 
 ## File Matrix
@@ -60,7 +60,7 @@ Local invariants before edits:
 
 - Kuafu remains Pi build mode: senior engineer/orchestrator, direct implementation only for trivial local work.
 - Every family must include intent gate, explicit implementation authorization gate, scope discipline, delegation policy, continuation/supervision, and verification gates.
-- GPT replacement must be self-contained; it cannot depend on missing `mode.md` body text.
+- GPT replacement must be self-contained; it cannot depend on missing `default.md` body text.
 - Gemini overlay must reinforce tool use, delegation, read-before-claim, and verify-before-completion without replacing the full prompt.
 - Preserve Pi tool/agent mapping: `chengfeng`, `wenchang`, `taishang`, `jintong`, `yunu`, `guangguang`, pi `Task*`, `agent`, CodeGraph, LSP, read/rg/fd, and guarded built-in `bash` for protected read-only agents.
 
