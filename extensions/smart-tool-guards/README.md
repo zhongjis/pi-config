@@ -46,9 +46,9 @@ The guard evaluates the model-issued command recorded at assistant `message_end`
 
 ## Classifier Contract
 
-Model selection resolves `smart-tool-guards.classifier` from layered `tool_models.json` config. Its built-in role is `guard.tool`. When no model in that chain is available or authenticated, the classifier falls back to the current session model so an unavailable guard chain does not hard-block every guarded call; the chain is still preferred whenever one of its models resolves.
+Model selection resolves `smart-tool-guards.classifier` from layered `tool_models.json` config. Its built-in role is `guard.tool`. The first available chain entry is used; an entry may name a chat model or a Pi classifier model (model type `classifier`), checked in that entry's position; an ID available as both keeps chat behavior. When no model in that chain is available or authenticated, the classifier falls back to the current session model so an unavailable guard chain does not hard-block every guarded call; the chain is still preferred whenever one of its models resolves.
 
-Trusted policy instructions stay in the system prompt. The command and context are serialized only as an untrusted JSON user payload. A valid response is exactly one of:
+For chat models, trusted policy instructions stay in the system prompt. The command and context are serialized only as an untrusted JSON user payload. A valid response is exactly one of:
 
 ```json
 {"version":1,"decision":"allow"}
@@ -59,6 +59,8 @@ Trusted policy instructions stay in the system prompt. The command and context a
 ```
 
 Provider thinking blocks are ignored when accompanied by a text verdict. Markdown fences, extra keys, blank block reasons, thinking-only or tool-call/unknown content, non-stop completion, or any other shape are invalid.
+
+Classifier models get one `choice` question whose labels are the policy's [choices](src/index.ts). Trusted policy instructions travel in the question instructions; the target, `untrusted_action`, and context travel as classifier state. The guard allows only when the allow label's probability reaches the [threshold](src/classifier.ts), and otherwise blocks with the most probable other label as the reason. A non-stop result, a missing or non-choice answer, or a missing allow-label probability is invalid.
 
 ## Failure Semantics
 

@@ -14,7 +14,7 @@ Authorize selected native bash calls through deterministic policy and model clas
 - Allowed calls MUST preserve command, cwd, timeout, and native execution semantics.
 - Policy and classifier MUST evaluate the model-issued command recorded at assistant `message_end`; other extensions' `tool_call` mutations are trusted and not re-evaluated.
 - Trusted policy MUST remain separate from untrusted command/context JSON.
-- Classifier verdicts MUST match the exact allow/block schema.
+- Chat-model classifier verdicts MUST match the exact allow/block schema; classifier-model verdicts MUST allow only at or above the allow-label probability threshold.
 - Denials MUST retain the stable envelope without raw provider errors and identify the current agent's capability restriction and non-execution, not a project-wide lack of access.
 - [Lark policy](src/bash-policy.ts) MUST allow only exact direct literal document search/fetch and discovery forms after shell danger checks; other recognized Lark calls, including path and known-wrapper variants, MUST block without classifier fallback. Verified flags and required read selectors are code-owned.
 - [Literal inspection](src/literal-inspection.ts) MUST run only after full danger checks and approve only direct, literal argv with every pipeline stage validated. Unknown options, wrappers, expansions, and general compound commands MUST defer or block; command discovery has one exact fallback exception.

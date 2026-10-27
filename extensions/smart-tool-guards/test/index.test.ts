@@ -218,6 +218,7 @@ describe("smart-tool-guards bash hook", () => {
 		expect(classifyMock).toHaveBeenCalledWith({
 			policyId: "bash-read-only-v1",
 			policyInstructions: expect.any(String),
+			choices: { allow: "read_only", criteria: expect.objectContaining({ read_only: expect.any(String) }) },
 			target: "bash",
 			action: {
 				command,

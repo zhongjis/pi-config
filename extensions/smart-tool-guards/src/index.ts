@@ -23,6 +23,15 @@ const BASH_POLICY_INSTRUCTIONS = [
 	"Allow fixed text written only to stdout, such as `printf classifier-ok`, when no other side effect is present.",
 	"Unfamiliarity alone is not evidence of mutation; if effects cannot be established as read-only, block.",
 ].join("\n");
+const BASH_POLICY_CHOICES = {
+	allow: "read_only",
+	criteria: {
+		read_only: "Every effect of every command and pipeline stage is read-only, or is fixed text written only to stdout.",
+		mutates_state: "May mutate local, version-control, service, or external-system state.",
+		runs_code: "Invokes a shell or general-purpose language interpreter as an executable, or executes downloaded or generated code.",
+		unknown_effects: "The effects cannot be established as read-only.",
+	},
+} as const;
 
 interface ValidBashInput {
 	command: string;
@@ -165,6 +174,7 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 		const verdict = await classify({
 			policyId: BASH_POLICY_ID,
 			policyInstructions: BASH_POLICY_INSTRUCTIONS,
+			choices: BASH_POLICY_CHOICES,
 			target: "bash" as const,
 			action: {
 				command,
