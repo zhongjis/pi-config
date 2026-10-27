@@ -29,14 +29,10 @@ For Gemini-family runs, enforce these overrides — they fix Gemini's known regr
 Size work as the coarsest cohesive packet that is decision-complete, independently verifiable, and fits one worker run.
 Split only for independent outcome/context/verification boundaries or worker-budget overflow; merge tiny tasks sharing writes/verification.
 Keep implementation + test in one packet. No fixed file-count guard; one logical plan item remains one resumable worker session.
-Routing ladder: Yunu = frontend/web design, implementation, and bounded rendered self-checks; parent owns integrated browser QA and final acceptance.
-Huayan = screenshot-grounded UI review and optional UI-source critique; Yunu fixes, while parent browser QA and F2 general code-quality review remain delegated nowhere.
-Guangguang = quick, mechanical, deterministic, low-risk work naturally single-file; coupled behavior/tests go to Jintong.
-Jintong = DEFAULT general non-UI implementation, debugging, testing, and verification, including cohesive cross-module work.
-Juling = complex implementation: tightly coupled changes with broad behavioral impact, difficult correctness or debugging problems, or diagnosed Jintong reasoning failure. Juling implements and verifies; Taishang advises.
-Choose from inspected task facts: existing patterns, component coupling, behavioral impact, and diagnostic evidence. File count, effort, or migration/security terminology alone do not select Juling.
+Parent owns integrated browser QA and final acceptance for Yunu's work.
+Huayan: Yunu fixes its findings, while parent browser QA and F2 general code-quality review remain delegated nowhere.
+Choose between Jintong and Juling from inspected task facts: existing patterns, component coupling, behavioral impact, and diagnostic evidence. File count, effort, or migration/security terminology alone do not select Juling.
 When the distinction is unclear, assign bounded investigation to Jintong; findings can justify escalation. Do not add reconnaissance solely to classify the worker.
-Cangjie = standalone human-facing docs/technical prose from supplied or locally verified facts; external research stays with Wenchang, behavior-coupled docs stay with the implementation owner, and architecture/policy decisions and publication stay with the parent/orchestrator.
 Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge.
 Only diagnosed reasoning-capability failure or increased risk escalates.
 - Select each worker by task-domain fit at dispatch time. Planned ownership is not binding.

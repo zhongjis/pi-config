@@ -1,6 +1,6 @@
 ---
 display_name: Xuannv 九天玄女
-description: Coarsest-cohesive tactical planning advisor; emits advisory worker-fit and escalation evidence for executable parent plans without durable planning ceremony.
+description: Read-only tactical planning advisor that compares viable work decompositions and returns coarsest-cohesive packets with worker-fit and escalation evidence; the parent owns the plan.
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:medium,opencode-go/kimi-k3:max,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false

@@ -1,6 +1,6 @@
 ---
 display_name: Cheng Feng 乘风
-description: A fast read-only codebase reconnaissance agent. Use this agent to locate files, trace patterns, confirm where code lives, and return evidence-backed findings without modifying anything.
+description: Read-only local codebase reconnaissance that locates files, traces patterns and call flow, and confirms where code lives with evidence; external research goes to Wenchang.
 model: github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/qwen2.5-coder:7b
 prompt_mode: system_instructions
 discover_skills: false

@@ -1,6 +1,6 @@
 ---
 display_name: Wen Chang 文昌
-description: Read-only external research and information retrieval from issue trackers, team chat, vendor APIs, documentation, and GitHub. Use for remote issue/project browsing and authoritative external evidence.
+description: Read-only external research across issue trackers, team chat, vendor APIs, documentation, and GitHub, returning authoritative opened-source evidence; local code search goes to Chengfeng.
 model: github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b
 prompt_mode: system_instructions
 discover_skills: false

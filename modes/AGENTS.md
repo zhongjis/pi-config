@@ -23,7 +23,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 - `gpt.md` replaces only the body; it MUST be self-contained.
 - Absent GPT variants inherit the default body.
 - `gemini.md` is a body-only corrective overlay on the default.
-- Kua Fu/Hou Tu default, GPT, and Gemini routing prose MUST match model-visible descriptions in `agents/*.md`.
+- Kua Fu/Hou Tu default, GPT, and Gemini routing prose MUST NOT contradict model-visible descriptions in `agents/*.md`.
 - Preserve the general/complex worker distinction owned by [Jintong](../agents/jintong.md) and [Juling](../agents/juling.md) across both families; their prompts own the evidence-based routing boundary.
 - Kua Fu/Hou Tu MAY delegate standalone prose to Cangjie; Fu Xi owns plan prose and MUST NOT delegate to Cangjie.
 - Runtime discovers only the active mode's existing skills; bodies load on demand.
