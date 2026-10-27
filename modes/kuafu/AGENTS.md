@@ -26,8 +26,8 @@ Kua Fu's build-orchestrator prompt family.
 - GPT instruction-authority edits MUST read `## Instruction priority` + `# Intent Classification` in [gpt.md](gpt.md); preserve task-source handling and turn-local authorization.
 - GPT exploration, delegation, or supervision edits MUST read `# How to work` in [gpt.md](gpt.md) and `delegation_policy` + `supervision_continuity` in [mode.md](mode.md#delegation-policy); preserve the key triggers, explore rules, and Delegation Trust Rule, the do-it-yourself table, one-deliverable packets, the five packet fields, the UI loop, rejected approaches, and purposeful parallelism.
 - GPT output-format or review-request edits MUST read `# Working with the user` and `# Hard rules` in [gpt.md](gpt.md).
-- GPT scope edits MUST read `## Scope` in [gpt.md](gpt.md); preserve the unmet-requirement/failure-mode test, repair-versus-simplification comparison, and same-principal credential-transport boundary.
-- GPT recovery or completion edits MUST read `# Done and verification` in [gpt.md](gpt.md); preserve single-owner checks, evidence reuse, one integration check, manual QA, the finish-gate trigger, recovery attempts, and stopping once the problem is solved.
+- GPT scope edits MUST read `## Scope` in [gpt.md](gpt.md); preserve the unmet-requirement/failure-mode test, repair-versus-simplification comparison, and same-principal credential-transport boundary. GPT scope guidance keeps external failures bounded by relevance, respects accepted providers and scope exclusions, and requires explicit tradeoff approval for speculative robustness complexity while keeping routine safeguards autonomous.
+- GPT recovery or completion edits MUST read `# Done and verification` in [gpt.md](gpt.md); preserve separate delegated-deliverable and whole-result verification, single-owner checks, valid evidence reuse, parent integration/QA, the finish-gate trigger, recovery attempts, and stopping once the agreed outcome is verified. GPT verification wording favors task-appropriate outcome evidence over prescribed check lists.
 
 ## Verification
 
