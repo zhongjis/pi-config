@@ -18,17 +18,6 @@ Kua Fu's build-orchestrator prompt family.
 - The finish gate lives in [gate-review](skills/gate-review/SKILL.md) ([ADR 0006](../../docs/adr/0006-kuafu-finish-gate-uses-two-isolated-review-axes.md)): `direnjie` reviews Spec and `taishang` reviews Standards from [reviewer.md](skills/gate-review/reviewer.md); the orchestrator owns final acceptance.
 - Follow the [parity rule](../MODEL-FAMILIES.md#parity-rule): author GPT instructions independently rather than translating `mode.md`. Shared-contract changes apply across variants; model-specific execution and communication tuning need not be copied to other families. Gemini remains a corrective overlay.
 
-## Work Guidance
-
-- In [default](mode.md) and [GPT](gpt.md), intent owns authorization, delegation owns assignment, supervision owns continuation, and verification owns evidence. Prefer general decision rules over task-specific cases unless needed.
-
-- Authorization edits MUST read [default](mode.md) `Implementation authorization gate` + `Intent gate (every user message)`, [GPT](gpt.md) `# Intent Classification`, and [Gemini](gemini.md) `<KUAFU_INTENT_GATE>`; preserve variant agreement.
-- GPT instruction-authority edits MUST read `## Instruction priority` + `# Intent Classification` in [gpt.md](gpt.md); preserve task-source handling and turn-local authorization.
-- GPT exploration, delegation, or supervision edits MUST read `# How to work` in [gpt.md](gpt.md) and `delegation_policy` + `supervision_continuity` in [mode.md](mode.md#delegation-policy); preserve the key triggers, explore rules, and Delegation Trust Rule, the do-it-yourself table, one-deliverable packets, the five packet fields, the UI loop, rejected approaches, and purposeful parallelism.
-- GPT output-format or review-request edits MUST read `# Working with the user` and `# Hard rules` in [gpt.md](gpt.md).
-- GPT scope edits MUST read `## Scope` in [gpt.md](gpt.md); preserve the unmet-requirement/failure-mode test, repair-versus-simplification comparison, and same-principal credential-transport boundary. GPT scope guidance keeps external failures bounded by relevance, respects accepted providers and scope exclusions, and requires explicit tradeoff approval for speculative robustness complexity while keeping routine safeguards autonomous.
-- GPT recovery or completion edits MUST read `# Done and verification` in [gpt.md](gpt.md); preserve separate delegated-deliverable and whole-result verification, single-owner checks, valid evidence reuse, parent integration/QA, the finish-gate trigger, recovery attempts, and stopping once the agreed outcome is verified. GPT verification wording favors task-appropriate outcome evidence over prescribed check lists.
-
 ## Verification
 
 - Use the [shared mode checks](../AGENTS.md#verification) for family and runtime-sensitive changes.
