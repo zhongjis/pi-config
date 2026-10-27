@@ -749,11 +749,15 @@ export default function (pi: ExtensionAPI): void {
     pendingInlineSkillBlocks = []
     pendingGraphInvocation = undefined
     loadedSkills = restoreLoadedSkills(ctx)
-    if (event.source === "extension") return { action: "continue" }
+    // Extension-sent prompts (e.g. /btw auto-submit, merge) still expand $skill:;
+    // graph authorization stays user-only.
+    const fromExtension = event.source === "extension"
 
     const sessionId = ctx.sessionManager.getSessionId()
-    const graphTokenNames = findGraphTokenNames(event.text)
-    if (graphTokenNames.length > 0) {
+    const graphTokenNames = fromExtension ? [] : findGraphTokenNames(event.text)
+    if (fromExtension) {
+      // Leave graph authorization state untouched.
+    } else if (graphTokenNames.length > 0) {
       // A new graph request, even an invalid one, must not retain prior authority.
       activeGraphAuthorization = undefined
     } else if (activeGraphAuthorization?.sessionId !== sessionId) {

@@ -177,6 +177,26 @@ describe("inline-skills ($skill: token)", () => {
     expect(basRes?.message?.content).toContain("TDD_BODY_MARKER");
   });
 
+  it("injects $skill: from extension-sent input without granting graph authority", async () => {
+    const h = createHarness([{ name: "tdd", path: tddPath }]);
+    await h.fire("session_start");
+    writeGraph(h.ctx.cwd, ".pi/agent-graphs/root.graph.json", "{}");
+
+    const inputRes = (await h.fire("input", {
+      source: "extension",
+      text: "use $skill:tdd and $graph:root",
+    })) as { action?: string } | undefined;
+    expect(inputRes?.action).toBe("transform");
+
+    const basRes = (await h.fire("before_agent_start", {})) as
+      | { message?: { content?: string; details?: { names?: string[] } } }
+      | undefined;
+    expect(basRes?.message?.details?.names).toEqual(["tdd"]);
+    expect(basRes?.message?.content).not.toContain("saved_graph_invocation");
+    // No authorization was created, so the guard does not restrict other graphs.
+    expect(await h.fire("tool_call", { toolName: "agent_graph", input: { graph: "other" } })).toBeUndefined();
+  });
+
   it("autocomplete shows $skill: label and inserts $skill:<name>", async () => {
     const h = createHarness([{ name: "tdd", path: tddPath }]);
     await h.fire("session_start");

@@ -4,7 +4,7 @@ Provide vendored `$skill:` and `$graph:` prompt tokens for inline skill loading 
 
 ## Ownership
 
-- Owns token autocomplete, skill injection (prompt input and `ask` tool results, matched only by tool name and result text), session-bound graph authorization, tests, and vendoring records.
+- Owns token autocomplete, skill injection (prompt input including extension-sent input, and `ask` tool results, matched only by tool name and result text), session-bound graph authorization (user input only), tests, and vendoring records.
 - [index.ts](index.ts) owns the hook inventory; [README](README.md) owns upstream provenance.
 - Saved-graph resolution belongs to [subagents](../subagents/AGENTS.md).
 
