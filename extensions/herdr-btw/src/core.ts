@@ -79,6 +79,8 @@ export type HerdrLaunchOptions = {
 	/** Herdr pane ID of the parent; the side pane splits from it. Falls back to the focused pane. */
 	parentPaneId?: string;
 	payloadPath: string;
+	/** Child session storage; keeps side threads persisted but out of the parent's /resume list. */
+	sessionDir: string;
 	model: string;
 	thinkingLevel: string;
 	toolMode: BtwToolMode;
@@ -271,7 +273,8 @@ export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string)
 		"--pane",
 		paneId,
 		"--",
-		"--no-session",
+		"--session-dir",
+		options.sessionDir,
 		"--model",
 		options.model,
 		"--thinking",

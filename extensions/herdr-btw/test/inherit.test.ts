@@ -20,6 +20,7 @@ const payloadOptions = {
 };
 const launch: HerdrLaunchOptions = {
 	paneName: "btw", cwd: "/tmp", payloadPath: "/tmp/payload", model: "test/model",
+	sessionDir: "/Users/someone/.pi/agent/btw-sessions/019e0000-0000-7000-8000-000000000000",
 	thinkingLevel: "standard", toolMode: "inherit", activeTools: selected, split: "right",
 };
 
@@ -87,6 +88,12 @@ describe("inherit availability", () => {
 		expect(withoutAvailability[withoutAvailability.indexOf("--tools") + 1]).toBe(selected.join(","));
 		expect(buildAgentStartArgs({ ...launch, availableTools: [] }, "child")).toContain("--no-tools");
 		expect(buildAgentStartArgs({ ...launch, activeTools: [] }, "child")).toContain("--no-tools");
+	});
+
+	it("persists the child session under the btw session dir", () => {
+		const args = buildAgentStartArgs(launch, "child");
+		expect(args[args.indexOf("--session-dir") + 1]).toBe(launch.sessionDir);
+		expect(args).not.toContain("--no-session");
 	});
 
 	it("omits mcp__ names from the inherit CLI allowlist", () => {

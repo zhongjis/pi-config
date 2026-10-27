@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { join } from "node:path";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
 import {
 	buildSessionContext,
 	convertToLlm,
+	getAgentDir,
 	serializeConversation,
 } from "@earendil-works/pi-coding-agent";
 import {
@@ -42,6 +44,8 @@ import {
 import { HELP_TEXT, parseBtwCommand } from "./src/router.ts";
 
 const CHILD_PAYLOAD_ENV = "PI_HERDR_BTW_PAYLOAD";
+// Mirrors subagents' `subagent-sessions/<parentSessionId>/` layout.
+const BTW_SESSION_DIR_NAME = "btw-sessions";
 const MERGE_POLL_INTERVAL_MS = 3_000;
 const ACK_POLL_INTERVAL_MS = 2_000;
 const ACK_POLL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -552,6 +556,7 @@ export async function registerBtwExtension(
 					cwd: ctx.cwd,
 					parentPaneId: process.env.HERDR_PANE_ID,
 					payloadPath,
+					sessionDir: join(getAgentDir(), BTW_SESSION_DIR_NAME, sessionId),
 					model: config.model ?? model,
 					thinkingLevel: config.thinking ?? thinkingLevel,
 					toolMode: config.tools,

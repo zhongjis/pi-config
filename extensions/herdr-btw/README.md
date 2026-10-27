@@ -11,6 +11,7 @@ separate Pi process and can merge its findings back into the parent.
 - Inherit tools preserve registered availability and the parent's exact initial active selection; inactive tools remain available for later lazy activation.
 - Prefills the question for review by default; leaves the parent session unchanged.
 - Stays usable while the parent is working.
+- Persists the side thread's session under `~/.pi/agent/btw-sessions/<parentSessionId>/`, mirroring subagent sessions, so `/session:copy-id` yields a readable log path while side threads stay out of the parent's `/resume` list.
 
 ## Requirements
 
@@ -72,7 +73,8 @@ delivered), and cleaned up after 24 hours if left stale.
 - Commit: `679916281e46d4930969183562b5d343df0e968c`
 - License: MIT — Copyright (c) 2026 Oscar Gabriel (see [LICENSE](LICENSE))
 - Local adaptation: `index.ts`, `src/config.ts`, and `src/core.ts` carry local patches for closeOnExit,
-  PAYLOAD\_VERSION 5, and inherit tool availability with one-time initial active selection restoration;
+  PAYLOAD\_VERSION 5, inherit tool availability with one-time initial active selection restoration, and
+  persisted child sessions;
   `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, and `LICENSE` are vendored verbatim.
   The standalone toolchain and upstream test suite are not vendored.
 - Repo-root `pi-herdr-btw.json` provides a committed portable default (autoSubmit+closeOnExit ON),
@@ -88,6 +90,7 @@ Current divergences from upstream; re-apply each on upstream sync:
 - **Patched:** `index.ts` runs the child-side quit cleanup (payload removal, pane close) only in TUI sessions, so UI-less subagent children of a side-thread process leave the pane and payload alone.
 - **Patched:** `index.ts` and `src/core.ts` separate registered availability from ordered active names in an optional version-5 `parentAvailableTools` field. Inherit launches allow the registered names through CLI filtering and restore the exact active selection once at startup `resources_discover`, only for TUI children. Reload/resume/new/fork and UI-less descendants do not restore; later activation persists. Legacy payloads retain active-name CLI fallback; cache comparisons remain active-name based. Inherit CLI allowlists omit `mcp__*` names (pi keeps MCP tools unless an entry starts with `mcp__`), keeping the typed `herdr agent start` command under the 1024-byte terminal line limit; MCP-only lists pass unchanged.
 - **Patched:** `index.ts` fallback `before_agent_start` sets the `herdr_btw` prompt section (`SIDE_PANE_INSTRUCTIONS`) instead of returning a rewritten `systemPrompt`. The `native` cache branch still returns the parent's exact `systemPrompt`; sections would change the cached prefix.
+- **Patched:** `index.ts` and `src/core.ts` launch the child with `--session-dir <agentDir>/btw-sessions/<parentSessionId>` instead of upstream `--no-session`, so the side thread writes a session log.
 - **Vendored verbatim:** `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, `LICENSE`.
 - **Kept with changes:** `tsconfig.json`, with the `test/**` include removed.
 - **Not vendored:** `package.json`, `package-lock.json`, `.gitignore`, and the upstream `test/` suite
