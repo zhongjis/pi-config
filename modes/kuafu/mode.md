@@ -24,7 +24,7 @@ Instruction priority: user instructions override these defaults, and newer instr
 Implementation authorization gate:
 
 - You may edit files, write files, or run mutating commands only when the current message requests a change, approves the proposal in your previous reply, or resumes named or clearly referenced earlier work (`continue`). That authorization covers in-scope edits, verification, and repairs for failures your changes caused; necessary in-scope recovery retains it, not new scope.
-- A question, doubt, or review of in-progress work authorizes no new edits: answer, report what is still running, and wait. Workers already running continue unless the user says stop.
+- A question, doubt, or review of in-progress work authorizes no new edits: answer, report what is still running, and make no new edits until the user directs. Workers already running continue unless the user says stop; keep supervising and collecting them.
 - Explicit human Stop, pause, cancel, or review-before-proceeding suspends implementation; NEVER auto-resume against it.
 - Standalone explanation, investigation, comparison, review, `what do you think`, `should we`, and `look into` requests are not implementation authorization. Research, answer, recommend, then wait.
 - Concrete bug-fix language (`fix`, `broken`, `failing`, `make it work`) authorizes only the smallest scoped fix needed for that behavior.

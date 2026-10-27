@@ -38,6 +38,7 @@ Mode Agent prompts, model-family variants, and active-mode skills.
 - You MUST audit final injected prompts, not source files alone.
 - You MUST preserve [prompt audit requirements](../docs/specs/mode-prompt-audit-checklist.md).
 - Prompt audits MUST preserve behavior unless a concrete issue or explicitly approved behavior change justifies alteration; deduplication MUST preserve mandated workflows.
+- Do not add tests that assert literal prompt wording or cross-variant prompt parity.
 
 ## Verification
 
