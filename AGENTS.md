@@ -88,6 +88,7 @@ When the user requests a durable behavior change, record it here or in the relev
 - Install repository-owned `agent-graphs/` (the reusable agent-graph portfolio) through `install.sh`; correct global symlinks are idempotent, wrong or dangling symlinks may be replaced, and non-symlink conflicts must remain untouched.
 - Use [GLOSSARY-MAP.md](GLOSSARY-MAP.md) for terminology — the root [GLOSSARY.md](GLOSSARY.md) plus the [subagents context](extensions/subagents/GLOSSARY.md) — and [README.md](README.md) for repository entrypoints.
 - When changing `modes/`, `agents/`, `extensions/`, or `agent-graphs/`, apply [docs/manifesto.md](docs/manifesto.md), the core principles for developing this harness.
+- NEVER put upstream attribution in LLM-visible content: agent and mode prompts, frontmatter descriptions, skills, tool descriptions and prompt guidelines, injected messages, or graph prompts. This covers source projects (oh-my-openagent/omo, OpenCode, senpi) and their agent names used as lineage ("Oracle", "Prometheus-style", "inspired by …"). Record provenance only in maintainer-facing material: `AGENTS.md`, `README.md`, `docs/`, and code comments. Functional identifiers such as `.omo/` paths are not attribution.
 
 ## Documentation Rules
 
