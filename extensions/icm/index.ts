@@ -4,6 +4,7 @@ import { basename, delimiter, dirname, join } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { createLogger, initDebugFromEnv } from "../lib/logger.js";
 import { resolveToolModelCandidates } from "../lib/tool-models.js";
+import { type DaemonStore, nativeExtractEvery, selectDaemon, storeDaemon } from "./daemon.js";
 
 // Bound on the calls a turn waits for (`icm hook start` / `icm hook prompt`, ~40 ms when healthy).
 const HOOK_TIMEOUT_MS = 2000;
@@ -27,6 +28,7 @@ interface SessionState {
 	wakeUp: Promise<string>;
 	/** Pi extracts natively when icm's summarizer is `auto`; otherwise icm's queue does. */
 	native: Promise<boolean>;
+	daemon?: DaemonStore;
 	/** Tool outputs per capture: EXTRACT_EVERY, or icm's `extract_every` once native mode is confirmed. */
 	extractEvery: number;
 	/** Tail of the native extraction chain; captures run one at a time. */
@@ -86,34 +88,6 @@ async function resolveProject(cwd: string): Promise<string> {
 	return basename(commonDir ? dirname(commonDir) : cwd) || "project";
 }
 
-/**
- * Native cadence from `icm config`: its `[extraction] extract_every` when extraction is enabled and
- * `[extraction.summarizer] provider = auto`, else undefined (icm's queue extracts).
- * ponytail: line-scans icm's printed config (no TOML dependency installed); replace with a
- * machine-readable icm config query if icm ever exposes one.
- */
-function nativeExtractEvery(config: string): number | undefined {
-	let section = "";
-	let enabled = false;
-	let provider = "";
-	let every = Number.NaN;
-	for (const raw of config.split("\n")) {
-		const line = raw.trim();
-		const header = /^\[(.+)\]$/.exec(line);
-		if (header) {
-			section = header[1];
-			continue;
-		}
-		const [key, value] = line.split(/\s*=\s*/, 2);
-		if (section === "extraction" && key === "enabled") enabled = value === "true";
-		if (section === "extraction" && key === "extract_every") every = Number(value);
-		if (section === "extraction.summarizer" && key === "provider") provider = value.replace(/^"|"$/g, "");
-	}
-	if (!enabled || provider !== "auto") return undefined;
-	// icm config prints extract_every with its default applied; 3 is that default if a build omits it.
-	return Number.isInteger(every) && every > 0 ? every : 3;
-}
-
 // ponytail: extractPrompt and parseFacts copy icm main.rs build_extract_prompt and reply_line (v0.11.5)
 // so native facts match icm-extracted ones; resync on icm bumps, or call icm if it ever exposes them.
 function extractPrompt(source: string, project: string, text: string): string {
@@ -141,13 +115,13 @@ function parseFacts(reply: string): string[] {
 	});
 }
 
-/** Extract facts with Pi's model and store them with `icm store`; never touches icm's shared queue. */
-async function extractNative(state: SessionState, ctx: ExtensionContext, source: string, text: string): Promise<void> {
+/** Extract facts with Pi's model; native storage never touches icm's shared queue. */
+async function extractNative(state: SessionState, ctx: ExtensionContext, captured: { readonly source: string; readonly text: string }): Promise<void> {
 	const cwd = ctx.cwd;
 	const { candidates, chain } = resolveToolModelCandidates(ctx, EXTRACT_TOOL_KEY);
 	state.project ??= resolveProject(cwd);
 	const project = await state.project;
-	const prompt = extractPrompt(source, project, text);
+	const prompt = extractPrompt(captured.source, project, captured.text);
 	let reply: string | undefined;
 	for (const { model, thinkingLevel } of candidates) {
 		if (!ctx.modelRegistry.hasConfiguredAuth(model)) continue;
@@ -169,8 +143,12 @@ async function extractNative(state: SessionState, ctx: ExtensionContext, source:
 		debug(ctx, "native extract skipped", `no usable model (tried: ${chain ?? "none"})`);
 		return;
 	}
-	// Sequential: each `icm store` writes the same SQLite store. The error names the fact in argv; keep it out of logs.
+	// Sequential writes to the same SQLite store; keep facts and raw storage errors out of logs.
 	for (const fact of parseFacts(reply)) {
+		if (state.daemon) {
+			if (!(await storeDaemon(state.daemon, { topic: `context-${project}`, content: fact }, STORE_TIMEOUT_MS))) debug(ctx, "store failed", "daemon MCP store failed");
+			continue;
+		}
 		await run(state.icm, ["store", "-t", `context-${project}`, "-c", fact], cwd, "", STORE_TIMEOUT_MS).catch(() =>
 			debug(ctx, "store failed", `icm store -t context-${project}`),
 		);
@@ -182,9 +160,9 @@ function capture(state: SessionState, ctx: ExtensionContext, source: string, tex
 	void state.native
 		.then((native) => {
 			if (!native) return enqueue(state, ctx, text, drain);
-			// Serial: each extraction ends in `icm store` calls that load the embedding model.
+			// Serial: finish storing each capture before starting the next.
 			state.extracting = state.extracting
-				.then(() => extractNative(state, ctx, source, text))
+				.then(() => extractNative(state, ctx, { source, text }))
 				.catch((error) => debug(ctx, "capture failed", error));
 		})
 		.catch((error) => debug(ctx, "capture failed", error));
@@ -238,9 +216,15 @@ export default function icmExtension(pi: ExtensionAPI): void {
 			enqueues: 0,
 		};
 		next.native = run(icm, ["config"], ctx.cwd, "", HOOK_TIMEOUT_MS)
-			.then((config) => {
+			.then(async (config) => {
 				const every = nativeExtractEvery(config);
-				if (every !== undefined) next.extractEvery = every;
+				if (every !== undefined) {
+					next.extractEvery = every;
+					next.daemon = await selectDaemon(config, ctx.cwd).catch(() => {
+						debug(ctx, "daemon route unavailable", "using CLI storage");
+						return undefined;
+					});
+				}
 				return every !== undefined;
 			})
 			.catch((error) => {
