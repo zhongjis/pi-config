@@ -4,7 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "../lib/thinking-level.js";
 import { resolveToolModelCandidates } from "../lib/tool-models.js";
-import { getHerdrContext, HERDR_OUTPUT_INSTRUCTIONS, parseHerdrSummary, renameHerdrTab } from "./herdr.js";
+import { getHerdrContext, HERDR_OUTPUT_INSTRUCTIONS, parseHerdrSummary, renameHerdrPane } from "./herdr.js";
 
 // -- Configuration --------------------------------------------------------
 
@@ -345,7 +345,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		// Fire-and-forget: non-blocking async LLM call
 		ctx.modelRegistry.streamSimple(model, {
 			systemPrompt: herdr
-				? "You are a concise summarizer. Output JSON containing a session summary and a separate short tab title."
+				? "You are a concise summarizer. Output JSON containing a session summary and a separate short pane title."
 				: "You are a concise summarizer. Output a single line summary of a coding session.",
 			messages: [{
 				role: "user" as const,
@@ -406,7 +406,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 					lastError = "";
 					// Update session name so it shows in /resume
 					pi.setSessionName(lastSummary);
-					if (herdr && herdrSummary) await renameHerdrTab(pi, herdr, herdrSummary.title);
+					if (herdr && herdrSummary) await renameHerdrPane(pi, herdr, herdrSummary.title);
 					// Verbose notification (guard: ctx may be stale after session replacement/reload)
 					if (config.verbose && changed) {
 						try {

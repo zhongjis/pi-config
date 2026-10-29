@@ -10,13 +10,13 @@ Maintains an LLM-generated one-line session summary as the session name, so acti
 - License: MIT
 - Adapted: lives at `extensions/smart-sessions/`; notifications use the Pi-supported `info` level instead of upstream `success`.
 
-## Herdr Tab Titles
+## Herdr Pane Titles
 
-Inside Herdr, the existing summary request also generates a separate meaningful tab title; the Pi session summary stays independent. Titles use `[w] ` followed by at most four words, counting whitespace and hyphens as separators.
+Inside Herdr, the existing summary request also generates a separate meaningful pane title; the Pi session summary stays independent. Titles use `[w] ` followed by at most four words, counting whitespace and hyphens as separators.
 
-Only tabs whose current label starts with `[w]`, or whose numeric label equals their current one-based position in the workspace tab list, are eligible. Every other label is preserved, including other bracketed prefixes and ordinary custom names. Removing or replacing `[w]` opts out. A manually chosen positional number is indistinguishable from a default label and can be overwritten.
+Only panes with no label, or whose current label starts with `[w]`, are eligible. Every other label is preserved, including other bracketed prefixes and ordinary custom names. Removing or replacing `[w]` opts out; clearing the label opts back in.
 
-Updates follow the existing summary timing and debounce, not startup. [herdr.ts](herdr.ts) checks the explicit current tab's live label immediately before renaming; [index.ts](index.ts) owns the shared summary request. Outside Herdr, summaries follow the plain one-line path.
+Updates follow the existing summary timing and debounce, not startup. [herdr.ts](herdr.ts) checks the explicit current pane's (`HERDR_PANE_ID`) live label immediately before renaming; [index.ts](index.ts) owns the shared summary request. Outside Herdr, summaries follow the plain one-line path.
 
 ## Entry Points
 

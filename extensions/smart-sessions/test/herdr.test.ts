@@ -2,81 +2,60 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
-import { getHerdrContext, parseHerdrSummary, renameHerdrTab } from "../herdr.js";
+import { getHerdrContext, parseHerdrSummary, renameHerdrPane } from "../herdr.js";
 import sessionSummaryExtension from "../index.js";
 
-const context = { tabId: "workspace:current", workspaceId: "workspace" };
-const tab = { tab_id: context.tabId, workspace_id: context.workspaceId, label: "2", number: 178 };
+const context = { paneId: "w1:current" };
+// Herdr omits `label` for unlabeled panes.
+const pane = { pane_id: context.paneId, tab_id: "w1:t1" };
 const summary = "Investigate railway deployment failure and identify the next debugging step";
 
-function cli(label = "2") {
-	return vi.fn<ExtensionAPI["exec"]>(async (_command, args) => ({
+function cli(label?: string) {
+	return vi.fn<ExtensionAPI["exec"]>(async () => ({
 		code: 0, stderr: "", killed: false,
-		stdout: JSON.stringify({ result: args[1] === "list"
-			? { tabs: [{ ...tab, tab_id: "workspace:other" }, tab] }
-			: { tab: { ...tab, label } } }),
+		stdout: JSON.stringify({ result: { pane: label === undefined ? pane : { ...pane, label } } }),
 	}));
 }
 
 beforeEach(() => {
 	vi.stubEnv("PI_CODING_AGENT_DIR", "/nonexistent-smart-sessions-test");
 	vi.stubEnv("HERDR_ENV", "1");
-	vi.stubEnv("HERDR_TAB_ID", context.tabId);
-	vi.stubEnv("HERDR_WORKSPACE_ID", context.workspaceId);
+	vi.stubEnv("HERDR_PANE_ID", context.paneId);
 });
 afterEach(() => vi.unstubAllEnvs());
 
 describe("Herdr title ownership", () => {
-	it.each(["2", "[w] old title", "[w]"])("renames eligible current label %s", async (label) => {
+	it.each([undefined, "[w] old title", "[w]"])("renames eligible current label %s", async (label) => {
 		const exec = cli(label);
-		await renameHerdrTab({ exec }, context, "railway issue");
-		expect(exec.mock.calls.map((call) => call[1][1])).toEqual(["list", "get", "rename"]);
-		expect(exec).toHaveBeenLastCalledWith("herdr", ["tab", "rename", context.tabId, "[w] railway issue"], expect.any(Object));
+		await renameHerdrPane({ exec }, context, "railway issue");
+		expect(exec.mock.calls.map((call) => call[1])).toEqual([
+			["pane", "get", context.paneId],
+			["pane", "rename", context.paneId, "[w] railway issue"],
+		]);
 	});
 
-	it.each(["[o] owned", "[x] custom", "my project", "railway issue", "178", "1", "[W] custom"])("preserves protected current label %s", async (label) => {
+	it.each(["[o] owned", "my project", "railway issue", "2", "[W] custom", ""])("preserves manual current label %j", async (label) => {
 		const exec = cli(label);
-		await renameHerdrTab({ exec }, context, "railway issue");
-		expect(exec.mock.calls.map((call) => call[1][1])).toEqual(["list", "get"]);
-	});
-
-	it("reads a manual opt-out after the tab list rather than trusting its default label", async () => {
-		const exec = cli("manually renamed");
-		await renameHerdrTab({ exec }, context, "railway issue");
-		expect(exec).toHaveBeenLastCalledWith("herdr", ["tab", "get", context.tabId], expect.any(Object));
-	});
-
-	it("resolves a missing workspace from the explicit current tab, never the focused tab", async () => {
-		const exec = cli();
-		await renameHerdrTab({ exec }, { tabId: context.tabId }, "railway issue");
-		expect(exec.mock.calls.map((call) => call[1][1])).toEqual(["get", "list", "get", "rename"]);
-		expect(exec.mock.calls[1]?.[1]).toEqual(["tab", "list", "--workspace", context.workspaceId]);
-	});
-
-	it.each(["{}", "not json", JSON.stringify({ result: { tabs: [] } })])("does not mutate for an unusable tab list: %s", async (stdout) => {
-		const exec = cli();
-		exec.mockResolvedValueOnce({ code: 0, stdout, stderr: "", killed: false });
-		await renameHerdrTab({ exec }, context, "railway issue");
+		await renameHerdrPane({ exec }, context, "railway issue");
 		expect(exec).toHaveBeenCalledTimes(1);
 	});
 
 	it.each([
-		{ ...tab, tab_id: "workspace:focused" },
-		{ ...tab, workspace_id: "another-workspace" },
-	])("preserves tabs when the current-tab response has mismatched identity: %s", async (current) => {
+		{ code: 1, stdout: "" },
+		{ code: 0, stdout: "not json" },
+		{ code: 0, stdout: "{}" },
+		{ code: 0, stdout: JSON.stringify({ result: { pane: { ...pane, pane_id: "w1:focused" } } }) },
+	])("does not mutate for an unusable or mismatched current-pane read: %j", async ({ code, stdout }) => {
 		const exec = cli();
-		exec.mockResolvedValueOnce({ code: 0, stdout: JSON.stringify({ result: { tabs: [tab] } }), stderr: "", killed: false });
-		exec.mockResolvedValueOnce({ code: 0, stdout: JSON.stringify({ result: { tab: current } }), stderr: "", killed: false });
-		await renameHerdrTab({ exec }, context, "railway issue");
-		expect(exec).toHaveBeenCalledTimes(2);
+		exec.mockResolvedValueOnce({ code, stdout, stderr: "", killed: false });
+		await renameHerdrPane({ exec }, context, "railway issue");
+		expect(exec).toHaveBeenCalledTimes(1);
 	});
 
-	it("does not mutate after a failed current-tab read", async () => {
+	it("skips an empty title without reading Herdr", async () => {
 		const exec = cli();
-		exec.mockResolvedValueOnce({ code: 0, stdout: JSON.stringify({ result: { tabs: [tab] } }), stderr: "", killed: false });
-		exec.mockResolvedValueOnce({ code: 1, stdout: "", stderr: "unavailable", killed: false });
-		await renameHerdrTab({ exec }, context, "railway issue");
-		expect(exec).toHaveBeenCalledTimes(2);
+		await renameHerdrPane({ exec }, context, "");
+		expect(exec).not.toHaveBeenCalled();
 	});
 });
 
@@ -125,7 +104,7 @@ describe("mocked lifecycle surface", () => {
 	it("updates Herdr and Pi separately in one existing call, retaining debounce", async () => {
 		const { mock, ctx, exec, streamSimple, setSessionName } = await surface(true);
 		expect(setSessionName).toHaveBeenCalledWith(summary);
-		expect(exec).toHaveBeenLastCalledWith("herdr", ["tab", "rename", context.tabId, "[w] railway issue"], expect.any(Object));
+		expect(exec).toHaveBeenLastCalledWith("herdr", ["pane", "rename", context.paneId, "[w] railway issue"], expect.any(Object));
 		await mock.fireLifecycle("agent_end", {}, ctx);
 		expect(streamSimple).toHaveBeenCalledTimes(1);
 	});
@@ -138,8 +117,8 @@ describe("mocked lifecycle surface", () => {
 		expect(getHerdrContext()).toBeUndefined();
 	});
 
-	it("requires an explicit current-tab identifier", () => {
-		vi.stubEnv("HERDR_TAB_ID", "");
+	it("requires an explicit current-pane identifier", () => {
+		vi.stubEnv("HERDR_PANE_ID", "");
 		expect(getHerdrContext()).toBeUndefined();
 	});
 });
