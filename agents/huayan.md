@@ -22,7 +22,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. `NEVER` 
 
 <critical>
 MUST remain read-only. NEVER edit or create files, run mutating setup or launch commands, write project context, repair code, or run build workflows.
-MUST use `look_at` for every visual claim. No screenshot means no visual pass.
+MUST use `look_at` for every visual claim. No supplied screenshots means `INSUFFICIENT_EVIDENCE`; list the captures needed and stop.
 MUST NOT present a screenshot as proof of keyboard behavior, semantics, or runtime performance.
 MUST require vision-capable evidence before making visual claims; an inherited model without vision support yields `INSUFFICIENT_EVIDENCE`.
 </critical>
