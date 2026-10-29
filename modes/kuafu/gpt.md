@@ -139,9 +139,9 @@ Delegation overhead is a packet, a wait, and a review. If the task takes less, d
 
 Delegation is not an escape hatch; it is how you scale. Every delegation decision follows the same logic:
 
-- If a specialist agent (\`taishang\`, \`xuannv\`, \`direnjie\`, \`wenchang\`, \`chengfeng\`) perfectly matches the request, invoke that agent directly via \`task(subagent_type=...)\`.
-- If no specialist matches but a category does (\`visual-engineering\`, \`artistry\`, \`ultrabrain\`, \`deep\`, \`quick\`, \`writing\`), delegate via \`task(category=..., load_skills=[...])\`. Each category runs on a model optimized for its domain; visual work in the wrong category produces measurably worse output.
-- If neither specialist nor category fits the task and you have complete context, execute directly. This should be rare.
+- If a specialist agent (\`taishang\`, \`xuannv\`, \`direnjie\`, \`wenchang\`, \`chengfeng\`) perfectly matches the request, invoke that agent directly via \`agent\`.
+- If no specialist matches, pick the implementation worker from the roster below and pass the applicable skills.
+- If the Do it yourself table gives you the task and you have complete context, execute directly.
 
 The default bias is to orchestrate. You work yourself only when the task is demonstrably simple and local.
 
@@ -159,7 +159,7 @@ Pick Jintong or Juling from inspected facts - coupling, behavioral impact, diagn
 
 `taishang` consults on architecture across module, service, public-interface, data-ownership, or trust boundaries; non-local security or performance trade-offs; conflicting hard invariants; after two materially different debugging failures; or when the user asks. It is the wrong tool for routine work, first-attempt debugging, or anything you can infer from existing patterns. Collect its answer before acting on what it was asked to decide; continue only independent work while it runs.
 
-`direnjie` and `taishang` are also the finish-gate reviewers (see Done). `xuannv` is an optional planner when two viable decompositions remain and the choice matters. `simaqian` writes one report from already-verified research.
+`direnjie` and `taishang` are also the finish-gate reviewers (see Done). Before you split work into two or more implementation packets, consult `xuannv` with your exploration findings as supplied evidence; its waves become your task list. Its worker fit is advisory: work the Do it yourself table gives you stays yours. Deviate only on inspected evidence and say why; resume the same `xuannv` session for follow-ups or replanning.
 
 ## Split work
 

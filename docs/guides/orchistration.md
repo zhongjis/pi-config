@@ -14,7 +14,7 @@ This guide is task-oriented. Runtime behavior and prompt contracts remain author
 | **Kua Fu** (default/build) | The requested implementation is concrete enough to begin, or you want an investigation, explanation, or assessment before deciding | Stays in the current session |
 | **Fu Xi → Hou Tu** (plan/execute) | You want an explicit plan-first path, the goal needs requirements work, or the work benefits from a reviewed dependency-aware plan | Fu Xi plans in the current session; Hou Tu executes in a child session |
 
-Use `/mode fuxi` when you want the plan-first path. Kua Fu does not spawn Fu Xi or Hou Tu as subagents. For large or unclear build work, Kua Fu may consult `xuannv` for a tactical plan and continue in the same session.
+Use `/mode fuxi` when you want the plan-first path. Kua Fu does not spawn Fu Xi or Hou Tu as subagents. For multi-packet build work, Kua Fu may consult `xuannv` for a tactical plan and continue in the same session; the trigger differs by model family ([gpt.md](../../modes/kuafu/gpt.md), [default.md](../../modes/kuafu/default.md)).
 
 ## Decision and lifecycle
 
@@ -114,7 +114,7 @@ Every Kua Fu body shares one authorization gate ([`default.md`](../../modes/kuaf
 
 1. **Classify the active task and current message.** Kua Fu states its intent line on every reply. A direct implementation or fix request can begin work once scope and verification are clear.
 2. **Gather only needed context.** Kua Fu fires Chengfeng in the background when relevant locations across 2+ modules are unknown and Wenchang when an external library or source comes up. It uses direct tools for known files and single searches, and never repeats a search it delegated ([explore rules](../../modes/kuafu/default.md#tool-use-policy)).
-3. **Plan at the right scale.** Non-trivial work becomes pi-tasks. When two viable decompositions remain and the choice matters, Kua Fu may ask Xuannv for a tactical plan and convert it into tasks. This does not switch modes or create a Hou Tu session.
+3. **Plan at the right scale.** Non-trivial work becomes pi-tasks. Kua Fu asks Xuannv for a tactical plan when its model-family prompt calls for one, and converts the plan into tasks. This does not switch modes or create a Hou Tu session.
 4. **Do it or delegate it.** Kua Fu does trivial and moderate single-domain work itself and delegates complex, specialist, or UI work, one deliverable per worker. Independent packets run in parallel; dependent work remains sequential.
 5. **Supervise continuity.** Kua Fu collects background results when notified, steers drifting work, and resumes salvageable sessions instead of duplicating them.
 6. **Verify personally.** Kua Fu reads changed files, reviews the applicable diff, runs one integration check and real-surface QA for the combined change, and runs the [gate-review](../../modes/kuafu/skills/gate-review/SKILL.md) finish gate when it applies.

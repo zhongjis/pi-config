@@ -108,13 +108,16 @@ Frontend/web visual-engineering implementation; visual/browser QA stays with the
 Quick, deterministic, low-risk, naturally single-file implementation with no unresolved design.
 
 **Taishang 太上**:
-Read-only architecture/debugging consult and plan-compliance audit only; does not do code-quality review.
+Read-only architecture/debugging consult and plan-compliance audit only; does not do code-quality review (Oracle-style).
 
 **Yan Luo 阎罗**:
 Final high-accuracy plan reviewer used in Plan mode (Momus-style).
 
 **Di Renjie 狄仁杰**:
 Plan gap analyzer used in Plan mode — catches hidden assumptions and execution risks (Metis-style).
+
+**Xuannv 九天玄女**:
+Read-only tactical planning advisor Kua Fu consults for work decomposition; returns plan text the parent owns (fills the slot of Sisyphus's Plan Agent, OpenCode's built-in `plan`).
 
 **Sima Qian 司马迁**:
 Tool-free report writer that writes one cited report from supplied research evidence; the deep-research writer.

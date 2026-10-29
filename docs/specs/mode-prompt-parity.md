@@ -55,6 +55,7 @@ Evidence:
 - `sisyphus/gpt-5-5.ts` is a complete GPT-native orchestration prompt, not a reminder fragment.
 - `sisyphus/gemini.ts` is corrective Gemini guidance for tool use, delegation, intent gate, and verification.
 - `sisyphus/claude-opus-5.ts` gates delegation by domain and size, yet keeps explore agents reachable through Phase 0 key triggers (`explore.ts`, `librarian.ts` `keyTrigger`) and the explore use/avoid lists in `dynamic-agent-core-sections.ts` (verified at commit `5275771d`). Kua Fu's key triggers, explore rules, and Delegation Trust Rule copy that wording.
+- `dynamic-agent-core-sections.ts` `buildNonClaudePlannerSection` makes every non-Claude Sisyphus consult the Plan Agent (OpenCode `plan`, demoted with Prometheus's model) before multi-step work; Claude variants plan inline. Kua Fu's `gpt.md` adapts this as a `xuannv` consult before 2+ implementation packets, without the ambiguity-to-planner rule or "Follow it".
 
 Local invariants before edits:
 
