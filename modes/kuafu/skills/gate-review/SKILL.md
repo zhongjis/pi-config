@@ -19,6 +19,8 @@ Each axis runs in its own agent so one axis cannot mask the other. A change can 
 
 Manual QA comes first. If QA fails, fix it before review; reviewing code that does not work wastes the reviewers.
 
+Before launching reviewers, establish passing evidence for applicable repository type checks and authored-file size gates across all changed source, test and documentation files. Staged-only gates must include every intended file. Resolve failures and required splits before review. Reuse passing evidence that still covers the final diff; do not rerun checks merely for this gate.
+
 ## Steps
 
 1. **Pin the base**: the commit where the task started. The diff command is `git diff <base>`, which covers commits and uncommitted edits; run `git add -N` on new files first so they show up. Confirm the diff is non-empty.
