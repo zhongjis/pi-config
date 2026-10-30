@@ -26,8 +26,8 @@ Accepted local mappings (from omo `v4.16.3`):
 
 - [`agents/chengfeng.md`](../../agents/chengfeng.md) maps omo Explorer-style read-only reconnaissance to Chengfeng, preserves Pi CodeGraph/LSP/literal-search contracts.
 - [`agents/wenchang.md`](../../agents/wenchang.md) maps omo Librarian-style external research to Wenchang, preserves opened-source citation safeguards.
-- [`agents/jintong.md`](../../agents/jintong.md) is the implementation-worker mapping.
-- [`agents/juling.md`](../../agents/juling.md) is the complex implementation-worker mapping.
+- [`agents/jintong/default.md`](../../agents/jintong/default.md) is the implementation-worker mapping.
+- [`agents/juling/default.md`](../../agents/juling/default.md) is the complex implementation-worker mapping.
 
 Model chains live in each agent's frontmatter.
 
