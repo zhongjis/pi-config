@@ -33,4 +33,4 @@ competing skills and worker routing.
 - [`extensions/github-fs/index.ts`](../../extensions/github-fs/index.ts) — hooks and prompt section
 - [`extensions/github-fs/url.ts`](../../extensions/github-fs/url.ts) — pasted GitHub URL translation
 - [`extensions/subagents/src/agent-runner.ts`](../../extensions/subagents/src/agent-runner.ts) — subagent extension loading and binding
-- [`agents/wenchang.md`](../../agents/wenchang.md) — worker tool scoping
+- [`agents/wenchang/default.md`](../../agents/wenchang/default.md) — worker tool scoping

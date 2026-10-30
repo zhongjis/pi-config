@@ -22,16 +22,27 @@ Local baselines:
 
 ## Agent Mappings
 
-Accepted local mappings (from omo `v4.16.3`):
+Accepted agent adaptations use [upstream source at `9eaaedfb24e421c29561767b143ec1ce9ae08570`](https://github.com/code-yeongyu/oh-my-openagent/tree/9eaaedfb24e421c29561767b143ec1ce9ae08570/packages/omo-opencode/src). The mode baselines above are separate.
 
-- [`agents/chengfeng.md`](../../agents/chengfeng.md) maps omo Explorer-style read-only reconnaissance to Chengfeng, preserves Pi CodeGraph/LSP/literal-search contracts.
-- [`agents/wenchang.md`](../../agents/wenchang.md) maps omo Librarian-style external research to Wenchang, preserves opened-source citation safeguards.
-- [`agents/jintong/default.md`](../../agents/jintong/default.md) is the implementation-worker mapping.
-- [`agents/juling/default.md`](../../agents/juling/default.md) is the complex implementation-worker mapping.
+| Local definition | Upstream role or category | GPT source |
+| --- | --- | --- |
+| [Chengfeng](../../agents/chengfeng/default.md) | Explore | Shared `agents/explore.ts` prompt |
+| [Wenchang](../../agents/wenchang/default.md) | Librarian | Shared `agents/librarian.ts` prompt |
+| [Taishang](../../agents/taishang/default.md) | Oracle | `ORACLE_GPT_5_5_PROMPT` in `agents/oracle.ts` |
+| [Direnjie](../../agents/direnjie/default.md) | Metis | Shared `agents/metis.ts` prompt |
+| [Yanluo](../../agents/yanluo/default.md) | Momus | `agents/momus-gpt-5-6.ts` |
+| [Guangguang](../../agents/guangguang/default.md) | Quick | Junior GPT execution guidance with quick-task boundaries |
+| [Jintong](../../agents/jintong/default.md) | Unspecified-low | Junior GPT execution guidance with general-worker boundaries |
+| [Juling](../../agents/juling/default.md) | Unspecified-high | Junior GPT execution guidance with coupled-correctness boundaries |
+| [Yunu](../../agents/yunu/default.md) | Visual-engineering | Junior GPT execution guidance with local design and rendered-check contracts |
+| [Cangjie](../../agents/cangjie/default.md) | Writing | Writing traits in `tools/delegate-task/kimi-categories.ts` |
+| [Huayan](../../agents/huayan/default.md) | Artistry | Artistry traits in `tools/delegate-task/google-categories.ts`, constrained to read-only visual review |
+| [Xuannv](../../agents/xuannv/default.md) | Local tactical planning | Local-only GPT authoring |
+| [Simaqian](../../agents/simaqian/default.md) | Local evidence synthesis | Local-only GPT authoring |
+
+Junior GPT execution guidance lives in `agents/sisyphus-junior/gpt-5-5.ts`. Shared source prompts and category traits are not upstream GPT-specific variants. Each local `gpt.md` preserves its role's authority, tool access, evidence standards, and output contracts; source mappings do not grant upstream permissions. Deep-low, deep-high, and ultrabrain have no dedicated local adaptations.
 
 Model chains live in each agent's frontmatter.
-
-Audit-only findings for [`agents/yanluo.md`](../../agents/yanluo.md) and [`modes/kuafu/gpt.md`](../../modes/kuafu/gpt.md) are not applied changes and are intentionally excluded from the accepted mapping baseline.
 
 ## Local Construction Semantics
 
