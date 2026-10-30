@@ -15,6 +15,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 - [Subagents custom agents](../extensions/subagents/README.md#custom-agents) owns the per-name definition loading order and fallback warnings.
 - You MUST preserve role boundaries in the [orchestration guide](../docs/guides/agent-orchestration.md).
 - You MUST align tool allowlists with each agent's stated role.
+- Implementation workers MUST remain non-delegating; they investigate with their own tools and return unresolved research needs to the orchestrator.
 - Read-only consultants MUST NOT receive mutating tools; bash requires runtime guarding.
 - `delegation` on a Subagent enables only `delegate_research`; its `+` rules MUST name read-only research Subagents; rules that resolve to none disable nesting and warn the user ([ADR 0007](../docs/adr/0007-nested-research-through-a-root-manager-bridge.md)).
 - `extensions:` MUST list only extensions that provide the agent's tools or shape them: the bash stack (`better-bash-tool`, `rtk`, `direnv`) for agents with `bash`, `filter-outputs` for every agent with tools, and `profiles` for agents with external research tools. NEVER list the runner-injected `smart-tool-guards`, `session-local`, or `fast`.
