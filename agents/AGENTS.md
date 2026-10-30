@@ -29,6 +29,7 @@ Callable Subagent definitions and their bounded delegation contracts.
 ## Work Guidance
 
 - Implementation workers [Guangguang](guangguang/default.md), [Jintong](jintong/default.md), [Juling](juling/default.md), and [Yunu](yunu/default.md) use directory definitions: `default.md` owns frontmatter and the Claude/default body; body-only `gpt.md` is independently authored against the same contracts, not a mechanical translation. Preserve each worker's routing, workflow, and exact report format across both families.
+- GPT worker bodies closely adapt the [pinned GPT execution guidance](https://github.com/code-yeongyu/oh-my-openagent/blob/9eaaedfb24e421c29561767b143ec1ce9ae08570/packages/omo-opencode/src/agents/sisyphus-junior/gpt-5-5.ts), scaled to each worker. Preserve substantive investigation, independent-call parallelism, persistence, scope, surface validation, and sparse parent communication while keeping local authorization, available tools, recovery, evidence reuse, and report contracts authoritative.
 - Shared worker contracts cover refusal, verification, termination, and style: denials remain final for the worker and parent; completion requires acceptance evidence and readback, with unavailable checks disclosed. Reuse valid passing evidence and stop after success; check counts never establish completion.
 - You SHOULD keep routing descriptions specific to worker capability.
 - [Wenchang](wenchang.md) uses guarded Bash for Lark document search/read and loads the relevant installed Lark skills; keep its Lark instructions limited to that workflow.
