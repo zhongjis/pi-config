@@ -40,11 +40,11 @@ import { isPaneHostEnabled } from "./graph/pane/controller.js";
 import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pane/manager.js";
 import { graphSkillPath } from "./graph/tool-description.js";
 import { createNotificationCoordinator } from "./notification-coordinator.js";
-import { registerSubagentNotificationRenderer } from "./notification-rendering.js";
+import { isNotificationDetails, registerSubagentNotificationRenderer } from "./notification-rendering.js";
 import { currentTargets } from "./research-delegation.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged, type ToolDescriptionMode } from "./settings.js";
 import { startBackgroundSupervision } from "./supervision-loop.js";
-import { type AgentRecord, type JoinMode, type NotificationDetails } from "./types.js";
+import { type AgentRecord, type JoinMode } from "./types.js";
 import { type AgentMonitorDeps, showAgentMonitor } from "./ui/agent-monitor.js";
 import {
   type AgentActivity,
@@ -178,8 +178,8 @@ export default function (pi: ExtensionAPI) {
   pi.on("message_start", (event, ctx) => {
     const message = event.message;
     if (isTui(ctx) || !ctx.hasUI || message.role !== "custom" || message.customType !== "subagent-notification") return;
-    const details = message.details as NotificationDetails | undefined;
-    if (!details) return;
+    const details = message.details;
+    if (!isNotificationDetails(details)) return;
     const reports = [details, ...(details.others ?? [])].map(report => `${report.description} (${report.status})`);
     ctx.ui.notify(`Subagent update: ${reports.join(", ")}`, "info");
   });

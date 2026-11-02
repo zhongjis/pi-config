@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { boot } from "./graph-run-registration.fixture.js";
 
+const stats = { toolUses: 1, turnCount: 1, totalTokens: 10, durationMs: 5, resultPreview: "done" };
 const followUp = {
   type: "message_start",
   message: {
     role: "custom", customType: "subagent-notification", display: true, content: "done",
-    details: { id: "a1", description: "scan repo", status: "completed", others: [{ id: "a2", description: "read docs", status: "error" }] },
+    details: { id: "a1", description: "scan repo", status: "completed", ...stats, others: [{ id: "a2", description: "read docs", status: "error", ...stats }] },
   },
 };
 

@@ -62,7 +62,7 @@ function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isNotificationDetails(value: unknown): value is NotificationDetails {
+export function isNotificationDetails(value: unknown): value is NotificationDetails {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const detail = value as Record<string, unknown>;
   if (
