@@ -61,5 +61,5 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - [ulw](ulw/AGENTS.md) — opt-in ultrawork prompt injection and GPT variant contracts.
 - [filter-outputs](filter-outputs/AGENTS.md) — tool-output redaction and credential-store matching.
 - [ask](ask/AGENTS.md) — structured user-decision dialog.
-- [smart-sessions](smart-sessions/AGENTS.md) — session summaries and Herdr title ownership.
+- [smart-sessions](smart-sessions/AGENTS.md) — session summaries and Herdr or Orca title ownership.
 - [thinking-steps](thinking-steps/AGENTS.md) — structured thinking display and Markdown preservation.

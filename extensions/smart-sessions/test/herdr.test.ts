@@ -21,6 +21,7 @@ beforeEach(() => {
 	vi.stubEnv("PI_CODING_AGENT_DIR", "/nonexistent-smart-sessions-test");
 	vi.stubEnv("HERDR_ENV", "1");
 	vi.stubEnv("HERDR_PANE_ID", context.paneId);
+	vi.stubEnv("ORCA_TERMINAL_HANDLE", "");
 });
 afterEach(() => vi.unstubAllEnvs());
 

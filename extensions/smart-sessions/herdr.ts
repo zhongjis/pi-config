@@ -1,7 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
+import { detectPaneHost } from "../lib/pane-host.js";
 
+const TerminalInfo = Type.Object({
+	result: Type.Object({ terminal: Type.Object({ paneTitle: Type.Optional(Type.String()) }) }),
+});
 const SummaryOutput = Type.Object({ summary: Type.String({ minLength: 1 }), title: Type.String() });
 const PaneInfo = Type.Object({
 	result: Type.Object({ pane: Type.Object({ pane_id: Type.String(), label: Type.Optional(Type.String()) }) }),
@@ -10,12 +14,31 @@ const PaneInfo = Type.Object({
 type HerdrContext = { readonly paneId: string };
 
 export function getHerdrContext(): HerdrContext | undefined {
-	if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) return undefined;
-	return { paneId: process.env.HERDR_PANE_ID };
+	const paneId = process.env.HERDR_PANE_ID;
+	return detectPaneHost() === "herdr" && paneId ? { paneId } : undefined;
+}
+
+type OrcaContext = { readonly handle: string };
+
+export function getOrcaContext(): OrcaContext | undefined {
+	const handle = process.env.ORCA_TERMINAL_HANDLE;
+	return detectPaneHost() === "orca" && handle ? { handle } : undefined;
+}
+
+export type PaneContext =
+	| ({ readonly host: "herdr" } & HerdrContext)
+	| ({ readonly host: "orca" } & OrcaContext);
+
+/** The host pane to title, if the session runs inside Herdr or Orca. */
+export function getPaneContext(): PaneContext | undefined {
+	const herdr = getHerdrContext();
+	if (herdr) return { host: "herdr", ...herdr };
+	const orca = getOrcaContext();
+	return orca && { host: "orca", ...orca };
 }
 
 export const HERDR_OUTPUT_INSTRUCTIONS = [
-	"Return JSON only: {\"summary\": \"the one-line session summary\", \"title\": \"a separate meaningful Herdr pane title\"}.",
+	"Return JSON only: {\"summary\": \"the one-line session summary\", \"title\": \"a separate meaningful pane title\"}.",
 	"Keep the summary as requested above. Give the title at most four words, counting whitespace and hyphens as word separators.",
 	"The title must capture the current problem, not merely truncate the summary. Do not add a prefix to the title.",
 ].join("\n");
@@ -46,4 +69,21 @@ export async function renameHerdrPane(pi: Pick<ExtensionAPI, "exec">, context: H
 	const { label } = info.result.pane;
 	if (label !== undefined && !label.startsWith("[w]")) return;
 	await run(["rename", context.paneId, `[w] ${title}`]);
+}
+
+/** Orca equivalent: `paneTitle` is present only when user- or tool-set, so absence means unlabelled. */
+export async function renameOrcaPane(pi: Pick<ExtensionAPI, "exec">, context: OrcaContext, title: string): Promise<void> {
+	if (!title) return;
+	const run = (args: string[]) => pi.exec("orca", ["terminal", ...args], { timeout: 3000 });
+	const current = await run(["show", "--terminal", context.handle, "--json"]);
+	if (current.code !== 0) return;
+	const info = parseJson(current.stdout);
+	if (!Check(TerminalInfo, info)) return;
+	const { paneTitle } = info.result.terminal;
+	if (paneTitle !== undefined && !paneTitle.startsWith("[w]")) return;
+	await run(["set-pane-title", "--terminal", context.handle, "--title", `[w] ${title}`]);
+}
+
+export function renamePane(pi: Pick<ExtensionAPI, "exec">, context: PaneContext, title: string): Promise<void> {
+	return context.host === "herdr" ? renameHerdrPane(pi, context, title) : renameOrcaPane(pi, context, title);
 }

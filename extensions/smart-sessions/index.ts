@@ -4,7 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "../lib/thinking-level.js";
 import { resolveToolModelCandidates } from "../lib/tool-models.js";
-import { getHerdrContext, HERDR_OUTPUT_INSTRUCTIONS, parseHerdrSummary, renameHerdrPane } from "./herdr.js";
+import { getPaneContext, HERDR_OUTPUT_INSTRUCTIONS, parseHerdrSummary, renamePane } from "./herdr.js";
 
 // -- Configuration --------------------------------------------------------
 
@@ -336,7 +336,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 			].join("\n");
 		}
 
-		const herdr = getHerdrContext();
+		const herdr = getPaneContext();
 		if (herdr) prompt += `\n\n${HERDR_OUTPUT_INSTRUCTIONS}`;
 
 		pendingLLMCall = true;
@@ -406,7 +406,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 					lastError = "";
 					// Update session name so it shows in /resume
 					pi.setSessionName(lastSummary);
-					if (herdr && herdrSummary) await renameHerdrPane(pi, herdr, herdrSummary.title);
+					if (herdr && herdrSummary) await renamePane(pi, herdr, herdrSummary.title);
 					// Verbose notification (guard: ctx may be stale after session replacement/reload)
 					if (config.verbose && changed) {
 						try {

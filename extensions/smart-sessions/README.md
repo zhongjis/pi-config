@@ -10,13 +10,13 @@ Maintains an LLM-generated one-line session summary as the session name, so acti
 - License: MIT
 - Adapted: lives at `extensions/smart-sessions/`; notifications use the Pi-supported `info` level instead of upstream `success`.
 
-## Herdr Pane Titles
+## Herdr and Orca Pane Titles
 
-Inside Herdr, the existing summary request also generates a separate meaningful pane title; the Pi session summary stays independent. Titles use `[w] ` followed by at most four words, counting whitespace and hyphens as separators.
+Inside Herdr or Orca, the existing summary request also generates a separate meaningful pane title; the Pi session summary stays independent. Titles use `[w] ` followed by at most four words, counting whitespace and hyphens as separators.
 
-Only panes with no label, or whose current label starts with `[w]`, are eligible. Every other label is preserved, including other bracketed prefixes and ordinary custom names. Removing or replacing `[w]` opts out; clearing the label opts back in.
+Only panes with no label (Orca: no `paneTitle`), or whose current label starts with `[w]`, are eligible. Every other label is preserved, including other bracketed prefixes and ordinary custom names. Removing or replacing `[w]` opts out; clearing the label opts back in.
 
-Updates follow the existing summary timing and debounce, not startup. [herdr.ts](herdr.ts) checks the explicit current pane's (`HERDR_PANE_ID`) live label immediately before renaming; [index.ts](index.ts) owns the shared summary request. Outside Herdr, summaries follow the plain one-line path.
+Updates follow the existing summary timing and debounce, not startup. [herdr.ts](herdr.ts) picks the host through [`detectPaneHost`](../lib/pane-host.ts) and checks the current pane's (`HERDR_PANE_ID` or `ORCA_TERMINAL_HANDLE`) live label immediately before renaming; [index.ts](index.ts) owns the shared summary request. Outside Herdr and Orca, summaries follow the plain one-line path.
 
 ## Entry Points
 
