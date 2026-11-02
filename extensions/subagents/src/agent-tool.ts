@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { type AgentSession, defineTool, type ExtensionAPI, type ExtensionContext, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { formatAccessRules } from "../../lib/active-tools.js";
+import { isTui } from "../../lib/mode.js";
 import { SPINNER } from "../../lib/widget-style.js";
 import type { AgentManager } from "./agent-manager.js";
 import { createAgentResultBuilder, formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
@@ -10,6 +11,7 @@ import { SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
 import { getAgentConfig, getAvailableTypes } from "./agent-types.js";
 import { DELEGATION_POLICY_DENIED, formatDelegationPolicyDenial, type ResolvedDelegationPolicy } from "./delegation-policy.js";
 import { prepareAgentInvocation, resolveJoinMode } from "./invocation-config.js";
+import type { NativePresentation } from "./native-presentation.js";
 import type { AgentPresentation, createNotificationCoordinator } from "./notification-coordinator.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "./output-file.js";
 import { SUBAGENT_COMMUNICATION_CONTRACT } from "./prompts.js";
@@ -31,6 +33,7 @@ const BACKGROUND_GUIDANCE = "Do not end your turn while this agent runs: continu
 /** The Agent execution host; settings remain activation-owned and live. */
 export interface AgentToolHost {
   readonly pi: ExtensionAPI;
+  readonly nativePresentation: NativePresentation;
   readonly manager: AgentManager;
   readonly settings: Readonly<Required<Pick<SubagentsSettings, "defaultJoinMode" | "scopeModels" | "outputTranscript" | "toolDescriptionMode" | "showCost">>>;
   readonly reloadCustomAgents: (ctx?: ExtensionContext) => void;
@@ -241,6 +244,14 @@ Terse command-style prompts produce shallow, generic work.
       reloadCustomAgents(ctx);
       const rawType = params.subagent_type as SubagentType;
       const delegation = resolveDelegation(ctx, rawType);
+      let presentedRecord: AgentRecord | undefined;
+      const background = params.resume ? params.run_in_background === true
+        : (getAgentConfig(delegation.decision.requestedType)?.runInBackground ?? params.run_in_background ?? false);
+      return host.nativePresentation({
+        id: toolCallId, ctx, signal, onUpdate, enabled: !background,
+        type: delegation.decision.requestedType, description: params.description,
+        record: () => presentedRecord,
+      }, async (onUpdate) => {
       if (!delegation.decision.allowed) {
         return textResult(
           formatDelegationPolicyDenial(delegation, rawType),
@@ -297,6 +308,7 @@ Terse command-style prompts produce shallow, generic work.
           return textResult((record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause) + workNotesSuffix(record), details);
         };
         const existing = manager.getRecord(resumeId);
+        presentedRecord = existing;
         if (!existing) {
           if (!manager.getEvicted(resumeId)) return textResult(`Agent not found: "${resumeId}". It may have been cleaned up.`);
           // Evicted from the live map: reopen its persisted session under the same id.
@@ -314,6 +326,7 @@ Terse command-style prompts produce shallow, generic work.
             },
           });
           const restored = manager.getRecord(resumeId);
+          presentedRecord = restored;
           if (restored && (getAgentConfig(restored.type)?.outputTranscript ?? settings.outputTranscript)) {
             restored.outputFile = createOutputFilePath(ctx.cwd, resumeId, ctx.sessionManager.getSessionId());
           }
@@ -483,10 +496,10 @@ Terse command-style prompts produce shallow, generic work.
           }
         },
       };
-      const spinnerInterval = setInterval(() => {
+      const spinnerInterval = isTui(ctx) ? setInterval(() => {
         spinnerFrame++;
         streamUpdate();
-      }, 80);
+      }, 80) : undefined;
       streamUpdate();
       let record: AgentRecord;
       let checkIn: number | undefined;
@@ -505,6 +518,7 @@ Terse command-style prompts produce shallow, generic work.
         }, (fgAgentId) => {
           fgId = fgAgentId;
           const fgRec = manager.getRecord(fgAgentId);
+          presentedRecord = fgRec;
           attachTranscript(fgRec, fgAgentId);
         }, true);
         record = fgResult.record;
@@ -532,6 +546,7 @@ Terse command-style prompts produce shallow, generic work.
         (record.result?.trim() || "No output.") + getForegroundOutcomeNote(record.status, record.interruptionCause) + workNotesSuffix(record),
         details,
       );
+      });
     },
   });
   // Built on first use so sessions that never place the roster in the prompt render the description once.

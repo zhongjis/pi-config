@@ -167,6 +167,7 @@ export const isGuardedBashType = (type: string) => GUARDED_CANONICAL_AGENT_TYPES
  */
 export const SUBAGENT_TOOL_NAMES = {
   AGENT: "agent",
+  PRESENTATION: "subagent",
   GET_AGENT_RESULT: "get_agent_result",
   RESOLVE_GRAPH_GATE: "resolve_agent_graph_gate",
   STEER: "steer_subagent",

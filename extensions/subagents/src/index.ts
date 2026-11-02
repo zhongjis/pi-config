@@ -3,6 +3,7 @@ import { createAgentTool, formatTypeList, type RosterPlacement } from "./agent-t
 import { createBackgroundStop } from "./background-stop.js";
 import { createGraphRuntime } from "./graph/graph-runtime.js";
 import { runReplayCommand } from "./graph/replay-command.js";
+import { createNativePresentation } from "./native-presentation.js";
 import { createResultTools } from "./result-tools.js";
 import { createAgentsMenu } from "./ui/agents-menu.js";
 import { createSettingsMenu } from "./ui/settings-menu.js";
@@ -530,9 +531,10 @@ export default function (pi: ExtensionAPI) {
     (event, payload) => pi.events.emit(event, payload),
   );
 
+  const nativePresentation = createNativePresentation(pi);
   const agentTool = createAgentTool(
     {
-      pi, manager, reloadCustomAgents, resolveDelegation,
+      pi, manager, reloadCustomAgents, resolveDelegation, nativePresentation,
       settings: {
         get defaultJoinMode() { return defaultJoinMode; },
         get scopeModels() { return scopeModelsEnabled; },
@@ -576,6 +578,7 @@ export default function (pi: ExtensionAPI) {
       { activity: agentActivity.get(record.id) },
     ),
     cancelNudge: notifications.consume,
+    nativePresentation,
   }, graphRuntime);
   pi.registerTool(resultTools.getAgentResult);
   pi.registerTool(resultTools.steer);

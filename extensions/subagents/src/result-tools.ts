@@ -8,6 +8,7 @@ import { formatAgentConversation, getAgentConversation, resolveOwnedSessionFile,
 import { extractText } from "./context.js";
 import { isGraphRunId } from "./graph/graph-snapshot-path.js";
 import type { createGraphResultObserver } from "./graph/result-observer.js";
+import type { NativePresentation } from "./native-presentation.js";
 import { getStatusNote } from "./status-note.js";
 import { renderGetAgentResult, renderGetAgentResultCall, renderSteerSubagentCall, renderSteerSubagentResult } from "./tool-rendering.js";
 import { turnCheckInNotice } from "./turn-ceiling.js";
@@ -18,6 +19,7 @@ import { workNotesRelativePath, workNotesSuffix } from "./work-notes.js";
 
 /** Retrieval reads live report state and suppresses held completion delivery. */
 interface ResultDelivery {
+  readonly nativePresentation?: NativePresentation;
   readonly details: (record: AgentRecord) => AgentDetails;
   readonly cancelNudge: (id: string, executionId?: string) => void;
 }
@@ -188,11 +190,20 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
       wait: Type.Optional(Type.Boolean({ description: "Wait for completion or an escalated decision. Cancellation stops only this wait." })),
       verbose: Type.Optional(Type.Boolean({ description: "Include an independent agent's conversation." })),
     }),
-    execute: async (_id, params, signal, _onUpdate, ctx) => {
+    execute: async (id, params, signal, onUpdate, ctx) => {
       if (isGraphRunId(params.run_id)) return graphs.retrieve(params.run_id, params.wait === true, signal);
-      const result = await retrieveAgent({ agent_id: params.run_id, wait: params.wait, verbose: params.verbose }, ctx, signal);
-      const details = result.details;
-      return { ...result, details: { ...(details && typeof details === "object" ? details : {}), kind: "agent" as const, run_id: params.run_id } };
+      const retrieve = async () => {
+        const result = await retrieveAgent({ agent_id: params.run_id, wait: params.wait, verbose: params.verbose }, ctx, signal);
+        const details = result.details;
+        return { ...result, details: { ...(details && typeof details === "object" ? details : {}), kind: "agent" as const, run_id: params.run_id } };
+      };
+      if (!delivery.nativePresentation) return retrieve();
+      const record = manager.getRecord(params.run_id);
+      return delivery.nativePresentation({
+        id, ctx, signal, onUpdate, enabled: params.wait === true,
+        type: record?.type ?? "agent", description: record?.description ?? params.run_id,
+        record: () => manager.getRecord(params.run_id),
+      }, retrieve);
     },
   });
   return { getAgentResult, steer };
