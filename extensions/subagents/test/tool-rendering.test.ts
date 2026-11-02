@@ -6,6 +6,7 @@ import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import subagentsExtension from "../src/index.js";
 import type { AgentDetails } from "../src/ui/agent-format.js";
+import { chainOn } from "./helpers/lifecycle.js";
 
 type ToolResult = {
   content: ReadonlyArray<{ readonly type: "text"; readonly text: string }>;
@@ -86,7 +87,7 @@ beforeAll(() => {
     registerTool: vi.fn((tool: ToolDefinition) => tools.set(tool.name, tool)),
     registerCommand: vi.fn(),
     registerFlag: vi.fn(),
-    on: vi.fn((event: string, handler: (...args: unknown[]) => unknown) => lifecycle.set(event, handler)),
+    on: vi.fn(chainOn(lifecycle)),
     events: { emit: vi.fn(), on: vi.fn(() => vi.fn()) },
     appendEntry: vi.fn(),
     sendMessage: vi.fn(),

@@ -29,6 +29,7 @@ vi.mock("../src/graph/graph-runtime.js", () => ({
 import { AgentManager } from "../src/agent-manager.js";
 import subagentsExtension from "../src/index.js";
 import { FleetList } from "../src/ui/fleet-list.js";
+import { chainOn } from "./helpers/lifecycle.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 type LifecycleHandler = (...args: unknown[]) => unknown;
@@ -40,7 +41,7 @@ function makePi() {
     registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((tool: { name: string }) => tools.set(tool.name, tool)),
     registerCommand: vi.fn(),
-    on: vi.fn((event: string, handler: LifecycleHandler) => lifecycle.set(event, handler)),
+    on: vi.fn(chainOn(lifecycle)),
     events: { emit: vi.fn(), on: vi.fn(() => vi.fn()) },
     appendEntry: vi.fn(),
     sendMessage: vi.fn(),

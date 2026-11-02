@@ -27,6 +27,7 @@ vi.mock("../src/agent-runner.js", async (importOriginal) =>
 import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 import { fakeSession, opened } from "./helpers/session-seam.js";
+import { chainOn } from "./helpers/lifecycle.js";
 
 const RPC_CHANNELS = ["subagents:rpc:ping", "subagents:rpc:spawn", "subagents:rpc:stop"] as const;
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
@@ -39,7 +40,7 @@ function makePi() {
     registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
-    on: vi.fn((event: string, handler: any) => lifecycle.set(event, handler)),
+    on: vi.fn(chainOn(lifecycle)),
     events: {
       emit: vi.fn(),
       on: vi.fn((event: string, handler: any) => {

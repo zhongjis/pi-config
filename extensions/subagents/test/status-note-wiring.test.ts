@@ -26,6 +26,7 @@ vi.mock("../src/turn-ceiling.js", async (importOriginal) => ({
 import subagentsExtension from "../src/index.js";
 import { getForegroundOutcomeNote, getStatusNote } from "../src/status-note.js";
 import { TURN_CEILING, TURN_CEILING_GRACE, TURN_CHECK_IN } from "../src/turn-ceiling.js";
+import { chainOn } from "./helpers/lifecycle.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
@@ -37,7 +38,7 @@ function makePi() {
     registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
-    on: vi.fn((event: string, handler: any) => lifecycle.set(event, handler)),
+    on: vi.fn(chainOn(lifecycle)),
     events: {
       emit: vi.fn(),
       on: vi.fn((event: string, handler: any) => {

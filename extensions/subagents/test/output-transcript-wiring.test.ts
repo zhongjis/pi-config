@@ -17,6 +17,7 @@ import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../src/output-file.js";
 import { fakeSession, opened } from "./helpers/session-seam.js";
+import { chainOn } from "./helpers/lifecycle.js";
 
 function makePi() {
   const tools = new Map<string, any>();
@@ -26,7 +27,7 @@ function makePi() {
     registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((tool: any) => tools.set(tool.name, tool)),
     registerCommand: vi.fn(),
-    on: vi.fn((event: string, handler: any) => lifecycle.set(event, handler)),
+    on: vi.fn(chainOn(lifecycle)),
     events: {
       emit: vi.fn(),
       on: vi.fn((event: string, handler: any) => {

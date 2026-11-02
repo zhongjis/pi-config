@@ -34,7 +34,7 @@ import { renderDelegationPolicyHint } from "./delegation-hint.js";
 import { formatDelegationPolicyDenial, getPermittedDelegationTypes, type ModeStateEntryLike, resolvePersistedDelegationPolicy, resolvePersistedDelegationPolicyContext } from "./delegation-policy.js";
 import { DEFAULT_MIN_CONFIDENCE } from "./graph/decision-gate.js";
 import { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData } from "./graph/entry.js";
-import { isTui } from "../../lib/mode.js";
+import { isTui, registerTuiCommand } from "../../lib/mode.js";
 import { detectPaneHost } from "../../lib/pane-host.js";
 import { isPaneHostEnabled } from "./graph/pane/controller.js";
 import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pane/manager.js";
@@ -44,7 +44,7 @@ import { registerSubagentNotificationRenderer } from "./notification-rendering.j
 import { currentTargets } from "./research-delegation.js";
 import { applyAndEmitLoaded, type SubagentsSettings, saveAndEmitChanged, type ToolDescriptionMode } from "./settings.js";
 import { startBackgroundSupervision } from "./supervision-loop.js";
-import { type AgentRecord, type JoinMode } from "./types.js";
+import { type AgentRecord, type JoinMode, type NotificationDetails } from "./types.js";
 import { type AgentMonitorDeps, showAgentMonitor } from "./ui/agent-monitor.js";
 import {
   type AgentActivity,
@@ -100,8 +100,9 @@ export default function (pi: ExtensionAPI) {
 
   // tool_result runs only for final results, including thrown/cancelled calls.
   // No execute/stream callback drains the pool, so cancellation cannot lose deltas.
+  // The nested presentation call is not a run: a parked approval would settle it late, so it never drains usage.
   pi.on("tool_result", (event) => {
-    if (!reportUsage || !event.toolCallId || !Object.values(SUBAGENT_TOOL_NAMES).some((name) => name === event.toolName)) return;
+    if (!reportUsage || !event.toolCallId || event.toolName === SUBAGENT_TOOL_NAMES.PRESENTATION || !Object.values(SUBAGENT_TOOL_NAMES).some((name) => name === event.toolName)) return;
     const usage = pendingUsage.drain();
     if (!usage) return;
     const prior = event.usage;
@@ -171,6 +172,16 @@ export default function (pi: ExtensionAPI) {
   // immediately, so a mid-turn send cannot be retracted.
   pi.on("turn_start", () => {
     notifications.hold();
+  });
+  // RPC clients such as T3 Code do not render custom messages and show notify only during
+  // an active turn, so name the Subagents a follow-up reports when it enters that turn.
+  pi.on("message_start", (event, ctx) => {
+    const message = event.message;
+    if (isTui(ctx) || !ctx.hasUI || message.role !== "custom" || message.customType !== "subagent-notification") return;
+    const details = message.details as NotificationDetails | undefined;
+    if (!details) return;
+    const reports = [details, ...(details.others ?? [])].map(report => `${report.description} (${report.status})`);
+    ctx.ui.notify(`Subagent update: ${reports.join(", ")}`, "info");
   });
   pi.on("turn_end", (event) => {
     const message = event.message;
@@ -383,12 +394,7 @@ export default function (pi: ExtensionAPI) {
   let graphRunPane: GraphRunPaneManager | undefined;
   // Capture ctx from session_start for RPC spawn handler and broadcast readiness.
   // Wires RPC handlers on the first bound session_start so a filtered-out activation never advertises (#142).
-  // Terminal-only commands register from a `tui` session_start so RPC clients
-  // (T3 Code) never list them; same contract as lib/mode.ts registerTuiCommand,
-  // kept in this single handler.
-  const tuiCommands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>();
   pi.on("session_start", async (_event, ctx) => {
-    if (isTui(ctx)) for (const [name, options] of tuiCommands) pi.registerCommand(name, options);
     if (!ownsManagerRegistry) return;
     reloadCustomAgents(ctx);
     await stopGraphRuns("reload");
@@ -563,7 +569,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("resources_discover", () => ({ skillPaths: [graphSkillPath] }));
   pi.registerTool(graphRuntime.tool);
   pi.registerTool(graphRuntime.resolveGateTool);
-  tuiCommands.set("agent-graph-replay", {
+  registerTuiCommand(pi, "agent-graph-replay", {
     description: "Replay a recorded agent graph run trace against a candidate graph: /agent-graph-replay <runId> <graph>",
     handler: async (args, ctx) => {
       const notice = runReplayCommand(args, ctx.cwd, ctx.sessionManager.getSessionId());
@@ -660,7 +666,7 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.notify(message, level);
   }
 
-  tuiCommands.set("agents", {
+  registerTuiCommand(pi, "agents", {
     description: "Manage agents",
     handler: async (_args, ctx) => { await showAgentsMenu(ctx); },
   });
@@ -692,7 +698,7 @@ export default function (pi: ExtensionAPI) {
     viewAgentConversation,
     detach: paneDetach,
   };
-  tuiCommands.set("agent-monitor", {
+  registerTuiCommand(pi, "agent-monitor", {
     description: "Open the Agent Monitor: agent graph runs and independent agents",
     handler: async (_args, ctx) => { await showAgentMonitor(ctx, agentMonitorDeps); },
   });

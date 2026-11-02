@@ -23,6 +23,7 @@ import { graphRunEntryData } from "../src/graph/entry.js";
 import { createGraphRunTask } from "../src/graph/task.js";
 import subagentsExtension from "../src/index.js";
 import { fakeSession, opened } from "./helpers/session-seam.js";
+import { chainOn } from "./helpers/lifecycle.js";
 
 type Renderable = {
   render(width: number): string[];
@@ -75,7 +76,7 @@ const pi = {
   registerTool: vi.fn((tool: ToolDefinition) => tools.set(tool.name, tool)),
   registerCommand: vi.fn(),
   registerFlag: vi.fn(),
-  on: vi.fn((event: string, handler: LifecycleHandler) => lifecycle.set(event, handler)),
+  on: vi.fn(chainOn(lifecycle)),
   events: { emit: vi.fn(), on: vi.fn(() => vi.fn()) },
   appendEntry: vi.fn(),
   sendMessage,
