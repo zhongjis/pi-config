@@ -170,7 +170,6 @@ export default function (pi: ExtensionAPI) {
   // immediately, so a mid-turn send cannot be retracted.
   pi.on("turn_start", () => {
     notifications.hold();
-    backgroundStop.disarm();
   });
   pi.on("turn_end", (event) => {
     const message = event.message;
@@ -191,14 +190,13 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     notifications.interrupt();
-    if (ctx.hasUI) backgroundStop.arm(ctx.ui);
+    backgroundStop.stop(ctx.hasUI ? ctx.ui : undefined);
   });
   const backgroundStop = createBackgroundStop({
     listAgents: () => manager.listAgents(),
     abortAgent: id => manager.abort(id, "user"),
     graphRuns: () => getGraphRuns().values(),
   });
-  let backgroundStopUnsub: (() => void) | undefined;
 
   /** Helper: build event data for lifecycle events from an AgentRecord. */
   function buildEventData(record: AgentRecord) {
@@ -441,8 +439,6 @@ export default function (pi: ExtensionAPI) {
         console.warn(`[pi-subagents] ${label}: ${err instanceof Error ? err.message : String(err)}`),
     });
     await graphRunPane.reconcile();
-    backgroundStopUnsub?.();
-    backgroundStopUnsub = ctx.hasUI ? backgroundStop.listen(ctx.ui, () => ctx.isIdle()) : undefined;
     resumeDurableGraphRuns(ctx);
   });
 
@@ -458,9 +454,6 @@ export default function (pi: ExtensionAPI) {
     const graphsStopped = ownsManagerRegistry ? stopGraphRuns(event?.reason === "reload" ? "reload" : "shutdown") : undefined;
     const drained = manager.dispose(); // abortAll("lifecycle"), refuses new spawns
     fleet.dispose();
-    backgroundStopUnsub?.();
-    backgroundStopUnsub = undefined;
-    backgroundStop.disarm();
     supervisionStop?.();
     supervisionStop = undefined;
     rpcHandle?.unsubSpawn();
