@@ -9,7 +9,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { ensureSessionLocalRootDirectory, resolveSessionLocalRelativePath } from "../../session-local/storage.js";
 import { historyText } from "./graph/history-topology.js";
-import type { AgentRecord } from "./types.js";
+import { type AgentRecord, INTERRUPTION_CAUSES } from "./types.js";
 
 /** Public name for the child transcript messages. Same type buildSessionContext returns. */
 type AgentMessage = SessionContext["messages"][number];
@@ -49,8 +49,8 @@ function decodeRun(value: unknown): DecodedRun | undefined {
   if (typeof value.status !== "string" || !STATUSES.includes(value.status as PersistedStatus)) return;
   if (!finite(value.startedAt) || !finite(value.toolUses) || !validSessionFile(value.sessionFile)) return;
   if (value.completedAt !== undefined && !finite(value.completedAt)) return;
-  const interruptionCause = value.interruptionCause;
-  if (interruptionCause !== undefined && interruptionCause !== "user" && interruptionCause !== "caller" && interruptionCause !== "lifecycle" && interruptionCause !== "supervisor-idle" && interruptionCause !== "supervisor-ceiling" && interruptionCause !== "turn-limit" && interruptionCause !== "unknown") return;
+  // An unrecognized cause drops only the cause, never the run: this history is the resume index.
+  const interruptionCause = INTERRUPTION_CAUSES.find(cause => cause === value.interruptionCause);
   if (!record(value.lifetimeUsage) || !finite(value.lifetimeUsage.input) || !finite(value.lifetimeUsage.output) || !finite(value.lifetimeUsage.cacheWrite)) return;
   const id = historyText(value.id);
   const type = historyText(value.type);

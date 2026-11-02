@@ -77,7 +77,7 @@ Make the Subagents extension speak T3 Code's existing, unmodified Pi integration
 - **Background completion signal.** Outside the terminal with UI, when a Subagent follow-up message enters its turn (`message_start`, inside the wake turn), emit one `ui.notify` line naming the reported Subagents and their status (T3 Code ignores custom messages and shows notify only during an active turn).
 - **Fleet widget and status line:** unchanged.
 - **Incompatibility.** Pi's example `subagent` extension cannot be loaded alongside (tool-name collision); documented, not guarded.
-- **Rejected designs.** A hidden nested `subagent` presentation tool beside a differently named delegation tool: it produced cards (including for waits) but repeated every run as an extra generic row and an extra Supervised approval. Keeping wait cards by letting the delegation tool double as a nested presenter: it brings the repeated row and the extra approval back for waits.
+- **Rejected designs.** A hidden nested `subagent` presentation tool beside a differently named delegation tool: it yields cards for waits too, but every run gains an extra generic row and an extra Supervised approval. Letting the delegation tool double as a nested presenter to keep wait cards: it adds the same extra row and approval to every wait.
 
 ## Testing Decisions
 

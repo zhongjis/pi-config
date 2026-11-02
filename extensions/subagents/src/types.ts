@@ -85,7 +85,8 @@ export interface AgentActivity {
   lastProgressAt?: number;
 }
 
-export type InterruptionCause = "user" | "caller" | "lifecycle" | "supervisor-idle" | "supervisor-ceiling" | "turn-limit" | "unknown";
+export const INTERRUPTION_CAUSES = ["user", "caller", "lifecycle", "supervisor-idle", "supervisor-ceiling", "turn-limit", "unknown"] as const;
+export type InterruptionCause = typeof INTERRUPTION_CAUSES[number];
 
 export interface AgentRecord {
   interruptionCause?: InterruptionCause;

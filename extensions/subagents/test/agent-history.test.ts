@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentHistoryStore, mergeAgentHistory, readHistoryConversation } from "../src/agent-history.js";
-import type { AgentRecord } from "../src/types.js";
+import { type AgentRecord, INTERRUPTION_CAUSES } from "../src/types.js";
 
 const SESSION_JSONL = [
   JSON.stringify({ type: "session", version: 3, id: "child", timestamp: "2024-01-01T00:00:00.000Z", cwd: "/tmp" }),
@@ -62,12 +62,24 @@ describe("independent agent history", () => {
     expect(text).not.toContain("cacheRead");
   });
 
-  it.each(["user", "caller", "lifecycle", "supervisor-idle", "supervisor-ceiling", "turn-limit", "unknown"] as const)("persists %s interruption provenance through restart and history projection", async (interruptionCause) => {
+  it.each(INTERRUPTION_CAUSES)("persists %s interruption provenance through restart and history projection", async (interruptionCause) => {
     const store = await AgentHistoryStore.load("session-a");
     store.capture(record(sessionFile, { status: "stopped", interruptionCause }));
     await store.flush();
     const reloaded = await AgentHistoryStore.load("session-a");
     expect(mergeAgentHistory([], reloaded.runs)[0]).toMatchObject({ status: "stopped", interruptionCause });
+  });
+
+  it("keeps a run whose persisted interruption cause is unrecognized, without the cause", async () => {
+    const store = await AgentHistoryStore.load("session-a");
+    store.capture(record(sessionFile, { status: "stopped", interruptionCause: "user" }));
+    await store.flush();
+    const file = JSON.parse(await readFile(historyPath("session-a"), "utf8"));
+    file.runs[0].interruptionCause = "future-cause";
+    await writeFile(historyPath("session-a"), JSON.stringify(file));
+    const [run] = (await AgentHistoryStore.load("session-a")).runs;
+    expect(run).toBeDefined();
+    expect(run).not.toHaveProperty("interruptionCause");
   });
 
   it("reloads interrupted running and queued rows as stopped without rewriting the file", async () => {
