@@ -7,6 +7,7 @@ Shared utilities for pi extensions. Import via `../lib/index.js`.
 Flat utility modules for model selection, fallback, fast requests, logging, clipboard, status, and tool output. [index.ts](index.ts) re-exports the public set.
 
 - [Prompt variants](prompt-variants.ts) — shared variant-directory reading, body selection, and overlay placement.
+- [Pane host](pane-host.ts) — `detectPaneHost` names the Herdr or Orca terminal host from the injected environment.
 
 ## Usage
 

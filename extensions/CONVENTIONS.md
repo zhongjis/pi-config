@@ -78,3 +78,7 @@ Continuation contract:
 | `ulw:activated` | Accepted kuafu ULW input | `{ sessionId: string }`; emitted during input, before all `before_agent_start` hooks; Goal owns access/bootstrap, no Goal mutation | Session-scoped notification |
 | `fast:policy-changed` | Refresh Fast UI after a mode default changes | `{ sessionId: string }`; notification only, never policy transport | Session-scoped; requests read branch-local `fast-policy` entries |
 | `herdr:blocked` | Blocking UI opened/closed, for Herdr pane agent state | `{ active: boolean, label?: string }`; counter-based — every `active: true` MUST pair with exactly one `active: false` (use `try`/`finally`) | External: listener is Herdr-managed (`herdr-agent-state.ts`); emitters live in this repo |
+
+## Pane host
+
+Extensions that act on the terminal pane they run in (title, split, close) MUST gate on [`detectPaneHost`](lib/pane-host.ts), which names Herdr or Orca (Herdr wins when both are detected), and issue only that host's CLI. The `herdr:blocked` event above stays Herdr-only.
