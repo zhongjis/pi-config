@@ -275,7 +275,7 @@ The agent-graph skill (`skills/agent-graphs/SKILL.md`) is discovered via `resour
 
 ## Commands
 
-[src/index.ts](src/index.ts) registers the commands:
+[src/index.ts](src/index.ts) registers the commands in terminal (TUI) sessions only, so RPC clients such as T3 Code never list them:
 
 - `/agents` lists agent types and views the selected definition read-only, opens running-agent conversations, and provides Settings and Graph runs navigation. Agent type rows show source (`•` project, `◦` global, `✕` disabled) and model, flagging `(unavailable)` chains and `(→ provider/id)` resolutions.
 - `/agent-monitor` opens the Agent Monitor.

@@ -79,7 +79,7 @@ function boot(settings: Record<string, unknown> = {}, sessionId = "parent") {
   const sessionManager: Pick<ExtensionContext["sessionManager"], "getSessionId" | "getEntries" | "getBranch"> = {
     getSessionId: () => sessionId, getEntries: () => [], getBranch: () => [],
   };
-  const ctxFixture: Partial<ExtensionContext> = { cwd: dir, hasUI: false, ui: uiFixture as ExtensionContext["ui"], model: model as ExtensionContext["model"],
+  const ctxFixture: Partial<ExtensionContext> = { cwd: dir, mode: "tui", hasUI: false, ui: uiFixture as ExtensionContext["ui"], model: model as ExtensionContext["model"],
     modelRegistry: modelRegistry as ExtensionContext["modelRegistry"],
     sessionManager: sessionManager as ExtensionContext["sessionManager"],
     getSystemPrompt: () => "parent",

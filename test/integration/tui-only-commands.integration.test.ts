@@ -6,8 +6,11 @@ import { createTestSession, type TestSession } from "./helpers/faux-session.js";
 // Terminal-only commands register from a `tui` session_start (extensions/lib/mode.ts),
 // so RPC clients such as T3 Code never list them.
 const ROOT = resolve(__dirname, "../..");
-const TUI_ONLY_EXTENSIONS = ["thinking-steps", "tools", "diff"].map((name) => resolve(ROOT, "extensions", name, "index.ts"));
-const TUI_ONLY_COMMANDS = ["thinking-steps", "tools", "diff"];
+const TUI_ONLY_EXTENSIONS = [
+	...["thinking-steps", "tools", "diff"].map((name) => resolve(ROOT, "extensions", name, "index.ts")),
+	resolve(ROOT, "extensions", "subagents", "src", "index.ts"),
+];
+const TUI_ONLY_COMMANDS = ["thinking-steps", "tools", "diff", "agents", "agent-monitor", "agent-graph-replay"];
 
 type RpcLine = { id?: string; type?: string; command?: string; success?: boolean; data?: { commands?: Array<{ name: string }> } };
 

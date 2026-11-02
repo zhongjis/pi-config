@@ -21,8 +21,11 @@ async function replay(host: Host, args: string): Promise<[string, string]> {
 }
 
 describe("/agent-graph-replay", () => {
-  it("registers the replay command", () => {
-    expect(boot().commands.has("agent-graph-replay")).toBe(true);
+  it("registers the replay command in terminal sessions", async () => {
+    const host = boot();
+    expect(host.commands.has("agent-graph-replay")).toBe(false);
+    await host.lifecycle("session_start");
+    expect(host.commands.has("agent-graph-replay")).toBe(true);
   });
 
   it("rejects bad arguments, traversal run IDs, missing traces, and invalid graphs without throwing", async () => {

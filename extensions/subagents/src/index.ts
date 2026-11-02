@@ -33,6 +33,7 @@ import { renderDelegationPolicyHint } from "./delegation-hint.js";
 import { formatDelegationPolicyDenial, getPermittedDelegationTypes, type ModeStateEntryLike, resolvePersistedDelegationPolicy, resolvePersistedDelegationPolicyContext } from "./delegation-policy.js";
 import { DEFAULT_MIN_CONFIDENCE } from "./graph/decision-gate.js";
 import { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData } from "./graph/entry.js";
+import { isTui } from "../../lib/mode.js";
 import { detectPaneHost } from "../../lib/pane-host.js";
 import { isPaneHostEnabled } from "./graph/pane/controller.js";
 import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pane/manager.js";
@@ -383,7 +384,12 @@ export default function (pi: ExtensionAPI) {
   let graphRunPane: GraphRunPaneManager | undefined;
   // Capture ctx from session_start for RPC spawn handler and broadcast readiness.
   // Wires RPC handlers on the first bound session_start so a filtered-out activation never advertises (#142).
+  // Terminal-only commands register from a `tui` session_start so RPC clients
+  // (T3 Code) never list them; same contract as lib/mode.ts registerTuiCommand,
+  // kept in this single handler.
+  const tuiCommands = new Map<string, Parameters<ExtensionAPI["registerCommand"]>[1]>();
   pi.on("session_start", async (_event, ctx) => {
+    if (isTui(ctx)) for (const [name, options] of tuiCommands) pi.registerCommand(name, options);
     if (!ownsManagerRegistry) return;
     reloadCustomAgents(ctx);
     await stopGraphRuns("reload");
@@ -562,7 +568,7 @@ export default function (pi: ExtensionAPI) {
   pi.on("resources_discover", () => ({ skillPaths: [graphSkillPath] }));
   pi.registerTool(graphRuntime.tool);
   pi.registerTool(graphRuntime.resolveGateTool);
-  pi.registerCommand("agent-graph-replay", {
+  tuiCommands.set("agent-graph-replay", {
     description: "Replay a recorded agent graph run trace against a candidate graph: /agent-graph-replay <runId> <graph>",
     handler: async (args, ctx) => {
       const notice = runReplayCommand(args, ctx.cwd, ctx.sessionManager.getSessionId());
@@ -658,7 +664,7 @@ export default function (pi: ExtensionAPI) {
     ctx.ui.notify(message, level);
   }
 
-  pi.registerCommand("agents", {
+  tuiCommands.set("agents", {
     description: "Manage agents",
     handler: async (_args, ctx) => { await showAgentsMenu(ctx); },
   });
@@ -690,7 +696,7 @@ export default function (pi: ExtensionAPI) {
     viewAgentConversation,
     detach: paneDetach,
   };
-  pi.registerCommand("agent-monitor", {
+  tuiCommands.set("agent-monitor", {
     description: "Open the Agent Monitor: agent graph runs and independent agents",
     handler: async (_args, ctx) => { await showAgentMonitor(ctx, agentMonitorDeps); },
   });
