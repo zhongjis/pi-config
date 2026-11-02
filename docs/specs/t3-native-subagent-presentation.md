@@ -1,6 +1,6 @@
 # T3 Code–Native Subagent Presentation
 
-Status: planned
+Status: shipped
 
 ## Problem Statement
 
