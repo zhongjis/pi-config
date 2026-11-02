@@ -374,7 +374,7 @@ export class AgentMonitor implements Component {
     }
     const detach = this.deps.detach;
     if (detach === undefined || !detach.available()) {
-      this.ctx.ui.notify("Detach needs a Herdr-managed pane.", "warning");
+      this.ctx.ui.notify("Detach needs a Herdr or Orca pane.", "warning");
       return;
     }
     void detach.open(row.run.id);

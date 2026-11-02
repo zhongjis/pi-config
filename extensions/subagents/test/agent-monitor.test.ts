@@ -427,12 +427,12 @@ describe("AgentMonitor", () => {
     });
     expect(plain(harness.render())).not.toContain("o detach");
     harness.component.handleInput("o");
-    expect(harness.notify).toHaveBeenCalledWith("Detach needs a Herdr-managed pane.", "warning");
+    expect(harness.notify).toHaveBeenCalledWith("Detach needs a Herdr or Orca pane.", "warning");
     expect(open).not.toHaveBeenCalled();
 
     const missing = setup({ graphRuns: [makeRun({ id: "g2" })] });
     missing.component.handleInput("o");
-    expect(missing.notify).toHaveBeenCalledWith("Detach needs a Herdr-managed pane.", "warning");
+    expect(missing.notify).toHaveBeenCalledWith("Detach needs a Herdr or Orca pane.", "warning");
   });
 
   it("refuses to detach an independent agent", () => {

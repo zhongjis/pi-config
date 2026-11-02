@@ -3,7 +3,7 @@
  *
  * It owns a {@link GraphRunPaneController}, a debounced writer, and a 1s liveness
  * tick that refreshes elapsed time while a run is live. When there is no
- * Herdr-managed pane to split off it is a strict no-op: it holds no controller,
+ * Herdr- or Orca-managed pane to split off it is a strict no-op: it holds no controller,
  * touches no filesystem, and never calls `pi.exec`, so the existing in-Pi overlay
  * is the only inspector on that path.
  *
@@ -15,6 +15,7 @@
 
 import { type FSWatcher, mkdirSync, watch } from "node:fs";
 import { fileURLToPath } from "node:url";
+import type { PaneHost } from "../../../../lib/pane-host.js";
 import { type GraphRunDialogSource, type GraphRunDialogState, initialGraphRunDialogState } from "../../ui/graph-run-dialog.js";
 import { initialPanelState, type PanelRun, type PanelState } from "../../ui/observability-panel.js";
 import type { GraphRun } from "../history-view.js";
@@ -42,7 +43,10 @@ const LIVENESS_TICK_MS = 1_000;
 export interface GraphRunPaneManagerOptions {
   enabled: boolean;
   exec: PaneExec;
+  /** Which CLI manages the panes; defaults to Herdr. */
+  host?: PaneHost;
   parentPaneId: string;
+  /** State-dir scope: the Herdr socket path, or the parent terminal handle under Orca. */
   socket: string;
   cwd: string;
   sessionId: string;
@@ -106,6 +110,7 @@ export class GraphRunPaneManager {
     const viewerPath = options.viewerPath ?? fileURLToPath(new URL("./viewer.mjs", import.meta.url));
     this.controller = new GraphRunPaneController({
       exec: options.exec,
+      host: options.host,
       dir: this.dir,
       parentPaneId: options.parentPaneId,
       cwd: options.cwd,
@@ -163,7 +168,7 @@ export class GraphRunPaneManager {
 
   /**
    * Reopen the pane for the active run, overriding a manual close. Returns false
-   * when there is no Herdr pane to open, so the caller can explain why.
+   * when there is no Herdr or Orca pane to open, so the caller can explain why.
    */
   async forceOpen(runId?: string): Promise<boolean> {
     if (!this.enabled || this.disposed) return false;

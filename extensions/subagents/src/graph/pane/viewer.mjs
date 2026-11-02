@@ -9,7 +9,7 @@
  * That keeps the shared layout the single source of truth and needs no bundler,
  * no dist, and no runtime dependencies here — only Node built-ins.
  *
- * Invocation:  node viewer.mjs --dir <paneStateDir> --ppid <piPid>
+ * Invocation:  node viewer.mjs --dir <paneStateDir> --ppid <piPid> [--pane <herdrPaneId> | --host orca]
  *
  * It repaints on `fs.watch` (debounced) plus a slow safety poll (watch is
  * unreliable on macOS), reports its terminal size back through `viewport.json`,
@@ -29,16 +29,17 @@ const SAFETY_POLL_MS = 400;
 const PARENT_POLL_MS = 1000;
 
 function parseArgs(argv) {
-  const out = { dir: undefined, ppid: undefined, pane: undefined };
+  const out = { dir: undefined, ppid: undefined, pane: undefined, host: undefined };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--dir") out.dir = argv[++i];
     else if (argv[i] === "--ppid") out.ppid = Number(argv[++i]);
     else if (argv[i] === "--pane") out.pane = argv[++i];
+    else if (argv[i] === "--host") out.host = argv[++i];
   }
   return out;
 }
 
-const { dir, ppid, pane } = parseArgs(process.argv.slice(2));
+const { dir, ppid, pane: herdrPane, host } = parseArgs(process.argv.slice(2));
 
 if (!dir) {
   process.stderr.write("viewer.mjs: --dir <paneStateDir> is required\n");
@@ -192,12 +193,16 @@ function quit(userInitiated) {
     repaintTimer = null;
   }
   restoreTerminal();
-  // A user-initiated quit (q / Ctrl+C / Ctrl+D) also closes this herdr pane so
+  // A user-initiated quit (q / Ctrl+C / Ctrl+D) also closes this host pane so
   // it is not left as an empty shell. Best-effort, and only for the pane we were
-  // told to own; a SIGTERM / parent-gone / dir-removed quit leaves it alone.
-  if (userInitiated && pane) {
+  // told to own (Orca: our own terminal handle); a SIGTERM / parent-gone /
+  // dir-removed quit leaves it alone.
+  const closeCommand = host === "orca"
+    ? process.env.ORCA_TERMINAL_HANDLE && ["orca", ["terminal", "close", "--terminal", process.env.ORCA_TERMINAL_HANDLE]]
+    : herdrPane && ["herdr", ["pane", "close", herdrPane]];
+  if (userInitiated && closeCommand) {
     try {
-      execFileSync("herdr", ["pane", "close", pane], { timeout: 5000, stdio: "ignore" });
+      execFileSync(closeCommand[0], closeCommand[1], { timeout: 5000, stdio: "ignore" });
     } catch {
       // The pane may already be gone; nothing to do.
     }

@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GraphRunPaneController, isHerdrPaneEnabled } from "../src/graph/pane/controller.js";
+import { GraphRunPaneController, isPaneHostEnabled } from "../src/graph/pane/controller.js";
 import { readRecord, writeRecord } from "../src/graph/pane/store.js";
 
 let dir: string;
@@ -40,15 +40,15 @@ const splitOut = (paneId: string) => JSON.stringify({ result: { pane: { pane_id:
 const getOut = (paneId: string, label: string) =>
   JSON.stringify({ result: { pane: { pane_id: paneId, title: label } } });
 
-describe("isHerdrPaneEnabled", () => {
-  it("is true only inside a Herdr-managed TUI pane", () => {
+describe("isPaneHostEnabled", () => {
+  it("is true only inside a Herdr- or Orca-managed TUI pane", () => {
     const base = { HERDR_ENV: "1", HERDR_PANE_ID: "%p0" } as NodeJS.ProcessEnv;
-    expect(isHerdrPaneEnabled(base, "tui")).toBe(true);
-    expect(isHerdrPaneEnabled(base, "rpc")).toBe(false);
-    expect(isHerdrPaneEnabled(base, "print")).toBe(false);
-    expect(isHerdrPaneEnabled({ HERDR_PANE_ID: "%p0" } as NodeJS.ProcessEnv, "tui")).toBe(false);
-    expect(isHerdrPaneEnabled({ HERDR_ENV: "1" } as NodeJS.ProcessEnv, "tui")).toBe(false);
-    expect(isHerdrPaneEnabled({ HERDR_ENV: "0", HERDR_PANE_ID: "%p0" } as NodeJS.ProcessEnv, "tui")).toBe(false);
+    expect(isPaneHostEnabled(base, "tui")).toBe(true);
+    expect(isPaneHostEnabled(base, "rpc")).toBe(false);
+    expect(isPaneHostEnabled(base, "print")).toBe(false);
+    expect(isPaneHostEnabled({ HERDR_PANE_ID: "%p0" } as NodeJS.ProcessEnv, "tui")).toBe(false);
+    expect(isPaneHostEnabled({ HERDR_ENV: "1" } as NodeJS.ProcessEnv, "tui")).toBe(false);
+    expect(isPaneHostEnabled({ HERDR_ENV: "0", HERDR_PANE_ID: "%p0" } as NodeJS.ProcessEnv, "tui")).toBe(false);
   });
 });
 

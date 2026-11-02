@@ -88,7 +88,7 @@ export interface PanelOptions {
   now?: number;
   /** In-Pi host only: enable pause/resume/skip/retry/stop dispatch. Absent = read-only pane. */
   controls?: boolean;
-  /** In-Pi host only: offer `o` detach to the Herdr pane. Absent = read-only pane. */
+  /** In-Pi host only: offer `o` detach to the Herdr or Orca pane. Absent = read-only pane. */
   detach?: boolean;
 }
 

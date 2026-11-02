@@ -19,7 +19,7 @@ A flat roster hides meaningful containment: a bounded-feedback coordinator, its 
 
 ## Solution
 
-Present the graph panel in Pi and in the Herdr pane as a dense, hierarchy-first graph inspector; the Herdr pane stays read-only:
+Present the graph panel in Pi and in the Herdr or Orca side pane as a dense, hierarchy-first graph inspector; the Herdr pane stays read-only:
 
 1. Show one stable run identity, one human description, and one honest composition-only aggregate summary; carry live elapsed on the `∑` status line rather than the aggregate.
 2. Render the effective graph as a compact tree. Indentation expresses containment: graph run → coordinator → iteration → fanout/evaluator → generated agent item. Vertical order expresses progression. Dependencies that cannot be represented honestly as containment remain in selected-node detail.

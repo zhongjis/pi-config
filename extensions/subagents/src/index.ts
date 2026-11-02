@@ -33,7 +33,8 @@ import { renderDelegationPolicyHint } from "./delegation-hint.js";
 import { formatDelegationPolicyDenial, getPermittedDelegationTypes, type ModeStateEntryLike, resolvePersistedDelegationPolicy, resolvePersistedDelegationPolicyContext } from "./delegation-policy.js";
 import { DEFAULT_MIN_CONFIDENCE } from "./graph/decision-gate.js";
 import { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData } from "./graph/entry.js";
-import { isHerdrPaneEnabled } from "./graph/pane/controller.js";
+import { detectPaneHost } from "../../lib/pane-host.js";
+import { isPaneHostEnabled } from "./graph/pane/controller.js";
 import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pane/manager.js";
 import { graphSkillPath } from "./graph/tool-description.js";
 import { createNotificationCoordinator } from "./notification-coordinator.js";
@@ -376,8 +377,8 @@ export default function (pi: ExtensionAPI) {
   // Background auto-supervision loop handle. Started on session_start, stopped on
   // session_shutdown. `undefined` = not running (used as the double-start guard).
   let supervisionStop: (() => void) | undefined;
-  // The graph run inspector's Herdr side pane, constructed per activation. A
-  // strict no-op when there is no Herdr-managed pane to split off, in which case
+  // The graph run inspector's Herdr or Orca side pane, constructed per activation. A
+  // strict no-op when there is no Herdr- or Orca-managed pane to split off, in which case
   // the in-Pi overlay stays the only inspector.
   let graphRunPane: GraphRunPaneManager | undefined;
   // Capture ctx from session_start for RPC spawn handler and broadcast readiness.
@@ -415,11 +416,13 @@ export default function (pi: ExtensionAPI) {
     // of any prior instance is defensive: a double-bound session_start must not
     // leak a controller or its timers.
     await graphRunPane?.dispose();
+    const paneHost = detectPaneHost(process.env);
     graphRunPane = createGraphRunPaneManager({
-      enabled: isHerdrPaneEnabled(process.env, ctx.mode),
+      enabled: isPaneHostEnabled(process.env, ctx.mode),
+      host: paneHost,
       exec: (command, args, options) => pi.exec(command, args, options),
-      parentPaneId: process.env.HERDR_PANE_ID ?? "",
-      socket: process.env.HERDR_SOCKET_PATH ?? "",
+      parentPaneId: (paneHost === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_PANE_ID) ?? "",
+      socket: (paneHost === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_SOCKET_PATH) ?? "",
       cwd: ctx.cwd,
       sessionId: ctx.sessionManager.getSessionId(),
       ppid: process.pid,

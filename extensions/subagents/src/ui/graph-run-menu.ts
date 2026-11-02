@@ -38,7 +38,7 @@ export interface GraphRunMenuDeps {
    * sessions, which is a no-op rather than an error.
    */
   getCtx(): GraphRunUIContext | undefined;
-  /** Detach a graph run to the read-only Herdr side pane; absent without a Herdr-managed pane. */
+  /** Detach a graph run to the read-only Herdr or Orca side pane; absent without a Herdr or Orca pane. */
   detach?: { available(): boolean; open(runId: string): Promise<boolean> };
 }
 
@@ -86,7 +86,7 @@ export async function showGraphRunDialog(
           if (run.type === "history") {
             if (action.kind === "detach") {
               void deps.detach?.open(run.id).then(ok => {
-                if (!ok) ctx.ui.notify("Detach needs a Herdr-managed pane.", "warning");
+                if (!ok) ctx.ui.notify("Detach needs a Herdr or Orca pane.", "warning");
               });
             }
             return;
@@ -140,7 +140,7 @@ export async function showGraphRunDialog(
             }
             case "detach":
               void deps.detach?.open(run.id).then(ok => {
-                if (!ok) ctx.ui.notify("Detach needs a Herdr-managed pane.", "warning");
+                if (!ok) ctx.ui.notify("Detach needs a Herdr or Orca pane.", "warning");
               });
               return;
           }
