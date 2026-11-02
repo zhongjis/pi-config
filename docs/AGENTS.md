@@ -20,7 +20,7 @@ Human-facing contracts, decisions, guides, ideas, and supporting evidence.
 - You SHOULD link authoritative contracts rather than duplicate them.
 - Mode construction belongs to [../modes/README.md](../modes/README.md).
 - [Herdr agent-graph presentation](specs/herdr-agent-graph-presentation.md) owns graph panel presentation in Pi and the Herdr pane; it does not redesign transcript tool rows or notifications.
-- [Subagent tool output presentation](specs/subagent-tool-output-presentation.md) covers Subagent tool rows; [Tool Output TUI Rendering Guide](guides/tool-output-tui-rendering.md) owns cross-Extension tool-call, tool-result, notification, and interactive-view rules.
+- [Subagent tool output presentation](specs/subagent-tool-output-presentation.md) covers Subagent tool rows; [T3 Code–native subagent presentation](specs/t3-native-subagent-presentation.md) covers non-terminal (RPC) cards, terminal-only commands, and unified stop; [Tool Output TUI Rendering Guide](guides/tool-output-tui-rendering.md) owns cross-Extension tool-call, tool-result, notification, and interactive-view rules.
 - [guides/orchistration.md](guides/orchistration.md) owns lifecycle and how-to guidance; [guides/agent-orchestration.md](guides/agent-orchestration.md) owns the role and delegation map.
 - Diagram HTML is generated: edit the source `<name>.<type>.json`, pin `meta.repository.revision` to the commit its `sources` cite, and regenerate the HTML with the `archify` skill's `finalize`.
 
