@@ -20,7 +20,7 @@
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { spawn } from "node:child_process";
-import { isTui } from "../lib/mode.js";
+import { isTui, registerTuiCommand } from "../lib/mode.js";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { Type } from "typebox";
@@ -351,7 +351,7 @@ export default function (pi: ExtensionAPI) {
     return { error: launchError, comments: latest ?? [] };
   };
 
-  pi.registerCommand("diff", {
+  registerTuiCommand(pi, "diff", {
     description: "Review git changes in hunk (/diff | staged | base | pr | commit | stash | <ref>)",
     getArgumentCompletions: (prefix: string): CommandArgumentCompletion[] | null => {
       const p = prefix.trim().toLowerCase();

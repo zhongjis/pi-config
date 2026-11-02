@@ -6,7 +6,7 @@
  */
 
 import type { AssistantMessage, StreamOptions, TranscriptContext } from "@earendil-works/pi-ai";
-import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
+import type { AgentSessionEvent, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 // ── Playbook types ──────────────────────────────────────────
@@ -111,6 +111,8 @@ export interface TestSessionOptions {
 	mockTools?: Record<string, MockToolHandler>;
 	/** Mock UI responses */
 	mockUI?: MockUIConfig;
+	/** Pi run mode passed to extension binding (`ctx.mode`); Pi defaults to "print" */
+	mode?: ExtensionContext["mode"];
 
 	/** Abort on real tool throw (default: true) */
 	propagateErrors?: boolean;

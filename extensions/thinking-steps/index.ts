@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
+import { isTui, registerTuiCommand, registerTuiShortcut } from "../lib/mode.js";
 import { retainThinkingStepsPatch } from "./internal-patch.js";
 import { clearThinkingStepsModePreference, readThinkingStepsModePreference, writeThinkingStepsModePreference } from "./persistence.js";
 import { parseThinkingMode } from "./parse.js";
@@ -229,7 +230,7 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	const isSessionDegraded = (scopeKey: string): boolean => degradedSessionScopes.has(scopeKey);
 	const degradedSessionMessage = (): string => "Thinking steps is using Pi's native thinking renderer for this session; live mode switching is disabled.";
 	const futureCompatibleSessionMessage = (scope: PersistedThinkingStepsPreferenceScope, action: "saved" | "cleared"): string => `${action === "saved" ? "Saved" : "Cleared"} ${scope} thinking view default for future compatible sessions; the current session is using Pi's native thinking renderer.`;
-	pi.registerCommand("thinking-steps", {
+	registerTuiCommand(pi, "thinking-steps", {
 		description: "Switch thinking view or set/clear project/global defaults",
 		getArgumentCompletions: thinkingModeCompletions,
 		handler: async (args, ctx) => {
@@ -285,7 +286,7 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 		},
 	});
 
-	pi.registerShortcut("alt+t", {
+	registerTuiShortcut(pi, "alt+t", {
 		description: "Cycle thinking view (collapsed, summary, expanded)",
 		handler: async (ctx) => {
 			if (isSessionDegraded(ctx.cwd)) {
@@ -298,7 +299,7 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
-		if (ctx.mode !== "tui") {
+		if (!isTui(ctx)) {
 			return;
 		}
 		const activeScopeKey = setSessionScopeKey(ctx.cwd);
@@ -380,7 +381,7 @@ export default function thinkingStepsExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
-		if (ctx.mode !== "tui") {
+		if (!isTui(ctx)) {
 			return;
 		}
 		if (!participating || ownedPatchRelease === undefined) {

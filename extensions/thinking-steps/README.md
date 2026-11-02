@@ -7,7 +7,7 @@ Three-mode rendering of assistant thinking blocks in Pi's interactive TUI only: 
 - Source: https://github.com/crustyhacker/pi-thinking-steps
 - Version: v1.0.11 (commit `d0a59a4f394a8b13f58aa84c30e2dc4071b7c2fd`) plus v1.0.17 (commit `2209e03ad13e1eda2c66f5fd7a13932b584c4764`) shorter truncation notice: `Response was truncated before completion.`
 - License: MIT
-- Adapted: targets the `@earendil-works/pi-*` runtime; the renderer patch bare-imports `AssistantMessageComponent`, takes the theme from `ctx.ui.theme`, and preserves assistant Markdown transformers (including Mermaid) and streaming state without importing Pi internals. Empty thinking is silent rather than showing upstream placeholder panels. Upstream export, review, verbatim, search, compare, autosave, and diagnostics subcommands are not vendored.
+- Adapted: targets the `@earendil-works/pi-*` runtime; the renderer patch bare-imports `AssistantMessageComponent`, takes the theme from `ctx.ui.theme`, and preserves assistant Markdown transformers (including Mermaid) and streaming state without importing Pi internals. Empty thinking is silent rather than showing upstream placeholder panels. `/thinking-steps` and `alt+t` register only in TUI sessions, so RPC clients do not list them. Upstream export, review, verbatim, search, compare, autosave, and diagnostics subcommands are not vendored.
 
 ## Entry Points
 

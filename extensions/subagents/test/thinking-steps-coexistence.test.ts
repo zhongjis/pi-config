@@ -87,13 +87,27 @@ describe("subagents + thinking-steps presentation coexistence", () => {
     const notificationRenderer = registry.renderers.get("subagent-notification");
     expect(notificationRenderer).toBeTypeOf("function");
 
+    const subagentSessionStartCount = registry.lifecycle.get("session_start")?.length ?? 0;
     thinkingStepsExtension(registry.pi);
+
+    expect(registry.commands.has("thinking-steps")).toBe(false);
+    expect(registry.shortcuts.has("alt+t")).toBe(false);
+    const tuiCtx = {
+      mode: "tui",
+      hasUI: true,
+      cwd: "/nonexistent-thinking-steps-coexistence",
+      ui: { theme, notify: vi.fn(), setStatus: vi.fn(), setHiddenThinkingLabel: vi.fn() },
+      sessionManager: { getEntries: () => [] },
+    };
+    for (const handler of registry.lifecycle.get("session_start")?.slice(subagentSessionStartCount) ?? []) {
+      await handler({ type: "session_start", reason: "startup" }, tuiCtx);
+    }
 
     expect(registry.commands.has("agents")).toBe(true);
     expect(registry.commands.has("agent-monitor")).toBe(true);
     expect(registry.commands.has("thinking-steps")).toBe(true);
     expect(registry.shortcuts.has("alt+t")).toBe(true);
-    expect(registry.lifecycle.get("session_start")).toHaveLength(2);
+    expect(registry.lifecycle.get("session_start")).toHaveLength(subagentSessionStartCount + 3);
     expect(registry.lifecycle.get("session_shutdown")).toHaveLength(2);
     for (const event of ["message_start", "message_update", "message_end", "agent_end"]) {
       expect(registry.lifecycle.get(event)?.length, `${event} handler registered`).toBeGreaterThan(0);

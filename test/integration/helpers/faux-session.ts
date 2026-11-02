@@ -277,6 +277,7 @@ export async function createTestSession(options: TestSessionOptions = {}): Promi
 	// Inject mock UI context via bindExtensions
 	await session.bindExtensions({
 		uiContext: mockUI,
+		mode: options.mode,
 		onError: (err: { event: string; error: unknown }) => {
 			console.error(`[faux-harness] Extension error: ${err.event} — ${err.error}`);
 		},

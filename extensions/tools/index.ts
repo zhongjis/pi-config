@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import { Container, type SettingItem, SettingsList } from "@earendil-works/pi-tui";
-import { isTui } from "../lib/mode.js";
+import { isTui, registerTuiCommand } from "../lib/mode.js";
 
 interface ToolsState {
   enabledTools: string[];
@@ -48,7 +48,7 @@ export default function toolsExtension(pi: ExtensionAPI): void {
     applyTools();
   }
 
-  pi.registerCommand("tools", {
+  registerTuiCommand(pi, "tools", {
     description: "Enable or disable available tools",
     handler: async (_args, ctx) => {
       if (!isTui(ctx)) {

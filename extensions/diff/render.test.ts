@@ -21,6 +21,7 @@ type ToolDefinition = {
 };
 
 type MockPi = {
+  on: (event: string, handler: unknown) => void;
   registerCommand: (name: string, command: unknown) => void;
   registerTool: (tool: ToolDefinition) => void;
   exec: () => never;
@@ -52,6 +53,7 @@ function expectWidthSafe(component: RenderableText): void {
 function registerOpenPrWalkthroughTool(): ToolDefinition {
   let registered: ToolDefinition | undefined;
   const pi: MockPi = {
+    on: vi.fn(),
     registerCommand: vi.fn(),
     registerTool(tool) {
       registered = tool;

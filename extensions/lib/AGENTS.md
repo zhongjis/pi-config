@@ -25,6 +25,7 @@ Provide shared extension utilities and integration primitives.
 - `BUILTIN_TOOL_NAMES` is a copy of Pi's built-in tool list; update it when Pi adds a built-in tool.
 - [pane-host.ts](pane-host.ts) is the only place that decides which terminal host (Herdr or Orca) manages the current pane; Herdr wins when both are present because Herdr panes started inside Orca inherit stale `ORCA_*` variables. Callers MUST gate on it instead of reading host env vars directly, and keep their own host CLI calls.
 - [Prompt variants](prompt-variants.ts) owns shared directory reading and body selection; callers parse default-file frontmatter and retain lifecycle/state ownership. Only missing prompt files are optional; other read failures propagate to callers.
+- [mode.ts](mode.ts) owns the run-mode predicate `isTui` and `registerTuiCommand`/`registerTuiShortcut`, which register from a `tui` `session_start` and keep no module-level state. New terminal-only commands MUST use `registerTuiCommand` so RPC `get_commands` never lists them; new terminal-only shortcuts MUST use `registerTuiShortcut` so headless runs never register them. The helpers rely on Pi awaiting `session_start` before building slash autocomplete and binding shortcuts; on each Pi bump, re-run interactive QA (autocomplete, shortcut, `/reload`, `/new`).
 
 ## Work Guidance
 

@@ -81,11 +81,11 @@ async function createHarness(): Promise<Harness> {
 
 	return {
 		activate() {
-			const handlers = new Map<string, LifecycleHandler>();
+			const handlers = new Map<string, LifecycleHandler[]>();
 			const appendEntry = vi.fn();
 			thinkingStepsExtension({
 				on(event: string, handler: LifecycleHandler) {
-					handlers.set(event, handler);
+					handlers.set(event, [...(handlers.get(event) ?? []), handler]);
 				},
 				registerCommand: vi.fn(),
 				registerShortcut: vi.fn(),
@@ -95,11 +95,12 @@ async function createHarness(): Promise<Harness> {
 			return {
 				appendEntry,
 				async fire(event: string, payload: unknown, ctx?: FakeContext) {
-					if (ctx === undefined && payload && typeof payload === "object" && "mode" in payload && "ui" in payload) {
-						await handlers.get(event)?.({ type: event }, payload as FakeContext);
-						return;
+					const [eventPayload, eventCtx] = ctx === undefined && payload && typeof payload === "object" && "mode" in payload && "ui" in payload
+						? [{ type: event }, payload as FakeContext]
+						: [payload, ctx as FakeContext];
+					for (const handler of handlers.get(event) ?? []) {
+						await handler(eventPayload, eventCtx);
 					}
-					await handlers.get(event)?.(payload, ctx as FakeContext);
 				}
 			};
 		},

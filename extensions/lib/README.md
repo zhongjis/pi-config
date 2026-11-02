@@ -8,6 +8,7 @@ Flat utility modules for model selection, fallback, fast requests, logging, clip
 
 - [Prompt variants](prompt-variants.ts) — shared variant-directory reading, body selection, and overlay placement.
 - [Pane host](pane-host.ts) — `detectPaneHost` names the Herdr or Orca terminal host from the injected environment.
+- [Run mode](mode.ts) — `isTui` gates terminal-only behavior; `registerTuiCommand` and `registerTuiShortcut` register terminal-only commands and shortcuts only in TUI sessions.
 
 ## Usage
 
