@@ -54,22 +54,14 @@ describe("ask execution", () => {
 		expect(result.details.aborted).toBeUndefined();
 		expect(custom).not.toHaveBeenCalled();
 	});
-	it("rpc mode answers through dialog methods without custom UI or Herdr blocking events", async () => {
+	it("rpc mode returns a direct question list without dialogs or events", async () => {
 		const { execute, custom, select, emit } = setup([], "rpc");
-		const result = await execute(undefined, undefined, "Decisions");
-		expect(select).toHaveBeenCalledWith("Scope: Which scope?", ["1. Source — Source files", "Other…", "Add note…"], { signal: undefined });
-		expect(result.content[0].text).toBe("Decisions\nScope: user selected: 1. src");
-		expect(result.details).toMatchObject({ mode: "submit", cancelled: false, answers: [{ indices: [1] }] });
+		const result = await execute();
+		expect(result.content[0].text).toContain("Needs user input:");
+		expect(result.details).toMatchObject({ answers: [], notes: [], cancelled: true, mode: "submit" });
 		expect(custom).not.toHaveBeenCalled();
-		expect(emit.mock.calls).toEqual([["user-prompted", { tool: "ask" }]]);
-	});
-	it("pre-aborted rpc execution returns aborted without dialogs", async () => {
-		const { execute, select } = setup([], "rpc");
-		const controller = new AbortController();
-		controller.abort();
-		const result = await execute(undefined, controller.signal);
-		expect(result.details).toMatchObject({ cancelled: true, aborted: true });
 		expect(select).not.toHaveBeenCalled();
+		expect(emit).not.toHaveBeenCalled();
 	});
 	it("pre-aborted TUI execution returns aborted without UI or events", async () => {
 		const { execute, custom, emit } = setup();

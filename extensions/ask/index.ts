@@ -1,5 +1,5 @@
 /**
- * ask — Structured user decisions, notes and clarification in Pi's TUI and RPC clients.
+ * ask — Structured user decisions, notes and clarification in Pi's TUI.
  *
  * Sources: badlogic/pi-mono (questionnaire.ts, question.ts), can1357/oh-my-pi
  * (ask lineage), and eko24ive/pi-ask (notes, previews and clarification).
@@ -18,6 +18,9 @@ import { AskParams, type Answer, type AskDetails, type AskIssue, type AskNote, t
 
 /** Pi's tool row width in an 80-column terminal (its Box pads one column per side). */
 const CALL_HEADER_WIDTH = 78;
+// ponytail: RPC dialogs are off because T3 Code renders each select/input/editor as a separate
+// single-question card. Set true once T3 lets Pi raise its native multi-question card.
+const RPC_DIALOGS = false;
 
 type LabeledText = { label: string; text: string };
 type AskView = {
@@ -175,7 +178,7 @@ export default function ask(pi: ExtensionAPI) {
 			};
 			const questions = normalizeQuestions(input);
 			const emptyDetails: AskDetails = { title: params.title, questions: input, answers: [], notes: [], cancelled: true, mode: "submit" };
-			if (!isTui(ctx) && !ctx.hasUI) return { content: [{ type: "text", text: formatNonTuiQuestions(questions) }], details: emptyDetails };
+			if (!isTui(ctx) && !(RPC_DIALOGS && ctx.hasUI)) return { content: [{ type: "text", text: formatNonTuiQuestions(questions) }], details: emptyDetails };
 			if (signal?.aborted) return { content: [{ type: "text", text: formatResultText(questions, emptyDetails, true) }], details: { ...emptyDetails, aborted: true } };
 
 			if (!isTui(ctx)) {
