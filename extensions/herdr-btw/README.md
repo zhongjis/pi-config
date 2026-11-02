@@ -16,7 +16,7 @@ separate Pi process and can merge its findings back into the parent.
 ## Requirements
 
 - Pi and Herdr v0.7.4+ installed; launches use `herdr pane split` + `herdr agent start --kind pi --pane`.
-- Pi running inside a Herdr-managed pane (`/btw` errors otherwise).
+- Pi running inside a Herdr-managed pane, or an Orca terminal where `orca` is installed (`/btw` errors otherwise). Orca launches use one `orca terminal split` whose command starts pi; Orca detects pi on its own. See [`src/core.ts`](src/core.ts) for the argv builders.
 
 ## Commands
 
@@ -89,6 +89,7 @@ Current divergences from upstream; re-apply each on upstream sync:
   that auto-closes the child pane on quit, and set `PAYLOAD_VERSION` to 5 for that config field.
 - **Patched:** `index.ts` runs the child-side quit cleanup (payload removal, pane close) only in TUI sessions, so UI-less subagent children of a side-thread process leave the pane and payload alone.
 - **Patched:** `index.ts` and `src/core.ts` separate registered availability from ordered active names in an optional version-5 `parentAvailableTools` field. Inherit launches allow the registered names through CLI filtering and restore the exact active selection once at startup `resources_discover`, only for TUI children. Reload/resume/new/fork and UI-less descendants do not restore; later activation persists. Legacy payloads retain active-name CLI fallback; cache comparisons remain active-name based. Inherit CLI allowlists omit `mcp__*` names (pi keeps MCP tools unless an entry starts with `mcp__`), keeping the typed `herdr agent start` command under the 1024-byte terminal line limit; MCP-only lists pass unchanged.
+- **Patched:** `index.ts` and `src/core.ts` add an Orca launch and child-shutdown path next to the Herdr one, selected with `detectPaneHost` from [`../lib/pane-host.ts`](../lib/pane-host.ts); Herdr argv and behavior are unchanged. Host-gate messages and the command description name Herdr or Orca.
 - **Patched:** `index.ts` fallback `before_agent_start` sets the `herdr_btw` prompt section (`SIDE_PANE_INSTRUCTIONS`) instead of returning a rewritten `systemPrompt`. The `native` cache branch still returns the parent's exact `systemPrompt`; sections would change the cached prefix.
 - **Patched:** `index.ts` and `src/core.ts` launch the child with `--session-dir <agentDir>/btw-sessions/<parentSessionId>` instead of upstream `--no-session`, so the side thread writes a session log.
 - **Vendored verbatim:** `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, `LICENSE`.

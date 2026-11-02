@@ -55,7 +55,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - [multimodal-look](multimodal-look/AGENTS.md) — isolated vision inspection.
 - [imagegen](imagegen/AGENTS.md) — vendored image generation, `/img` workflows and local browser studio.
 - [init](init/AGENTS.md) — documentation initialization prompts.
-- [herdr-btw](herdr-btw/AGENTS.md) — vendored `/btw` Herdr side-thread launch and merge.
+- [herdr-btw](herdr-btw/AGENTS.md) — vendored `/btw` Herdr or Orca side-thread launch and merge.
 - [recap](recap/AGENTS.md) — vendored session-recap lifecycle and model-chain fallback.
 - [inline-skills](inline-skills/AGENTS.md) — vendored `$skill:`/`$graph:` tokens and session-bound graph authorization.
 - [ulw](ulw/AGENTS.md) — opt-in ultrawork prompt injection and GPT variant contracts.

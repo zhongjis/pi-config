@@ -14,6 +14,7 @@ import {
 	formatConfig,
 	type BtwConfig,
 } from "./src/config.ts";
+import { detectPaneHost } from "../lib/pane-host.js";
 import { ContextStore } from "./src/context-store.ts";
 import {
 	buildAgentStartArgs,
@@ -24,7 +25,10 @@ import {
 	createPayload,
 	LAUNCH_DRAFT_ARG,
 	LAUNCH_DRAFT_COMMAND,
+	buildOrcaSplitArgs,
 	buildPaneSplitArgs,
+	parseOrcaRetrySplitLeaf,
+	parseOrcaSplitHandle,
 	parsePaneSplitPaneId,
 	safeErrorText,
 	type BtwPayload,
@@ -101,6 +105,27 @@ export function decideCacheMode(
 		return { mode: "fallback", reason: "thinking level differs from parent" };
 	}
 	return { mode: "native" };
+}
+
+/**
+ * Hand focus back to the parent and close the child's own pane on whichever host owns it.
+ * Returns whether the close succeeded; false when no host pane is known.
+ */
+async function closeOwnPane(pi: Pick<ExtensionAPI, "exec">, parentPaneId: string | null): Promise<boolean> {
+	const options = { timeout: 5_000 };
+	const herdrPaneId = process.env.HERDR_PANE_ID;
+	const orcaHandle = process.env.ORCA_TERMINAL_HANDLE;
+	const [command, focusArgs, closeArgs] = herdrPaneId
+		? ["herdr", ["agent", "focus"], ["pane", "close", herdrPaneId]]
+		: orcaHandle
+			? ["orca", ["terminal", "switch", "--terminal"], ["terminal", "close", "--terminal", orcaHandle]]
+			: [];
+	if (!command || !focusArgs || !closeArgs) return false;
+	if (parentPaneId) await pi.exec(command, [...focusArgs, parentPaneId], options).catch(() => undefined);
+	return pi
+		.exec(command, closeArgs, options)
+		.then((result) => result.code === 0)
+		.catch(() => false);
 }
 
 async function configureChild(
@@ -268,22 +293,10 @@ async function configureChild(
 			// Close the loop: hand focus back to the parent pane and close this one.
 			// The mailbox request survives the pane teardown (cleanup is ack-aware),
 			// and the parent picks it up on its next poll or agent_settled.
-			const ownPaneId = process.env.HERDR_PANE_ID;
-			if (ownPaneId) {
-				if (payload.parentPaneId) {
-					await pi
-						.exec("herdr", ["agent", "focus", payload.parentPaneId], { timeout: 5_000 })
-						.catch(() => undefined);
-				}
-				const closed = await pi
-					.exec("herdr", ["pane", "close", ownPaneId], { timeout: 5_000 })
-					.then((result) => result.code === 0)
-					.catch(() => false);
-				// A successful close tears this process down with the pane.
-				if (closed) return;
-			}
+			// A successful close tears this process down with the pane.
+			if (await closeOwnPane(pi, payload.parentPaneId)) return;
 
-			// Fallback (not in a Herdr pane, or the close failed): stay open and
+			// Fallback (not in a Herdr or Orca pane, or the close failed): stay open and
 			// watch for the acknowledgement instead.
 			ctx.ui.notify("Merge pending: waiting for the parent session to accept it.", "info");
 
@@ -328,7 +341,7 @@ async function configureChild(
 			payload?.config.tools === "inherit" && payload.parentAvailableTools !== undefined;
 		restoreToolsEligible = false;
 		if (ctx.mode !== "tui") return;
-		ctx.ui.setTitle("pi /btw — Herdr side thread");
+		ctx.ui.setTitle("pi /btw — side thread");
 
 		if (payloadError) {
 			ctx.ui.setWidget("herdr-btw-context", [
@@ -361,19 +374,43 @@ async function configureChild(
 			// Acknowledgement-aware cleanup: an unacknowledged merge outlives the
 			// child (until ack or the stale TTL), so the parent can still import it.
 			await store.removeIfNoPendingMerge(payloadPath).catch(() => undefined);
-			const ownPaneId = process.env.HERDR_PANE_ID;
-			if (payload?.config.closeOnExit && ownPaneId) {
-				if (payload.parentPaneId) {
-					await pi
-						.exec("herdr", ["agent", "focus", payload.parentPaneId], { timeout: 5_000 })
-						.catch(() => undefined);
-				}
-				await pi
-					.exec("herdr", ["pane", "close", ownPaneId], { timeout: 5_000 })
-					.catch(() => undefined);
-			}
+			if (payload?.config.closeOnExit) await closeOwnPane(pi, payload.parentPaneId);
 		}
 	});
+}
+
+/** Orca launch: a single split whose command starts pi; there is no separate agent-start step. */
+async function launchOrcaPane(
+	pi: Pick<ExtensionAPI, "exec">,
+	store: Pick<ContextStorePort, "remove">,
+	ui: ExtensionCommandContext["ui"],
+	options: HerdrLaunchOptions,
+	parentHandle: string,
+	payloadPath: string,
+	ensurePolling: () => void,
+): Promise<void> {
+	const result = await pi.exec("orca", buildOrcaSplitArgs(options, parentHandle), { timeout: 10_000 });
+	const outcome = classifyLaunchResult(result);
+	if (outcome === "failed") {
+		await store.remove(payloadPath);
+		ui.notify(`/btw failed: ${safeErrorText(result.stdout, result.stderr)}`, "error");
+		return;
+	}
+	if (outcome === "ambiguous") {
+		ensurePolling();
+		const leaf = parseOrcaRetrySplitLeaf(result.stdout, result.stderr) ?? "<leafId>";
+		ui.notify(
+			`/btw launch timed out or was killed after it may have reached Orca; the side pane may still open. Do not split again: run \`orca terminal split --terminal ${parentHandle} --retry-split ${leaf}\` to wait for it. Context cleanup is deferred in case the child pane is still starting.`,
+			"warning",
+		);
+		return;
+	}
+	if (!parseOrcaSplitHandle(result.stdout)) {
+		await store.remove(payloadPath);
+		ui.notify("/btw failed: could not determine the new terminal handle from `orca terminal split` output", "error");
+		return;
+	}
+	ensurePolling();
 }
 
 export async function registerBtwExtension(
@@ -441,7 +478,7 @@ export async function registerBtwExtension(
 		// Pi has no argumentHint field for extension commands (only builtins and
 		// prompt templates); the TUI renders template hints as "hint — description",
 		// so we bake the same shape into the description.
-		description: "[question] — Open a Herdr side thread, or use ask, config, merge, help",
+		description: "[question] — Open a Herdr or Orca side thread, or use ask, config, merge, help",
 		handler: async (args, ctx) => {
 			sessionCtx = ctx;
 			notifyFn = (message, type) => ctx.ui.notify(message, type);
@@ -452,7 +489,7 @@ export async function registerBtwExtension(
 				return;
 			}
 
-			// Config routes before any Herdr/model/conversation launch checks.
+			// Config routes before any host/model/conversation launch checks.
 			if (route.kind === "config") {
 				try {
 					if (route.args === "reset") {
@@ -494,8 +531,10 @@ export async function registerBtwExtension(
 				ctx.ui.notify("/btw requires Pi's interactive mode", "error");
 				return;
 			}
-			if (process.env.HERDR_ENV !== "1" || !process.env.HERDR_PANE_ID) {
-				ctx.ui.notify("/btw must be run inside a Herdr-managed pane", "error");
+			const host = detectPaneHost();
+			const parentPaneId = host === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_PANE_ID;
+			if (!host || !parentPaneId) {
+				ctx.ui.notify("/btw must be run inside a Herdr or Orca pane", "error");
 				return;
 			}
 			if (!ctx.model) {
@@ -534,7 +573,7 @@ export async function registerBtwExtension(
 					createPayload({
 						createdAt,
 						parentSessionId: sessionId,
-						parentPaneId: process.env.HERDR_PANE_ID ?? null,
+						parentPaneId,
 						metadata: {
 							generatedAt: createdAt,
 							cwd: ctx.cwd,
@@ -554,7 +593,7 @@ export async function registerBtwExtension(
 				const launchOptions: HerdrLaunchOptions = {
 					paneName: `btw-${sessionId.slice(0, 6)}-${Date.now().toString(36).slice(-4)}`,
 					cwd: ctx.cwd,
-					parentPaneId: process.env.HERDR_PANE_ID,
+					parentPaneId,
 					payloadPath,
 					sessionDir: join(getAgentDir(), BTW_SESSION_DIR_NAME, sessionId),
 					model: config.model ?? model,
@@ -569,6 +608,11 @@ export async function registerBtwExtension(
 					initialMessage:
 						config.autoSubmit && draftQuestion.trim() ? LAUNCH_DRAFT_COMMAND : undefined,
 				};
+
+				if (host === "orca") {
+					await launchOrcaPane(pi, store, ctx.ui, launchOptions, parentPaneId, payloadPath, ensurePolling);
+					return;
+				}
 
 				// Step 1: create the side pane (carries cwd + payload env var).
 				const splitResult = await pi.exec("herdr", buildPaneSplitArgs(launchOptions), {

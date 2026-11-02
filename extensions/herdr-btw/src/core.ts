@@ -258,6 +258,11 @@ export function parsePaneSplitPaneId(stdout: string): string | null {
  * the canonical executable for `--kind pi`, so only pi's own args follow `--`.
  */
 export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string): string[] {
+	return ["agent", "start", options.paneName, "--kind", "pi", "--pane", paneId, "--", ...buildPiArgs(options)];
+}
+
+/** Child pi CLI arguments shared by every pane host. */
+function buildPiArgs(options: HerdrLaunchOptions): string[] {
 	const inheritTools = options.availableTools ?? options.activeTools;
 	// ponytail: mcp__* names are omitted to keep the typed command under macOS's 1024-byte terminal line limit.
 	// MCP availability falls back to pi's default of all connected servers, so a parent that restricted MCP via
@@ -265,14 +270,6 @@ export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string)
 	const nonMcpTools = inheritTools.filter((name) => !name.startsWith("mcp__"));
 	const cliTools = nonMcpTools.length > 0 ? nonMcpTools : inheritTools;
 	return [
-		"agent",
-		"start",
-		options.paneName,
-		"--kind",
-		"pi",
-		"--pane",
-		paneId,
-		"--",
 		"--session-dir",
 		options.sessionDir,
 		"--model",
@@ -290,6 +287,47 @@ export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string)
 					: []),
 		...(options.initialMessage ? [options.initialMessage] : []),
 	];
+}
+
+/** POSIX single-quote escaping, safe for any argument typed into an interactive shell. */
+export function shellQuote(arg: string): string {
+	return `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * Orca launch: one `terminal split` that types the pi command into the new pane's shell.
+ * Orca has no cwd/env/focus flags and no agent-start step (it detects pi via hooks),
+ * so the payload env var rides in the command and every argument is shell-quoted.
+ */
+export function buildOrcaSplitArgs(options: HerdrLaunchOptions, parentHandle: string): string[] {
+	const command = ["env", `PI_HERDR_BTW_PAYLOAD=${shellQuote(options.payloadPath)}`, "pi", ...buildPiArgs(options).map(shellQuote)].join(" ");
+	return [
+		"terminal",
+		"split",
+		"--terminal",
+		parentHandle,
+		"--direction",
+		options.split === "right" ? "vertical" : "horizontal",
+		"--command",
+		command,
+		"--json",
+	];
+}
+
+/** Extract the new terminal handle from `orca terminal split --json` output. */
+export function parseOrcaSplitHandle(stdout: string): string | null {
+	try {
+		const parsed = JSON.parse(stdout) as { result?: { split?: { handle?: unknown } } };
+		const handle = parsed?.result?.split?.handle;
+		return typeof handle === "string" && handle.length > 0 ? handle : null;
+	} catch {
+		return null;
+	}
+}
+
+/** Leaf ID Orca reports for a timed-out split; pass it to `--retry-split` instead of splitting again. */
+export function parseOrcaRetrySplitLeaf(stdout: string, stderr: string): string | null {
+	return /--retry-split\s+(\S+)/.exec(`${stderr}\n${stdout}`)?.[1] ?? null;
 }
 
 export function classifyLaunchResult(result: LaunchResult): LaunchOutcome {
