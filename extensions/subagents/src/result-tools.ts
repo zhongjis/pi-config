@@ -38,7 +38,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     statsParts.push(`Duration: ${formatDuration(record.startedAt, record.completedAt)}`);
     let output =
       `Agent: ${record.id}\n` +
-      `Type: ${getDisplayName(record.type)} | Status: ${record.status}${getStatusNote(record.status)} | ${statsParts.join(" | ")}\n` +
+      `Type: ${getDisplayName(record.type)} | Status: ${record.status}${getStatusNote(record.status, record.interruptionCause)} | ${statsParts.join(" | ")}\n` +
       `Description: ${record.description}\n\n`;
     if (!transcript.ok) {
       output += `Transcript unavailable (${transcript.reason}).${workNotesSuffix(record)}`;
@@ -143,7 +143,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     execute: async (_toolCallId, params, _signal, _onUpdate, _ctx) => {
       const notRunning = (status: string, resumable: boolean) => {
         const text = `Agent "${params.agent_id}" is not running (status: ${status}). Cannot steer a non-running agent.`;
-        return textResult(resumable ? `${text}\nTo continue it, call agent with resume: "${params.agent_id}" and a new prompt.` : text);
+        return textResult(resumable ? `${text}\nTo continue it, call subagent with resume: "${params.agent_id}" and a new prompt.` : text);
       };
       const record = manager.getRecord(params.agent_id);
       if (!record) {
@@ -190,7 +190,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
       wait: Type.Optional(Type.Boolean({ description: "Wait for completion or an escalated decision. Cancellation stops only this wait." })),
       verbose: Type.Optional(Type.Boolean({ description: "Include an independent agent's conversation." })),
     }),
-    execute: async (id, params, signal, onUpdate, ctx) => {
+    execute: async (_id, params, signal, onUpdate, ctx) => {
       if (isGraphRunId(params.run_id)) return graphs.retrieve(params.run_id, params.wait === true, signal);
       const retrieve = async () => {
         const result = await retrieveAgent({ agent_id: params.run_id, wait: params.wait, verbose: params.verbose }, ctx, signal);
@@ -200,7 +200,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
       if (!delivery.nativePresentation) return retrieve();
       const record = manager.getRecord(params.run_id);
       return delivery.nativePresentation({
-        id, ctx, signal, onUpdate, enabled: params.wait === true,
+        ctx, signal, onUpdate, enabled: params.wait === true, cards: false,
         type: record?.type ?? "agent", description: record?.description ?? params.run_id,
         record: () => manager.getRecord(params.run_id),
       }, retrieve);

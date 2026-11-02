@@ -9,7 +9,7 @@
  * never actually spawn a subagent or exercise the background hold condition.
  * This runner closes that gap: it boots a real headless pi session with the
  * pi-subagents extension loaded, drives a real assistant turn that calls the
- * `agent` tool, and lets the extension spawn a real child session through the
+ * `subagent` tool, and lets the extension spawn a real child session through the
  * real Execution path — then waits for it to finish exactly like a production
  * print-mode host does.
  *
@@ -37,7 +37,7 @@
  * ------------------------
  * The same `runPrintMode()` covers `.pi/agents/*.md` /
  * `.agents/agents/*.md` frontmatter agents, and inline-instruction agents — the difference is purely
- * what you register in `beforeRun` and which `subagent_type` the `agent` call
+ * what you register in `beforeRun` and which `subagent_type` the `subagent` call
  * names. See `test/subagents-print-mode-e2e.test.ts` for usage.
  */
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -169,7 +169,7 @@ export interface PrintModeRun {
 // --------------------------------------------------------------------------
 
 /**
- * Build an `agent` tool call for a faux assistant turn. `subagent_type` defaults
+ * Build a `subagent` tool call for a faux assistant turn. `subagent_type` defaults
  * to "fixture"; everything else is passed straight through as tool args.
  */
 export function agentCall(
@@ -182,7 +182,7 @@ export function agentCall(
   },
   opts?: { id?: string },
 ): ToolCall {
-  return fauxToolCall("agent", { subagent_type: "fixture", ...args }, opts);
+  return fauxToolCall("subagent", { subagent_type: "fixture", ...args }, opts);
 }
 
 function resolveReply(
@@ -195,10 +195,10 @@ function resolveReply(
 /**
  * The common single-spawn flow as a responder. Routes by inspecting the calling
  * session's own context:
- *   - PARENT  (its tool set includes `agent`):
- *       · `parentInitial` until an `agent` tool result is in history (the spawn),
+ *   - PARENT  (its tool set includes `subagent`):
+ *       · `parentInitial` until a `subagent` tool result is in history (the spawn),
  *       · then `parentFinal` (the answer after the child reports back).
- *   - SUBAGENT (no `agent` tool): `subagent`.
+ *   - SUBAGENT (no `subagent` tool): `subagent`.
  * Each route may be a value or a `(ctx) => value` function.
  */
 export function routeBySession(routes: {
@@ -207,10 +207,10 @@ export function routeBySession(routes: {
   subagent: FauxReply | ((ctx: TranscriptContext) => FauxReply);
 }): FauxResponder {
   return (context) => {
-    const isParent = getCurrentTools(context.messages).some((t) => t.name === "agent");
+    const isParent = getCurrentTools(context.messages).some((t) => t.name === "subagent");
     if (!isParent) return resolveReply(routes.subagent, context);
     const spawned = context.messages.some(
-      (m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "agent",
+      (m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "subagent",
     );
     if (spawned) {
       return routes.parentFinal != null
@@ -237,7 +237,7 @@ function toAssistantMessage(reply: FauxReply): AssistantMessage {
 // --------------------------------------------------------------------------
 
 const DEFAULT_SYSTEM_PROMPT =
-  "You are a headless orchestrator. Use the `agent` tool to delegate, then report the result.";
+  "You are a headless orchestrator. Use the `subagent` tool to delegate, then report the result.";
 
 function isLive(options: RunPrintModeOptions): boolean {
   return Boolean(options.live) || /^(1|true|yes)$/i.test(process.env.PI_E2E_LIVE ?? "");
@@ -253,7 +253,7 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
   const cwd = options.cwd ?? mkdtempSync(join(tmpdir(), "subagents-print-"));
 
   // chdir into cwd: the extension discovers project custom agents from process.cwd()
-  // (not ctx.cwd), and re-reads them on every `agent` invocation — so a custom agent
+  // (not ctx.cwd), and re-reads them on every `subagent` invocation — so a custom agent
   // is only spawnable if process.cwd() points at the dir holding it. Restored on
   // dispose. (Vitest isolates test files per process, so this doesn't race.)
   const prevCwd = process.cwd();
@@ -509,7 +509,7 @@ export async function runPrintMode(options: RunPrintModeOptions): Promise<PrintM
 }
 
 /**
- * Extract the text of every `agent` tool result in a session's history. This is
+ * Extract the text of every `subagent` tool result in a session's history. This is
  * the real end-to-end observable: for a foreground spawn it contains the child's
  * own output; for a background spawn it's the "started in background" envelope.
  */
@@ -517,7 +517,7 @@ export function agentToolResults(session: AgentSession): string[] {
   const out: string[] = [];
   for (const msg of session.messages) {
     if (msg.role !== "toolResult") continue;
-    if ((msg as { toolName?: string }).toolName !== "agent") continue;
+    if ((msg as { toolName?: string }).toolName !== "subagent") continue;
     const text = (msg.content as Array<{ type?: string; text?: string }>)
       .map((b) => (b.type === "text" ? (b.text ?? "") : ""))
       .join("");
@@ -557,7 +557,7 @@ export function invokedToolNames(session: AgentSession): string[] {
 }
 
 /**
- * The arguments of every `agent` tool call the model actually made — lets a live
+ * The arguments of every `subagent` tool call the model actually made — lets a live
  * smoke assert which feature was exercised (e.g. `run_in_background`,
  * `subagent_type`) rather than just that *some* spawn happened.
  */
@@ -566,7 +566,7 @@ export function agentToolCalls(session: AgentSession): Array<Record<string, unkn
   for (const msg of session.messages) {
     if (msg.role !== "assistant") continue;
     for (const block of msg.content as Array<{ type?: string; name?: string; arguments?: unknown }>) {
-      if (block.type === "toolCall" && block.name === "agent") {
+      if (block.type === "toolCall" && block.name === "subagent") {
         out.push((block.arguments ?? {}) as Record<string, unknown>);
       }
     }

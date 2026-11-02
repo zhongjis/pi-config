@@ -456,12 +456,12 @@ describe("modes + subagents agent roster — integration", () => {
 		const capture = (context: TranscriptContext) => {
 			requests.push({
 				sections: getCurrentSystemMessage(context.messages)?.sections ?? {},
-				agentDescription: getCurrentTools(context.messages).find((tool) => tool.name === "agent")?.description,
+				agentDescription: getCurrentTools(context.messages).find((tool) => tool.name === "subagent")?.description,
 			});
 			return undefined;
 		};
 		t = await createTestSession({ extensions, fauxResponseRouter: capture });
-		const listedDescription: string = t.session.extensionRunner.getToolDefinition("agent").description;
+		const listedDescription: string = t.session.extensionRunner.getToolDefinition("subagent").description;
 		expect(rosterRows(listedDescription).length).toBeGreaterThan(0);
 
 		await t.run(when("Roster mode", [says("Done.")]));

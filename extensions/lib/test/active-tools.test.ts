@@ -301,9 +301,9 @@ describe("resolveToolAccess", () => {
   });
 
   it("denies nested-subagent tools unless allowNesting is true", () => {
-    const tools: ToolCandidate[] = [{ name: "agent", source: "/x/subagents/index.ts", extensionIds: ["subagents"] }];
-    expect(resolveToolAccess([{ sign: "+", selector: "@all" }], tools).allowed.has("agent")).toBe(false);
-    expect(resolveToolAccess([{ sign: "+", selector: "@all" }], tools, { allowNesting: true }).allowed.has("agent")).toBe(true);
+    const tools: ToolCandidate[] = [{ name: "subagent", source: "/x/subagents/index.ts", extensionIds: ["subagents"] }];
+    expect(resolveToolAccess([{ sign: "+", selector: "@all" }], tools).allowed.has("subagent")).toBe(false);
+    expect(resolveToolAccess([{ sign: "+", selector: "@all" }], tools, { allowNesting: true }).allowed.has("subagent")).toBe(true);
   });
 
   it("goal tools are allowed only through the goal gate's allowed list", () => {

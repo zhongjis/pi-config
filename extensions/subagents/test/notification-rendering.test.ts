@@ -1,4 +1,3 @@
-import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +6,7 @@ import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { type AgentPresentation, createNotificationCoordinator } from "../src/notification-coordinator.js";
 import type { AgentRecord, NotificationDetails } from "../src/types.js";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 
 vi.mock("@earendil-works/pi-tui", () => import("../../../node_modules/@earendil-works/pi-tui/dist/index.js"));
 // Stub keyHint so graph-run-card renders (used by G2 tests) do not need a real TUI theme.
@@ -22,8 +22,8 @@ import { openSession } from "../src/agent-runner.js";
 import { graphRunEntryData } from "../src/graph/entry.js";
 import { createGraphRunTask } from "../src/graph/task.js";
 import subagentsExtension from "../src/index.js";
-import { fakeSession, opened } from "./helpers/session-seam.js";
 import { chainOn } from "./helpers/lifecycle.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 type Renderable = {
   render(width: number): string[];
@@ -72,7 +72,7 @@ const tools = new Map<string, ToolDefinition>();
 const lifecycle = new Map<string, LifecycleHandler>();
 const sendMessage = vi.fn();
 const pi = {
-  registerMessageRenderer: vi.fn((type: string, renderer: MessageRenderer) => renderers.set(type, renderer)),
+  registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn((type: string, renderer: MessageRenderer) => renderers.set(type, renderer)),
   registerTool: vi.fn((tool: ToolDefinition) => tools.set(tool.name, tool)),
   registerCommand: vi.fn(),
   registerFlag: vi.fn(),
@@ -414,7 +414,7 @@ describe("subagent notification rendering migration", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-24T00:00:00.000Z"));
     vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => "Renderer migration complete.")));
-    const tool = tools.get("agent");
+    const tool = tools.get("subagent");
     expect(tool).toBeDefined();
 
     await tool?.execute(

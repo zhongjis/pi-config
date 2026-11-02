@@ -11,27 +11,27 @@ function expectClosed(host: ReturnType<typeof presentationHost>, id: string, ent
   expect(updates.at(-1)).toMatchObject({ details: { results: [{ finished: true, ...entry }] } });
 }
 
-describe("foreground native cards through registered agent", () => {
+describe("foreground native cards through registered subagent", () => {
   it.each([false, true])("completes with actual model and preserves the authoritative result (resume: %s)", async (resume) => {
     const host = presentationHost();
-    const tool = required(host.tools.get("agent"));
+    const tool = required(host.tools.get("subagent"));
     mockSessions(() => "THE ANSWER");
     const previous = resume ? await tool.execute("first", launchParams, undefined, undefined, host.ctx) : undefined;
     const id = previous && /Agent ID: (\S+)/.exec(resultText(previous))?.[1];
     const ctx = host.context("run");
     const result = await tool.execute("run", { ...launchParams, ...(id ? { resume: id } : {}) }, undefined, undefined, ctx);
     expectClosed(host, "run", { exitCode: 0, model: "test/chosen", messages: [{ role: "assistant", content: [{ type: "text", text: "THE ANSWER" }] }] });
-    expect(ctx.executeTool).toHaveBeenCalledExactlyOnceWith("subagent", {});
+    expect(ctx.executeTool).not.toHaveBeenCalled();
     expect(result).toMatchObject({ details: { status: "completed", result: "THE ANSWER", modelName: "test/chosen" } });
     expect(result).not.toHaveProperty("isError", true);
     if (resume) expect(resultText(result)).toBe("THE ANSWER");
     else expect(resultText(result)).toMatch(/^Agent ID: \S+\nAgent completed in .*\n\nTHE ANSWER$/);
-    expect(result.details).not.toHaveProperty("results");
+    expect(result.details).toMatchObject({ results: [{ finished: true, exitCode: 0 }] });
   });
 
   it.each([false, true])("closes provider failures (resume: %s)", async (resume) => {
     const host = presentationHost();
-    const tool = required(host.tools.get("agent"));
+    const tool = required(host.tools.get("subagent"));
     const previous = resume ? await tool.execute("first", launchParams, undefined, undefined, host.ctx) : undefined;
     const id = previous && /Agent ID: (\S+)/.exec(resultText(previous))?.[1];
     mockSessions(() => ({ failure: "provider unavailable" }));
@@ -48,27 +48,16 @@ describe("foreground native cards through registered agent", () => {
 
   it.each(["missing", "fixture"]) ("closes policy denial or missing resume: %s", async (type) => {
     const host = presentationHost();
-    const result = await required(host.tools.get("agent")).execute("refused", { ...launchParams, subagent_type: type, ...(type === "fixture" ? { resume: "absent" } : {}) }, undefined, undefined, host.context("refused"));
+    const result = await required(host.tools.get("subagent")).execute("refused", { ...launchParams, subagent_type: type, ...(type === "fixture" ? { resume: "absent" } : {}) }, undefined, undefined, host.context("refused"));
     const updates = required(host.entries.get("refused"));
     expect(updates[0]).toMatchObject({ details: { results: [{ finished: false }] } });
     expect(updates.at(-1)).toMatchObject({ details: { results: [{ finished: true, exitCode: 1, stopReason: "error", errorMessage: resultText(result) }] } });
   });
 
-  it.each(["parked", "rejected"])("never lets a %s presentation call hold or fail the run", async (outcome) => {
-    const host = presentationHost();
-    mockSessions(() => "THE ANSWER");
-    const ctx = host.context("held");
-    // A T3 Supervised approval parks the nested call; a mode or approval block rejects it.
-    ctx.executeTool.mockImplementationOnce(() => outcome === "parked" ? new Promise(() => {}) : Promise.reject(new Error("blocked")));
-    const result = await required(host.tools.get("agent")).execute("held", launchParams, undefined, undefined, ctx);
-    expect(result).toMatchObject({ details: { status: "completed", result: "THE ANSWER" } });
-    expect(result).not.toHaveProperty("isError", true);
-  });
-
   it("closes thrown preparation errors without changing their propagation", async () => {
     const host = presentationHost();
     writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\nmodel: unavailable/model\n---\nTask");
-    await expect(required(host.tools.get("agent")).execute("throw", launchParams, undefined, undefined, host.context("throw"))).rejects.toThrow();
+    await expect(required(host.tools.get("subagent")).execute("throw", launchParams, undefined, undefined, host.context("throw"))).rejects.toThrow();
     expectClosed(host, "throw", { exitCode: 1, stopReason: "error", errorMessage: expect.any(String) });
   });
 
@@ -77,13 +66,13 @@ describe("foreground native cards through registered agent", () => {
     const controller = new AbortController();
     mockSessions(async (_prompt, session) => { await session.aborted; return { aborted: true }; });
     if (alreadyAborted) controller.abort("caller cancelled");
-    const pending = required(host.tools.get("agent")).execute("abort", launchParams, controller.signal, undefined, host.context("abort"));
+    const pending = required(host.tools.get("subagent")).execute("abort", launchParams, controller.signal, undefined, host.context("abort"));
     if (!alreadyAborted) { await flush(); controller.abort("caller cancelled"); }
     await pending;
-    expectClosed(host, "abort", { stopReason: "aborted", errorMessage: "caller cancelled", messages: [{ role: "assistant", content: [{ text: "caller cancelled" }] }] });
+    expectClosed(host, "abort", { stopReason: "aborted", errorMessage: "cancelled by caller", messages: [{ role: "assistant", content: [{ text: "cancelled by caller" }] }] });
   });
 
-  it.each(["tui", "headless", "background", "queued", "configured-background"] as const)("does not start a nested card for %s", async (kind) => {
+  it.each(["tui", "headless", "background", "queued", "configured-background"] as const)("does not attach native results for %s", async (kind) => {
     const host = presentationHost({ maxConcurrent: 1 });
     if (kind === "configured-background") writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\nrun_in_background: true\n---\nTask");
     const hold = deferred();
@@ -91,13 +80,15 @@ describe("foreground native cards through registered agent", () => {
     const ctx = host.context(kind, kind === "tui" ? "tui" : "rpc", kind !== "headless");
     const background = ["background", "queued"].includes(kind);
     try {
-      if (kind === "queued") await required(host.tools.get("agent")).execute("occupy", { ...launchParams, run_in_background: true }, undefined, undefined, ctx);
-      const pending = required(host.tools.get("agent")).execute(kind, { ...launchParams, ...(background ? { run_in_background: true } : {}) }, undefined, undefined, ctx);
+      if (kind === "queued") await required(host.tools.get("subagent")).execute("occupy", { ...launchParams, run_in_background: true }, undefined, undefined, ctx);
+      const pending = required(host.tools.get("subagent")).execute(kind, { ...launchParams, ...(background ? { run_in_background: true } : {}) }, undefined, undefined, ctx);
       await flush();
       expect(ctx.executeTool).not.toHaveBeenCalled();
       hold.resolve();
       const result = await pending;
       if (kind === "queued") expect(result).toMatchObject({ details: { status: "queued" } });
+      expect(result.details).not.toHaveProperty("results");
+      expect(host.entries.get(kind)?.some(update => update.details && typeof update.details === "object" && "results" in update.details)).not.toBe(true);
     } finally { hold.resolve(); }
   });
 
@@ -114,14 +105,14 @@ describe("foreground native cards through registered agent", () => {
     }] }));
     await host.lifecycle("session_start");
     mockSessions(() => "RESTORED");
-    const result = await required(host.tools.get("agent")).execute("restore", { ...launchParams, resume: "evicted" }, undefined, undefined, host.context("restore"));
+    const result = await required(host.tools.get("subagent")).execute("restore", { ...launchParams, resume: "evicted" }, undefined, undefined, host.context("restore"));
     expectClosed(host, "restore", refused ? { exitCode: 1, stopReason: "error", errorMessage: resultText(result) }
       : { exitCode: 0, messages: [{ content: [{ text: "RESTORED" }] }] });
   });
 
   it("isolates parallel calls and closes both cards", async () => {
     const host = presentationHost();
-    const tool = required(host.tools.get("agent"));
+    const tool = required(host.tools.get("subagent"));
     await Promise.all(["left", "right"].map(id => tool.execute(id, launchParams, undefined, undefined, host.context(id))));
     for (const id of ["left", "right"]) expectClosed(host, id, { exitCode: 0 });
   });

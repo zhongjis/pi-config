@@ -93,7 +93,7 @@ type ToolFixture = {
 };
 
 const FIXTURES: Record<string, ToolFixture> = {
-  agent: {
+  subagent: {
     args: { prompt: "Audit renderer output", description: "renderer audit", subagent_type: "juling", skills: ["pi-extensions", "vitest"] },
     raw: "Renderer audit complete.\nRAW31_01",
     details: {
@@ -303,7 +303,7 @@ describe("tool output TUI rendering — real Pi integration", () => {
       type: "message",
       message: expect.objectContaining({
         role: "assistant",
-        content: expect.arrayContaining([expect.objectContaining({ type: "toolCall", name: "agent", arguments: expect.objectContaining({ skills: ["pi-extensions", "vitest"] }) })]),
+        content: expect.arrayContaining([expect.objectContaining({ type: "toolCall", name: "subagent", arguments: expect.objectContaining({ skills: ["pi-extensions", "vitest"] }) })]),
       }),
     }));
     expect(lines).toContainEqual(expect.objectContaining({ type: "message", message: expect.objectContaining({ role: "toolResult", toolName: "steer_subagent", isError: true }) }));

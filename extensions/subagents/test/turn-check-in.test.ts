@@ -1,5 +1,5 @@
 /**
- * turn-check-in.test.ts — the orchestrator check-in through the real `agent`,
+ * turn-check-in.test.ts — the orchestrator check-in through the real `subagent`,
  * `get_agent_result`, and notification wiring: a waiting retrieval returns early,
  * a foreground call (fresh, live resume, or evicted resume) converts to
  * background, and an unobserved check-in sends one follow-up notification.
@@ -55,7 +55,7 @@ async function checkIn(runs: ParkedRun[], index: number) {
 }
 
 async function launchBackground(host: Host, toolCallId = "tc-bg") {
-  const result = await host.tools.get("agent")?.execute(toolCallId, { prompt: "inspect", description: "inspect repo", subagent_type: "fixture", run_in_background: true }, undefined, undefined, host.ctx);
+  const result = await host.tools.get("subagent")?.execute(toolCallId, { prompt: "inspect", description: "inspect repo", subagent_type: "fixture", run_in_background: true }, undefined, undefined, host.ctx);
   const id = /Agent ID: (\S+)/.exec(textOf(result ?? { content: [] }))?.[1];
   if (!id) throw new Error("No background agent id");
   return id;
@@ -135,7 +135,7 @@ describe("orchestrator turn check-in", () => {
   it("converts a foreground call to background; completion arrives as a notification and the foreground slot stays held until Settlement", async () => {
     const runs = parkRuns();
     const host = boot({ maxConcurrentForeground: 1 });
-    const agent = host.tools.get("agent");
+    const agent = host.tools.get("subagent");
     const foreground = agent?.execute("tc-fg", { prompt: "audit", description: "audit repo", subagent_type: "fixture" }, undefined, undefined, host.ctx);
     let next: ReturnType<NonNullable<typeof agent>["execute"]> | undefined;
     try {
@@ -167,7 +167,7 @@ describe("orchestrator turn check-in", () => {
   it("keeps a converted Execution unsupervised past the ceiling, but supervises its next background resume", async () => {
     const runs = parkRuns();
     const host = boot();
-    const agent = host.tools.get("agent");
+    const agent = host.tools.get("subagent");
     let convertedRecord: AgentRecord | undefined;
     const foreground = agent?.execute("tc-convert", { prompt: "audit", description: "audit repo", subagent_type: "fixture" }, undefined, undefined, host.ctx);
     try {
@@ -206,7 +206,7 @@ describe("orchestrator turn check-in", () => {
       return `${prompt} answer`;
     });
     const host = boot();
-    const agent = host.tools.get("agent");
+    const agent = host.tools.get("subagent");
     const first = await agent?.execute("tc-first", { prompt: "audit", description: "audit repo", subagent_type: "fixture" }, undefined, undefined, host.ctx);
     const id = /Agent ID: (\S+)/.exec(textOf(first ?? { content: [] }))?.[1] ?? "";
     try {
@@ -222,7 +222,7 @@ describe("orchestrator turn check-in", () => {
   it("converts a foreground evicted resume at the check-in; its completion arrives as a background notification", async () => {
     const runs = parkRuns();
     const host = await bootIndexed();
-    const resuming = host.tools.get("agent")?.execute("tc-restore", { prompt: "again", description: "resume", subagent_type: "fixture", resume: "evicted-1" }, undefined, undefined, host.ctx);
+    const resuming = host.tools.get("subagent")?.execute("tc-restore", { prompt: "again", description: "resume", subagent_type: "fixture", resume: "evicted-1" }, undefined, undefined, host.ctx);
     try {
       await checkIn(runs, 0);
       expectConverted(await resuming, { id: "evicted-1", description: "evicted review" }, CHECK_IN, "tc-restore");

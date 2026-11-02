@@ -27,7 +27,7 @@ export type Theme = {
 
 export type { AgentActivity } from "../types.js";
 
-/** Metadata attached to `agent` tool results for custom rendering. */
+/** Metadata attached to `subagent` tool results for custom rendering. */
 export interface AgentDetails {
   interruptionCause?: AgentRecord["interruptionCause"];
   displayName: string;
@@ -62,7 +62,7 @@ export interface AgentDetails {
   error?: string;
   /**
    * Stable delegation-policy denial metadata (mirrors the OLD subagent
-   * extension). Present only on a denied `agent` tool result; the tool_result
+   * extension). Present only on a denied `subagent` tool result; the tool_result
    * hook keys off `category` + `invocationStatus` to mark the call as an error.
    */
   invocationStatus?: "failed";

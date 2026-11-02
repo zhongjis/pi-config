@@ -11,7 +11,7 @@ Where the details live:
 | Workflow lifecycles and how-to | [`docs/guides/orchistration.md`](orchistration.md) |
 | Delegation authorization internals | [`docs/specs/mode-scoped-subagent-delegation.md`](../specs/mode-scoped-subagent-delegation.md) |
 | Mode switching, plan approval, restrictions | [`docs/specs/modes.md`](../specs/modes.md) · [`extensions/modes/README.md`](../../extensions/modes/README.md) |
-| `agent` tool API (spawn / resume / supervise) | [`extensions/subagents/README.md`](../../extensions/subagents/README.md) |
+| `subagent` tool API (spawn / resume / supervise) | [`extensions/subagents/README.md`](../../extensions/subagents/README.md) |
 | Frontmatter fields (`delegation`, `prompt_mode`, …) | [`docs/guides/agent-frontmatter.md`](agent-frontmatter.md) |
 
 ---
@@ -82,7 +82,7 @@ spawn ingress (a denial reports the permitted targets). Full model:
 | Any → any | manual | `/mode <name>` or the other switching entry points in [modes.md](../specs/modes.md). |
 
 `fuxi` and `houtu` are **modes, not spawnable subagents** — moving between them is a
-mode switch (or the approval bridge), never an `agent` call. See
+mode switch (or the approval bridge), never a `subagent` call. See
 [modes.md](../specs/modes.md) for switching details.
 
 ---

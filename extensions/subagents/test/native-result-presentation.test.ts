@@ -8,7 +8,7 @@ async function parkedBackground(host: ReturnType<typeof presentationHost>) {
   const release = deferred();
   const started = deferred<ScriptedSession>();
   mockSessions(async (_prompt, session) => { started.resolve(session); await release.promise; return "background answer"; });
-  const launched = await required(host.tools.get("agent")).execute("launch", { ...launchParams, run_in_background: true }, undefined, undefined, host.context("launch"));
+  const launched = await required(host.tools.get("subagent")).execute("launch", { ...launchParams, run_in_background: true }, undefined, undefined, host.context("launch"));
   const id = required(/Agent ID: (\S+)/.exec(resultText(launched))?.[1]);
   return { id, release, session: await started.promise };
 }
@@ -20,7 +20,7 @@ function finalEntry(host: ReturnType<typeof presentationHost>, id: string, entry
 }
 
 describe("registered waiting retrieval presentation", () => {
-  it("streams a readable partial and closes with the real result, without changing final content/details", async () => {
+  it("streams readable progress without cards and preserves final content/details", async () => {
     const host = presentationHost();
     const run = await parkedBackground(host);
     const updates: AgentToolResult<unknown>[] = [];
@@ -29,14 +29,14 @@ describe("registered waiting retrieval presentation", () => {
       expect(updates[0]).toMatchObject({ content: [{ text: expect.stringMatching(/^fixture · test\/chosen · .* · 0 tool uses · /) }] });
       run.release.resolve();
       const result = await pending;
-      finalEntry(host, "wait", { exitCode: 0, model: "test/chosen", messages: [{ content: [{ text: "background answer" }] }] });
+      expect(updates.every(update => !update.details || typeof update.details !== "object" || !("results" in update.details))).toBe(true);
       expect(resultText(result)).toContain("background answer");
       expect(result).toMatchObject({ details: { kind: "agent", run_id: run.id, status: "completed", result: "background answer" } });
       expect(result.details).not.toHaveProperty("results");
     } finally { run.release.resolve(); }
   });
 
-  it.each(["check-in", "abort"])("closes a waiting retrieval at %s without cancelling execution", async (ending) => {
+  it.each(["check-in", "abort"])("ends a waiting retrieval at %s without cards or cancelling execution", async (ending) => {
     vi.stubEnv("SUBAGENT_TURN_CHECK_IN", "1");
     const host = presentationHost();
     const run = await parkedBackground(host);
@@ -47,12 +47,11 @@ describe("registered waiting retrieval presentation", () => {
       else controller.abort("wait cancelled");
       if (ending === "check-in") {
         expect(resultText(await pending)).toContain("pending");
-        finalEntry(host, "wait", { exitCode: 0, messages: [{ content: [{ text: `continues in background as ${run.id}` }] }] });
       } else {
         await expect(pending).rejects.toBe("wait cancelled");
-        finalEntry(host, "wait", { stopReason: "aborted", errorMessage: "wait cancelled" });
       }
       expect(host.entries.has("launch")).toBe(false);
+      expect(host.entries.get("wait")?.every(update => !update.details || typeof update.details !== "object" || !("results" in update.details))).toBe(true);
     } finally { run.release.resolve(); await flush(); }
   });
 
@@ -74,7 +73,7 @@ describe("registered waiting retrieval presentation", () => {
   it.each([false, true])("closes foreground check-in conversion (resume: %s)", async (resume) => {
     vi.stubEnv("SUBAGENT_TURN_CHECK_IN", "1");
     const host = presentationHost();
-    const tool = required(host.tools.get("agent"));
+    const tool = required(host.tools.get("subagent"));
     let runId: string | undefined;
     const hold = deferred();
     const started = deferred<ScriptedSession>();
@@ -106,7 +105,7 @@ describe("registered waiting retrieval presentation", () => {
     mockSessions(async (_prompt, session) => { started.resolve(session); await hold.promise; return "done"; });
     const updates: AgentToolResult<unknown>[] = [];
     try {
-      const pending = required(host.tools.get("agent")).execute("progress", launchParams, undefined, update => updates.push(update), host.context("progress"));
+      const pending = required(host.tools.get("subagent")).execute("progress", launchParams, undefined, update => updates.push(update), host.context("progress"));
       const session = await started.promise;
       session.toolStart("read");
       session.textDelta("latest response");

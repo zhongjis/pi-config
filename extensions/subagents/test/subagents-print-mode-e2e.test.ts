@@ -4,7 +4,7 @@
  *
  * Unlike agent-runner-e2e / ext-templates-e2e (which assert on the gated tool
  * set captured at construction and never drive a turn), these tests drive a real
- * parent turn that calls the `agent` tool, lets the extension spawn a real child
+ * parent turn that calls the `subagent` tool, lets the extension spawn a real child
  * session via the real Execution, and waits for it through the real subagent
  * hold condition — then asserts on what actually flowed back.
  *
@@ -133,7 +133,7 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
         parentFinal: (ctx: TranscriptContext) => {
           const childOut = [...ctx.messages]
             .reverse()
-            .find((m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "agent");
+            .find((m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "subagent");
           const text = ((childOut?.content ?? []) as Array<{ text?: string }>)
             .map((b) => b.text ?? "")
             .join("");
@@ -143,7 +143,7 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
       }),
     });
 
-    // The child actually ran: its output reached the parent via the `agent` tool
+    // The child actually ran: its output reached the parent via the `subagent` tool
     // result (real record.result), and the parent's final answer was derived
     // from that result — not a value the test hard-coded into the parent.
     const toolResults = agentToolResults(run.parentSession);
@@ -151,7 +151,7 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
     expect(toolResults[0]).toContain("CHILD_GREETING_OK");
     expect(run.responseText).toContain("CHILD_GREETING_OK");
     expect(run.responseText).not.toContain("CHILD_MISSING");
-    // Parent t1 (`agent` call) + child t1 (reply) + parent t2 (final) = 3 calls.
+    // Parent t1 (`subagent` call) + child t1 (reply) + parent t2 (final) = 3 calls.
     expect(run.modelCalls).toBeGreaterThanOrEqual(3);
   });
 
@@ -166,13 +166,13 @@ describe.skipIf(LIVE)("subagents print-mode e2e (scripted faux, real pi-mono)", 
     let openChildGate: (() => void) | undefined;
     const childGate = new Promise<void>((resolve) => { openChildGate = resolve; });
     const respond = async (ctx: TranscriptContext) => {
-      const isParent = getCurrentTools(ctx.messages).some((t) => t.name === "agent");
+      const isParent = getCurrentTools(ctx.messages).some((t) => t.name === "subagent");
       if (!isParent) {
         await childGate; // a non-held parent exits before the child can reply
         return "CHILD_BG_RAN";
       }
       const spawned = ctx.messages.some(
-        (m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "agent",
+        (m) => m.role === "toolResult" && (m as { toolName?: string }).toolName === "subagent",
       );
       return spawned
         ? "summarized"
@@ -321,12 +321,12 @@ describe.runIf(LIVE)("subagents print-mode e2e (live LLM, opt-in)", () => {
     async () => {
       run = await runPrintMode({
         prompt:
-          "Use the `agent` tool to spawn a chengfeng subagent (run_in_background: false) " +
+          "Use the `subagent` tool to spawn a chengfeng subagent (run_in_background: false) " +
           "whose only task is to reply with the exact word PONG, then tell me what it replied.",
         timeoutMs: LIVE_TIMEOUT,
       });
       expect(run.modelCalls).toBe(0); // live mode doesn't use the faux counter
-      expect(invokedToolNames(run.parentSession)).toContain("agent");
+      expect(invokedToolNames(run.parentSession)).toContain("subagent");
       // The child actually ran and its output came back through the tool result.
       expect(agentToolResults(run.parentSession).join("\n")).toMatch(/PONG/i);
       expect(run.responseText).toMatch(/PONG/i);
@@ -361,7 +361,7 @@ describe.runIf(LIVE)("subagents print-mode e2e (live LLM, opt-in)", () => {
     async () => {
       run = await runPrintMode({
         prompt:
-          "Use the `agent` tool with subagent_type 'chengfeng' to look at the current working " +
+          "Use the `subagent` tool with subagent_type 'chengfeng' to look at the current working " +
           "directory and report a one-line summary of what's there.",
         timeoutMs: LIVE_TIMEOUT,
       });
@@ -376,14 +376,14 @@ describe.runIf(LIVE)("subagents print-mode e2e (live LLM, opt-in)", () => {
   );
 
   it(
-    "SELF-SMOKE — the agent drives a multi-feature smoke of its own `agent` toolset",
+    "SELF-SMOKE — the agent drives a multi-feature smoke of its own `subagent` toolset",
     async () => {
       // Agent-driven (not puppeted): one prompt, the model itself exercises three
       // Agent capabilities in a single session and self-reports. We then assert it
       // genuinely invoked each feature (not just that it claimed to in prose).
       run = await runPrintMode({
         prompt: [
-          "You are smoke-testing your own `agent` toolset. Do these steps IN ORDER, then print a",
+          "You are smoke-testing your own `subagent` toolset. Do these steps IN ORDER, then print a",
           "final report with one PASS/FAIL line per step:",
           "1) FOREGROUND: spawn a chengfeng subagent (run_in_background: false) whose only",
           "   task is to reply with the exact token FG_OK. Confirm you got FG_OK back.",
@@ -401,7 +401,7 @@ describe.runIf(LIVE)("subagents print-mode e2e (live LLM, opt-in)", () => {
       const tools = invokedToolNames(run.parentSession);
 
       // Each capability was actually exercised at the tool layer (not just narrated):
-      // — a foreground spawn (run_in_background not true on at least one `agent` call)
+      // — a foreground spawn (run_in_background not true on at least one `subagent` call)
       expect(calls.some((c) => c.run_in_background !== true)).toBe(true);
       // — a background spawn
       expect(calls.some((c) => c.run_in_background === true)).toBe(true);

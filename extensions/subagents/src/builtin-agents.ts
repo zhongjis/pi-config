@@ -1,6 +1,6 @@
 /**
  * builtin-agents.ts — Load runtime-internal agent definitions shipped with this extension.
- * They are never registered, so no roster, `/agents`, `agent` tool call, or graph node can select them.
+ * They are never registered, so no roster, `/agents`, `subagent` tool call, or graph node can select them.
  */
 
 import { readFileSync } from "node:fs";

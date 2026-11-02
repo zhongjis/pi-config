@@ -1,4 +1,3 @@
-import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * rpc-lifecycle-gating.test.ts — issue #142.
  *
@@ -20,14 +19,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
   (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
 import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
-import { fakeSession, opened } from "./helpers/session-seam.js";
 import { chainOn } from "./helpers/lifecycle.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 const RPC_CHANNELS = ["subagents:rpc:ping", "subagents:rpc:spawn", "subagents:rpc:stop"] as const;
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
@@ -37,7 +37,7 @@ function makePi() {
   const lifecycle = new Map<string, any>(); // pi.on(...) — session_start, session_shutdown, …
   const busHandlers = new Map<string, (raw: any) => unknown>(); // pi.events.on(...) — rpc channels
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
     on: vi.fn(chainOn(lifecycle)),

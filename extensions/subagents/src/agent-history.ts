@@ -22,6 +22,7 @@ export interface AgentHistoryRun {
   status: "running" | "completed" | "force_steered" | "aborted" | "stopped" | "error";
   startedAt: number;
   completedAt?: number;
+  interruptionCause?: AgentRecord["interruptionCause"];
   toolUses: number;
   lifetimeUsage: { input: number; output: number; cacheWrite: number };
   sessionFile: string;
@@ -48,6 +49,8 @@ function decodeRun(value: unknown): DecodedRun | undefined {
   if (typeof value.status !== "string" || !STATUSES.includes(value.status as PersistedStatus)) return;
   if (!finite(value.startedAt) || !finite(value.toolUses) || !validSessionFile(value.sessionFile)) return;
   if (value.completedAt !== undefined && !finite(value.completedAt)) return;
+  const interruptionCause = value.interruptionCause;
+  if (interruptionCause !== undefined && interruptionCause !== "user" && interruptionCause !== "caller" && interruptionCause !== "lifecycle" && interruptionCause !== "supervisor-idle" && interruptionCause !== "supervisor-ceiling" && interruptionCause !== "turn-limit" && interruptionCause !== "unknown") return;
   if (!record(value.lifetimeUsage) || !finite(value.lifetimeUsage.input) || !finite(value.lifetimeUsage.output) || !finite(value.lifetimeUsage.cacheWrite)) return;
   const id = historyText(value.id);
   const type = historyText(value.type);
@@ -57,6 +60,7 @@ function decodeRun(value: unknown): DecodedRun | undefined {
     type,
     description: historyText(value.description),
     status: value.status as PersistedStatus,
+    ...(interruptionCause === undefined ? {} : { interruptionCause }),
     startedAt: value.startedAt,
     ...(value.completedAt === undefined ? {} : { completedAt: value.completedAt }),
     toolUses: value.toolUses,
@@ -100,6 +104,7 @@ function snapshot(recordValue: AgentRecord): AgentHistoryRun | undefined {
     type,
     description: historyText(recordValue.description),
     status,
+    ...(recordValue.interruptionCause === undefined ? {} : { interruptionCause: recordValue.interruptionCause }),
     startedAt: recordValue.startedAt,
     ...(recordValue.completedAt === undefined ? {} : { completedAt: recordValue.completedAt }),
     toolUses: recordValue.toolUses,
@@ -135,6 +140,7 @@ export function mergeAgentHistory(live: AgentRecord[], runs: readonly AgentHisto
     type: run.type,
     description: run.description,
     status: run.status,
+    ...(run.interruptionCause === undefined ? {} : { interruptionCause: run.interruptionCause }),
     startedAt: run.startedAt,
     ...(run.completedAt === undefined ? {} : { completedAt: run.completedAt }),
     toolUses: run.toolUses,

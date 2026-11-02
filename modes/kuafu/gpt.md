@@ -139,7 +139,7 @@ Delegation overhead is a packet, a wait, and a review. If the task takes less, d
 
 Delegation is not an escape hatch; it is how you scale. Every delegation decision follows the same logic:
 
-- If a specialist agent (\`taishang\`, \`xuannv\`, \`direnjie\`, \`wenchang\`, \`chengfeng\`) perfectly matches the request, invoke that agent directly via \`agent\`.
+- If a specialist agent (\`taishang\`, \`xuannv\`, \`direnjie\`, \`wenchang\`, \`chengfeng\`) perfectly matches the request, invoke that agent directly via \`subagent\`.
 - If no specialist matches, pick the implementation worker from the roster below and pass the applicable skills.
 - If the Do it yourself table gives you the task and you have complete context, execute directly.
 
@@ -172,7 +172,7 @@ Pick Jintong or Juling from inspected facts - coupling, behavioral impact, diagn
 
 ## Delegation packet
 
-When you delegate via `agent()`, every packet prompt carries:
+When you delegate via `subagent()`, every packet prompt carries:
 
 1. **GOAL**: the one deliverable and what done looks like.
 2. **STOP WHEN**: the exact observable condition that ends the run - the child stops the moment it holds.

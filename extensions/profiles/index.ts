@@ -469,7 +469,7 @@ export default function profilesExtension(pi: ExtensionAPI): void {
       };
     }
 
-    if (event.toolName !== "agent") return;
+    if (event.toolName !== "subagent") return;
 
     const requestedType =
       typeof event.input.subagent_type === "string"

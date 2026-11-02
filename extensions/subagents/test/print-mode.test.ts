@@ -1,9 +1,8 @@
-import { mkdtempSync as tempDir, rmSync as removeDir } from "node:fs";
+import { rmSync as removeDir, mkdtempSync as tempDir } from "node:fs";
 import { tmpdir as tempRoot } from "node:os";
 import { join as pathJoin } from "node:path";
-import { beforeEach as fixtureBefore, afterEach as fixtureAfter } from "vitest";
+import { afterEach, describe, expect, afterEach as fixtureAfter, beforeEach as fixtureBefore, it, vi } from "vitest";
 import { writeFixtureAgent } from "./helpers/fixture-agent.js";
-import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
   (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
@@ -19,7 +18,7 @@ function makePi() {
 
   return {
     pi: {
-      registerMessageRenderer: vi.fn(),
+      registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
       registerTool: vi.fn((tool: any) => {
         tools.set(tool.name, tool);
       }),
@@ -78,7 +77,7 @@ describe("print mode background notifications", () => {
     subagentsExtension(pi);
     vi.useFakeTimers();
 
-    const agentTool = tools.get("agent");
+    const agentTool = tools.get("subagent");
     await agentTool.execute(
       "tool-call-1",
       {

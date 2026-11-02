@@ -70,7 +70,7 @@ export function createSettingsMenu(
       {
         id: "toolDescriptionMode",
         label: "Tool description",
-        description: "agent tool description sent to the LLM: full (rich, default), compact (~75% fewer tokens, for small/local models), or custom (.pi/agent-tool-description.md with {{placeholders}})",
+        description: "subagent tool description sent to the LLM: full (rich, default), compact (~75% fewer tokens, for small/local models), or custom (.pi/agent-tool-description.md with {{placeholders}})",
         currentValue: settings.toolDescriptionMode,
         values: ["full", "compact", "custom"],
       },

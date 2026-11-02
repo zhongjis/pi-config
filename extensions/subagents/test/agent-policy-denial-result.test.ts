@@ -15,7 +15,7 @@ function registerHook(): Handler {
 }
 
 const denial = {
-  toolName: "agent",
+  toolName: "subagent",
   content: [{ type: "text", text: "denied raw" }],
   details: {
     category: "delegation_policy_denied",
@@ -45,7 +45,7 @@ describe("agent policy-denial tool_result hook", () => {
     { ...denial, details: undefined },
     { ...denial, details: null },
     { ...denial, isError: true },
-    { toolName: "agent", content: [], details: { category: "delegation_policy_denied" } },
+    { toolName: "subagent", content: [], details: { category: "delegation_policy_denied" } },
   ])("leaves successful, unrelated, malformed, or already-error results unchanged", (event) => {
     expect(registerHook()(event)).toBeUndefined();
   });

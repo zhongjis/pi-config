@@ -1,8 +1,6 @@
-import { mkdtempSync as tempDir, rmSync as removeDir } from "node:fs";
+import { rmSync as removeDir, mkdtempSync as tempDir } from "node:fs";
 import { tmpdir as tempRoot } from "node:os";
 import { join as pathJoin } from "node:path";
-import { beforeEach as fixtureBefore, afterEach as fixtureAfter } from "vitest";
-import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * manager-registry-guard.test.ts — the Symbol.for("pi-subagents:manager")
  * global registry across multiple activations in one process.
@@ -16,15 +14,16 @@ import { writeFixtureAgent } from "./helpers/fixture-agent.js";
  * The fix: the first activation claims the slot, later activations leave it
  * alone, and only the owner's shutdown releases it.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, afterEach as fixtureAfter, beforeEach as fixtureBefore, it, vi } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
   (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
 import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
-import { deferred, fakeSession, opened } from "./helpers/session-seam.js";
 import { chainOn } from "./helpers/lifecycle.js";
+import { deferred, fakeSession, opened } from "./helpers/session-seam.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
@@ -32,7 +31,7 @@ function makePi() {
   const tools = new Map<string, any>();
   const lifecycle = new Map<string, any>();
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
     on: vi.fn(chainOn(lifecycle)),
@@ -67,7 +66,7 @@ async function spawnBackground(tools: Map<string, any>): Promise<string> {
     pendingRuns.push(() => gate.reject(new Error("Fixture session drained")));
     return opened(fakeSession(() => gate.promise));
   });
-  const r = await tools.get("agent").execute(
+  const r = await tools.get("subagent").execute(
     "tc-spawn",
     { prompt: "go", description: "registry test agent", subagent_type: "fixture", run_in_background: true },
     undefined,
@@ -138,7 +137,7 @@ describe("owner session_shutdown ordering (/new, /resume, quit)", () => {
         return { text: "a", aborted: true };
       })))
       .mockImplementationOnce(async () => opened(fakeSession(() => lingering.promise)));
-    const spawn = async (description: string) => /Agent ID: (\S+)/.exec(textOf(await root.tools.get("agent").execute(
+    const spawn = async (description: string) => /Agent ID: (\S+)/.exec(textOf(await root.tools.get("subagent").execute(
       "tc", { prompt: "go", description, subagent_type: "fixture", run_in_background: true }, undefined, undefined, ctx())))![1];
     const ids = [await spawn("settles on abort"), await spawn("ignores abort")];
     await new Promise(resolve => setImmediate(resolve));

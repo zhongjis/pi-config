@@ -1,5 +1,5 @@
 /**
- * agent-tool-evicted-resume.test.ts — `agent({ resume })` on an id that exists
+ * agent-tool-evicted-resume.test.ts — `subagent({ resume })` on an id that exists
  * only in the owning activation's agent-history index (the reload case),
  * through the real extension wiring.
  */
@@ -42,7 +42,7 @@ function recordRuns(script?: Script): Array<string | undefined> {
 }
 
 function resume(host: Awaited<ReturnType<typeof bootIndexed>>, id = "evicted-1", extra: Record<string, unknown> = {}) {
-  return host.tools.get("agent")!.execute("call", {
+  return host.tools.get("subagent")!.execute("call", {
     prompt: "again", description: "resume", subagent_type: "fixture", resume: id, ...extra,
   }, undefined, undefined, host.ctx);
 }
@@ -101,7 +101,7 @@ describe("agent resume of an evicted, indexed run", () => {
   it("a live resume still continues the live session", async () => {
     const host = await bootIndexed();
     const runs = recordRuns((prompt) => (prompt === "first" ? prompt : "LIVE"));
-    const spawned = await host.tools.get("agent")!.execute("spawn", { prompt: "first", description: "live", subagent_type: "fixture" }, undefined, undefined, host.ctx);
+    const spawned = await host.tools.get("subagent")!.execute("spawn", { prompt: "first", description: "live", subagent_type: "fixture" }, undefined, undefined, host.ctx);
     const id = (spawned.details as { agentId?: string } | undefined)?.agentId ?? "";
 
     const result = await resume(host, id);

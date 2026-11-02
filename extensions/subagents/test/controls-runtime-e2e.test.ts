@@ -100,7 +100,7 @@ it("waits for a queued background result in the real host", async () => {
       prompt: "Delegate.",
       beforeRun: () => { isolatedHome = process.env.HOME; },
       respond: async (ctx) => {
-        if (!getCurrentTools(ctx.messages).some((tool) => tool.name === "agent")) {
+        if (!getCurrentTools(ctx.messages).some((tool) => tool.name === "subagent")) {
           if (++childCalls === 1) {
             await blocker.promise;
             return "Blocker complete";
@@ -177,7 +177,7 @@ it("returns complete inline results for queued foreground calls in the real host
         subagent: "Complete",
       }),
     });
-    const results = run.parentSession.messages.filter((message): message is ToolResultMessage => message.role === "toolResult" && message.toolName === "agent");
+    const results = run.parentSession.messages.filter((message): message is ToolResultMessage => message.role === "toolResult" && message.toolName === "subagent");
     expect(results).toHaveLength(3);
     for (const result of results) expect(result.details).toMatchObject({ status: "completed", result: "Complete", toolUses: 0 });
     expect(run.manager?.hasRunning()).toBe(false);

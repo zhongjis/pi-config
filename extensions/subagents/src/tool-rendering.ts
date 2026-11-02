@@ -8,13 +8,6 @@ import { formatMs, getDisplayName } from "./ui/agent-format.js";
 type ToolTheme = Pick<ExtensionContext["ui"]["theme"], "bold" | "fg">;
 type TextToolResult = AgentToolResult<unknown>;
 
-type AgentToolRenderArgs = {
-  subagent_type?: string;
-  description?: string;
-  skills?: string[];
-  run_in_background?: boolean;
-};
-
 type SteerSubagentArgs = {
   agent_id: string;
   message: string;
@@ -86,9 +79,14 @@ function getRunMetadata(details: AgentDetails, expanded: boolean): string[] {
   return lines;
 }
 
-export function renderAgentToolCall(args: AgentToolRenderArgs, theme: ToolTheme) {
-  const displayName = `${args.subagent_type ? getDisplayName(args.subagent_type) : "Agent"}${args.run_in_background ? " [background]" : ""}`;
-  const target = [args.description, formatSkillsSummary(args.skills)]
+export function renderAgentToolCall(args: unknown, theme: ToolTheme) {
+  const input = args !== null && typeof args === "object" ? args : {};
+  const type = "subagent_type" in input && typeof input.subagent_type === "string" ? input.subagent_type : undefined;
+  const description = "description" in input && typeof input.description === "string" ? input.description : undefined;
+  const skills = "skills" in input && Array.isArray(input.skills) && input.skills.every((skill): skill is string => typeof skill === "string") ? input.skills : undefined;
+  const background = "run_in_background" in input && input.run_in_background === true;
+  const displayName = `${type ? getDisplayName(type) : "Agent"}${background ? " [background]" : ""}`;
+  const target = [description, formatSkillsSummary(skills)]
     .filter((value): value is string => Boolean(value))
     .join(" · ");
   return renderToolCall(displayName, target, theme);

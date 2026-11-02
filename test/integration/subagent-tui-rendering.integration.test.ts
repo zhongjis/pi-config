@@ -53,10 +53,10 @@ function renderText(component: unknown, width = 120): string {
 }
 
 function getAgentTool(t: TestSession): { renderResult: (...args: any[]) => unknown } {
-	const runnerTool = (t.session as SessionLike).extensionRunner?.getToolDefinition?.("agent");
+	const runnerTool = (t.session as SessionLike).extensionRunner?.getToolDefinition?.("subagent");
 	const tools = (t.session as SessionLike).agent?.state?.tools ?? [];
-	const tool = runnerTool ?? tools.find((candidate) => candidate.name === "agent");
-	if (!tool?.renderResult) throw new Error("agent tool renderer not registered");
+	const tool = runnerTool ?? tools.find((candidate) => candidate.name === "subagent");
+	if (!tool?.renderResult) throw new Error("subagent tool renderer not registered");
 	return tool as { renderResult: (...args: any[]) => unknown };
 }
 

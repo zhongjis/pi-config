@@ -5,13 +5,14 @@ import { createGraphRuntime } from "./graph/graph-runtime.js";
 import { runReplayCommand } from "./graph/replay-command.js";
 import { createNativePresentation } from "./native-presentation.js";
 import { createResultTools } from "./result-tools.js";
+import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js";
 import { createAgentsMenu } from "./ui/agents-menu.js";
 import { createSettingsMenu } from "./ui/settings-menu.js";
 /**
  * pi-agents — A pi extension providing Claude Code-style autonomous sub-agents.
  *
  * Tools:
- *   agent             — LLM-callable: spawn a sub-agent
+ *   subagent          — LLM-callable: spawn a sub-agent
  *   get_agent_result     — LLM-callable: collect agent/graph results or escalated decisions
  *   resolve_agent_graph_gate — LLM-callable: submit an escalated decision
  *   steer_subagent       — LLM-callable: send a steering message to a running agent
@@ -100,9 +101,8 @@ export default function (pi: ExtensionAPI) {
 
   // tool_result runs only for final results, including thrown/cancelled calls.
   // No execute/stream callback drains the pool, so cancellation cannot lose deltas.
-  // The nested presentation call is not a run: a parked approval would settle it late, so it never drains usage.
   pi.on("tool_result", (event) => {
-    if (!reportUsage || !event.toolCallId || event.toolName === SUBAGENT_TOOL_NAMES.PRESENTATION || !Object.values(SUBAGENT_TOOL_NAMES).some((name) => name === event.toolName)) return;
+    if (!reportUsage || !event.toolCallId || !Object.values(SUBAGENT_TOOL_NAMES).some((name) => name === event.toolName)) return;
     const usage = pendingUsage.drain();
     if (!usage) return;
     const prior = event.usage;
@@ -127,14 +127,14 @@ export default function (pi: ExtensionAPI) {
   const buildDetails = createAgentResultBuilder(() => showCost);
 
   // Mark structured delegation-policy denials (details.category ===
-  // "delegation_policy_denied") as tool errors so the LLM sees a failed `agent`
+  // "delegation_policy_denied") as tool errors so the LLM sees a failed `subagent`
   // call instead of a success. Registered once per activation.
   registerAgentPolicyDenialResultHook(pi);
 
   // ---- Register custom notification renderer ----
   registerSubagentNotificationRenderer(pi);
 
-  /** Reload agents from project/global custom agent definitions (called on init and each `agent` invocation). */
+  /** Reload agents from project/global custom agent definitions (called on init and each `subagent` invocation). */
   const notifiedDiagnostics = new Set<string>();
   const reloadCustomAgents = (ctx?: ExtensionContext) => {
     const loaded = loadCustomAgentsWithDiagnostics(process.cwd());
@@ -293,7 +293,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   // Inject the delegation-policy gate into the manager (defense in depth: the
-  // `agent` tool and RPC handler both deny earlier, but any spawn reaching the
+  // `subagent` tool and RPC handler both deny earlier, but any spawn reaching the
   // manager is still gated). The manager stays free of session-state imports —
   // this closure reads the persisted agent-mode policy from the spawn ctx and
   // fails closed on denial.
@@ -312,7 +312,7 @@ export default function (pi: ExtensionAPI) {
 
   // Roster placement: a mode prompt that renders the roster (via the bridge's
   // renderAgentRoster) owns it for that run, so the hint is skipped and the
-  // `agent` tool is re-registered without its type list. Re-registration (not a
+  // `subagent` tool is re-registered without its type list. Re-registration (not a
   // prepareLoadout description) lets codemode's per-tool annotation compose on top.
   // The run is identified by its systemPromptOptions object, which Pi shares across
   // every before_agent_start handler of one run, so either handler order converges.
@@ -356,7 +356,7 @@ export default function (pi: ExtensionAPI) {
     getLifetimeCost: () => manager.getLifetimeCost(),
     resolveDelegationTargets: (rules: AccessRule[]): string[] => getPermittedDelegationTypes({ rules }, getAvailableTypes()),
     /**
-     * Mode-permitted roster for a mode prompt's `{{agentRoster}}`; empty while `agent` is inactive.
+     * Mode-permitted roster for a mode prompt's `{{agentRoster}}`; empty while `subagent` is inactive.
      * Claims this run's roster: drops this run's delegation hint and the tool's type list.
      */
     renderAgentRoster: (ctx: ExtensionContext, options: { readonly sections: Record<string, string> }): string => {
@@ -505,7 +505,7 @@ export default function (pi: ExtensionAPI) {
   function isScopeModelsEnabled(): boolean { return scopeModelsEnabled; }
   function setScopeModelsEnabled(enabled: boolean): void { scopeModelsEnabled = enabled; }
 
-  // ---- agent tool description mode ----
+  // ---- subagent tool description mode ----
   // "full" (default) keeps the rich Claude Code-style description; "compact"
   // swaps in a ~75% smaller one for small/local models (#91). Read once at
   // tool registration — flipping it applies on the next pi session.
@@ -537,7 +537,7 @@ export default function (pi: ExtensionAPI) {
     (event, payload) => pi.events.emit(event, payload),
   );
 
-  const nativePresentation = createNativePresentation(pi);
+  const nativePresentation = createNativePresentation();
   const agentTool = createAgentTool(
     {
       pi, manager, reloadCustomAgents, resolveDelegation, nativePresentation,
@@ -554,6 +554,9 @@ export default function (pi: ExtensionAPI) {
   );
   rosterCompact = getToolDescriptionMode() === "compact";
   pi.registerTool(agentTool(rosterPlacement));
+  pi.registerToolRenderer((toolName, next) => toolName === "agent"
+    ? next() ?? { renderCall: renderAgentToolCall, renderResult: renderAgentToolResult }
+    : next());
 
   const graphRuntime = createGraphRuntime(
     { pi, manager, scopeModels: isScopeModelsEnabled, outputTranscript: getOutputTranscriptDefault, delegationDenial,

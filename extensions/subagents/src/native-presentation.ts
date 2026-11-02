@@ -1,9 +1,7 @@
-import { type AgentToolResult, type AgentToolUpdateCallback, defineTool, type ExtensionAPI, type ExtensionToolContext } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
+import { type AgentToolResult, type AgentToolUpdateCallback, type ExtensionToolContext } from "@earendil-works/pi-coding-agent";
 import { isTui } from "../../lib/mode.js";
 import { createAgentResultBuilder } from "./agent-result.js";
-import { SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
-import { renderAgentToolCall, renderAgentToolResult } from "./tool-rendering.js";
+import { getInterruptionLabel } from "./status-note.js";
 import type { AgentRecord } from "./types.js";
 import { type AgentDetails, formatMs, getDisplayName } from "./ui/agent-format.js";
 
@@ -26,7 +24,7 @@ export function projectNativeResult(details: AgentDetails, snapshot: Presentatio
   const failed = !!snapshot.error || state === "error";
   const continuing = snapshot.finished && state === "running";
   const finished = !!snapshot.finished;
-  const error = aborted ? snapshot.error || details.error || "Agent execution interrupted" : snapshot.error || details.error;
+  const error = aborted ? getInterruptionLabel(details.interruptionCause) : snapshot.error || details.error;
   const text = finished
     ? aborted || failed ? error || "Agent execution failed" : continuing ? `continues in background as ${details.agentId}` : details.result || "No output."
     : `${details.activity || "starting…"}${details.result ? `\n${details.result.slice(-2000)}` : ""}`;
@@ -44,52 +42,23 @@ function progressText(details: AgentDetails): string {
   return `${line.replace(/\s+/g, " ")}${details.result ? `\n${details.result.slice(-200).replace(/\s+/g, " ")}` : ""}`;
 }
 
-type PresentationResult = ReturnType<typeof presentationResult>;
-function presentationResult(details: AgentDetails, snapshot?: PresentationSnapshot) {
-  const entry = projectNativeResult(details, snapshot);
-  return { content: [{ type: "text" as const, text: entry.messages[0].content[0].text }], details: { results: [entry] } };
-}
-
-interface Channel {
-  current: PresentationResult;
-  update?: (result: PresentationResult) => void;
-  readonly done: Promise<PresentationResult>;
-  readonly finish: (result: PresentationResult) => void;
-}
-
 interface PresentingCall {
-  readonly id: string;
   readonly ctx: ExtensionToolContext;
   readonly signal?: AbortSignal;
   readonly enabled: boolean;
+  readonly cards?: boolean;
   readonly type: string;
   readonly description: string;
   readonly record: () => AgentRecord | undefined;
   readonly onUpdate?: AgentToolUpdateCallback<AgentDetails | undefined>;
 }
 
-/** Activation-owned channels; presentation never owns or cancels an Execution. */
-export function createNativePresentation(pi: ExtensionAPI) {
-  const channels = new Map<string, Channel>();
-  pi.registerTool(defineTool({
-    name: SUBAGENT_TOOL_NAMES.PRESENTATION,
-    label: "Subagent",
-    description: "Internal subagent presentation channel.",
-    exposure: "deferred",
-    parameters: Type.Object({}),
-    renderCall: renderAgentToolCall,
-    renderResult: renderAgentToolResult,
-    execute: async (id, _params, _signal, onUpdate) => {
-      const channel = channels.get(id);
-      if (!channel) return { content: [{ type: "text", text: "No live subagent presentation channel." }], details: undefined, isError: true };
-      channel.update = onUpdate;
-      onUpdate?.(channel.current);
-      return channel.done;
-    },
-  }));
+/** Direct tool updates; presentation never owns or cancels an Execution. */
+export function createNativePresentation() {
   const buildDetails = createAgentResultBuilder(() => false);
-  return async function present<T extends { content: AgentToolResult<unknown>["content"]; details: Partial<AgentDetails> | undefined; isError?: boolean }>(call: PresentingCall, execute: (update?: AgentToolUpdateCallback<AgentDetails | undefined>) => Promise<T>): Promise<T> {
+  return async function present<T extends { content: AgentToolResult<unknown>["content"]; details: Partial<AgentDetails> | undefined; isError?: boolean }>(call: PresentingCall, execute: (update?: AgentToolUpdateCallback<AgentDetails | undefined>) => Promise<T>) {
     if (!call.enabled || isTui(call.ctx) || !call.ctx.hasUI) return execute(call.onUpdate);
+    const cards = call.cards !== false;
     const base = { displayName: getDisplayName(call.type), description: call.description, subagentType: call.type };
     const initial: AgentDetails = { ...base, toolUses: 0, tokens: "", durationMs: 0, status: "running" };
     const read = () => {
@@ -99,49 +68,42 @@ export function createNativePresentation(pi: ExtensionAPI) {
         overrides: { result: record.activity?.responseText || record.result },
       }) : initial;
     };
-    let finish: Channel["finish"] = () => {};
-    const done = new Promise<PresentationResult>(resolve => { finish = resolve; });
-    const channel: Channel = { current: presentationResult(read()), done, finish };
-    const nestedId = `${call.id}/1`;
-    channels.set(nestedId, channel);
     let lastActivity: string | undefined;
     let lastUpdate = -Infinity;
+    let streamed = false;
     const update = () => {
       const details = read();
       const activity = details.activity || "starting…";
       if (activity === lastActivity || Date.now() - lastUpdate < 1000) return;
       lastActivity = activity;
       lastUpdate = Date.now();
-      channel.current = presentationResult(details);
-      channel.update?.(channel.current);
-      call.onUpdate?.({ content: [{ type: "text", text: progressText(details) }], details });
+      if (call.onUpdate) {
+        call.onUpdate({ content: [{ type: "text", text: progressText(details) }], details: { ...details, ...(cards ? { results: [projectNativeResult(details)] } : {}) } });
+        streamed = true;
+      }
     };
     update();
-    // Never let presentation hold or fail the run: a T3 Supervised approval can park the
-    // nested call, and a mode or approval block rejects it. The channel outlives the run
-    // until the nested call settles, so a late start still renders the final entry.
-    const nested = call.ctx.executeTool(SUBAGENT_TOOL_NAMES.PRESENTATION, {}).then(() => undefined, () => undefined);
     const timer = setInterval(update, 1000);
     let result: T | undefined;
     let failure: string | undefined;
+    let final: ReturnType<typeof projectNativeResult> | undefined;
     try {
       result = await execute(update);
-      return result;
     } catch (error) {
       failure = error instanceof Error ? error.message : String(error);
       throw error;
     } finally {
       clearInterval(timer);
-      const details = { ...read(), ...result?.details };
-      const text = result?.content.filter(part => part.type === "text").map(part => part.text).join("\n");
-      const error = failure || result?.details?.error || (result?.isError || !result?.details?.status ? text || "Agent execution failed" : undefined);
-      const aborted = call.signal?.aborted;
-      const reason = aborted ? String(call.signal?.reason || "Agent execution aborted") : error;
-      const final = presentationResult(details, { finished: true, error: reason, aborted });
-      channel.current = final;
-      channel.finish(final);
-      void nested.then(() => channels.delete(nestedId));
+      if (cards) {
+        const details = { ...read(), ...result?.details };
+        const text = result?.content.filter(part => part.type === "text").map(part => part.text).join("\n");
+        const error = failure || result?.details?.error || (result?.isError || !result?.details?.status ? text || "Agent execution failed" : undefined);
+        final = projectNativeResult(details, { finished: true, error, aborted: call.signal?.aborted });
+        const finishedDetails = { ...details, results: [final] };
+        if (streamed) call.onUpdate?.({ content: [{ type: "text", text: progressText(details) }], details: finishedDetails });
+      }
     }
+    return final ? { ...result, details: { ...result.details, results: [final] } } : result;
   };
 }
 

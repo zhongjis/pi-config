@@ -38,7 +38,7 @@ function makePi() {
   const tools = new Map<string, unknown>();
   const lifecycle = new Map<string, LifecycleHandler>();
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((tool: { name: string }) => tools.set(tool.name, tool)),
     registerCommand: vi.fn(),
     on: vi.fn(chainOn(lifecycle)),
@@ -157,7 +157,7 @@ describe("manager registry lifecycle ownership", () => {
 
     const child = makePi();
     Reflect.apply(subagentsExtension, undefined, [child.pi]);
-    expect(child.tools.has("agent"), "child tool registration remains available").toBe(true);
+    expect(child.tools.has("subagent"), "child tool registration remains available").toBe(true);
     await fire(child, "session_start", {}, context());
     await fire(child, "tool_execution_start", {}, context());
     await fire(child, "session_shutdown", {}, context());

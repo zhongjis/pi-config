@@ -48,7 +48,7 @@ describe("registered result retrieval", () => {
   it("retrieves an independent terminal agent through get_agent_result", async () => {
     const host = boot();
     await host.lifecycle("session_start");
-    const launched = await required(host.tools.get("agent")).execute("launch", {
+    const launched = await required(host.tools.get("subagent")).execute("launch", {
       subagent_type: "fixture", prompt: "independent-result", description: "result fixture",
     }, undefined, undefined, host.ctx);
     const text = launched.content.map(part => part.text ?? "").join("\n");
@@ -136,7 +136,7 @@ describe("turn-boundary completion notifications", () => {
     await host.lifecycle("turn_start", turnStart);
     fakeTimers();
     const done = completed(host);
-    const launched = await required(host.tools.get("agent")).execute("launch", {
+    const launched = await required(host.tools.get("subagent")).execute("launch", {
       subagent_type: "fixture", prompt: "bg-result", description: "parked", run_in_background: true,
     }, undefined, undefined, host.ctx);
     const id = required(/Agent ID: (\S+)/.exec(launched.content.map((part) => part.text ?? "").join("\n"))?.[1]);
@@ -154,7 +154,7 @@ describe("turn-boundary completion notifications", () => {
     await host.lifecycle("turn_start", turnStart);
     fakeTimers();
     const done = completed(host);
-    const launched = await required(host.tools.get("agent")).execute("launch", {
+    const launched = await required(host.tools.get("subagent")).execute("launch", {
       subagent_type: "fixture", prompt: "bg-open", description: "still parked", run_in_background: true,
     }, undefined, undefined, host.ctx);
     const id = required(/Agent ID: (\S+)/.exec(launched.content.map((part) => part.text ?? "").join("\n"))?.[1]);

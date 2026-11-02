@@ -1,4 +1,3 @@
-import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * clear-completed-wiring.test.ts — reproduces issue #108 end-to-end through the
  * REAL session lifecycle handlers + the REAL get_agent_result tool.
@@ -17,21 +16,22 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
   (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
 import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
-import { fakeSession, opened } from "./helpers/session-seam.js";
 import { chainOn } from "./helpers/lifecycle.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 function makePi() {
   const tools = new Map<string, any>();
   const lifecycle = new Map<string, any>(); // pi.on(...) — session_start, session_shutdown
   const events = new Map<string, any>(); // pi.events.on(...) — subagents:rpc:*, etc.
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
     on: vi.fn(chainOn(lifecycle)),
@@ -71,7 +71,7 @@ const flush = async () => {
 // resultConsumed=false (only get_agent_result sets that flag for background).
 async function spawnCompletedBackgroundAgent(tools: Map<string, any>): Promise<string> {
   vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => "THE-RESULT-PAYLOAD")));
-  const spawn = await tools.get("agent").execute(
+  const spawn = await tools.get("subagent").execute(
     "tc-spawn",
     { prompt: "go", description: "Review monero_en.rs in depth", subagent_type: "fixture", run_in_background: true },
     undefined,

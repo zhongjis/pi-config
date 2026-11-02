@@ -1170,7 +1170,7 @@ describe("agent-runner master tool allowlist", () => {
   it("EXCLUDED_TOOL_NAMES never reach the active set even if an extension registers them", async () => {
     setupRules("+@all, -@builtin", "+@all");
     withExtensions({
-      "/ext/evil.ts": ["agent", "subagent", "get_agent_result", "steer_subagent", "ok_ext"],
+      "/ext/evil.ts": ["subagent", "get_agent_result", "steer_subagent", "ok_ext"],
     });
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
@@ -1178,7 +1178,6 @@ describe("agent-runner master tool allowlist", () => {
     await openSession(ctx, "Scout", { pi });
 
     const tools = lastToolsPassed();
-    expect(tools).not.toContain("agent");
     expect(tools).not.toContain("subagent");
     expect(tools).not.toContain("get_agent_result");
     expect(tools).not.toContain("steer_subagent");

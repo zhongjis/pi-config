@@ -24,7 +24,7 @@ describe("user-only delegation diagnostics", () => {
     const host = boot();
 
     await host.lifecycle("session_start");
-    const agent = required(host.tools.get("agent"));
+    const agent = required(host.tools.get("subagent"));
     const first = await agent.execute("first", params, undefined, undefined, host.ctx);
     await agent.execute("second", params, undefined, undefined, host.ctx);
 
@@ -43,7 +43,7 @@ describe("user-only delegation diagnostics", () => {
     const host = boot();
     await host.lifecycle("session_start");
     const laterPath = writeAgent("later", "delegation: +@builtin");
-    const agent = required(host.tools.get("agent"));
+    const agent = required(host.tools.get("subagent"));
 
     const result = await agent.execute("first", params, undefined, undefined, host.ctx);
     await agent.execute("second", params, undefined, undefined, host.ctx);
@@ -64,7 +64,7 @@ describe("user-only delegation diagnostics", () => {
     writeFileSync(join(directory, "default.md"), "---\ntools: read\n---\nINVALID_BODY");
     const host = boot();
     await host.lifecycle("session_start");
-    const agent = required(host.tools.get("agent"));
+    const agent = required(host.tools.get("subagent"));
 
     const result = await agent.execute("first", params, undefined, undefined, host.ctx);
     await agent.execute("second", params, undefined, undefined, host.ctx);
@@ -90,7 +90,7 @@ describe("user-only delegation diagnostics", () => {
       { sign: "+", selector: "@all" }, { sign: "-", selector: "fixture" }, { sign: "+", selector: "nosuch" },
     ])).toEqual(["leaf"]);
     writeAgent("leaf", "enabled: false");
-    await required(host.tools.get("agent")).execute("reload", params, undefined, undefined, host.ctx);
+    await required(host.tools.get("subagent")).execute("reload", params, undefined, undefined, host.ctx);
     expect(bridge.resolveDelegationTargets([{ sign: "+", selector: "leaf" }])).toEqual([]);
   });
 });

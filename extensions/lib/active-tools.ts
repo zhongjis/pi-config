@@ -13,7 +13,7 @@ import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { extractToolText, firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "./tool-output.js";
 
-export const NESTED_SUBAGENT_TOOL_NAMES = ["agent", "subagent", "get_agent_result", "resolve_agent_graph_gate", "steer_subagent", "agent_graph"] as const;
+export const NESTED_SUBAGENT_TOOL_NAMES = ["subagent", "get_agent_result", "resolve_agent_graph_gate", "steer_subagent", "agent_graph"] as const;
 
 // ponytail: copy of Pi's internal built-in tool name list. Pi does not export
 // `ToolName`/`allToolNames`, so this is hand-maintained. Add new Pi built-ins

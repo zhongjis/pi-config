@@ -1,4 +1,3 @@
-import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * fleet-wiring.test.ts — end-to-end wiring of the FleetView through the REAL
  * extension (src/index.ts), not the FleetList class in isolation.
@@ -14,14 +13,15 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
   (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
 
 import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
-import { fakeSession, opened } from "./helpers/session-seam.js";
 import { chainOn } from "./helpers/lifecycle.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
@@ -29,7 +29,7 @@ function makePi() {
   const tools = new Map<string, any>();
   const lifecycle = new Map<string, any>();
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
     on: vi.fn(chainOn(lifecycle)),
@@ -128,7 +128,7 @@ describe("FleetView wiring (real extension lifecycle)", () => {
     const ui = uiCtx();
     await lifecycle.get("tool_execution_start")?.({}, ctxWith(ui));
 
-    const spawn = await tools.get("agent").execute(
+    const spawn = await tools.get("subagent").execute(
       "tc",
       { prompt: "go", description: "live one", subagent_type: "fixture", run_in_background: true },
       undefined,

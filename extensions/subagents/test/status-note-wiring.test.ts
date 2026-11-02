@@ -1,15 +1,14 @@
-import { mkdtempSync as tempDir, rmSync as removeDir } from "node:fs";
+import { rmSync as removeDir, mkdtempSync as tempDir } from "node:fs";
 import { tmpdir as tempRoot } from "node:os";
 import { join as pathJoin } from "node:path";
-import { beforeEach as fixtureBefore, afterEach as fixtureAfter } from "vitest";
-import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * status-note-wiring.test.ts — proves the status note actually reaches the
  * PARENT through the real tool handlers, not just that getStatusNote() returns
- * a string. Drives the registered `agent` / `get_agent_result` tools and
+ * a string. Drives the registered `subagent` / `get_agent_result` tools and
  * inspects the text delivered back, for a turn-limit abort and a user stop.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, afterEach as fixtureAfter, beforeEach as fixtureBefore, it, vi } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
   (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
@@ -35,7 +34,7 @@ function makePi() {
   const eventHandlers = new Map<string, any>();
   const lifecycle = new Map<string, any>();
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
     on: vi.fn(chainOn(lifecycle)),
@@ -106,7 +105,7 @@ describe("status note reaches the parent through the real handlers", () => {
     const { pi, tools } = makePi();
     subagentsExtension(pi);
 
-    const res = await tools.get("agent").execute(
+    const res = await tools.get("subagent").execute(
       "tc1",
       { prompt: "go", description: "d", subagent_type: "fixture" },
       undefined, undefined, ctx(),
@@ -136,7 +135,7 @@ describe("status note reaches the parent through the real handlers", () => {
     subagentsExtension(pi);
 
     const parent = new AbortController();
-    const call = tools.get("agent").execute(
+    const call = tools.get("subagent").execute(
       "tc-stop",
       { prompt: "go", description: "d", subagent_type: "fixture" },
       parent.signal, undefined, ctx(),
@@ -169,7 +168,7 @@ describe("status note reaches the parent through the real handlers", () => {
     subagentsExtension(pi);
     await bind(lifecycle); // register RPC channels via session_start (#142)
 
-    const spawn = await tools.get("agent").execute(
+    const spawn = await tools.get("subagent").execute(
       "tc2",
       { prompt: "go", description: "d", subagent_type: "fixture", run_in_background: true },
       undefined, undefined, ctx(),

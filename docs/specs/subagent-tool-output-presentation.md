@@ -2,7 +2,7 @@
 
 Status: shipped
 
-`agent` and `get_agent_result` share independent-agent metadata and compact/expanded rendering; `steer_subagent` has its own action-report renderer ([`tool-rendering.ts`](../../extensions/subagents/src/tool-rendering.ts)). Canonical graph retrieval distinguishes execution, objective outcome, and human-required gates without opening UI. The owning [Subagent contract](../../extensions/subagents/AGENTS.md) also records these guarantees.
+`subagent` and `get_agent_result` share independent-agent metadata and compact/expanded rendering; `steer_subagent` has its own action-report renderer ([`tool-rendering.ts`](../../extensions/subagents/src/tool-rendering.ts)). Canonical graph retrieval distinguishes execution, objective outcome, and human-required gates without opening UI. The owning [Subagent contract](../../extensions/subagents/AGENTS.md) also records these guarantees.
 
 ## Problem Statement
 

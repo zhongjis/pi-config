@@ -87,7 +87,7 @@ The guard preserves native command, cwd, timeout, and execution behavior after a
 
 ### Delegation Restrictions
 
-Mode frontmatter delegation rules are persisted in versioned `agent-mode` policy state. The subagent runtime consumes that policy for direct `agent` and RPC authorization; the modes hook does not guard `agent` calls.
+Mode frontmatter delegation rules are persisted in versioned `agent-mode` policy state. The subagent runtime consumes that policy for direct `subagent` and RPC authorization; the modes hook does not guard `subagent` calls.
 
 ---
 

@@ -62,6 +62,14 @@ describe("independent agent history", () => {
     expect(text).not.toContain("cacheRead");
   });
 
+  it.each(["user", "caller", "lifecycle", "supervisor-idle", "supervisor-ceiling", "turn-limit", "unknown"] as const)("persists %s interruption provenance through restart and history projection", async (interruptionCause) => {
+    const store = await AgentHistoryStore.load("session-a");
+    store.capture(record(sessionFile, { status: "stopped", interruptionCause }));
+    await store.flush();
+    const reloaded = await AgentHistoryStore.load("session-a");
+    expect(mergeAgentHistory([], reloaded.runs)[0]).toMatchObject({ status: "stopped", interruptionCause });
+  });
+
   it("reloads interrupted running and queued rows as stopped without rewriting the file", async () => {
     const stamp = new Date("2024-06-01T12:00:00.000Z");
     await utimes(sessionFile, stamp, stamp);

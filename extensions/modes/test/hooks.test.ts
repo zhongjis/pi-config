@@ -59,7 +59,7 @@ type MockToolDefinition = {
 };
 
 const MODES_PATH = "/fixture/modes/src/index.ts";
-const DEFAULT_TOOLS: MockTool[] = [{ name: "read" }, { name: "write" }, { name: "edit" }, { name: "bash" }, { name: "agent" }];
+const DEFAULT_TOOLS: MockTool[] = [{ name: "read" }, { name: "write" }, { name: "edit" }, { name: "bash" }, { name: "subagent" }];
 
 function activatesOnRegistration(tool: MockTool): boolean {
 	return tool.exposure === undefined || tool.exposure === "direct" || tool.exposure === "model-only";

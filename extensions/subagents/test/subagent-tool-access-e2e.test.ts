@@ -175,7 +175,7 @@ describe("subagent tool access — e2e (real pi-mono session + hermetic fixtures
 	}
 
 	it("applies custom-agent tool rules after extension binding", async () => {
-		writeAgent("matrix", "extensions: +@all, -@builtin\ntools: +read, +matrix.allowed, +agent, +get_agent_result, +steer_subagent");
+		writeAgent("matrix", "extensions: +@all, -@builtin\ntools: +read, +matrix.allowed, +subagent, +get_agent_result, +steer_subagent");
 		const requests: string[][] = [];
 		fauxRuntime.faux.setResponses([
 			(context) => {

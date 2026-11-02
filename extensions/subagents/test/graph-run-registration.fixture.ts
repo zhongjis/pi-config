@@ -66,7 +66,7 @@ function boot(settings: Record<string, unknown> = {}, sessionId = "parent") {
   const api = {
     registerTool: (tool: Tool) => tools.set(tool.name, tool),
     registerCommand: (name: string, command: { handler(args: string, ctx: ExtensionContext): Promise<void> }) => commands.set(name, command),
-    registerMessageRenderer: vi.fn(), registerEntryRenderer: vi.fn(), registerFlag: vi.fn(),
+    registerToolRenderer: vi.fn<ExtensionAPI["registerToolRenderer"]>(), registerMessageRenderer: vi.fn(), registerEntryRenderer: vi.fn(), registerFlag: vi.fn(),
     getFlag: vi.fn(() => flag), getAllTools: () => [...foreign, ...tools.values()],
     getActiveTools: () => [...tools.keys()], setActiveTools: vi.fn(),
     on: (name: string, hook: Hook) => hooks.set(name, [...(hooks.get(name) ?? []), hook]),

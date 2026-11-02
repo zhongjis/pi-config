@@ -421,7 +421,7 @@ describe("local profile offline guards", () => {
 		}
 		const [allowedResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "read", toolName: "read", input: {} }, ctx);
 		expect(allowedResult).toBeUndefined();
-		const [agentResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent", toolName: "agent", input: { subagent_type: "wenchang" } }, ctx);
+		const [agentResult] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent", toolName: "subagent", input: { subagent_type: "wenchang" } }, ctx);
 		expect(agentResult).toMatchObject({ block: true, reason: expect.stringContaining("wenchang") });
 	});
 
@@ -430,7 +430,7 @@ describe("local profile offline guards", () => {
 		const harness = createHarness();
 		const ctx = createContext(llamaSwapModel);
 		await harness.fire("session_start", {}, ctx);
-		const [result] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent-1", toolName: "agent", input: { subagent_type: "chengfeng" } }, ctx);
+		const [result] = await harness.fire("tool_call", { type: "tool_call", toolCallId: "agent-1", toolName: "subagent", input: { subagent_type: "chengfeng" } }, ctx);
 		expect(result).toBeUndefined();
 	});
 

@@ -1,11 +1,11 @@
-import { registerAgents } from "../src/agent-types.js";
-import { fixtureAgent } from "./helpers/fixture-agent.js";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, initTheme } from "@earendil-works/pi-coding-agent";
 import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { registerAgents } from "../src/agent-types.js";
 import subagentsExtension from "../src/index.js";
 import type { AgentDetails } from "../src/ui/agent-format.js";
+import { fixtureAgent } from "./helpers/fixture-agent.js";
 import { chainOn } from "./helpers/lifecycle.js";
 
 type ToolResult = {
@@ -83,7 +83,7 @@ beforeAll(() => {
     else process.env.PI_PACKAGE_DIR = previousPackageDir;
   }
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((tool: ToolDefinition) => tools.set(tool.name, tool)),
     registerCommand: vi.fn(),
     registerFlag: vi.fn(),
@@ -102,7 +102,7 @@ afterAll(async () => {
 
 describe("subagent tool rendering migration", () => {
   it("preserves Agent description and skills call preview and width safety", () => {
-    const call = requireTool("agent").renderCall({
+    const call = requireTool("subagent").renderCall({
       subagent_type: "fixture", description: "Review 界面 boundary fix",
       skills: ["codebase-design", "typescript-best-practices", "react-best-practices", "diagnosing-bugs"],
     }, theme);
@@ -111,7 +111,7 @@ describe("subagent tool rendering migration", () => {
   });
 
   it("keeps Agent call headers identical across delivery modes except for the background tag", () => {
-    const tool = requireTool("agent");
+    const tool = requireTool("subagent");
     const args = {
       subagent_type: "fixture",
       description: "Audit tool rendering",
@@ -150,7 +150,7 @@ describe("subagent tool rendering migration", () => {
     conversation: "[User]: full verbose conversation",
   };
 
-  it.each(["agent", "get_agent_result"])("compact_completed_keeps_only_model_and_thinking (%s)", (name) => {
+  it.each(["subagent", "get_agent_result"])("compact_completed_keeps_only_model_and_thinking (%s)", (name) => {
     const tool = requireTool(name);
     for (const preview of ["HEALTH_OK chengfeng", "界面健康 🚀 é"]) {
       const details = { ...base, result: preview, modelName: "openai-codex/gpt-5.6-luna", thinking: "medium", toolUses: 7 };
@@ -166,7 +166,7 @@ describe("subagent tool rendering migration", () => {
     }
   });
 
-  it.each(["agent", "get_agent_result"])("keeps compact rows identical with optional run disclosures (%s)", (name) => {
+  it.each(["subagent", "get_agent_result"])("keeps compact rows identical with optional run disclosures (%s)", (name) => {
     const tool = requireTool(name);
     const details = { ...base, result: "\u001b[32m界面健康 🚀 é\u001b[0m", modelName: "provider/界面-model" };
     const original: ToolResult = { content: [{ type: "text", text: "unchanged" }], details };
@@ -179,7 +179,7 @@ describe("subagent tool rendering migration", () => {
     }
   });
 
-  it.each(["agent", "get_agent_result"])("discloses requested settings and estimated cost after complete output (%s)", (name) => {
+  it.each(["subagent", "get_agent_result"])("discloses requested settings and estimated cost after complete output (%s)", (name) => {
     for (const error of [undefined, "Decisive failure"]) {
       const details: AgentDetails = { ...base, status: error ? "error" : "completed", error, cost: 0.123, requestedModel: "provider/requested", requestedThinking: "high" };
       const result: ToolResult = { content: [{ type: "text", text: "unchanged envelope" }], details, isError: Boolean(error) };
@@ -200,7 +200,7 @@ describe("subagent tool rendering migration", () => {
 
   it.each([0.00000012, Number.MIN_VALUE])("keeps very small positive cost meaningful (%s)", (cost) => {
     const result: ToolResult = { content: [], details: { ...base, cost } };
-    const full = renderText(requireTool("agent").renderResult(result, { expanded: true }, theme));
+    const full = renderText(requireTool("subagent").renderResult(result, { expanded: true }, theme));
     const amount = full.match(/cost: ~\$([^\s]+)/)?.[1];
     expect(amount).toBeDefined();
     expect(Number(amount)).toBeGreaterThan(0);
@@ -208,7 +208,7 @@ describe("subagent tool rendering migration", () => {
 
   it.each([undefined, 0])("omits unpriced or zero cost (%s)", (cost) => {
     const result: ToolResult = { content: [], details: { ...base, cost } };
-    expect(renderText(requireTool("agent").renderResult(result, { expanded: true }, theme))).not.toContain("cost:");
+    expect(renderText(requireTool("subagent").renderResult(result, { expanded: true }, theme))).not.toContain("cost:");
   });
 
   it.each([
@@ -217,7 +217,7 @@ describe("subagent tool rendering migration", () => {
   ])("preserves complete raw fallback for malformed optional metadata (%j)", (invalid) => {
     const raw = "Raw first line\n\nRaw final line";
     const result: ToolResult = { content: [{ type: "text", text: raw }], details: { ...base, ...invalid } };
-    for (const name of ["agent", "get_agent_result"]) {
+    for (const name of ["subagent", "get_agent_result"]) {
       const tool = requireTool(name);
       expect(rawText(tool.renderResult(result, { expanded: true }, theme))).toBe(raw);
       const compact = tool.renderResult(result, { expanded: false }, theme);
@@ -230,7 +230,7 @@ describe("subagent tool rendering migration", () => {
     }
   });
 
-  it.each(["agent", "get_agent_result"])("compact_pending_omits_unknown_model_and_telemetry (%s)", (name) => {
+  it.each(["subagent", "get_agent_result"])("compact_pending_omits_unknown_model_and_telemetry (%s)", (name) => {
     const result: ToolResult = { content: [{ type: "text", text: "queued envelope" }], details: {
       ...base, status: "queued", modelName: undefined, thinking: undefined, tags: ["thinking: default (pending)"],
     } };
@@ -264,7 +264,7 @@ describe("subagent tool rendering migration", () => {
     expect(result.isError).toBe(true);
   });
 
-  it.each(["agent", "get_agent_result"])("explicit_precedence_and_pending_to_actual_metadata_remain_truthful (%s)", (name) => {
+  it.each(["subagent", "get_agent_result"])("explicit_precedence_and_pending_to_actual_metadata_remain_truthful (%s)", (name) => {
     const tool = requireTool(name);
     for (const thinking of [undefined, "low", "off"]) {
       const details = { ...base, status: "running", thinking, tags: ["thinking: default (pending)"] };
@@ -286,7 +286,7 @@ describe("subagent tool rendering migration", () => {
     }
   });
 
-  it.each(["agent", "get_agent_result"])("B02 %s renders compact report and complete expanded result", (name) => {
+  it.each(["subagent", "get_agent_result"])("B02 %s renders compact report and complete expanded result", (name) => {
     const tool = requireTool(name);
     const result: ToolResult = Object.freeze({
       content: Object.freeze([{ type: "text" as const, text: "Agent ID: actual-id\nMODEL-FACING ENVELOPE" }]),
@@ -326,7 +326,7 @@ describe("subagent tool rendering migration", () => {
     const result = { content: [{ type: "text" as const, text: "envelope" }], details: {
       ...base, status, activity: "reading 界面", error: status === "error" ? "Decisive failure" : undefined,
     } };
-    const tool = requireTool("agent");
+    const tool = requireTool("subagent");
     const compact = renderText(tool.renderResult(result, { expanded: false }, theme), 240);
     const full = renderText(tool.renderResult(result, { expanded: true }, theme));
     const decisive = status === "error" ? "Decisive failure" : status === "running" ? "reading 界面" : status === "queued" ? "waiting for a slot" : "Decisive answer";
@@ -334,7 +334,7 @@ describe("subagent tool rendering migration", () => {
     expect(full).toContain(decisive);
   });
 
-  it.each(["agent", "get_agent_result"])("B03 %s shows exact denial", (name) => {
+  it.each(["subagent", "get_agent_result"])("B03 %s shows exact denial", (name) => {
     const tool = requireTool(name);
     const reason = "Delegation denied: only fixture is permitted.";
     const denied = Object.freeze({ content: [{ type: "text" as const, text: reason }], isError: true, details: {
@@ -347,7 +347,7 @@ describe("subagent tool rendering migration", () => {
     expect(denied.isError).toBe(true);
   });
 
-  it.each(["agent", "get_agent_result"])("B03 %s preserves raw fallback for malformed details", (name) => {
+  it.each(["subagent", "get_agent_result"])("B03 %s preserves raw fallback for malformed details", (name) => {
     const tool = requireTool(name);
     for (const details of [undefined, "broken", { ...base, result: undefined }, { ...base, tags: 42 }, { ...base, error: {} }]) {
       const raw = "Agent: raw\n\n**Entire original body**\n" + "retained\n".repeat(60);

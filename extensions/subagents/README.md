@@ -10,15 +10,15 @@ Derived from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)
 
 ## Features
 
-- **Agent supervision** — launch with `agent`, collect with `get_agent_result({run_id, wait:true})`, and redirect active workers with `steer_subagent`
-- **Native RPC presentation** — foreground and resumed runs, plus waiting independent-agent retrievals, show native T3 Code cards with readable, throttled progress through [the presentation adapter](src/native-presentation.ts). Check-ins close the card while work continues in background; terminal rendering and final model-facing results stay unchanged. Subagent follow-ups that wake the main agent also post a one-line `notify` naming the reported agents, since RPC clients do not render custom messages. Pi's example subagent extension cannot be loaded alongside this extension because both register the same presentation tool name.
+- **Agent supervision** — launch with `subagent`, collect with `get_agent_result({run_id, wait:true})`, and redirect active workers with `steer_subagent`
+- **Native RPC presentation** — foreground fresh and resumed `subagent` runs attach native T3 Code card data directly to their tool updates and results through [the presentation adapter](src/native-presentation.ts). Activity changes stream readable, throttled progress; every streamed card closes, including interruption, failure, and check-in continuation in background. Waiting independent-agent retrievals show readable progress without cards; background launches and graph retrievals do not create cards. Terminal rendering and final result content stay unchanged. Interrupted cards show the [recorded cause](src/status-note.ts), and [independent history](src/agent-history.ts) preserves that cause across restarts. Subagent follow-ups that wake the main agent also post a one-line `notify` naming the reported agents, since RPC clients do not render custom messages. Pi's example subagent extension cannot be loaded alongside this extension because both register `subagent`.
 - **Parallel background agents** — spawn multiple agents that run concurrently with automatic queuing (configurable concurrency limit, default 4) and smart group join (consolidated notifications)
 - **FleetView** — an always-on navigable agent list below the editor with live status and usage, nested research children, and an aggregate queue. Press `↓` or `←` at an empty prompt to enter, select with `↑`/`↓`, open a conversation with `Enter`, and return with `Esc`. See [FleetView](#fleetview).
 - **Agent Monitor** — `/agent-monitor` opens a full-screen roster with two sections, agent graph runs and independent agents, including finished entries from this session. In-memory records last up to 15 minutes; independent runs also remain as read-only history after reload. `Enter` on a graph run opens the graph panel — the Herdr pane layout — inside Pi with `c` conversation, `p` pause/resume, `s` skip, `r` retry, and `x` stop; `Enter` on an agent opens its conversation. `o` detaches a graph run to a read-only Herdr or Orca side pane.
 - **Conversation viewer** — select any agent in `/agents` to open a live-scrolling overlay of its full conversation (auto-follows new content, scroll up to pause). Steer a running agent inline by pressing `Enter` to open a composer, typing, then `Enter` to send (`Esc` or an empty submit returns) — the message appears as a user message and redirects the agent after its current tool. Stop a still-running agent by pressing `x` (then `x` again to confirm) — both work for background agents too. Press `/` to search the transcript (`n`/`N` for next/previous match, `Esc` clears), or `[`/`]` to jump between messages. Tool calls show their main argument, long results show their first and last lines with an omitted-line count, and assistant errors appear inline. Reload-surviving history rows in `/agent-monitor` open the same viewer read-only
 - **Custom agent types** — define agents in `.pi/agents/<name>.md` or `.agents/agents/<name>.md` (project) or globally, with YAML frontmatter: custom system prompts, model selection, thinking levels, tool restrictions
 - **Steering** — redirect running agents without restarting, or queue a message for delivery when a queued agent's session attaches
-- **Session resume** — pick up where an agent left off, preserving full conversation context. Every independent agent session is persisted. A terminal Agent record stays in memory for 15 minutes within the current parent session; after it is evicted (retention, session switch, reload, or a Pi restart followed by `/resume` of the same parent session), `agent({resume: id})` reopens the persisted session file and continues the conversation under the current agent config and delegation policy. The resumed run appends to the agent's existing `.output` transcript when transcripts are enabled. `get_agent_result` on an evicted id reads the result from the file without reviving the agent.
+- **Session resume** — pick up where an agent left off, preserving full conversation context. Every independent agent session is persisted. A terminal Agent record stays in memory for 15 minutes within the current parent session; after it is evicted (retention, session switch, reload, or a Pi restart followed by `/resume` of the same parent session), `subagent({resume: id})` reopens the persisted session file and continues the conversation under the current agent config and delegation policy. The resumed run appends to the agent's existing `.output` transcript when transcripts are enabled. `get_agent_result` on an evicted id reads the result from the file without reviving the agent.
 - **Work notes** — a non-isolated, non-graph agent granted `write` or `edit` is told to keep its own `local://notes/<agent-id>.md` current while it works ([work-notes.ts](src/work-notes.ts)). Once the file exists, foreground, resume, and `get_agent_result` results end with a `Work notes:` line and completion notifications carry `<work-notes>`. Notes are self-reported context, not verification evidence
 - **Hidden turn ceiling** — every Execution, including resumes, gets a friendly wrap-up reminder at a turn ceiling far above normal work, producing clean results instead of cut-off output
 - **Delegation gate** — requests are canonicalized against loaded, enabled agents and checked against the current delegation allowlist. With no active mode, all loaded, enabled agents are permitted; unknown and unavailable types are denied. See [delegation-policy.ts](src/delegation-policy.ts).
@@ -30,7 +30,7 @@ Derived from [tintinweb/pi-subagents](https://github.com/tintinweb/pi-subagents)
 - **Styled completion notifications** — background agent results render as themed, compact notification boxes (icon, stats, result preview) instead of raw XML. Expandable to show full output. Group completions render each agent individually
 - **Event bus** — lifecycle events (`subagents:created`, `started`, `completed`, `failed`, `steered`, `compacted`) emitted via `pi.events`, enabling other extensions to react to sub-agent activity
 - **Cross-extension RPC** — other pi extensions can spawn and stop subagents via the `pi.events` event bus (`subagents:rpc:ping`, `subagents:rpc:spawn`, `subagents:rpc:stop`). Standardized reply envelopes with protocol versioning. Emits `subagents:ready` on session start
-- **Schedule subagents** — pass `schedule` to the `agent` tool to fire on cron / interval / one-shot. Session-scoped jobs with PID-locked persistence; results land via the same `subagent-notification` followUp path as manual background completions; manage via `/agents → Scheduled jobs`
+- **Schedule subagents** — pass `schedule` to the `subagent` tool to fire on cron / interval / one-shot. Session-scoped jobs with PID-locked persistence; results land via the same `subagent-notification` followUp path as manual background completions; manage via `/agents → Scheduled jobs`
 - **Model scope enforcement** — opt-in validation that subagent model choices stay within your pi `enabledModels` allowlist (sourced from `/scoped-models`, with both global and project-local pi settings honored). Caller-supplied out-of-scope → hard error to orchestrator; frontmatter-pinned out-of-scope → warning + runs anyway (frontmatter authoritative). Toggle via `/agents → Settings → Scope models`
 
 ## Install
@@ -39,10 +39,10 @@ This repository installs the extension through its root `install.sh`; see the ro
 
 ## Quick Start
 
-The parent agent spawns sub-agents using the `agent` tool:
+The parent agent spawns sub-agents using the `subagent` tool:
 
 ```
-agent({
+subagent({
   subagent_type: "chengfeng",
   prompt: "Find all files that handle authentication",
   description: "Find auth files",
@@ -57,7 +57,7 @@ Foreground agents block until complete and return results inline. Background age
 Add a `schedule` field to register the agent to fire later instead of running now:
 
 ```
-agent({
+subagent({
   subagent_type: "chengfeng",
   prompt: "Look at recent commits and summarize what changed since last week",
   description: "Weekly commit review",
@@ -74,9 +74,9 @@ Schedule formats:
 
 When a schedule fires, the spawn runs in background and its completion notification arrives in the conversation through the same `subagent-notification` followUp path as a manually-spawned background agent — your parent agent reasons about the result the same way.
 
-Schedules are **session-scoped**: they reset on `/new` and restore on `/resume`. List and cancel via `/agents → Scheduled jobs` (creation is the `agent` tool's job — there is no parallel manual-create wizard). Storage at `<cwd>/.pi/subagent-schedules/<sessionId>.json` with PID-based file locking for cross-instance safety.
+Schedules are **session-scoped**: they reset on `/new` and restore on `/resume`. List and cancel via `/agents → Scheduled jobs` (creation is the `subagent` tool's job — there is no parallel manual-create wizard). Storage at `<cwd>/.pi/subagent-schedules/<sessionId>.json` with PID-based file locking for cross-instance safety.
 
-**Disable the feature entirely**: `/agents → Settings → Scheduling → disabled` removes `schedule` from the `agent` tool spec (no LLM-context cost), hides the menu entry, and stops any active scheduler. The schema-level removal takes effect on the next pi session; the runtime kill is immediate. Re-enable from the same menu.
+**Disable the feature entirely**: `/agents → Settings → Scheduling → disabled` removes `schedule` from the `subagent` tool spec (no LLM-context cost), hides the menu entry, and stops any active scheduler. The schema-level removal takes effect on the next pi session; the runtime kill is immediate. Re-enable from the same menu.
 
 Restrictions:
 - `schedule` cannot be combined with `inherit_context` (no parent conversation exists at fire time) or `resume` (schedules create fresh agents).
@@ -183,18 +183,18 @@ Report findings with file paths, line numbers, severity, and remediation advice.
 Then spawn the configured type:
 
 ```
-agent({ subagent_type: "auditor", prompt: "Review the auth module", description: "Security audit" })
+subagent({ subagent_type: "auditor", prompt: "Review the auth module", description: "Security audit" })
 ```
 
 ### Frontmatter Fields
 
 All fields are optional. [src/types.ts](src/types.ts) defines the fields and [../lib/agent-frontmatter.ts](../lib/agent-frontmatter.ts) parses them; the [agent frontmatter guide](../../docs/guides/agent-frontmatter.md) explains their use.
 
-Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `inherit_context`, `run_in_background`, or `isolated`, those values are locked for that agent. `agent` tool parameters only fill fields the agent config leaves unspecified.
+Frontmatter is authoritative. If an agent file sets `model`, `thinking`, `inherit_context`, `run_in_background`, or `isolated`, those values are locked for that agent. `subagent` tool parameters only fill fields the agent config leaves unspecified.
 
 Model candidates accept `provider/model[:thinking]:fast`; no suffix means fixed off, never the parent's `/fast` toggle. Resume retains the selected setting. See [child policy contracts](MAINTENANCE.md#invocation-and-model-policy) for validation/isolation and [shared helpers](../lib/README.md#fast-request-helpers) for strict request mechanics.
 
-Thinking precedence: agent frontmatter → selected model-chain suffix → SDK selected-model default. Omission never inherits parent thinking, even when the model is inherited, and `agent` tool calls carry no thinking value. The installed SDK resolves its native per-model/global/Pi defaults (per-model support depends on SDK version). Before session creation, Agent reports and queued retrieval display `thinking: default (pending)` only when the invocation retains omitted-thinking intent; unknown RPC intent stays unlabelled. Runtime reports replace the pending tag with the session's actual level. Resume retains the existing session level.
+Thinking precedence: agent frontmatter → selected model-chain suffix → SDK selected-model default. Omission never inherits parent thinking, even when the model is inherited, and `subagent` tool calls carry no thinking value. The installed SDK resolves its native per-model/global/Pi defaults (per-model support depends on SDK version). Before session creation, Agent reports and queued retrieval display `thinking: default (pending)` only when the invocation retains omitted-thinking intent; unknown RPC intent stays unlabelled. Runtime reports replace the pending tag with the session's actual level. Resume retains the existing session level.
 
 **Forgiving `model:` resolution.** A `model:` pin is matched against pi's model registry tolerantly, so cosmetic id variations don't silently drop the agent back to the parent's model: `.` and `-` are treated as equivalent in version numbers (`claude-haiku-4.5` ≡ `claude-haiku-4-5`), a trailing `-YYYYMMDD` date stamp is optional (`anthropic/claude-haiku-4-5-20251001` matches an undated registry id and vice-versa), and a `provider/modelId` whose named provider doesn't carry that model retries the bare id against every provider. Precedence is **exact → fuzzy under the named provider → same model under any provider → unavailable**, so an exact match always wins and dated snapshots aren't conflated. A comma-separated chain tries candidates in order against available models; a selected candidate's thinking suffix supplies the level when the agent omits `thinking:`, while explicit agent `thinking:` remains authoritative. If no configured candidate resolves, execution fails rather than silently inheriting. Only an absent model setting inherits the parent. `/agents → Agent types` flags exhausted chains as `(unavailable)` and shows the resolved target when it differs from configuration. (This is distinct from [Model Scope](#model-scope) enforcement, which matches the `enabledModels` allowlist by *exact* entry.)
 
@@ -230,7 +230,7 @@ A few rules the examples don't make obvious:
 
 [src/index.ts](src/index.ts) registers the tools; [src/agent-tool.ts](src/agent-tool.ts), [src/result-tools.ts](src/result-tools.ts) and [src/graph/graph-runtime.ts](src/graph/graph-runtime.ts) define their parameters.
 
-- `agent` launches a sub-agent in the foreground or background, or resumes one.
+- `subagent` launches a sub-agent in the foreground or background, or resumes one.
 - `get_agent_result` retrieves an independent Agent ID or an `agr_*` graph run ID; `wait: true` waits without polling for terminal output or a pending decision-gate escalation, and cancelling it stops only the wait, never the run. Continue non-overlapping work, then collect with `wait: true` rather than ending the turn. Graph run calls show a `[graph]` tag in the call header.
 - `resolve_agent_graph_gate` submits the orchestrator's or human's answers for an escalated decision gate.
 - `steer_subagent` sends a message to a running agent; it takes effect after the current tool execution.
@@ -290,7 +290,7 @@ Every Execution — fresh spawn, live resume, or resume reopened from file — c
 2. A short grace period to finish cleanly
 3. Abort only after the grace turns
 
-Below the ceiling, an Execution the orchestrator owns (not a graph node or a `delegate_research` run) checks in once at the threshold in [src/turn-ceiling.ts](src/turn-ceiling.ts), which also owns its environment override. The agent keeps running, and the orchestrator is asked to check that it stays on task, makes progress, and converges. A waiting `get_agent_result` returns its still-pending report with the notice, without consuming the result. A foreground `agent` call returns and the agent continues as a background agent. With neither waiting, a background agent's notice arrives as one follow-up notification.
+Below the ceiling, an Execution the orchestrator owns (not a graph node or a `delegate_research` run) checks in once at the threshold in [src/turn-ceiling.ts](src/turn-ceiling.ts), which also owns its environment override. The agent keeps running, and the orchestrator is asked to check that it stays on task, makes progress, and converges. A waiting `get_agent_result` returns its still-pending report with the notice, without consuming the result. A foreground `subagent` call returns and the agent continues as a background agent. With neither waiting, a background agent's notice arrives as one follow-up notification.
 
 | Status | Meaning | Icon |
 |--------|---------|------|
@@ -303,7 +303,7 @@ Below the ceiling, an Execution the orchestrator owns (not a graph node or a `de
 
 Background agents are subject to a configurable concurrency limit (default: 4). Excess agents are automatically queued and start as running agents complete. FleetView shows queued agents as one non-selectable aggregate row.
 
-Foreground calls have an independent FIFO pool controlled by `maxConcurrentForeground` (`0` = unlimited, the default). Set it in `/agents → Settings` to bound new blocking `agent` calls without competing with background capacity. Queued calls still wait for their complete inline result; Esc cancels a queued or running foreground call. A foreground call converted to background at the [turn check-in](#turn-ceiling) keeps its slot until the agent settles. Detached/RPC spawns and resume do not use the foreground pool. Stopping queued work or shutting down releases its waiting caller.
+Foreground calls have an independent FIFO pool controlled by `maxConcurrentForeground` (`0` = unlimited, the default). Set it in `/agents → Settings` to bound new blocking `subagent` calls without competing with background capacity. Queued calls still wait for their complete inline result; Esc cancels a queued or running foreground call. A foreground call converted to background at the [turn check-in](#turn-ceiling) keeps its slot until the agent settles. Detached/RPC spawns and resume do not use the foreground pool. Stopping queued work or shutting down releases its waiting caller.
 
 ## Join Strategies
 
@@ -335,7 +335,7 @@ When on, each subagent spawn's effective model is validated against pi's own `en
 | Pinned in agent frontmatter | Warning toast + the pinned model runs (frontmatter is authoritative) |
 | Parent-inherited (no frontmatter model) | Warning toast + parent's model runs |
 
-**Design:** `scopeModels` surfaces effective models outside `enabledModels`; it is not a hard policy against user-level config. `agent` tool calls and graph nodes carry no model, so frontmatter pins and parent inheritance always run, with a visible warning when out of scope.
+**Design:** `scopeModels` surfaces effective models outside `enabledModels`; it is not a hard policy against user-level config. `subagent` tool calls and graph nodes carry no model, so frontmatter pins and parent inheritance always run, with a visible warning when out of scope.
 
 **Pattern format:** only exact `provider/modelId` entries are honored (e.g. `anthropic/claude-haiku-4-5-20251001`). Glob patterns (`*sonnet*`), bare model IDs, and `:thinking` suffixes — which pi itself supports — are silently dropped here. pi's `/scoped-models` picker writes exact entries, so the limitation is invisible if you configure scope through the UI. Hand-edited globs produce an empty allowed set (scope check becomes a no-op).
 
@@ -361,11 +361,11 @@ The custom QoL footer retains its live accounting: parent assistant-message cost
 
 **Output transcript** (`outputTranscript`, default `true`): the project/global default for writing each subagent's `.output` transcript. Toggle via `/agents → Settings → Output transcript`, or set `false` in `subagents.json` to make transcripts opt-in project-wide — useful when run transcripts shouldn't sit on disk for backup or DLP tooling to pick up. A custom agent's `output_transcript` frontmatter overrides this per agent. Applied live at spawn time. Governs only the transcript, not the persisted session or memory files.
 
-**Tool description** (`toolDescriptionMode`, default `"full"`): which `agent` tool description the LLM sees. `"full"` is the rich Claude Code-style prompt (size depends on configured agents); `"compact"` is ~75% smaller — one-line configured-agent list, terse usage notes — for small/local models where tool-spec tokens are expensive. The `subagent_type` parameter points to this roster without repeating agent names. Applies on the next pi session.
+**Tool description** (`toolDescriptionMode`, default `"full"`): which `subagent` tool description the LLM sees. `"full"` is the rich Claude Code-style prompt (size depends on configured agents); `"compact"` is ~75% smaller — one-line configured-agent list, terse usage notes — for small/local models where tool-spec tokens are expensive. The `subagent_type` parameter points to this roster without repeating agent names. Applies on the next pi session.
 
-The configured roster is capability metadata, not delegation authority. While the `agent` tool is active, the extension adds one replaceable system-prompt hint containing the current mode's permitted target names. It derives from the same persisted delegation policy as runtime enforcement, stays byte-stable while the mode is unchanged, and replaces the prior hint after a mode or branch change instead of accumulating stale messages.
+The configured roster is capability metadata, not delegation authority. While the `subagent` tool is active, the extension adds one replaceable system-prompt hint containing the current mode's permitted target names. It derives from the same persisted delegation policy as runtime enforcement, stays byte-stable while the mode is unchanged, and replaces the prior hint after a mode or branch change instead of accumulating stale messages.
 
-A mode prompt containing `{{agentRoster}}` takes the roster instead ([modes](../modes/README.md#mode-frontmatter)): for that run, the placeholder expands to the mode-permitted agents in the type-list format (compact rows in `"compact"` mode), the hint is omitted, and the `agent` tool description drops its type list (`{{typeList}}` and `{{compactTypeList}}` render empty in `"custom"` mode). Runs without the placeholder keep the listed description and the hint.
+A mode prompt containing `{{agentRoster}}` takes the roster instead ([modes](../modes/README.md#mode-frontmatter)): for that run, the placeholder expands to the mode-permitted agents in the type-list format (compact rows in `"compact"` mode), the hint is omitted, and the `subagent` tool description drops its type list (`{{typeList}}` and `{{compactTypeList}}` render empty in `"custom"` mode). Runs without the placeholder keep the listed description and the hint.
 
 `"custom"` registers your own description from `<cwd>/.pi/agent-tool-description.md` (project) or `<agentDir>/agent-tool-description.md` (global; project wins). The file is read once at tool registration, so edits also apply on the next pi session. Dynamic parts stay live via placeholders — a static configured-agent list would go stale the moment you add a custom agent:
 

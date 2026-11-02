@@ -3,13 +3,13 @@ import { boot, mockSessions, required } from "./graph-run-registration.fixture.j
 
 const params = { subagent_type: "fixture", prompt: "work", description: "error fixture" };
 
-describe("agent tool failures", () => {
+describe("subagent tool failures", () => {
   it.each([false, true])("marks a refused spawn as an error (background: %s)", async (background) => {
     const host = boot();
     await host.lifecycle("session_start");
     await host.lifecycle("session_shutdown");
 
-    const result = await required(host.tools.get("agent")).execute("spawn", {
+    const result = await required(host.tools.get("subagent")).execute("spawn", {
       ...params, run_in_background: background,
     }, undefined, undefined, host.ctx);
 
@@ -19,7 +19,7 @@ describe("agent tool failures", () => {
   it.each([false, true])("marks execution failure as an error (resume: %s)", async (resume) => {
     const host = boot();
     await host.lifecycle("session_start");
-    const agent = required(host.tools.get("agent"));
+    const agent = required(host.tools.get("subagent"));
     let fail = false;
     mockSessions(() => {
       if (fail) throw new Error("provider execution failed");
@@ -39,7 +39,7 @@ describe("agent tool failures", () => {
     await host.lifecycle("session_start");
     mockSessions(() => "Agent failed: the proposed approach is infeasible");
 
-    const result = await required(host.tools.get("agent")).execute("outcome", params, undefined, undefined, host.ctx);
+    const result = await required(host.tools.get("subagent")).execute("outcome", params, undefined, undefined, host.ctx);
 
     expect(result).toMatchObject({ details: { status: "completed", result: "Agent failed: the proposed approach is infeasible" } });
     expect(result).not.toHaveProperty("isError", true);

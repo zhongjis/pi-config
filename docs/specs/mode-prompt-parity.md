@@ -74,7 +74,7 @@ Local invariants before edits:
 - Every family must include intent gate, explicit implementation authorization gate, scope discipline, delegation policy, continuation/supervision, and verification gates.
 - GPT replacement must be self-contained; it cannot depend on missing `default.md` body text.
 - Gemini overlay must reinforce tool use, delegation, read-before-claim, and verify-before-completion without replacing the full prompt.
-- Preserve Pi tool/agent mapping: `chengfeng`, `wenchang`, `taishang`, `jintong`, `yunu`, `guangguang`, pi `Task*`, `agent`, CodeGraph, LSP, read/rg/fd, and guarded built-in `bash` for protected read-only agents.
+- Preserve Pi tool/agent mapping: `chengfeng`, `wenchang`, `taishang`, `jintong`, `yunu`, `guangguang`, pi `Task*`, `subagent`, CodeGraph, LSP, read/rg/fd, and guarded built-in `bash` for protected read-only agents.
 
 ### Fuxi <- Prometheus
 
@@ -104,8 +104,8 @@ Local invariants before edits:
 
 - Houtu executes approved `PLAN.md` paths by coordinating workers and independently verifying evidence; it never implements product changes directly.
 - Every delegation remains one domain plus one deliverable.
-- Independent implementation launches as multiple foreground `agent` calls in one assistant response when no named dependency or write conflict exists; they execute concurrently while the parent blocks until all return.
-- Background `agent` runs are reserved for non-blocking exploration/research, not implementation parallelism.
+- Independent implementation launches as multiple foreground `subagent` calls in one assistant response when no named dependency or write conflict exists; they execute concurrently while the parent blocks until all return.
+- Background `subagent` runs are reserved for non-blocking exploration/research, not implementation parallelism.
 - Parent initializes and curates `local://{plan-name}/notepads/` with `learnings.md`, `decisions.md`, `issues.md`, and `blockers.md`.
 - All workers read only relevant shared notes.
 - Mutation-capable workers append only relevant findings and preserve unrelated entries.
@@ -117,7 +117,7 @@ Local invariants before edits:
 - Default/Gemini retain PLAN as durable source of truth and Task as its synchronized runtime mirror. [Hou Tu GPT](../../modes/houtu/gpt.md) follows subsequent user corrections immediately without revised-plan approval; PLAN records approved scope and progress, Task mirrors execution state, and independent verification gates completion rather than all state changes. All families batch-create pending top-level Todos and F1-F4, wire dependencies, mark `in_progress` before dispatch, then mark Task `completed` plus check PLAN only after parent verification.
 - GPT-only tracking/completion follows [Hou Tu GPT](../../modes/houtu/gpt.md): authoritative top-level PLAN markers distinguish pending `[ ]`, verified complete `[x]`, and canceled `[-]`. Canceled tasks remain recorded, are excluded from new pending Task registration, and existing mirrors use `status:'deleted'`, never `completed`. Completion covers remaining in-scope top-level tasks and F1-F4, not nested checkboxes.
 - GPT passes the smallest task/verification-applicable skill set (`skills=[]` when none apply), without exhaustive catalog reevaluation. Default/Gemini skill selection remains unchanged.
-- Bounded recovery uses `agent(resume)` for salvageable work; a fresh session is allowed only when its predecessor is unavailable or unsalvageable and receives failure context. Consult `taishang` before attempt 3.
+- Bounded recovery uses `subagent(resume)` for salvageable work; a fresh session is allowed only when its predecessor is unavailable or unsalvageable and receives failure context. Consult `taishang` before attempt 3.
 - Final ownership is fixed: F1 `taishang`; F2 parent code-quality gate; F3 parent manual QA; F4 `direnjie`. Rejection leaves the gate `in_progress` and unchecked, repairs the responsible implementation workstream, then reruns every invalidated gate. All families surface all four verdicts. Default/Gemini retain explicit final user okay; GPT reports verified completion after required gates pass unless the user explicitly requested a final approval checkpoint.
 
 ## Non-Goals

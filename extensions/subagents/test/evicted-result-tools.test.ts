@@ -84,6 +84,12 @@ describe("tools on an evicted, indexed agent", () => {
     expect(textOf(result)).toMatch(/^Agent: evicted-1\nType: .* \| Status: completed \| Tool uses: 3 \| 150 token \| Duration: 3\.0s\nDescription: evicted review\n\nFINAL ANSWER$/);
   });
 
+  it("reports the persisted interruption cause for an indexed stopped run", async () => {
+    const { getAgentResult } = tools(entry(transcript(join(sessionsDir, "child.jsonl"), finalAnswer), { status: "stopped", interruptionCause: "user" }));
+    const result = await getAgentResult.execute("get", { run_id: "evicted-1" }, undefined, undefined, ctx);
+    expect(textOf(result)).toContain("STOPPED BY THE USER");
+  });
+
   it("S11 details carry the transcript answer for the tool row", async () => {
     const { getAgentResult } = tools(entry(transcript(join(sessionsDir, "child.jsonl"), finalAnswer)));
 
@@ -147,6 +153,6 @@ describe("tools on an evicted, indexed agent", () => {
 
     const result = await steer.execute("steer", { agent_id: "evicted-1", message: "change course" }, undefined, undefined, ctx);
 
-    expect(textOf(result)).toBe('Agent "evicted-1" is not running (status: completed). Cannot steer a non-running agent.\nTo continue it, call agent with resume: "evicted-1" and a new prompt.');
+    expect(textOf(result)).toBe('Agent "evicted-1" is not running (status: completed). Cannot steer a non-running agent.\nTo continue it, call subagent with resume: "evicted-1" and a new prompt.');
   });
 });

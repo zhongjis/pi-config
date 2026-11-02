@@ -77,7 +77,7 @@ Fields whose purpose the code does not make obvious:
 
 Model and thinking policy comes from agent frontmatter, as resolved by
 [`prepareAgentInvocation`](../../extensions/subagents/src/invocation-config.ts).
-Thinking can be expressed as a model-spec suffix or the Subagent loader's `thinking` field; agent tool calls use that configured policy.
+Thinking can be expressed as a model-spec suffix or the Subagent loader's `thinking` field; subagent tool calls use that configured policy.
 
 ---
 
@@ -297,7 +297,7 @@ for chain resolution and fallback semantics.
 
 ## Delegation fields
 
-`delegation` governs which agent types a mode may spawn through the `agent`
+`delegation` governs which agent types a mode may spawn through the `subagent`
 tool, or a Subagent through `delegate_research`.
 
 ```yaml
@@ -425,6 +425,6 @@ There is no repo-local automated validator for agent/mode markdown. After editin
 1. Re-read the changed frontmatter and body for internal consistency.
 2. Confirm no obsolete fields remain (see [Invalid / obsolete fields](#invalid--obsolete-fields)).
 3. Confirm tool access matches role scope (read-only agents get no mutating tools).
-4. For subagents, test by launching through the `agent` tool.
+4. For subagents, test by launching through the `subagent` tool.
 5. For modes, exercise the relevant integration coverage
    (`pnpm test:integration` or the focused mode test) for runtime-sensitive changes.

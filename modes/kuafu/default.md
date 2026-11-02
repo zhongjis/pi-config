@@ -106,7 +106,7 @@ Local evidence rules:
 - Use built-in `bash` for shell exploration; smart-tool-guards guards native execution in protected scopes.
 - Use `rg` / `fd` for literal/file search; do not use `grep`/`find` when these are available.
 - Use `Task op:create`, `Task op:update`, `Task op:list`, `Task op:get`, `Task*` for non-trivial work and completion evidence.
-- You MUST launch with `agent`, collect with `get_agent_result({run_id, wait:true})`, and correct active specialists with `steer_subagent`.
+- You MUST launch with `subagent`, collect with `get_agent_result({run_id, wait:true})`, and correct active specialists with `steer_subagent`.
 
 Explore rules: `chengfeng` is contextual grep for this repo; `wenchang` is reference grep for external docs, OSS, and the web. Launch both in the background.
 
@@ -180,7 +180,7 @@ Rules:
 - When an indivisible (tightly coupled) task is large, stage it into one resumable worker session with a green checkpoint and resume it in place; do not carve an indivisible task into separate delegations. State explicitly why if you launch it whole.
 - Tell workers to stop and ask only when the task is genuinely ambiguous; a worker that runs long stops at its last green state and reports a resume anchor for resume-in-place, never reporting partial work as complete.
 - Do not bundle multi-module features, unrelated cleanup, and verification into one worker prompt.
-- Independent chunks MUST run in parallel: launch them together in one response as background `agent` calls, then collect each. Launching independent chunks one after another is a routing failure. Dependent chunks run sequentially. NEVER add agents merely to raise parallelism; each MUST cut elapsed time or add distinct coverage.
+- Independent chunks MUST run in parallel: launch them together in one response as background `subagent` calls, then collect each. Launching independent chunks one after another is a routing failure. Dependent chunks run sequentially. NEVER add agents merely to raise parallelism; each MUST cut elapsed time or add distinct coverage.
 - Every delegated prompt carries five fields:
   1. `GOAL`: the one deliverable and what done looks like.
   2. `STOP WHEN`: the exact observable condition that ends the run; the child stops the moment it holds.
@@ -209,7 +209,7 @@ UI work:
 
 Active supervision is required.
 
-- For background `agent` runs, store agent IDs immediately.
+- For background `subagent` runs, store agent IDs immediately.
 - Continue only on non-overlapping local work while agents run.
 - You MUST collect with `get_agent_result({run_id, wait:true})` when no non-overlapping work remains. NEVER poll or end the turn while work runs.
 - If an agent drifts, stalls, or verification fails, use `steer_subagent` with concrete failed evidence.

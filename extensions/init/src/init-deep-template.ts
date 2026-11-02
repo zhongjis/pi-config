@@ -14,7 +14,7 @@ Generate hierarchical AGENTS.md files. Root plus complexity-scored child docs.
 - Preserve raw invocation semantics: --create-new and --max-depth=N must be honored exactly.
 - Always read existing AGENTS.md and CLAUDE.md before writing. With --create-new, harvest context first, then delete/regenerate AGENTS.md files.
 - Never require tools absent from active Pi runtime. Prefer first-class discovery tools when available, fallback cleanly.
-- Use Pi-native tools/agents: Task (op:create/update/list/get), Agent/chengfeng, Agent/jintong, CodeGraph if available, LSP if available, rg, fd, read, edit, write.
+- Use Pi-native tools/agents: Task (op:create/update/list/get), subagent/chengfeng, subagent/jintong, CodeGraph if available, LSP if available, rg, fd, read, edit, write.
 
 ## Workflow
 
@@ -45,11 +45,11 @@ Mark discovery task in_progress.
 Launch chengfeng agents before deep local reading. Keep prompts narrow. Ask for deviations, not generic ecosystem facts.
 
 Baseline agents:
-  agent(subagent_type="chengfeng", description="Map project structure", run_in_background=true, prompt="Find major directories, entrypoints, generated/runtime dirs, package/workspace boundaries. Report only repo-specific facts.")
-  agent(subagent_type="chengfeng", description="Find commands", run_in_background=true, prompt="Read package/config/build files. Report exact dev/test/lint/typecheck/build commands plus caveats.")
-  agent(subagent_type="chengfeng", description="Find conventions", run_in_background=true, prompt="Find local style rules, naming, layouts, event/API contracts, config-driven constraints. Report concrete examples.")
-  agent(subagent_type="chengfeng", description="Find tests", run_in_background=true, prompt="Map test tiers, stubs, integration requirements, fixtures, slow tests, focused commands.")
-  agent(subagent_type="chengfeng", description="Find hazards", run_in_background=true, prompt="Search for DO NOT, NEVER, ALWAYS, DEPRECATED, TODO, FIXME, migrations, generated/runtime state. Report durable warnings only.")
+  subagent(subagent_type="chengfeng", description="Map project structure", run_in_background=true, prompt="Find major directories, entrypoints, generated/runtime dirs, package/workspace boundaries. Report only repo-specific facts.")
+  subagent(subagent_type="chengfeng", description="Find commands", run_in_background=true, prompt="Read package/config/build files. Report exact dev/test/lint/typecheck/build commands plus caveats.")
+  subagent(subagent_type="chengfeng", description="Find conventions", run_in_background=true, prompt="Find local style rules, naming, layouts, event/API contracts, config-driven constraints. Report concrete examples.")
+  subagent(subagent_type="chengfeng", description="Find tests", run_in_background=true, prompt="Map test tiers, stubs, integration requirements, fixtures, slow tests, focused commands.")
+  subagent(subagent_type="chengfeng", description="Find hazards", run_in_background=true, prompt="Search for DO NOT, NEVER, ALWAYS, DEPRECATED, TODO, FIXME, migrations, generated/runtime state. Report durable warnings only.")
 
 ### Dynamic Background Exploration by Project Scale
 
@@ -179,7 +179,7 @@ Mark child generation in_progress.
 For each non-root location, launch jintong in background. Give only directory-specific context plus inherited parent summary.
 
 Child prompt shape:
-  agent(subagent_type="jintong", description="Generate AGENTS.md for PATH", run_in_background=true, prompt="TASK: Generate AGENTS.md for PATH. MUST read parent AGENTS chain and local files. Write PATH/AGENTS.md only. Keep 30-80 lines. Include local Overview, Structure if useful, Where to Look, Commands if local, Always, Ask First, Never, Gotchas. Do not repeat parent. Use telegraphic style. Verify with readback.")
+  subagent(subagent_type="jintong", description="Generate AGENTS.md for PATH", run_in_background=true, prompt="TASK: Generate AGENTS.md for PATH. MUST read parent AGENTS chain and local files. Write PATH/AGENTS.md only. Keep 30-80 lines. Include local Overview, Structure if useful, Where to Look, Commands if local, Always, Ask First, Never, Gotchas. Do not repeat parent. Use telegraphic style. Verify with readback.")
 
 Child quality gates:
 - 30-80 lines target.

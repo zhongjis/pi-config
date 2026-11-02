@@ -1,8 +1,8 @@
-import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
   (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
@@ -16,15 +16,15 @@ vi.mock("../src/output-file.js", () => ({
 import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 import { createOutputFilePath, streamToOutputFile, writeInitialEntry } from "../src/output-file.js";
-import { fakeSession, opened } from "./helpers/session-seam.js";
 import { chainOn } from "./helpers/lifecycle.js";
+import { fakeSession, opened } from "./helpers/session-seam.js";
 
 function makePi() {
   const tools = new Map<string, any>();
   const lifecycle = new Map<string, any>();
   const events = new Map<string, any>();
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((tool: any) => tools.set(tool.name, tool)),
     registerCommand: vi.fn(),
     on: vi.fn(chainOn(lifecycle)),
@@ -92,7 +92,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("agent").execute(
+    await tools.get("subagent").execute(
       "tool-call",
       { prompt: "process sensitive data", description: "Process sensitive data", subagent_type: "sensitive" },
       undefined,
@@ -111,7 +111,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("agent").execute(
+    await tools.get("subagent").execute(
       "tool-call",
       { prompt: "process sensitive data", description: "Process sensitive data", subagent_type: "sensitive" },
       undefined,
@@ -129,7 +129,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("agent").execute(
+    await tools.get("subagent").execute(
       "tool-call",
       { prompt: "ordinary work", description: "Do ordinary work", subagent_type: "fixture" },
       undefined,
@@ -149,7 +149,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("agent").execute(
+    await tools.get("subagent").execute(
       "tool-call",
       { prompt: "ordinary work", description: "Do ordinary work", subagent_type: "fixture" },
       undefined,
@@ -169,7 +169,7 @@ describe("output_transcript agent wiring", () => {
     const { pi, tools, lifecycle } = makePi();
     subagentsExtension(pi);
 
-    await tools.get("agent").execute(
+    await tools.get("subagent").execute(
       "tool-call",
       { prompt: "audited work", description: "Do audited work", subagent_type: "audited" },
       undefined,

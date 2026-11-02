@@ -38,7 +38,7 @@ function makePi() {
     registerCommand: vi.fn((name: string, definition: unknown) => commands.set(name, definition)),
     registerShortcut: vi.fn((key: string, definition: unknown) => shortcuts.set(key, definition)),
     registerFlag: vi.fn(),
-    registerMessageRenderer: vi.fn((type: string, renderer: MessageRenderer) => renderers.set(type, renderer)),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn((type: string, renderer: MessageRenderer) => renderers.set(type, renderer)),
     on: vi.fn((event: string, handler: LifecycleHandler) => {
       const handlers = lifecycle.get(event) ?? [];
       handlers.push(handler);
@@ -77,7 +77,7 @@ describe("subagents + thinking-steps presentation coexistence", () => {
     const registry = makePi();
     subagentsExtension(registry.pi);
 
-    const subagentTools = ["agent", "get_agent_result", "steer_subagent"].map((name) => {
+    const subagentTools = ["subagent", "get_agent_result", "steer_subagent"].map((name) => {
       const tool = registry.tools.get(name);
       expect(tool, `${name} registered`).toBeDefined();
       expect(tool?.renderCall, `${name}.renderCall`).toBeTypeOf("function");
@@ -114,11 +114,11 @@ describe("subagents + thinking-steps presentation coexistence", () => {
     }
 
     expect(
-      ["agent", "get_agent_result", "steer_subagent"].map((name) => registry.tools.get(name)),
+      ["subagent", "get_agent_result", "steer_subagent"].map((name) => registry.tools.get(name)),
     ).toEqual(subagentTools);
     expect(registry.renderers.get("subagent-notification")).toBe(notificationRenderer);
 
-    const agentTool = registry.tools.get("agent");
+    const agentTool = registry.tools.get("subagent");
     const raw = "Coexistence renderer result.";
     const result = {
       content: [{ type: "text" as const, text: raw }],

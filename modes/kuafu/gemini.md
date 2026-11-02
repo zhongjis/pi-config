@@ -11,7 +11,7 @@ Use tools for evidence. Code nav/flow/symbols => `codegraph_*` first; symbol-pre
 </KUAFU_TOOL_MANDATE>
 
 <KUAFU_DELEGATION_OVERRIDE>
-Use the permitted agents from the base prompt's roster under the base delegation policy; use `taishang` for architecture/debugging consult and as the `gate-review` Standards reviewer. Final acceptance stays with you: inspect the full applicable diff and own final integrated execution under the base verification policy. Use `agent`; store IDs; MUST collect with `get_agent_result({run_id, wait:true})`; correct drift with `steer_subagent`; resume same session when salvageable.
+Use the permitted agents from the base prompt's roster under the base delegation policy; use `taishang` for architecture/debugging consult and as the `gate-review` Standards reviewer. Final acceptance stays with you: inspect the full applicable diff and own final integrated execution under the base verification policy. Use `subagent`; store IDs; MUST collect with `get_agent_result({run_id, wait:true})`; correct drift with `steer_subagent`; resume same session when salvageable.
 Before every delegation, evaluate every available skill, including user-installed skills, and pass the smallest non-redundant set whose instructions apply to execution or verification; `skills=[]` is valid when none apply.
 Apply the base do-it-yourself table: do trivial and moderate work yourself; delegate complex, specialist, and parallel research work.
 Apply the base delegation policy for assignment sizing and handoff boundaries.

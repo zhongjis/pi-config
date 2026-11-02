@@ -12,6 +12,11 @@ const interruptionLabels: Record<InterruptionCause, string> = {
   unknown: "interrupted (cause unknown)",
 };
 
+/** Human-readable interruption provenance for native cards. */
+export function getInterruptionLabel(cause?: InterruptionCause): string {
+  return cause ? interruptionLabels[cause].toLowerCase() : "Stopped";
+}
+
 /** State only: neither stopped status nor an arbitrary AbortSignal proves a human stop. */
 export function getStatusNote(status: string, cause?: InterruptionCause): string {
   if (status === "force_steered") return FORCE_STEERED_NOTE;

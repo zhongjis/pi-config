@@ -14,7 +14,7 @@ it.each([false, true])("denies unknown and disabled agent targets with an active
   }
   await host.lifecycle("session_start");
   for (const type of ["missing", "disabled"]) {
-    const result = await required(host.tools.get("agent")).execute("call", {
+    const result = await required(host.tools.get("subagent")).execute("call", {
       subagent_type: type, prompt: "task", description: "test",
     }, undefined, undefined, host.ctx);
 
@@ -27,7 +27,7 @@ it.each([false, true])("denies unknown and disabled agent targets with an active
 
 it("runs the canonical loaded agent without an active mode", async () => {
   const host = boot();
-  const result = await required(host.tools.get("agent")).execute("call", {
+  const result = await required(host.tools.get("subagent")).execute("call", {
     subagent_type: " FIXTURE ", prompt: "task", description: "test",
   }, undefined, undefined, host.ctx);
 

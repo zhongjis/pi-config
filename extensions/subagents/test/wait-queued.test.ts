@@ -1,7 +1,7 @@
-import { mkdtempSync as tempDir, rmSync as removeDir } from "node:fs";
+import { rmSync as removeDir, mkdtempSync as tempDir } from "node:fs";
 import { tmpdir as tempRoot } from "node:os";
 import { join as pathJoin } from "node:path";
-import { beforeEach as fixtureBefore, afterEach as fixtureAfter } from "vitest";
+import { afterEach as fixtureAfter, beforeEach as fixtureBefore } from "vitest";
 import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * wait-queued.test.ts — get_agent_result(wait: true) lifecycle behavior.
@@ -27,14 +27,14 @@ vi.mock("../src/agent-runner.js", async (importOriginal) =>
 import { openSession } from "../src/agent-runner.js";
 import subagentsExtension from "../src/index.js";
 import { QUEUE_WAIT_POLL_MS } from "../src/notification-coordinator.js";
-import { deferred, fakeSession, opened } from "./helpers/session-seam.js";
 import { chainOn } from "./helpers/lifecycle.js";
+import { deferred, fakeSession, opened } from "./helpers/session-seam.js";
 
 function makePi() {
   const tools = new Map<string, any>();
   const lifecycle = new Map<string, any>();
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
     on: vi.fn(chainOn(lifecycle)),
@@ -78,7 +78,7 @@ function deferredRuns() {
 }
 
 async function spawnBackground(tools: Map<string, any>): Promise<{ id: string; queued: boolean }> {
-  const r = await tools.get("agent").execute(
+  const r = await tools.get("subagent").execute(
     "tc-spawn",
     { prompt: "go", description: "queued-wait test agent", subagent_type: "fixture", run_in_background: true },
     undefined,
@@ -113,7 +113,7 @@ describe("get_agent_result wait:true on a queued agent", () => {
       const prevCwd = process.cwd();
       process.chdir(agentCwd);
       try {
-        const explicit = await tools.get("agent").execute("explicit", { prompt: "go", description: "explicit", subagent_type: "explicit-thinker", run_in_background: true }, undefined, undefined, ctx());
+        const explicit = await tools.get("subagent").execute("explicit", { prompt: "go", description: "explicit", subagent_type: "explicit-thinker", run_in_background: true }, undefined, undefined, ctx());
         const retrieved = await tools.get("get_agent_result").execute("explicit-pending", { run_id: explicit.details.agentId, wait: false }, undefined, undefined, ctx());
         expect(retrieved.details).toMatchObject({ status: "queued", thinking: undefined, tags: expect.not.arrayContaining(["thinking: default (pending)"]) });
       } finally {

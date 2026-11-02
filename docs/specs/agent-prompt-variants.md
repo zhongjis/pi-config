@@ -14,7 +14,7 @@ A Subagent may be defined as a directory, `<name>/default.md` plus optional `<na
 
 The prompt variant follows the model actually running the child: it is chosen at spawn and re-chosen before every run, so a runtime fallback across families switches prompts. Definition loading always lands on a valid prompt when one exists, warning the user about every invalid candidate it skipped.
 
-The delegation allowlist becomes the only gate on an `agent` call: an unknown or unloaded type is denied like a disallowed one. Stock agents, `append`, menu write paths, and the stock-agent setting are removed.
+The delegation allowlist becomes the only gate on a `subagent` call: an unknown or unloaded type is denied like a disallowed one. Stock agents, `append`, menu write paths, and the stock-agent setting are removed.
 
 ## User Stories
 
@@ -39,7 +39,7 @@ The delegation allowlist becomes the only gate on an `agent` call: an unknown or
 19. As a mode maintainer, I want each mode's default prompt file named `default.md`, so that modes and agents share one variant convention.
 20. As a mode maintainer, I want a mode without `gpt.md` or `gemini.md` to use its `default.md` body for that family, so that variants stay optional.
 21. As a maintainer, I want one shared prompt-variant helper used by modes and Subagents, so that variant selection and overlay placement cannot drift between them.
-22. As a delegating agent, I want an `agent` call naming an unknown, disabled, or unloaded type to be denied with the list of types I may use, so that a typo never runs a different agent.
+22. As a delegating agent, I want a `subagent` call naming an unknown, disabled, or unloaded type to be denied with the list of types I may use, so that a typo never runs a different agent.
 23. As a user without an active mode, I want delegation limited to loaded agents, so that unrestricted delegation still cannot name a nonexistent agent.
 24. As a user, I want no stock agents registered, so that only agents I defined are callable.
 25. As a user, I want the `/agents` menu to list agents, show definitions, and show running agents without writing files, so that it never creates flat files that shadow directory definitions.
@@ -58,7 +58,7 @@ The delegation allowlist becomes the only gate on an `agent` call: an unknown or
 - Subagent definitions store the default body as their system prompt plus optional stored variants. Variants are read at definition load, not at spawn.
 - Definition resolution per agent name walks candidates in priority order — project directory, project flat file, workspace directory, workspace flat file, global directory, global flat file — and uses the first valid candidate. Each invalid candidate skipped yields a warning naming what was used instead; exhausting all candidates yields a "no valid definition" warning. Warnings use the existing deduplicated session notification path for definition diagnostics.
 - The Subagent runner builds the child prompt for a model family. The initial prompt uses the spawn model; a `before_agent_start` handler in the runner's trusted fallback extension sets the system prompt's custom-prompt section from the current model before every run. It must set the custom-prompt section, not return a whole system prompt, so project context and skills sections survive. Rationale: Pi evaluates the system-prompt override only at resource reload, while every run starts from base prompt options and passes through `before_agent_start`.
-- The delegation allowlist is the only gate on `agent` calls. Without an active mode, permitted types are all loaded, enabled types; with an active mode, they are the mode's rules resolved against loaded types. The requested type is canonicalized against loaded types; any type outside the permitted set is denied with the existing denial result. No fallback agent is substituted.
+- The delegation allowlist is the only gate on `subagent` calls. Without an active mode, permitted types are all loaded, enabled types; with an active mode, they are the mode's rules resolved against loaded types. The requested type is canonicalized against loaded types; any type outside the permitted set is denied with the existing denial result. No fallback agent is substituted.
 - Stock agents (`general-purpose`, `Explore`, `Plan`) are removed, along with the unknown-type fallback configuration and fallback note.
 - The `append` prompt mode is removed from the frontmatter schema and prompt construction. Prompt modes are `replace` and `system_instructions`.
 - The `/agents` menu is read-only: list, view definition, running agents. Create, generate, edit, delete, reset, eject, and enable/disable paths are removed.

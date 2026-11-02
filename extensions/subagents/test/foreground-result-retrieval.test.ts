@@ -1,4 +1,3 @@
-import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 /**
  * foreground-result-retrieval.test.ts — issue #174, via the REAL Agent,
  * get_agent_result, and resume paths.
@@ -20,6 +19,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { writeFixtureAgent } from "./helpers/fixture-agent.js";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
   (await import("./helpers/session-seam.js")).mockOpenSession(await importOriginal()));
@@ -42,7 +42,7 @@ function makePi() {
   const tools = new Map<string, any>();
   const lifecycle = new Map<string, any>();
   const pi = {
-    registerMessageRenderer: vi.fn(),
+    registerToolRenderer: vi.fn(), registerMessageRenderer: vi.fn(),
     registerTool: vi.fn((t: any) => tools.set(t.name, t)),
     registerCommand: vi.fn(),
     on: vi.fn(chainOn(lifecycle)),
@@ -85,7 +85,7 @@ async function runForegroundSteeredAgent(tools: Map<string, any>) {
     return "THE-RESULT-PAYLOAD";
   });
   vi.mocked(openSession).mockResolvedValue(opened(session));
-  const res = await tools.get("agent").execute(
+  const res = await tools.get("subagent").execute(
     "tc-fg",
     {
       prompt: "Perform a very thorough read-only codebase exploration.",
@@ -165,7 +165,7 @@ describe("issue #174: foreground agent that hits the turn ceiling", () => {
 
     session.prompt.mockImplementationOnce(async () => { session.reply({ text: "RESUMED-PAYLOAD" }); });
     const openingCount = vi.mocked(openSession).mock.calls.length;
-    const resumed = await tools.get("agent").execute(
+    const resumed = await tools.get("subagent").execute(
       "tc-resume",
       {
         prompt: "Continue from the previous result.",

@@ -122,7 +122,7 @@ export interface AgentRecord {
   resultConsumed?: boolean;
   /** Steering messages queued before the session was ready. */
   pendingSteers?: string[];
-  /** The tool_use_id from the original `agent` tool call. */
+  /** The tool_use_id from the original `subagent` tool call. */
   toolCallId?: string;
   /** Path to the streaming output transcript file. */
   outputFile?: string;
@@ -143,11 +143,11 @@ export interface AgentRecord {
   /**
    * Whether this agent was spawned to run in the background. Tri-state, set at
    * spawn from `SpawnOptions.isBackground`: `true` = background, `false` =
-   * foreground (has an inline `agent` tool-result surface), `undefined` = the
+   * foreground (has an inline `subagent` tool-result surface), `undefined` = the
    * caller never declared it (e.g. a cross-extension RPC spawn, which is detached
    * and has no inline surface). The fleet row's `bg` tag shows only for explicit
    * `true`. Reliable across ALL spawn paths, unlike the UI-only `invocation`
-   * snapshot, which only the `agent` tool path populates.
+   * snapshot, which only the `subagent` tool path populates.
    */
   isBackground?: boolean;
   /** Converted foreground Execution retains its unsupervised behavior until the next admission. */
@@ -172,6 +172,7 @@ export interface EvictedAgent {
   status: "running" | "completed" | "force_steered" | "aborted" | "stopped" | "error";
   startedAt: number;
   completedAt?: number;
+  interruptionCause?: InterruptionCause;
   toolUses: number;
   lifetimeUsage: { input: number; output: number; cacheWrite: number };
   sessionFile: string;

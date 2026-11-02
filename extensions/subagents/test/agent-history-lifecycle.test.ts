@@ -18,7 +18,7 @@ describe("independent agent history lifecycle", () => {
       settled = true;
       return { text: "SECRET_RESULT", aborted: true };
     }, { sessionFile });
-    await host.tools.get("agent")!.execute("call", {
+    await host.tools.get("subagent")!.execute("call", {
       prompt: "SECRET_PROMPT",
       description: "history review",
       subagent_type: "fixture",

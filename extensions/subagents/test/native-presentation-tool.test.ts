@@ -1,5 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { projectNativeResult } from "../src/native-presentation.js";
+import { renderAgentToolCall, renderAgentToolResult } from "../src/tool-rendering.js";
 import type { AgentDetails } from "../src/ui/agent-format.js";
 import { required } from "./graph-run-registration.fixture.js";
 import { launchParams, presentationHost } from "./native-presentation.fixture.js";
@@ -10,16 +11,24 @@ const details: AgentDetails = {
   activity: "reading files", result: "Latest response",
 };
 
-describe("deferred presentation tool", () => {
-  it("returns an error immediately with no live channel, including after a completed call", async () => {
+describe("model-facing delegation tool", () => {
+  it("registers a callable tool with its launch schema and native final data", async () => {
     const host = presentationHost();
-    const presentation = required(host.tools.get("subagent"));
-    expect(presentation.exposure).toBe("deferred");
-    await required(host.tools.get("agent")).execute("run", launchParams, undefined, undefined, host.context("run"));
-    // The channel closes once its nested call settles, which may trail the run.
-    for (const id of ["unowned", "run/1"]) {
-      await vi.waitFor(async () => expect(await presentation.execute(id, {}, undefined, undefined, host.ctx)).toMatchObject({ isError: true }));
-    }
+    const tool = required(host.tools.get("subagent"));
+    expect(tool.parameters.properties).toHaveProperty("subagent_type");
+    const result = await tool.execute("run", launchParams, undefined, undefined, host.context("run"));
+    expect(result.details).toMatchObject({ results: [{ finished: true, exitCode: 0 }] });
+  });
+});
+
+describe("historical agent renderer alias", () => {
+  it("supplies terminal renderers for historical rows without replacing an existing renderer", () => {
+    const host = presentationHost();
+    const [resolve] = required(host.api.registerToolRenderer.mock.calls[0]);
+    const renderers = { renderCall: renderAgentToolCall, renderResult: renderAgentToolResult };
+    expect(resolve("agent", () => undefined)).toEqual(renderers);
+    expect(resolve("agent", () => renderers)).toBe(renderers);
+    expect(resolve("read", () => undefined)).toBeUndefined();
   });
 });
 
@@ -38,8 +47,8 @@ describe("T3 entry projection", () => {
   });
 
   it.each(["stopped", "aborted"] as const)("projects %s as interruption with an assistant reason", status => {
-    expect(projectNativeResult({ ...details, status, error: "interrupted by owner" }, { finished: true })).toMatchObject({
-      finished: true, stopReason: "aborted", errorMessage: "interrupted by owner", messages: [{ content: [{ text: "interrupted by owner" }] }],
+    expect(projectNativeResult({ ...details, status, interruptionCause: "user", error: "AbortError: The operation was aborted." }, { finished: true })).toMatchObject({
+      finished: true, stopReason: "aborted", errorMessage: "stopped by the user", messages: [{ content: [{ text: "stopped by the user" }] }],
     });
   });
 
