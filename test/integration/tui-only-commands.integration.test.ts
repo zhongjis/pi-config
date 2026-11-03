@@ -7,10 +7,15 @@ import { createTestSession, type TestSession } from "./helpers/faux-session.js";
 // so RPC clients such as T3 Code never list them.
 const ROOT = resolve(__dirname, "../..");
 const TUI_ONLY_EXTENSIONS = [
-	...["thinking-steps", "tools", "diff"].map((name) => resolve(ROOT, "extensions", name, "index.ts")),
+	...["thinking-steps", "tools", "diff", "handoff", "recap", "smart-sessions", "imagegen", "herdr-btw"].map((name) => resolve(ROOT, "extensions", name, "index.ts")),
 	resolve(ROOT, "extensions", "subagents", "src", "index.ts"),
+	resolve(ROOT, "extensions", "qol", "src", "exit.ts"),
 ];
-const TUI_ONLY_COMMANDS = ["thinking-steps", "tools", "diff", "agents", "agent-monitor", "agent-graph-replay"];
+const TUI_ONLY_COMMANDS = [
+	"thinking-steps", "tools", "diff", "agents", "agent-monitor", "agent-graph-replay",
+	"handoff", "handoff:mode", "handoff:start-work", "recap",
+	"summary:settings", "summary:update", "summary:clear", "summary:cost", "img", "btw", "exit",
+];
 
 type RpcLine = { id?: string; type?: string; command?: string; success?: boolean; data?: { commands?: Array<{ name: string }> } };
 
@@ -84,5 +89,6 @@ describe("terminal-only commands", () => {
 		expect(reply).toMatchObject({ type: "response", command: "get_commands", success: true });
 		const names = reply?.data?.commands?.map((command) => command.name) ?? [];
 		for (const name of TUI_ONLY_COMMANDS) expect(names).not.toContain(name);
+		expect(names).toContain("handoff:file");
 	});
 });
