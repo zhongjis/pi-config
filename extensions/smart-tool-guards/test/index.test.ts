@@ -173,6 +173,8 @@ describe("smart-tool-guards bash hook", () => {
 
 	it.each([
 		"rg --no-config 'pattern' file | head -20", "sha256sum file",
+		"fd 'report.*' /tmp -d 1 -t f", "rg --no-config -C2 --max-count 5 error /tmp",
+		"git diff HEAD~3 -- '/tmp/a b'", "rtk git diff --no-compact HEAD -- '/tmp/a b' | head -20",
 		"command -v lark-cli || true", "jq --version", "lark-cli wiki --help", "journalctl --user -u sample.service --no-pager -n 80", "systemctl --user status sample.service --no-pager",
 		"systemctl --user show sample.service -p ExecStart --no-pager", `sqlite3 -batch -readonly -init /dev/null 'file:/snapshot.db?mode=ro&immutable=1' "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name;"`,
 	])("allows literal inspection with classifier unavailable and native input intact: %s", async (command) => {
@@ -352,9 +354,11 @@ describe("smart-tool-guards bash hook", () => {
 		const { pi, handlers, messageEndHandlers } = makeRuntime();
 		guard(pi);
 		smartToolGuards(pi);
-		expect(await handlers[0](bashEvent({ command: "rtk git push" }), context())).toBeUndefined();
-		expect(classifyMock).toHaveBeenCalledOnce();
-		classifyMock.mockClear();
+		expect(await handlers[0](bashEvent({ command: "rtk git push" }), context())).toEqual({
+			block: true,
+			reason: expect.stringContaining("[source=policy]"),
+		});
+		expect(classifyMock).not.toHaveBeenCalled();
 
 		await messageEndHandlers[0](messageEnd({
 			role: "assistant",
@@ -445,16 +449,16 @@ describe("smart-tool-guards bash hook", () => {
 		smartToolGuards(pi);
 		await messageEndHandlers[0](messageEnd({
 			role: "assistant",
-			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "git push" } }],
+			content: [{ type: "toolCall", id: "call-1", name: "bash", arguments: { command: "rm out" } }],
 		}), context());
 		await messageEndHandlers[0](messageEnd({
 			role: "assistant",
 			content: [{ type: "toolCall", id: "call-2", name: "bash", arguments: { command: "git status" } }],
 		}), context());
 
-		expect(await handlers[0](bashEvent({ command: "rtk git push" }), context())).toBeUndefined();
+		expect(await handlers[0](bashEvent({ command: "rtk git log --oneline" }), context())).toBeUndefined();
 		expect(classifyMock).toHaveBeenCalledWith(expect.objectContaining({
-			action: expect.objectContaining({ command: "rtk git push" }),
+			action: expect.objectContaining({ command: "rtk git log --oneline" }),
 		}), expect.anything());
 	});
 

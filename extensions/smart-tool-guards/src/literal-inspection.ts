@@ -1,7 +1,7 @@
 // Unlike the hazard scanner, literal matching preserves empty arguments and shell spelling.
 function literalStages(command: string, pipeline: boolean): string[][] | undefined {
 	const stages: string[][] = [[]];
-	const literalWordPattern = /(?:[^\s'"\\$`*?[\]{}~#!();&|<>]|'[^']*'|"(?:[^"\\$`]|\\["\\$`])*"|\\[^\n\r])+/y;
+	const literalWordPattern = /(?:[^\s'"\\$`*?[\]{}~#!();&|<>]|'[^']*'|"(?:[^"\\$`]|\\["\\$`])*"|\\[^\n\r]|(?<=[A-Za-z0-9_./^~-])~)+/y;
 	let index = 0;
 	while (index < command.length) {
 		while (command[index] === " " || command[index] === "\t") index += 1;
@@ -33,29 +33,37 @@ export function literalWords(command: string): string[] | undefined {
 type Options = {
 	readonly flags: readonly string[];
 	readonly values?: readonly string[];
-	readonly numeric?: boolean;
+	readonly numeric?: readonly string[];
 };
 
 const READER_OPTIONS: Readonly<Record<string, Options>> = {
 	cat: { flags: ["-n", "-b", "-s", "-v", "-E", "-T", "-A"] },
 	nl: { flags: [] },
-	head: { flags: ["-q", "-v"], values: ["-n", "-c", "--lines", "--bytes"], numeric: true },
-	tail: { flags: ["-q", "-v"], values: ["-n", "-c", "--lines", "--bytes"], numeric: true },
+	head: { flags: ["-q", "-v"], numeric: ["-n", "-c", "--lines", "--bytes"] },
+	tail: { flags: ["-q", "-v"], numeric: ["-n", "-c", "--lines", "--bytes"] },
 	wc: { flags: ["-l", "-w", "-c", "-m", "-L"] },
 	sha256sum: { flags: ["-b", "-t", "--binary", "--text", "--tag"] },
 	rg: {
 		flags: ["--no-config", "--files", "--hidden", "-n", "--line-number", "-i", "--ignore-case", "-l", "--files-with-matches", "-c", "--count", "-F", "--fixed-strings", "-w", "--word-regexp", "-S", "--smart-case"],
 		values: ["-e", "--regexp", "-g", "--glob", "-t", "--type", "-T", "--type-not"],
+		numeric: ["-A", "--after-context", "-B", "--before-context", "-C", "--context", "-m", "--max-count", "--max-depth"],
 	},
 	fd: {
 		flags: ["--hidden", "-H", "--no-ignore", "-I", "--absolute-path", "-a", "--full-path", "-p", "--fixed-strings", "-F", "--case-sensitive", "-s", "--ignore-case", "-i"],
 		values: ["-t", "--type", "-e", "--extension", "-E", "--exclude", "--search-path"],
+		numeric: ["-d", "--max-depth"],
+	},
+	git: {
+		flags: ["--cached", "--staged", "--stat", "--numstat", "--name-only", "--name-status", "--check", "--no-color", "--no-ext-diff", "--no-textconv"],
+		numeric: ["-U", "--unified"],
 	},
 } as const;
 
 function inspectionStage(words: readonly string[]): boolean {
-	const [executable, ...args] = words;
+	const rtkDiff = words[0] === "rtk" && words[1] === "git" && words[2] === "diff";
+	const [executable, ...args] = rtkDiff ? words.slice(1) : words;
 	if (args.some((arg) => arg.length === 0)) return false;
+	if (executable === "git" && args.shift() !== "diff") return false;
 	if (executable === "jq") return args.length === 1 && ["--version", "--help"].includes(args[0]);
 	if (executable === "command") return args.length === 2 && args[0] === "-v" && /^[A-Za-z_][A-Za-z0-9_-]*$/.test(args[1]);
 	if (!Object.hasOwn(READER_OPTIONS, executable)) return false;
@@ -70,12 +78,16 @@ function inspectionStage(words: readonly string[]): boolean {
 			if (arg === "--no-config") configDisabled = true;
 			continue;
 		}
-		if (options.numeric && /^-\d+$/.test(arg)) continue;
+		if (rtkDiff && arg === "--no-compact") continue;
+		if (["head", "tail"].includes(executable) && /^-\d+$/.test(arg)) continue;
+		const compact = /^(-[A-Za-z])(\d+)$/.exec(arg);
+		if (compact && options.numeric?.includes(compact[1])) continue;
 		const equals = arg.indexOf("=");
 		const flag = equals < 0 ? arg : arg.slice(0, equals);
-		if (!options.values?.includes(flag)) return false;
+		const numeric = options.numeric?.includes(flag);
+		if (!numeric && !options.values?.includes(flag)) return false;
 		const value = equals < 0 ? args[++index] : arg.slice(equals + 1);
-		if (!value || value.startsWith("-") || options.numeric && !/^\d+$/.test(value)) return false;
+		if (!value || value.startsWith("-") || numeric && !/^\d+$/.test(value)) return false;
 	}
 	return executable !== "rg" || configDisabled;
 }

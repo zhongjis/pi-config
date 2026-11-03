@@ -207,6 +207,14 @@ describe("aggregate bash danger policy", () => {
 		}
 	});
 
+	it("retains RTK Git hazard source positions", () => {
+		const command = "cat /tmp/file | env rtk git push";
+		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({
+			kind: "block",
+			findings: [{ code: "vcs-mutation", position: command.indexOf("push") }],
+		});
+	});
+
 	it("does not let an earlier unsupported command mask later hazards", () => {
 		expect(codes("unknown --bad; env git reset --hard; echo x > out")).toEqual([
 			"vcs-mutation",
@@ -251,6 +259,20 @@ describe("aggregate bash danger policy", () => {
 		"cat '/outside repo/file' | nl | tail -n 5 | wc -l", "head -c 20 -- file",
 		"rg --no-config -n -e 'a|b' -g '*.ts' .", "rg --no-config --files .",
 		"fd --hidden -t f -e ts . src", "cat -- -filename",
+		"fd 'report.*' /tmp -d 1 -t f", "fd log /tmp -d2 -t f",
+		"fd --max-depth=3 -t f . '/outside repo'", "fd --max-depth 4 . /tmp",
+		"rg --no-config -C2 -m 5 --max-depth=3 error /tmp",
+		"rg --no-config --context 2 --max-count=4 --max-depth 1 error /tmp",
+		"rg --no-config -A 2 -B3 error '/tmp/log file' | head -n 8",
+		"git diff HEAD~2 -- 'path with spaces'", "git diff release..topic -- /tmp/report",
+		"git diff --cached --stat --no-color", "git diff --staged --numstat --name-only --name-status --check",
+		"git diff -U3 --no-ext-diff --no-textconv HEAD -- --output=literal-path",
+		"git diff --unified 12 HEAD", "git diff --unified=0 HEAD",
+		"rtk git diff --no-compact HEAD -- extensions/smart-tool-guards/src/index.ts",
+		"rtk git diff --stat release~3..topic -- '/tmp/a b' | head -20",
+		"rtk git diff --no-compact -U 2 HEAD -- /tmp/file",
+		"rtk git diff HEAD -- --output=literal-path", "git diff 'HEAD^{tree}' -- /tmp/file",
+		"fd -d0 -t f . /tmp | head -n2", "rg --no-config --after-context=1 --before-context 2 error /tmp",
 	])("allows only validated literal inspection stages: %s", (command) => {
 		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "allow" });
 	});
@@ -270,6 +292,23 @@ describe("aggregate bash danger policy", () => {
 		"cat file | jq '.'", "cat file | cat --unknown", "head --unknown file", "tail -f file",
 		"wc --files0-from=paths", "sha256sum --unknown file", "cat file >/dev/null", "cat file <input",
 		"git status", "sed -n 1p file", "awk '{print}' file",
+		"fd -d . /tmp", "fd -d -t f /tmp", "fd -d1x /tmp", "fd -Hd1 /tmp",
+		"fd --max-depth= /tmp", "fd --max-depth=-1 /tmp", "fd -d '' /tmp",
+		"fd -d 1 --exec echo", "fd --max-depth 1 --exec-batch echo",
+		"rg --no-config -C x error /tmp", "rg --no-config -m --pre helper error /tmp",
+		"rg --no-config --max-depth= error /tmp", "rg --no-config -nC2 error /tmp",
+		"rg --no-config --context -1 error /tmp", "rg -C2 error /tmp",
+		"git diff --ext-diff HEAD", "git diff --textconv HEAD", "git diff --unknown HEAD",
+		"git diff --no-compact HEAD", "git diff -U HEAD", "git diff --unified= HEAD",
+		"git diff -U3x HEAD", "git diff --unified --ext-diff HEAD",
+		"git -c diff.external=helper diff HEAD", "git -C /tmp diff HEAD",
+		"rtk git diff --ext-diff HEAD", "rtk git diff --textconv HEAD",
+		"rtk git diff --unknown HEAD", "rtk git diff --unified=bad HEAD",
+		"rtk git -c diff.external=helper diff HEAD", "rtk git status", "rtk run git diff",
+		"rtk bypass git diff", "rtk config", "rtk init", "rtk lark-cli docs +fetch --doc x",
+		"env rtk git diff HEAD", "rtk git diff HEAD | cat --unknown",
+		"git diff HEAD | rtk git diff --ext-diff HEAD", "fd -d= /tmp", "fd --max-depth=1.5 /tmp",
+		"git diff HEAD --unified=-1", "rtk git diff -U '' HEAD", "fd -d +1 /tmp",
 	])("defers unsupported argv or shell syntax without fast approval: %s", (command) => {
 		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "defer" });
 	});
@@ -278,6 +317,11 @@ describe("aggregate bash danger policy", () => {
 		"cat file | rm out", "cat file | head -20; touch out", "sha256sum file >out",
 		"cat $(printf file)", "cat `printf file`", "cat file | node -e 'process.exit()'",
 		"cat file | python3 script.py", "command -v jq || rm out", "gh run view 1",
+		"rtk git push", "rtk git reset --hard", "rtk git checkout main",
+		"env rtk git push", "command -- rtk git reset --hard",
+		"rtk git diff --output=/tmp/patch HEAD", "rtk git diff --output /tmp/patch HEAD",
+		"rtk git diff HEAD > /tmp/patch", "fd . /tmp -d1 | touch /tmp/out",
+		"rtk git diff HEAD | git push", "git diff HEAD; rm /tmp/out",
 	])("keeps danger checks ahead of literal inspection: %s", (command) => {
 		expect(evaluateBashPolicy({ ...BASE_INPUT, command }).kind).toBe("block");
 	});

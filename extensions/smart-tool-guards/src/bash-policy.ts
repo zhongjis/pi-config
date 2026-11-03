@@ -161,7 +161,9 @@ function isExactLarkReadOnly(command: string): boolean {
 }
 
 function inspectCommand(words: Word[], add: (code: BashDangerCode, position: number) => void, exactReads: { readonly lark: boolean; readonly diagnostic: boolean }): { name: string; position: number } | undefined {
-	const argv = unwrap(words);
+	const unwrapped = unwrap(words);
+	// RTK Git actions retain Git's hazards without making RTK a general wrapper.
+	const argv = basename(unwrapped[0]?.text ?? "") === "rtk" && unwrapped[1]?.text === "git" ? unwrapped.slice(1) : unwrapped;
 	const executable = argv[0];
 	if (!executable) return undefined;
 	const name = basename(executable.text);
@@ -173,9 +175,12 @@ function inspectCommand(words: Word[], add: (code: BashDangerCode, position: num
 
 	if (name === "git") {
 		const action = subcommand(argv, GIT_VALUE_OPTIONS);
+		const args = action ? argv.slice(argv.indexOf(action) + 1) : [];
+		const separator = args.findIndex((word) => word.text === "--");
+		const options = separator < 0 ? args : args.slice(0, separator);
 		if (action && (GIT_MUTATIONS.has(action.text.toLowerCase()) ||
 			action.text.toLowerCase() === "branch" && argv.slice(argv.indexOf(action) + 1).some((word) => ["-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy", "--set-upstream-to", "--unset-upstream", "--edit-description"].includes(optionName(word.text))) ||
-			["diff", "show"].includes(action.text.toLowerCase()) && argv.slice(argv.indexOf(action) + 1).some((word) => optionName(word.text) === "--output"))) {
+			["diff", "show"].includes(action.text.toLowerCase()) && options.some((word) => optionName(word.text) === "--output"))) {
 			add("vcs-mutation", action.start);
 		}
 	}
