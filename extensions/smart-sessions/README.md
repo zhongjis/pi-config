@@ -16,9 +16,9 @@ Inside native Herdr, herdr-app, or Orca, the existing summary request also gener
 
 Only panes with no label (Orca: no `paneTitle`), or whose current label starts with `[w]`, are eligible. Every other label is preserved, including other bracketed prefixes and ordinary custom names. Removing or replacing `[w]` opts out; clearing the label opts back in.
 
-herdr-app titles name the **whole associated tab**, not an individual pane: the app exposes tab renaming, not pane renaming. Positional numeric default tab names and own `[w]` names are eligible; manual names are preserved. HC labels are metadata, not visible titles.
+herdr-app titles name the **whole associated tab**, not an individual pane: the app exposes tab renaming, not pane renaming. Positional numeric default tab names, the agent name Herdr's + menu gives an agent's tab (`Pi`), and own `[w]` names are eligible; manual names are preserved. HC labels are metadata, not visible titles.
 
-When the session ends (quit, `/new`, `/resume`, `/fork`; not `/reload`), a title this process wrote is undone if the host still shows it: the Herdr pane label is cleared, and the herdr-app tab returns to its number. A label renamed in the meantime is left alone. Orca titles stay, and so does a title left by a hard kill until the next session reclaims it.
+When the session ends (quit, `/new`, `/resume`, `/fork`; not `/reload`), a title this process wrote is undone if the host still shows it: the Herdr pane label is cleared, and the herdr-app tab returns to the agent name it took over, else to its number. A label renamed in the meantime is left alone. Orca titles stay, and so does a title left by a hard kill until the next session reclaims it.
 
 Updates follow the existing summary timing and debounce, not startup. [herdr.ts](herdr.ts) uses [shared host selection](../lib/pane-host.ts) and re-reads the live label/name before renaming; [index.ts](index.ts) owns the shared summary request. [App resolution](../lib/herdr-app.mjs) requires the exact current HC terminal’s tab/pane association; missing or malformed layouts never fall back to inherited native host IDs or focus. Outside supported hosts, summaries follow the plain one-line path.
 

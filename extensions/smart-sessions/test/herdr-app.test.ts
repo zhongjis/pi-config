@@ -10,9 +10,9 @@ beforeEach(() => {
   vi.stubEnv("ORCA_TERMINAL_HANDLE", "stale-orca");
 });
 afterEach(() => vi.unstubAllEnvs());
-const layout = (name: string, terminal = "t-current") => JSON.stringify({ spaces: [{ tabs: [
+const layout = (name: string, terminal = "t-current", app?: string) => JSON.stringify({ spaces: [{ tabs: [
   { id: "tab-focused", name: "manual focused", terminals: [{ terminal: "t-other", pane: "p-other" }] },
-  { id: "tab-current", name, terminals: [{ terminal, pane: "p-current" }] },
+  { id: "tab-current", name, terminals: [{ terminal, pane: "p-current", app }] },
 ] }] });
 
 describe("herdr-app tab titles", () => {
@@ -27,7 +27,7 @@ describe("herdr-app tab titles", () => {
       ["herdr-app", ["do", "tab.rename", "--id", "tab-current", "--name", "[w] fix deployment"]],
     ]);
   });
-  it.each([layout("my manual name"), layout("[o] owned"), layout("1", "t-missing"), "{}", "invalid", '{"spaces":[{"tabs":[null]}]}'])("does not mutate an unowned or missing association", async stdout => {
+  it.each([layout("my manual name"), layout("[o] owned"), layout("1", "t-missing"), layout("Pi"), layout("Pi", "t-current", "claude"), "{}", "invalid", '{"spaces":[{"tabs":[null]}]}'])("does not mutate an unowned or missing association", async stdout => {
     const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout, stderr: "", killed: false });
     await renamePane({ exec }, { host: "herdr-app", terminalId: "t-current" }, "fix deployment");
     expect(exec.mock.calls.map(call => call[1])).toEqual([["ls"]]);
@@ -52,13 +52,29 @@ describe("herdr-app tab titles", () => {
   it("claims the tab it renamed", async () => {
     const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: layout("2"), stderr: "", killed: false });
     expect(await renamePane({ exec }, { host: "herdr-app", terminalId: "t-current" }, "fix deployment"))
-      .toEqual({ host: "herdr-app", terminalId: "t-current", tabId: "tab-current", written: "[w] fix deployment" });
+      .toEqual({ host: "herdr-app", terminalId: "t-current", tabId: "tab-current", written: "[w] fix deployment", restore: "" });
   });
-  const claim = { host: "herdr-app" as const, terminalId: "t-current", tabId: "tab-current", written: "[w] fix deployment" };
+  it("takes over the agent-named tab Herdr's + menu creates and claims that name back", async () => {
+    const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: layout("Pi", "t-current", "pi"), stderr: "", killed: false });
+    expect(await renamePane({ exec }, { host: "herdr-app", terminalId: "t-current" }, "fix deployment"))
+      .toEqual({ host: "herdr-app", terminalId: "t-current", tabId: "tab-current", written: "[w] fix deployment", restore: "Pi" });
+  });
+  it("keeps the first claim's restore target across later renames", async () => {
+    const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: layout("[w] fix deployment", "t-current", "pi"), stderr: "", killed: false });
+    const previous = { host: "herdr-app" as const, terminalId: "t-current", tabId: "tab-current", written: "[w] fix deployment", restore: "Pi" };
+    expect(await renamePane({ exec }, { host: "herdr-app", terminalId: "t-current" }, "ship fix", previous))
+      .toEqual({ ...previous, written: "[w] ship fix" });
+  });
+  const claim = { host: "herdr-app" as const, terminalId: "t-current", tabId: "tab-current", written: "[w] fix deployment", restore: "" };
   it("resets the tab to its number while it still shows its own title", async () => {
     const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: layout(claim.written), stderr: "", killed: false });
     await restorePane({ exec }, claim);
     expect(exec.mock.calls.map(call => call[1])).toEqual([["ls"], ["do", "tab.rename", "--id", "tab-current", "--name", ""]]);
+  });
+  it("restores the agent name it took over", async () => {
+    const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: layout(claim.written, "t-current", "pi"), stderr: "", killed: false });
+    await restorePane({ exec }, { ...claim, restore: "Pi" });
+    expect(exec.mock.calls.map(call => call[1])).toEqual([["ls"], ["do", "tab.rename", "--id", "tab-current", "--name", "Pi"]]);
   });
   it.each(["my manual name", "[w] other title"])("leaves a renamed tab alone: %s", async name => {
     const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: layout(name), stderr: "", killed: false });

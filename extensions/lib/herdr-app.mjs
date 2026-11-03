@@ -15,7 +15,7 @@ export function parseHerdrAppPanes(stdout) {
       if (!tab || typeof tab.id !== "string" || !tab.id || typeof tab.name !== "string" || !Array.isArray(tab.terminals)) return undefined;
       for (const terminal of tab.terminals) {
         if (!terminal || typeof terminal.terminal !== "string" || !terminal.terminal || typeof terminal.pane !== "string" || !terminal.pane) return undefined;
-        panes.push({ terminalId: terminal.terminal, paneId: terminal.pane, tabId: tab.id, tabName: tab.name });
+        panes.push({ terminalId: terminal.terminal, paneId: terminal.pane, tabId: tab.id, tabName: tab.name, app: typeof terminal.app === "string" ? terminal.app : undefined });
       }
     }
   }

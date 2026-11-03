@@ -1,5 +1,5 @@
 export type HerdrAppExec = (command: string, args: string[], options?: { timeout?: number }) => Promise<{ code: number; stdout: string; stderr: string; killed?: boolean }>;
-export type HerdrAppPane = { readonly terminalId: string; readonly paneId: string; readonly tabId: string; readonly tabName: string };
+export type HerdrAppPane = { readonly terminalId: string; readonly paneId: string; readonly tabId: string; readonly tabName: string; readonly app?: string };
 export function parseHerdrAppPanes(stdout: string): HerdrAppPane[] | undefined;
 export function readHerdrAppPanes(exec: HerdrAppExec): Promise<HerdrAppPane[] | undefined>;
 export function resolveHerdrAppTerminal(exec: HerdrAppExec, terminalId: string): Promise<HerdrAppPane | undefined>;

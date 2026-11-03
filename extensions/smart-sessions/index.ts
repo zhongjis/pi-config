@@ -409,7 +409,8 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 					lastError = "";
 					// Update session name so it shows in /resume
 					pi.setSessionName(lastSummary);
-					if (herdr && herdrSummary && !signal.aborted) paneClaim = await renamePane(pi, herdr, herdrSummary.title) ?? paneClaim;
+					// Later renames start from our own `[w]` title; the previous claim keeps the original restore target.
+					if (herdr && herdrSummary && !signal.aborted) paneClaim = await renamePane(pi, herdr, herdrSummary.title, paneClaim) ?? paneClaim;
 					// Verbose notification (guard: ctx may be stale after session replacement/reload)
 					if (config.verbose && changed) {
 						try {
