@@ -62,17 +62,28 @@ export function parseHerdrSummary(text: string): { readonly summary: string; rea
 	return { summary: output.summary.trim(), title: output.title.trim().split(/[\s-]+/).filter(Boolean).slice(0, 4).join(" ") };
 }
 
-/** Re-read ownership immediately before renaming; a manual label opts out. */
-export async function renameHerdrPane(pi: Pick<ExtensionAPI, "exec">, context: HerdrContext, title: string): Promise<void> {
-	if (!title) return;
-	const run = (args: string[]) => pi.exec("herdr", ["pane", ...args], { timeout: 3000 });
-	const current = await run(["get", context.paneId]);
-	if (current.code !== 0) return;
+/** A title this process wrote; restore only while the host still shows `written`. */
+export type PaneClaim =
+	| { readonly host: "herdr"; readonly paneId: string; readonly written: string }
+	| { readonly host: "herdr-app"; readonly terminalId: string; readonly tabId: string; readonly written: string };
+
+const isNumericTabName = (name: string) => /^[1-9]\d*$/.test(name);
+
+async function readHerdrLabel(pi: Pick<ExtensionAPI, "exec">, paneId: string): Promise<{ label?: string } | undefined> {
+	const current = await pi.exec("herdr", ["pane", "get", paneId], { timeout: 3000 });
+	if (current.code !== 0) return undefined;
 	const info = parseJson(current.stdout);
-	if (!Check(PaneInfo, info) || info.result.pane.pane_id !== context.paneId) return;
-	const { label } = info.result.pane;
-	if (label !== undefined && !label.startsWith("[w]")) return;
-	await run(["rename", context.paneId, `[w] ${title}`]);
+	return Check(PaneInfo, info) && info.result.pane.pane_id === paneId ? { label: info.result.pane.label } : undefined;
+}
+
+/** Re-read ownership immediately before renaming; a manual label opts out. */
+export async function renameHerdrPane(pi: Pick<ExtensionAPI, "exec">, context: HerdrContext, title: string): Promise<PaneClaim | undefined> {
+	if (!title) return undefined;
+	const current = await readHerdrLabel(pi, context.paneId);
+	if (!current || (current.label !== undefined && !current.label.startsWith("[w]"))) return undefined;
+	const written = `[w] ${title}`;
+	const result = await pi.exec("herdr", ["pane", "rename", context.paneId, written], { timeout: 3000 });
+	return result.code === 0 ? { host: "herdr", paneId: context.paneId, written } : undefined;
 }
 
 /** Orca equivalent: `paneTitle` is present only when user- or tool-set, so absence means unlabelled. */
@@ -89,18 +100,35 @@ export async function renameOrcaPane(pi: Pick<ExtensionAPI, "exec">, context: Or
 }
 
 /** The app exposes tab names, not a pane-title API. Preserve manually named tabs. */
-async function renameHerdrAppTab(pi: Pick<ExtensionAPI, "exec">, terminalId: string, title: string): Promise<void> {
-	if (!title) return;
+async function renameHerdrAppTab(pi: Pick<ExtensionAPI, "exec">, terminalId: string, title: string): Promise<PaneClaim | undefined> {
+	if (!title) return undefined;
 	const current = await resolveHerdrAppTerminal(pi.exec.bind(pi), terminalId);
-	if (!current || (!/^[1-9]\d*$/.test(current.tabName) && !current.tabName.startsWith("[w]"))) return;
-	await pi.exec("herdr-app", ["do", "tab.rename", "--id", current.tabId, "--name", `[w] ${title}`], { timeout: 3000 });
+	if (!current || (!isNumericTabName(current.tabName) && !current.tabName.startsWith("[w]"))) return undefined;
+	const written = `[w] ${title}`;
+	const result = await pi.exec("herdr-app", ["do", "tab.rename", "--id", current.tabId, "--name", written], { timeout: 3000 });
+	return result.code === 0 ? { host: "herdr-app", terminalId, tabId: current.tabId, written } : undefined;
 }
 
-export function renamePane(pi: Pick<ExtensionAPI, "exec">, context: PaneContext, title: string): Promise<void> {
+/** Orca titles are not claimed: its CLI has no verified way to clear a pane title. */
+export async function renamePane(pi: Pick<ExtensionAPI, "exec">, context: PaneContext, title: string): Promise<PaneClaim | undefined> {
 	switch (context.host) {
 		case "herdr-app": return renameHerdrAppTab(pi, context.terminalId, title);
 		case "herdr": return renameHerdrPane(pi, context, title);
-		case "orca": return renameOrcaPane(pi, context, title);
+		case "orca": await renameOrcaPane(pi, context, title); return undefined;
 		default: { const exhaustive: never = context; return exhaustive; }
+	}
+}
+
+/** Undo a claim only while the host still shows the title this process wrote. */
+export async function restorePane(pi: Pick<ExtensionAPI, "exec">, claim: PaneClaim): Promise<void> {
+	if (claim.host === "herdr") {
+		const current = await readHerdrLabel(pi, claim.paneId);
+		if (current?.label === claim.written) await pi.exec("herdr", ["pane", "rename", "--clear", claim.paneId], { timeout: 3000 });
+		return;
+	}
+	// An empty name returns the tab to its positional number.
+	const current = await resolveHerdrAppTerminal(pi.exec.bind(pi), claim.terminalId);
+	if (current?.tabId === claim.tabId && current.tabName === claim.written) {
+		await pi.exec("herdr-app", ["do", "tab.rename", "--id", claim.tabId, "--name", ""], { timeout: 3000 });
 	}
 }

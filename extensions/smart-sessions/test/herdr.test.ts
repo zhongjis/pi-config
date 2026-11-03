@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
-import { getHerdrContext, parseHerdrSummary, renameHerdrPane } from "../herdr.js";
+import { getHerdrContext, parseHerdrSummary, renameHerdrPane, restorePane } from "../herdr.js";
 import sessionSummaryExtension from "../index.js";
 
 const context = { paneId: "w1:current" };
@@ -77,10 +77,9 @@ describe("separate Herdr title output", () => {
 });
 
 // Lifecycle surface driver: every CLI execution is replaced; never reaches live Herdr.
-async function surface(insideHerdr: boolean) {
+async function surface(insideHerdr: boolean, exec = cli()) {
 	if (!insideHerdr) vi.stubEnv("HERDR_ENV", "");
 	const mock = createMockPi();
-	const exec = cli();
 	const setSessionName = vi.fn();
 	const streamSimple = vi.fn(() => ({ result: async () => ({
 		stopReason: "stop", content: [{ type: "text", text: insideHerdr
@@ -122,5 +121,55 @@ describe("mocked lifecycle surface", () => {
 	it("requires an explicit current-pane identifier", () => {
 		vi.stubEnv("HERDR_PANE_ID", "");
 		expect(getHerdrContext()).toBeUndefined();
+	});
+});
+
+// Stateful fake Herdr: `rename` sets the label, `rename --clear` removes it.
+function liveHerdr() {
+	let label: string | undefined;
+	const exec = vi.fn<ExtensionAPI["exec"]>(async (_cmd, args) => {
+		if (args[1] === "rename") label = args[2] === "--clear" ? undefined : args[3];
+		return { code: 0, stderr: "", killed: false, stdout: JSON.stringify({ result: { pane: label === undefined ? pane : { ...pane, label } } }) };
+	});
+	return { exec, setLabel: (next: string) => { label = next; } };
+}
+const cleared = ["pane", "rename", "--clear", context.paneId];
+
+describe("title restore on shutdown", () => {
+	it.each(["quit", "new", "resume", "fork"])("clears its own title on %s", async (reason) => {
+		const { exec } = liveHerdr();
+		const { mock } = await surface(true, exec);
+		await mock.fireLifecycle("session_shutdown", { reason });
+		expect(exec).toHaveBeenLastCalledWith("herdr", cleared, expect.any(Object));
+	});
+
+	it("keeps the title across reload", async () => {
+		const { exec } = liveHerdr();
+		const { mock } = await surface(true, exec);
+		const calls = exec.mock.calls.length;
+		await mock.fireLifecycle("session_shutdown", { reason: "reload" });
+		expect(exec).toHaveBeenCalledTimes(calls);
+	});
+
+	it("preserves a label the user set after the takeover", async () => {
+		const { exec, setLabel } = liveHerdr();
+		const { mock } = await surface(true, exec);
+		setLabel("my project");
+		await mock.fireLifecycle("session_shutdown", { reason: "quit" });
+		expect(exec.mock.calls.map((call) => call[1])).not.toContainEqual(cleared);
+	});
+
+	it("never touches the pane when it never renamed", async () => {
+		const { exec } = liveHerdr();
+		const mock = createMockPi();
+		Reflect.apply(sessionSummaryExtension, undefined, [{ ...mock.pi, exec }]);
+		await mock.fireLifecycle("session_shutdown", { reason: "quit" });
+		expect(exec).not.toHaveBeenCalled();
+	});
+
+	it("restorePane clears only the matching label", async () => {
+		const { exec } = liveHerdr();
+		await restorePane({ exec }, { host: "herdr", paneId: context.paneId, written: "[w] gone" });
+		expect(exec.mock.calls.map((call) => call[1])).toEqual([["pane", "get", context.paneId]]);
 	});
 });

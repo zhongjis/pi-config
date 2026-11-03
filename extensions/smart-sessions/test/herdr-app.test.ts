@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getPaneContext, renamePane } from "../herdr.js";
+import { getPaneContext, renamePane, restorePane } from "../herdr.js";
 import { parseHerdrAppPanes } from "../../lib/herdr-app.mjs";
 
 beforeEach(() => {
@@ -48,5 +48,21 @@ describe("herdr-app tab titles", () => {
   });
   it("rejects malformed nested terminal data", () => {
     expect(parseHerdrAppPanes('{"spaces":[{"tabs":[{"id":"tab","name":"1","terminals":[{}]}]}]}')).toBeUndefined();
+  });
+  it("claims the tab it renamed", async () => {
+    const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: layout("2"), stderr: "", killed: false });
+    expect(await renamePane({ exec }, { host: "herdr-app", terminalId: "t-current" }, "fix deployment"))
+      .toEqual({ host: "herdr-app", terminalId: "t-current", tabId: "tab-current", written: "[w] fix deployment" });
+  });
+  const claim = { host: "herdr-app" as const, terminalId: "t-current", tabId: "tab-current", written: "[w] fix deployment" };
+  it("resets the tab to its number while it still shows its own title", async () => {
+    const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: layout(claim.written), stderr: "", killed: false });
+    await restorePane({ exec }, claim);
+    expect(exec.mock.calls.map(call => call[1])).toEqual([["ls"], ["do", "tab.rename", "--id", "tab-current", "--name", ""]]);
+  });
+  it.each(["my manual name", "[w] other title"])("leaves a renamed tab alone: %s", async name => {
+    const exec = vi.fn<ExtensionAPI["exec"]>().mockResolvedValue({ code: 0, stdout: layout(name), stderr: "", killed: false });
+    await restorePane({ exec }, claim);
+    expect(exec.mock.calls.map(call => call[1])).toEqual([["ls"]]);
   });
 });
