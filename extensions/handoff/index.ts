@@ -10,6 +10,7 @@ import {
   runPreparedHandoffCommand,
 } from "./runtime.js";
 import { MODE_META, MODES } from "../modes/src/constants.js";
+import { registerTuiCommand } from "../lib/mode.js";
 
 export {
   buildPlanExecutionGoal,
@@ -40,7 +41,9 @@ const HANDOFF_MODE_COMPLETIONS = MODES.map((mode) => ({
 export default function (pi: ExtensionAPI) {
   const unsubscribeBridge = registerDirectHandoffBridge(pi);
 
-  pi.registerCommand("handoff", {
+  // Session-replacing commands are terminal-only: RPC clients such as T3 Code stay
+  // bound to the original session file and cannot follow a replacement.
+  registerTuiCommand(pi, "handoff", {
     description: "Transfer context to a new focused session (-mode <name>, -no-summarize)",
     argumentHint: "[-mode <mode>] [-no-summarize] <content>",
     handler: async (args: string, ctx: any) => {
@@ -60,7 +63,7 @@ export default function (pi: ExtensionAPI) {
     },
   } as Parameters<typeof pi.registerCommand>[1] & { argumentHint: string });
 
-  pi.registerCommand("handoff:mode", {
+  registerTuiCommand(pi, "handoff:mode", {
     description: "Transfer context to a new focused session in the specified mode",
     argumentHint: "<mode> <content>",
     getArgumentCompletions: (prefix: string) => {
@@ -105,7 +108,7 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("handoff:start-work", {
+  registerTuiCommand(pi, "handoff:start-work", {
     description: `After planning mode finishes planning, run this to hand off the plan to an execution agent in a new session (${getPreparedHandoffCommand()})`,
     handler: async (_args: string, ctx: any) => {
       const error = await runPreparedHandoffCommand(pi, ctx as ExtensionCommandContext);

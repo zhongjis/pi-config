@@ -152,10 +152,11 @@ function createCommandContext(options: {
 	return { ctx, ui, replacementUi, appendedCustomEntries };
 }
 
-async function initExtension(mock: ReturnType<typeof createMockPi>) {
+async function initExtension(mock: ReturnType<typeof createMockPi>, mode = "tui") {
 	vi.resetModules();
 	const { default: init } = await import("../index.js");
 	init(mock.pi as never);
+	await mock.fireLifecycle("session_start", { reason: "startup" }, { mode });
 }
 
 async function withTempHome(run: (tempHome: string) => Promise<void>) {
@@ -376,6 +377,37 @@ describe("handoff extension", () => {
 			await mock.executeCommand("handoff", '-mode kuafu -no-summarize "fix auth"', ctx);
 
 			expect(ui.setEditorText).not.toHaveBeenCalled();
+		});
+	});
+
+	it("keeps only handoff:file outside the terminal", async () => {
+		const mock = createMockPi();
+		await initExtension(mock, "rpc");
+
+		for (const name of ["handoff", "handoff:mode", "handoff:start-work"]) expect(mock.getCommand(name)).toBeUndefined();
+		expect(mock.getCommand("handoff:file")).toBeDefined();
+	});
+
+	it("summarizes handoff:file without the terminal loader in rpc mode", async () => {
+		await withTempHome(async () => {
+			const mock = createMockPi();
+			await initExtension(mock, "rpc");
+			const { ctx, ui } = createCommandContext({ summaryChoice: "anthropic/claude-haiku-4-5" });
+			ctx.mode = "rpc";
+			// Pi's RPC mode resolves custom() to undefined.
+			ui.custom.mockResolvedValue(undefined as never);
+
+			await mock.executeCommand("handoff:file", "investigate auth flow", ctx);
+
+			const messages = ui.notify.mock.calls.map((call: unknown[]) => String(call[0]));
+			const path = messages.at(-1)!.replace("Handoff document written to ", "");
+			try {
+				expect(ui.custom).not.toHaveBeenCalled();
+				expect(messages[0]).toBe("Generating handoff prompt with anthropic/claude-haiku-4-5...");
+				expect(await readFile(path, "utf8")).toContain("Summary");
+			} finally {
+				await rm(path, { force: true });
+			}
 		});
 	});
 });

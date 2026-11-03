@@ -701,6 +701,39 @@ async function generateContextSummaryWithUi(
   goal: string,
   systemPrompt = SUMMARY_SYSTEM_PROMPT,
 ): Promise<string | null> {
+  const label = `Generating handoff prompt with ${summaryModel.value}...`;
+  const summarize = async (signal: AbortSignal | undefined): Promise<string | null> => {
+    try {
+      if (!ctx.modelRegistry.hasConfiguredAuth(summaryModel.model)) {
+        throw new Error(`No auth available for ${summaryModel.value}`);
+      }
+
+      const summary = await generateContextSummary(
+        ctx.modelRegistry,
+        summaryModel.model,
+        messages,
+        goal,
+        signal,
+        systemPrompt,
+      );
+
+      if (summary && summary.trim().length > 0) {
+        updateHandoffConfig({ lastSummaryModel: summaryModel.value });
+      }
+
+      return summary;
+    } catch (error) {
+      console.error("Handoff generation failed:", error);
+      return null;
+    }
+  };
+
+  // RPC clients cannot render the loader: custom() returns undefined there.
+  if (!isTui(ctx)) {
+    ctx.ui.notify(label, "info");
+    return await summarize(ctx.signal);
+  }
+
   return await ctx.ui.custom<string | null>(
     (
       tui: any,
@@ -708,40 +741,9 @@ async function generateContextSummaryWithUi(
       _keybindings: any,
       done: (value: string | null) => void,
     ) => {
-      const loader = new BorderedLoader(
-        tui,
-        theme,
-        `Generating handoff prompt with ${summaryModel.value}...`,
-      );
+      const loader = new BorderedLoader(tui, theme, label);
       loader.onAbort = () => done(null);
-
-      const run = async () => {
-        try {
-          if (!ctx.modelRegistry.hasConfiguredAuth(summaryModel.model)) {
-            throw new Error(`No auth available for ${summaryModel.value}`);
-          }
-
-          const summary = await generateContextSummary(
-            ctx.modelRegistry,
-            summaryModel.model,
-            messages,
-            goal,
-            loader.signal,
-            systemPrompt,
-          );
-
-          if (summary && summary.trim().length > 0) {
-            updateHandoffConfig({ lastSummaryModel: summaryModel.value });
-          }
-
-          done(summary);
-        } catch (error) {
-          console.error("Handoff generation failed:", error);
-          done(null);
-        }
-      };
-
-      void run();
+      void summarize(loader.signal).then(done);
       return loader;
     },
   );

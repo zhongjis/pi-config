@@ -21,6 +21,8 @@ Session handoff system for transferring context to a new focused session.
 
 With summarization enabled, `/handoff:file` asks the model for a self-contained brief focused on the supplied goal, or the current unfinished task when omitted. Sections cover Task, Findings and evidence, Remaining questions, Constraints, and Relevant files. Instructions preserve authorization limits and require secret redaction. The receiving agent uses its own working directory; source paths are evidence references, not instructions to change directories. File export creates no new session; `/handoff` summarizes into a new session.
 
+`/handoff`, `/handoff:mode`, and `/handoff:start-work` replace the session, so they register only in terminal sessions; RPC clients such as T3 Code stay bound to the original session file. `/handoff:file` works in RPC sessions; outside the terminal it summarizes without the loader and reports the file path through a notification. Summarizing still needs a UI, so print and JSON runs use `-no-summarize`.
+
 Commands are registered in [`index.ts`](index.ts).
 
 ## Configuration
