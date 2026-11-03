@@ -15,6 +15,7 @@ import {
 	type BtwConfig,
 } from "./src/config.ts";
 import { detectPaneHost } from "../lib/pane-host.js";
+import { registerTuiCommand } from "../lib/mode.js";
 import { ContextStore } from "./src/context-store.ts";
 import {
 	buildAgentStartArgs,
@@ -216,7 +217,7 @@ async function configureChild(
 
 	// Child-side /btw: reviewed merge back to the parent, plus help.
 	let ackTimer: ReturnType<typeof setInterval> | undefined;
-	pi.registerCommand("btw", {
+	registerTuiCommand(pi, "btw", {
 		description:
 			"Side-thread /btw: fold this side thread into the parent and continue there (/btw merge <prompt...>)",
 		handler: async (args, ctx) => {
@@ -474,7 +475,7 @@ export async function registerBtwExtension(
 		}
 	});
 
-	pi.registerCommand("btw", {
+	registerTuiCommand(pi, "btw", {
 		// Pi has no argumentHint field for extension commands (only builtins and
 		// prompt templates); the TUI renders template hints as "hint — description",
 		// so we bake the same shape into the description.

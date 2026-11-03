@@ -79,6 +79,7 @@ describe("Orca parent launch", () => {
 		const ctx = { mode: "tui", ui, cwd: root, model: { provider: "test", id: "model" }, getSystemPrompt: () => "p", isIdle: () => true,
 			sessionManager: { getSessionId: () => "parent-session", getSessionFile: () => undefined, getLeafId: () => null, getEntries: () => [{ type: "message", message: { role: "user", content: "hello" } }] },
 		};
+		await mock.fireLifecycle("session_start", { reason: "startup" }, ctx);
 		const command = mock.commands.get("btw");
 		if (!command || typeof command !== "object" || !("handler" in command) || typeof command.handler !== "function") throw new Error("btw not registered");
 		await Reflect.apply(command.handler, command, ["question", ctx]);

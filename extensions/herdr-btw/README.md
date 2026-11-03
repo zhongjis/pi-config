@@ -29,6 +29,8 @@ separate Pi process and can merge its findings back into the parent.
 /btw help                 show the grammar
 ```
 
+`/btw` registers only in terminal sessions; RPC clients get no `/btw` command.
+
 Commands are registered in [`index.ts`](index.ts).
 
 Only the exact first words `ask`, `config`, `merge`, and `help` are subcommands;
@@ -73,8 +75,8 @@ delivered), and cleaned up after 24 hours if left stale.
 - Commit: `679916281e46d4930969183562b5d343df0e968c`
 - License: MIT — Copyright (c) 2026 Oscar Gabriel (see [LICENSE](LICENSE))
 - Local adaptation: `index.ts`, `src/config.ts`, and `src/core.ts` carry local patches for closeOnExit,
-  PAYLOAD\_VERSION 5, inherit tool availability with one-time initial active selection restoration, and
-  persisted child sessions;
+  PAYLOAD\_VERSION 5, inherit tool availability with one-time initial active selection restoration,
+  persisted child sessions, and terminal-only `/btw` registration;
   `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, and `LICENSE` are vendored verbatim.
   The standalone toolchain and upstream test suite are not vendored.
 - Repo-root `pi-herdr-btw.json` provides a committed portable default (autoSubmit+closeOnExit ON),
@@ -92,6 +94,7 @@ Current divergences from upstream; re-apply each on upstream sync:
 - **Patched:** `index.ts` and `src/core.ts` add an Orca launch and child-shutdown path next to the Herdr one, selected with `detectPaneHost` from [`../lib/pane-host.ts`](../lib/pane-host.ts); Herdr argv and behavior are unchanged. Host-gate messages and the command description name Herdr or Orca.
 - **Patched:** `index.ts` fallback `before_agent_start` sets the `herdr_btw` prompt section (`SIDE_PANE_INSTRUCTIONS`) instead of returning a rewritten `systemPrompt`. The `native` cache branch still returns the parent's exact `systemPrompt`; sections would change the cached prefix.
 - **Patched:** `index.ts` and `src/core.ts` launch the child with `--session-dir <agentDir>/btw-sessions/<parentSessionId>` instead of upstream `--no-session`, so the side thread writes a session log.
+- **Patched:** `index.ts` registers both `/btw` commands (parent and child side thread) through `registerTuiCommand` from [`../lib/mode.ts`](../lib/mode.ts), so RPC `get_commands` never lists them; the upstream non-TUI guard stays in place.
 - **Vendored verbatim:** `src/context-store.ts`, `src/merge.ts`, `src/router.ts`, `LICENSE`.
 - **Kept with changes:** `tsconfig.json`, with the `test/**` include removed.
 - **Not vendored:** `package.json`, `package-lock.json`, `.gitignore`, and the upstream `test/` suite
