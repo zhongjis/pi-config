@@ -13,6 +13,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { type Static, Type } from "typebox";
 import { Check } from "typebox/value";
 import { getToolModelSelection, loadToolModelsConfig } from "../lib/tool-models.js";
+import { registerTuiCommand } from "../lib/mode.js";
 
 const PROVIDERS = ["openai", "cliproxyapi"] as const;
 const IMAGE_MODELS = ["gpt-image-2", "gpt-image-2.5", "gpt-image-2.5-sunburst"] as const;
@@ -1653,7 +1654,9 @@ export default function imagegen(pi: ExtensionAPI) {
 	}
 	pi.on("before_agent_start", (_event, ctx) => withdrawUnavailableTool(ctx));
 
-	pi.registerCommand("img", {
+	// /img reports through custom messages, which RPC clients such as T3 Code do not
+	// render; the imagegen tool stays available there.
+	registerTuiCommand(pi, "img", {
 		description: "Image workflows: /img gen|list|open|reveal|path|info ...",
 		handler: async (args, ctx) => {
 			const input = args.trim();

@@ -67,7 +67,7 @@ describe("vendored imagegen public registration", () => {
     oauth = vi.fn().mockReturnValue(true);
     available = vi.fn().mockReturnValue([proxy, official]);
     context = {
-      cwd: dir, hasUI: true, signal: undefined,
+      cwd: dir, hasUI: true, mode: "tui", signal: undefined,
       model: { provider: "openai-codex", id: "dispatcher-fixture" },
       modelRegistry: { getAll: () => [proxy, official], getAvailable: available, getApiKeyAndHeaders: apiKey, isUsingOAuth: oauth },
       ui: { notify: vi.fn(), setStatus: vi.fn(), getEditorText: () => "", setEditorText: vi.fn() },
@@ -88,6 +88,9 @@ describe("vendored imagegen public registration", () => {
       },
     } as unknown as ExtensionAPI;
     imagegen(pi);
+    // Fire only registerTuiCommand's hook (registered last); imagegen's own session_start
+    // hook withdraws the tool before each test writes its config.
+    await mock.lifecycleHandlers.get("session_start")?.at(-1)?.({}, context);
     if (!registeredTool || !registeredCommand) throw new Error("Missing imagegen registrations");
     tool = registeredTool;
     command = registeredCommand;

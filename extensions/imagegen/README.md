@@ -7,7 +7,7 @@ Generate images through Pi's configured CLIProxyAPI provider, with a local brows
 - **Source:** [Jon-Vii/pi-imagegen](https://github.com/Jon-Vii/pi-imagegen)
 - **Version:** 0.2.0, pinned commit `2ca63486547fdf780e84b105548783bc9de1e5c3`
 - **License:** MIT declaration; see [UPSTREAM-LICENSE.md](UPSTREAM-LICENSE.md) for exact evidence and absent license artifact.
-- **Adapted:** `index.ts` discovery, `@earendil-works/*` imports, supported notifications, studio access checks, direct Images API transport and provider/model selection. [Local Tweaks](#local-tweaks) owns the sync checklist; [AGENTS.md](AGENTS.md) owns maintenance and safety requirements.
+- **Adapted:** `index.ts` discovery, `@earendil-works/*` imports, supported notifications, studio access checks, direct Images API transport, provider/model selection and terminal-only `/img` registration. [Local Tweaks](#local-tweaks) owns the sync checklist; [AGENTS.md](AGENTS.md) owns maintenance and safety requirements.
 
 ## What It Does
 
@@ -18,7 +18,7 @@ Generate images through Pi's configured CLIProxyAPI provider, with a local brows
 
 ## Entry Points
 
-The model-facing `imagegen` tool, `/img` commands and lifecycle registrations live in [index.ts](index.ts). Load locally with `pi -e ./extensions/imagegen/index.ts`.
+The model-facing `imagegen` tool, `/img` commands and lifecycle registrations live in [index.ts](index.ts). `/img` registers only in terminal sessions because it reports through custom messages that RPC clients do not render; the tool works in every mode. Load locally with `pi -e ./extensions/imagegen/index.ts`.
 
 ```text
 /img gen --provider cliproxyapi --model gpt-image-2.5 --quality low A blue ceramic mug
@@ -62,6 +62,7 @@ The studio binds to loopback. HTML (`/`, `/studio`), `/api/*` and `/events` requ
 - Upstream `imagegen.ts` lives as `index.ts`; imports use `@earendil-works/*`.
 - Studio requests enforce URL-token and same-origin checks centrally before route handling.
 - Model-facing visibility follows local configured-chain eligibility and monotonic hidden exposure; manual commands remain independent.
+- `/img` registers through `registerTuiCommand` from [`../lib/mode.ts`](../lib/mode.ts), so RPC `get_commands` never lists it; the `imagegen` tool stays available in every mode.
 - Generation uses direct Images generation/edit routes, selectable provider/model parameters and Pi-resolved request authentication. Proxy API-base normalization, official OAuth isolation, bounded/redacted errors and image-format checks live in `index.ts`.
 - Studio provider/model controls replace dispatcher thinking and retain selection for reruns and variations; the remaining upstream layout and workflows stay intact.
 - Four `ui.notify` calls use supported `info` severity instead of `success`.
