@@ -32,7 +32,7 @@ After native retry and auto-compaction processing settles, QoL immediately reque
 ## Entry Points
 
 - `/session:copy-id` — copy the session ID and log path (printed when clipboard access fails).
-- `/exit` — exit Pi cleanly.
+- `/exit` — exit Pi cleanly (terminal sessions only; RPC clients own the process).
 
 [src/index.ts](src/index.ts) installs each feature; its modules register the commands and hooks.
 
