@@ -51,6 +51,7 @@ function createSummaryContext(models: ModelEntry[]) {
 	const base = createMockContext();
 	return {
 		...base,
+		mode: "tui",
 		cwd: tempCwd,
 		sessionManager: {
 			...base.sessionManager,
@@ -92,6 +93,18 @@ async function runSummary(models: ModelEntry[]) {
 }
 
 describe("smart-sessions model selection", () => {
+	it("skips summaries and commands outside the terminal", async () => {
+		const { ctx, mock } = registerExtension([{ id: "summary-model", provider: "test" }]);
+		const rpcCtx = { ...ctx, mode: "rpc" };
+
+		await mock.fireLifecycle("session_start", {}, rpcCtx);
+		await mock.fireLifecycle("agent_end", {}, rpcCtx);
+		await Promise.resolve();
+
+		expect(mockedStreamSimple).not.toHaveBeenCalled();
+		expect(mock.commands.size).toBe(0);
+	});
+
 	it.each([["off", undefined], ["high", "high"]] as const)("uses provider-neutral reasoning for %s", async (thinking, expected) => {
 		await writeFile(
 			join(tempAgentDir, "tool_models.json"),
@@ -233,6 +246,7 @@ describe("smart-sessions model selection", () => {
 		const { ctx, mock } = registerExtension([
 			{ id: "claude-haiku-4-5", name: "Claude Haiku 4.5", provider: "anthropic" },
 		]);
+		await mock.fireLifecycle("session_start", {}, ctx);
 		const command = mock.commands.get("summary:settings") as {
 			handler: (args: unknown, ctx: unknown) => Promise<void>;
 		};

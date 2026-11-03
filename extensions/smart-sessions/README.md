@@ -21,6 +21,7 @@ Updates follow the existing summary timing and debounce, not startup. [herdr.ts]
 ## Entry Points
 
 - `/summary:update` forces an update; `/summary:settings`, `/summary:clear`, and `/summary:cost` manage settings, the name, and usage. [index.ts](index.ts) registers them.
+- Summaries and the `/summary:*` commands run only in terminal sessions; RPC clients such as T3 Code own their thread titles.
 
 ## Settings / Configuration
 

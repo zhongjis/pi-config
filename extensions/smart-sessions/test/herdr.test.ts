@@ -87,7 +87,7 @@ async function surface(insideHerdr: boolean) {
 	}) }));
 	const base = createMockContext();
 	const ctx = {
-		...base, cwd: "/nonexistent-smart-sessions-test",
+		...base, mode: "tui", cwd: "/nonexistent-smart-sessions-test",
 		sessionManager: { ...base.sessionManager, getBranch: () => [{ type: "message", message: { role: "user", content: "Debug the railway deployment" } }] },
 		modelRegistry: { ...base.modelRegistry, find: () => base.model, hasConfiguredAuth: () => true, streamSimple },
 	};

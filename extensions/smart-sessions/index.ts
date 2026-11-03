@@ -4,6 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "../lib/thinking-level.js";
 import { resolveToolModelCandidates } from "../lib/tool-models.js";
+import { isTui, registerTuiCommand } from "../lib/mode.js";
 import { getPaneContext, HERDR_OUTPUT_INSTRUCTIONS, parseHerdrSummary, renamePane } from "./herdr.js";
 
 // -- Configuration --------------------------------------------------------
@@ -442,7 +443,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 
 	// -- Commands ---------------------------------------------------------
 
-	pi.registerCommand("summary:settings", {
+	registerTuiCommand(pi, "summary:settings", {
 		description: "Create/show session-summary settings file",
 		handler: async (_args, ctx) => {
 			const globalPath = join(getAgentDir(), "session-summary.json");
@@ -462,7 +463,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("summary:update", {
+	registerTuiCommand(pi, "summary:update", {
 		description: "Force-update the session summary now",
 		handler: async (_args, ctx) => {
 			if (pendingLLMCall) {
@@ -477,7 +478,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("summary:clear", {
+	registerTuiCommand(pi, "summary:clear", {
 		description: "Clear the session summary/name",
 		handler: async (_args, ctx) => {
 			resetState();
@@ -489,7 +490,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerCommand("summary:cost", {
+	registerTuiCommand(pi, "summary:cost", {
 		description: "Show summary model and its cost this session",
 		handler: async (_args, ctx) => {
 			// Ensure model is resolved fresh
@@ -520,6 +521,9 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
+		// Summaries surface only in the terminal (widget, session name, pane title);
+		// RPC clients such as T3 Code own their thread titles.
+		if (!isTui(ctx)) return;
 		latestCtx = ctx;
 		turnsSinceSummary++;
 		updateWidget(ctx);
