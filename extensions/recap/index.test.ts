@@ -13,6 +13,7 @@ type CommandHandler = (args: string, ctx: unknown) => Promise<unknown>;
 type FakeContext = {
 	cwd: string;
 	hasUI: boolean;
+	mode: string;
 	model: TestModel;
 	modelRegistry: {
 		find(provider: string, id: string): TestModel | undefined;
@@ -52,7 +53,11 @@ function activate() {
 	const on = (...args: unknown[]) => {
 		const [event, handler] = args;
 		if (typeof event !== "string" || !isFunction(handler)) return;
-		handlers.set(event, async (payload, ctx) => handler(payload, ctx));
+		const previous = handlers.get(event);
+		handlers.set(event, async (payload, ctx) => {
+			await previous?.(payload, ctx);
+			return handler(payload, ctx);
+		});
 	};
 	const registerCommand = (...args: unknown[]) => {
 		const [name, command] = args;
@@ -77,6 +82,7 @@ function context(cwd: string, branch: unknown[], completion: ReturnType<typeof v
 	return {
 		cwd,
 		hasUI: true,
+		mode: "tui",
 		model: model("session", "current"),
 		modelRegistry: {
 			find(provider, id) {
@@ -161,6 +167,18 @@ describe("recap lifecycle", () => {
 		await activation.commands.get("recap")?.("", ctx);
 
 		expect(completion.mock.calls.map(([, , options]) => options.reasoningEffort)).toEqual(["low", "medium"]);
+	});
+
+	it("skips generation and the command outside the terminal", async () => {
+		const activation = activate();
+		const completion = vi.fn();
+		const ctx = { ...context(cwd, sessionBranch(), completion), mode: "rpc" };
+
+		await activation.handlers.get("session_start")?.({}, ctx);
+		await activation.handlers.get("agent_end")?.({}, ctx);
+
+		expect(activation.commands.has("recap")).toBe(false);
+		expect(completion).not.toHaveBeenCalled();
 	});
 
 });

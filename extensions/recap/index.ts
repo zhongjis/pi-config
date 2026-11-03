@@ -13,6 +13,7 @@ import {
 } from "./content.js";
 import { completeRecap, resolveRecapModelCandidates } from "./model.js";
 import { getRecapConfig } from "./settings.js";
+import { isTui, registerTuiCommand } from "../lib/mode.js";
 
 const STATE_KEY = "pi-recap";
 const WIDGET_KEY = "pi-recap";
@@ -63,7 +64,7 @@ export default function recapExtension(pi: ExtensionAPI): void {
 		await generateRecap(pi, ctx, false);
 	});
 
-	pi.registerCommand("recap", {
+	registerTuiCommand(pi, "recap", {
 		description: "Generate a session recap now",
 		handler: async (_args, ctx) => {
 			if (!ctx.hasUI) return;
@@ -85,7 +86,8 @@ export default function recapExtension(pi: ExtensionAPI): void {
 
 async function generateRecap(pi: ExtensionAPI, ctx: ExtensionContext, force: boolean): Promise<GenerateOutcome> {
 	if (isGenerating) return { kind: "busy" };
-	if (!ctx.hasUI) return { kind: "skipped", reason: "no UI" };
+	// The recap shows only in a terminal widget; skip the model call elsewhere.
+	if (!isTui(ctx)) return { kind: "skipped", reason: "no terminal UI" };
 	const { goal, rounds, userCount } = buildSessionContext(ctx);
 	if (!goal || rounds.length === 0) return { kind: "skipped", reason: "no conversation yet" };
 	const config = getRecapConfig(ctx.cwd);

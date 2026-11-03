@@ -9,3 +9,4 @@ Copyright 2026 L2ncE. Licensed under Apache-2.0; see [LICENSE](LICENSE).
 - Content, settings, model selection, and lifecycle live in separate modules.
 - Model selection uses the `tool_models.json` key `recap.generate`, mapped to `summary.session`; `recap.model` is not supported.
 - Configured chain candidates are tried in order before an authenticated current-session-model fallback; cancellation stops retries.
+- Generation and `/recap` run only in terminal sessions; the recap widget has no RPC equivalent, so RPC and headless runs make no recap model calls.
