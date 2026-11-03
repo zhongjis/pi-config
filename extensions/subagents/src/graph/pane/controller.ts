@@ -12,6 +12,8 @@
  * stealing the cursor from the main agent.
  */
 
+import { isHerdrAppPaneOwned } from "../../../../lib/herdr-app.mjs";
+import { splitHerdrAppPane } from "./herdr-app.js";
 import { detectPaneHost, type PaneHost } from "../../../../lib/pane-host.js";
 import { clearRecord, type PaneRecord, readRecord, writeRecord } from "./store.js";
 
@@ -116,6 +118,7 @@ function parsePaneLabel(stdout: string): string | undefined {
 }
 
 export class GraphRunPaneController {
+  private readonly options: GraphRunPaneControllerOptions;
   private readonly exec: PaneExec;
   private readonly host: PaneHost;
   private readonly dir: string;
@@ -129,6 +132,7 @@ export class GraphRunPaneController {
   private ensuring: Promise<void> | undefined;
 
   constructor(options: GraphRunPaneControllerOptions) {
+    this.options = options;
     this.exec = options.exec;
     this.host = options.host ?? "herdr";
     this.dir = options.dir;
@@ -179,6 +183,7 @@ export class GraphRunPaneController {
 
   /** True only when `paneId` still exists AND still carries our sentinel label. */
   private async isOursAlive(paneId: string): Promise<boolean> {
+    if (this.host === "herdr-app") return isHerdrAppPaneOwned(this.exec, paneId, this.sentinel);
     if (this.host === "orca") {
       const res = await this.exec("orca", ["terminal", "show", "--terminal", paneId, "--json"], { timeout: this.timeoutMs });
       return res.code === 0 && parseOrcaPaneTitle(res.stdout) === this.sentinel;
@@ -201,10 +206,12 @@ export class GraphRunPaneController {
   }
 
   private closeArgs(paneId: string): string[] {
-    return this.host === "orca" ? ["terminal", "close", "--terminal", paneId] : ["pane", "close", paneId];
+    return this.host === "herdr-app" ? ["do", "pane.close", "--pane", paneId]
+      : this.host === "orca" ? ["terminal", "close", "--terminal", paneId] : ["pane", "close", paneId];
   }
 
   private async split(): Promise<void> {
+    if (this.host === "herdr-app") return splitHerdrAppPane(this.options, this.sentinel);
     if (this.host === "orca") {
       await this.splitOrca();
       return;
@@ -283,7 +290,7 @@ export class GraphRunPaneController {
   async closeOwned(): Promise<void> {
     const record = readRecord(this.dir);
     if (!record?.paneId) return;
-    const paneId = this.host === "orca" ? await this.resolveOwned(record.paneId) : record.paneId;
+    const paneId = this.host === "herdr" ? record.paneId : await this.resolveOwned(record.paneId);
     if (paneId !== undefined) await this.exec(this.host, this.closeArgs(paneId), { timeout: this.timeoutMs });
     clearRecord(this.dir);
   }
@@ -301,7 +308,7 @@ export class GraphRunPaneController {
       return;
     }
     writeRecord(this.dir, { ...record, closedByUser: true });
-    const paneId = this.host === "orca" ? await this.resolveOwned(record.paneId) : record.paneId;
+    const paneId = this.host === "herdr" ? record.paneId : await this.resolveOwned(record.paneId);
     if (paneId !== undefined) await this.exec(this.host, this.closeArgs(paneId), { timeout: this.timeoutMs });
   }
 
@@ -312,6 +319,7 @@ export class GraphRunPaneController {
    */
   async reconcile(): Promise<void> {
     const record = readRecord(this.dir);
+    if (this.host === "herdr-app" && record?.closedByUser) return;
     if (!record?.paneId) return;
     const paneId = await this.resolveOwned(record.paneId);
     if (paneId === undefined) clearRecord(this.dir);

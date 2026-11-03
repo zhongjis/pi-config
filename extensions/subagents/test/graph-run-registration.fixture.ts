@@ -42,6 +42,7 @@ beforeEach(() => {
   process.chdir(dir);
   vi.stubEnv("PI_CODING_AGENT_DIR", join(dir, "global"));
   vi.stubEnv("HOME", dir);
+  for (const name of ["HC_TERMINAL_ID", "HERDR_ENV", "HERDR_PANE_ID", "ORCA_TERMINAL_HANDLE"]) vi.stubEnv(name, "");
   mkdirSync(join(dir, ".pi", "agents"), { recursive: true });
   writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\ndescription: test\n---\nTask");
   mockSessions((prompt) => ({ text: prompt, usage: { input: 10, output: 2, cacheWrite: 3, cacheRead: 7, cost: 0.25 } }));

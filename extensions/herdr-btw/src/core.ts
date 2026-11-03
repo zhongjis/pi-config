@@ -262,7 +262,7 @@ export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string)
 }
 
 /** Child pi CLI arguments shared by every pane host. */
-function buildPiArgs(options: HerdrLaunchOptions): string[] {
+export function buildPiArgs(options: HerdrLaunchOptions): string[] {
 	const inheritTools = options.availableTools ?? options.activeTools;
 	// ponytail: mcp__* names are omitted to keep the typed command under macOS's 1024-byte terminal line limit.
 	// MCP availability falls back to pi's default of all connected servers, so a parent that restricted MCP via

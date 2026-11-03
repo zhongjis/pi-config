@@ -14,6 +14,8 @@ import {
 	formatConfig,
 	type BtwConfig,
 } from "./src/config.ts";
+import { resolveHerdrAppTerminal } from "../lib/herdr-app.mjs";
+import { launchHerdrAppPane } from "./src/herdr-app.ts";
 import { detectPaneHost } from "../lib/pane-host.js";
 import { registerTuiCommand } from "../lib/mode.js";
 import { ContextStore } from "./src/context-store.ts";
@@ -114,8 +116,15 @@ export function decideCacheMode(
  */
 async function closeOwnPane(pi: Pick<ExtensionAPI, "exec">, parentPaneId: string | null): Promise<boolean> {
 	const options = { timeout: 5_000 };
-	const herdrPaneId = process.env.HERDR_PANE_ID;
-	const orcaHandle = process.env.ORCA_TERMINAL_HANDLE;
+	const host = detectPaneHost();
+	if (host === "herdr-app") {
+		const own = await resolveHerdrAppTerminal(pi.exec.bind(pi), process.env.HC_TERMINAL_ID ?? "");
+		if (!own) return false;
+		if (parentPaneId) await pi.exec("herdr-app", ["do", "pane.focus", "--pane", parentPaneId], options).catch(() => undefined);
+		return pi.exec("herdr-app", ["do", "pane.close", "--pane", own.paneId], options).then(result => result.code === 0).catch(() => false);
+	}
+	const herdrPaneId = host === "herdr" ? process.env.HERDR_PANE_ID : undefined;
+	const orcaHandle = host === "orca" ? process.env.ORCA_TERMINAL_HANDLE : undefined;
 	const [command, focusArgs, closeArgs] = herdrPaneId
 		? ["herdr", ["agent", "focus"], ["pane", "close", herdrPaneId]]
 		: orcaHandle
@@ -479,7 +488,7 @@ export async function registerBtwExtension(
 		// Pi has no argumentHint field for extension commands (only builtins and
 		// prompt templates); the TUI renders template hints as "hint — description",
 		// so we bake the same shape into the description.
-		description: "[question] — Open a Herdr or Orca side thread, or use ask, config, merge, help",
+		description: "[question] — Open a side thread in the current terminal host, or use ask, config, merge, help",
 		handler: async (args, ctx) => {
 			sessionCtx = ctx;
 			notifyFn = (message, type) => ctx.ui.notify(message, type);
@@ -533,9 +542,11 @@ export async function registerBtwExtension(
 				return;
 			}
 			const host = detectPaneHost();
-			const parentPaneId = host === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_PANE_ID;
+			const parentPaneId = host === "herdr-app"
+				? (await resolveHerdrAppTerminal(pi.exec.bind(pi), process.env.HC_TERMINAL_ID ?? ""))?.paneId
+				: host === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_PANE_ID;
 			if (!host || !parentPaneId) {
-				ctx.ui.notify("/btw must be run inside a Herdr or Orca pane", "error");
+				ctx.ui.notify("/btw must be run inside a Herdr, herdr-app or Orca pane", "error");
 				return;
 			}
 			if (!ctx.model) {
@@ -610,6 +621,17 @@ export async function registerBtwExtension(
 						config.autoSubmit && draftQuestion.trim() ? LAUNCH_DRAFT_COMMAND : undefined,
 				};
 
+				if (host === "herdr-app") {
+					const result = await launchHerdrAppPane(pi, launchOptions);
+					if (result.kind === "failed") {
+						await store.remove(payloadPath);
+						ctx.ui.notify(`/btw failed: ${result.message}`, "error");
+					} else {
+						ensurePolling();
+						if (result.kind === "ambiguous") ctx.ui.notify("/btw launch outcome is unknown. Context cleanup is deferred in case the herdr-app child is starting; do not retry blindly.", "warning");
+					}
+					return;
+				}
 				if (host === "orca") {
 					await launchOrcaPane(pi, store, ctx.ui, launchOptions, parentPaneId, payloadPath, ensurePolling);
 					return;

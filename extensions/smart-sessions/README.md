@@ -10,13 +10,15 @@ Maintains an LLM-generated one-line session summary as the session name, so acti
 - License: MIT
 - Adapted: lives at `extensions/smart-sessions/`; notifications use the Pi-supported `info` level instead of upstream `success`.
 
-## Herdr and Orca Pane Titles
+## Terminal-host Titles
 
-Inside Herdr or Orca, the existing summary request also generates a separate meaningful pane title; the Pi session summary stays independent. Titles use `[w] ` followed by at most four words, counting whitespace and hyphens as separators.
+Inside native Herdr, herdr-app, or Orca, the existing summary request also generates a separate meaningful title; the Pi session summary stays independent. Titles use `[w] ` followed by at most four words, counting whitespace and hyphens as separators.
 
 Only panes with no label (Orca: no `paneTitle`), or whose current label starts with `[w]`, are eligible. Every other label is preserved, including other bracketed prefixes and ordinary custom names. Removing or replacing `[w]` opts out; clearing the label opts back in.
 
-Updates follow the existing summary timing and debounce, not startup. [herdr.ts](herdr.ts) picks the host through [`detectPaneHost`](../lib/pane-host.ts) and checks the current pane's (`HERDR_PANE_ID` or `ORCA_TERMINAL_HANDLE`) live label immediately before renaming; [index.ts](index.ts) owns the shared summary request. Outside Herdr and Orca, summaries follow the plain one-line path.
+herdr-app titles name the **whole associated tab**, not an individual pane: the app exposes tab renaming, not pane renaming. Positional numeric default tab names and own `[w]` names are eligible; manual names are preserved. HC labels are metadata, not visible titles.
+
+Updates follow the existing summary timing and debounce, not startup. [herdr.ts](herdr.ts) uses [shared host selection](../lib/pane-host.ts) and re-reads the live label/name before renaming; [index.ts](index.ts) owns the shared summary request. [App resolution](../lib/herdr-app.mjs) requires the exact current HC terminal’s tab/pane association; missing or malformed layouts never fall back to inherited native host IDs or focus. Outside supported hosts, summaries follow the plain one-line path.
 
 ## Entry Points
 

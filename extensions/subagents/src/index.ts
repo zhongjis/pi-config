@@ -36,6 +36,7 @@ import { formatDelegationPolicyDenial, getPermittedDelegationTypes, type ModeSta
 import { DEFAULT_MIN_CONFIDENCE } from "./graph/decision-gate.js";
 import { GRAPH_RUN_ENTRY_TYPE, type GraphRunEntryData, graphRunEntryData } from "./graph/entry.js";
 import { isTui, registerTuiCommand } from "../../lib/mode.js";
+import { resolveHerdrAppTerminal } from "../../lib/herdr-app.mjs";
 import { detectPaneHost } from "../../lib/pane-host.js";
 import { isPaneHostEnabled } from "./graph/pane/controller.js";
 import { createGraphRunPaneManager, type GraphRunPaneManager } from "./graph/pane/manager.js";
@@ -428,12 +429,16 @@ export default function (pi: ExtensionAPI) {
     // leak a controller or its timers.
     await graphRunPane?.dispose();
     const paneHost = detectPaneHost(process.env);
+    const appPane = paneHost === "herdr-app" && ctx.mode === "tui"
+      ? await resolveHerdrAppTerminal(pi.exec.bind(pi), process.env.HC_TERMINAL_ID ?? "") : undefined;
     graphRunPane = createGraphRunPaneManager({
-      enabled: isPaneHostEnabled(process.env, ctx.mode),
+      enabled: isPaneHostEnabled(process.env, ctx.mode) && (paneHost !== "herdr-app" || appPane !== undefined),
       host: paneHost,
       exec: (command, args, options) => pi.exec(command, args, options),
-      parentPaneId: (paneHost === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_PANE_ID) ?? "",
-      socket: (paneHost === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_SOCKET_PATH) ?? "",
+      parentPaneId: paneHost === "herdr-app" ? appPane?.paneId ?? ""
+        : (paneHost === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_PANE_ID) ?? "",
+      socket: paneHost === "herdr-app" ? `herdr-app:${process.env.HERDR_APP_HOME ?? ""}:${process.env.HC_SESSION ?? ""}`
+        : (paneHost === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_SOCKET_PATH) ?? "",
       cwd: ctx.cwd,
       sessionId: ctx.sessionManager.getSessionId(),
       ppid: process.pid,

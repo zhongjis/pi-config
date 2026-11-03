@@ -81,4 +81,4 @@ Continuation contract:
 
 ## Pane host
 
-Extensions that act on the terminal pane they run in (title, split, close) MUST gate on [`detectPaneHost`](lib/pane-host.ts), which names Herdr or Orca (Herdr wins when both are detected), and issue only that host's CLI. The `herdr:blocked` event above stays Herdr-only.
+Extensions that act on the terminal pane they run in (title, split, close) MUST use [`detectPaneHost`](lib/pane-host.ts) as the authority for host selection and issue only the selected host's CLI. The `herdr:blocked` event above stays native-Herdr-only.

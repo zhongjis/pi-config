@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Check } from "typebox/value";
+import { resolveHerdrAppTerminal } from "../lib/herdr-app.mjs";
 import { detectPaneHost } from "../lib/pane-host.js";
 
 const TerminalInfo = Type.Object({
@@ -26,11 +27,14 @@ export function getOrcaContext(): OrcaContext | undefined {
 }
 
 export type PaneContext =
+	| { readonly host: "herdr-app"; readonly terminalId: string }
 	| ({ readonly host: "herdr" } & HerdrContext)
 	| ({ readonly host: "orca" } & OrcaContext);
 
 /** The host pane to title, if the session runs inside Herdr or Orca. */
 export function getPaneContext(): PaneContext | undefined {
+	const terminalId = process.env.HC_TERMINAL_ID;
+	if (detectPaneHost() === "herdr-app" && terminalId) return { host: "herdr-app", terminalId };
 	const herdr = getHerdrContext();
 	if (herdr) return { host: "herdr", ...herdr };
 	const orca = getOrcaContext();
@@ -84,6 +88,19 @@ export async function renameOrcaPane(pi: Pick<ExtensionAPI, "exec">, context: Or
 	await run(["set-pane-title", "--terminal", context.handle, "--title", `[w] ${title}`]);
 }
 
+/** The app exposes tab names, not a pane-title API. Preserve manually named tabs. */
+async function renameHerdrAppTab(pi: Pick<ExtensionAPI, "exec">, terminalId: string, title: string): Promise<void> {
+	if (!title) return;
+	const current = await resolveHerdrAppTerminal(pi.exec.bind(pi), terminalId);
+	if (!current || (!/^[1-9]\d*$/.test(current.tabName) && !current.tabName.startsWith("[w]"))) return;
+	await pi.exec("herdr-app", ["do", "tab.rename", "--id", current.tabId, "--name", `[w] ${title}`], { timeout: 3000 });
+}
+
 export function renamePane(pi: Pick<ExtensionAPI, "exec">, context: PaneContext, title: string): Promise<void> {
-	return context.host === "herdr" ? renameHerdrPane(pi, context, title) : renameOrcaPane(pi, context, title);
+	switch (context.host) {
+		case "herdr-app": return renameHerdrAppTab(pi, context.terminalId, title);
+		case "herdr": return renameHerdrPane(pi, context, title);
+		case "orca": return renameOrcaPane(pi, context, title);
+		default: { const exhaustive: never = context; return exhaustive; }
+	}
 }

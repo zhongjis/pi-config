@@ -22,6 +22,7 @@ export * from "./active-tools.js";
 export * from "./agent-frontmatter.js";
 export * from "./provider-errors.js";
 export * from "./pane-host.js";
+export * from "./herdr-app.mjs";
 export * from "./rpc.js";
 export * from "./tool-models.js";
 export * from "./tool-output.js";

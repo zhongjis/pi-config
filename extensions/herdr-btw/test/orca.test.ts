@@ -55,6 +55,7 @@ describe("Orca parent launch", () => {
 	let root: string;
 	beforeEach(async () => {
 		root = await mkdtemp(join(tmpdir(), "btw-orca-"));
+		vi.stubEnv("HC_TERMINAL_ID", "");
 		vi.stubEnv("PI_HERDR_BTW_PAYLOAD", "");
 		vi.stubEnv("HERDR_ENV", "");
 		vi.stubEnv("HERDR_PANE_ID", "");
@@ -119,6 +120,7 @@ describe("Orca child shutdown", () => {
 	let root: string;
 	beforeEach(async () => {
 		root = await mkdtemp(join(tmpdir(), "btw-orca-child-"));
+		vi.stubEnv("HC_TERMINAL_ID", "");
 		vi.stubEnv("HERDR_ENV", "");
 		vi.stubEnv("HERDR_PANE_ID", "");
 		vi.stubEnv("ORCA_TERMINAL_HANDLE", "term_child");

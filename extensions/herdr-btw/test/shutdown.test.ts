@@ -34,6 +34,8 @@ describe("child pane auto-close on session_shutdown", () => {
 	let savedPaneIdEnv: string | undefined;
 
 	beforeEach(async () => {
+		vi.stubEnv("HC_TERMINAL_ID", "");
+		vi.stubEnv("HERDR_ENV", "1");
 		tempDir = await mkdtemp(join(tmpdir(), "herdr-btw-test-"));
 		savedPayloadEnv = process.env.PI_HERDR_BTW_PAYLOAD;
 		savedPaneIdEnv = process.env.HERDR_PANE_ID;
@@ -52,6 +54,7 @@ describe("child pane auto-close on session_shutdown", () => {
 			process.env.HERDR_PANE_ID = savedPaneIdEnv;
 		}
 		await rm(tempDir, { recursive: true, force: true });
+		vi.unstubAllEnvs();
 		vi.resetModules();
 	});
 

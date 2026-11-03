@@ -212,7 +212,7 @@ describe("inherit availability", () => {
 	});
 
 	it("captures parent registry separately and passes it to the launch", async () => {
-		vi.stubEnv("PI_HERDR_BTW_PAYLOAD", ""); vi.stubEnv("HERDR_ENV", "1"); vi.stubEnv("HERDR_PANE_ID", "parent-pane");
+		vi.stubEnv("HC_TERMINAL_ID", ""); vi.stubEnv("PI_HERDR_BTW_PAYLOAD", ""); vi.stubEnv("HERDR_ENV", "1"); vi.stubEnv("HERDR_PANE_ID", "parent-pane");
 		const mock = localPi(); mock.api.setActiveTools(selected);
 		const exec = vi.fn().mockResolvedValueOnce({ code: 0, stdout: '{"result":{"pane":{"pane_id":"child"}}}', stderr: "" }).mockResolvedValue({ code: 0, stdout: "", stderr: "" });
 		Object.assign(mock.pi, { exec });

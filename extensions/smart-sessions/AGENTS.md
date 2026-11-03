@@ -1,14 +1,14 @@
 ## Purpose
 
-Maintain LLM-generated session names and Herdr or Orca pane titles.
+Maintain LLM-generated session names and native Herdr/Orca pane titles or herdr-app tab names.
 
 ## Ownership
 
-- Owns session summaries, Herdr and Orca title integration, and tests.
+- Owns session summaries, terminal-host title integration, and tests.
 
 ## Local Contracts
 
-- [smart-sessions](herdr.ts) MUST generate Herdr titles separately within the existing summary call, preserve Pi summaries, and rename only the current pane (Herdr pane or Orca terminal) when its label is unset or carries its own `[w]` marker, after reading the current label. Orca ownership reads only `paneTitle`, never the auto-derived `title`. Removing the ownership marker opts out; no startup renames, additional model calls, or title persistence.
+- [smart-sessions](herdr.ts) MUST generate Herdr titles separately within the existing summary call, preserve Pi summaries, and rename only the current pane (Herdr pane or Orca terminal) when its label is unset or carries its own `[w]` marker, after reading the current label. Orca ownership reads only `paneTitle`, never the auto-derived `title`. Removing the ownership marker opts out; no startup renames, additional model calls, or title persistence. For herdr-app, rename only the exact HC terminal’s associated tab after re-reading its name; positional numeric defaults and own `[w]` names are eligible, manual names are preserved. The app title is tab-scoped, not pane-scoped.
 
 ## Work Guidance
 

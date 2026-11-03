@@ -21,6 +21,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, renameSync, watch, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { isHerdrAppPaneOwned, resolveHerdrAppTerminal } from "../../../../lib/herdr-app.mjs";
 import { classifyPaneKey } from "./input-filter.mjs";
 import { paintFrame, shownLines } from "./paint.mjs";
 
@@ -179,7 +180,7 @@ function restoreTerminal() {
 }
 
 let exiting = false;
-function quit(userInitiated) {
+async function quit(userInitiated) {
   if (exiting) return;
   exiting = true;
   if (userInitiated) markClosedByUser();
@@ -197,7 +198,21 @@ function quit(userInitiated) {
   // it is not left as an empty shell. Best-effort, and only for the pane we were
   // told to own (Orca: our own terminal handle); a SIGTERM / parent-gone /
   // dir-removed quit leaves it alone.
-  const closeCommand = host === "orca"
+  let appPane;
+  if (userInitiated && host === "herdr-app") {
+    try {
+      const exec = async (command, args) => ({ code: 0, stdout: execFileSync(command, args, { timeout: 3000, encoding: "utf8" }), stderr: "" });
+      const own = await resolveHerdrAppTerminal(exec, process.env.HC_TERMINAL_ID ?? "");
+      const record = JSON.parse(readFileSync(recordFile, "utf8"));
+      if (own?.paneId === record.paneId && typeof record.sentinel === "string"
+        && await isHerdrAppPaneOwned(exec, own.paneId, record.sentinel)) appPane = own.paneId;
+    } catch {
+      // Missing layout, core, or ownership evidence must never close a pane.
+    }
+  }
+  const closeCommand = host === "herdr-app"
+    ? appPane && ["herdr-app", ["do", "pane.close", "--pane", appPane]]
+    : host === "orca"
     ? process.env.ORCA_TERMINAL_HANDLE && ["orca", ["terminal", "close", "--terminal", process.env.ORCA_TERMINAL_HANDLE]]
     : herdrPane && ["herdr", ["pane", "close", herdrPane]];
   if (userInitiated && closeCommand) {

@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { detectPaneHost } from "../pane-host.js";
 
 describe("detectPaneHost", () => {
+  it("prefers HC over inherited native hosts", () => {
+    expect(detectPaneHost({ HC_TERMINAL_ID: "t-current", HERDR_ENV: "1", HERDR_PANE_ID: "stale", ORCA_TERMINAL_HANDLE: "stale-orca" })).toBe("herdr-app");
+  });
   it("detects Herdr from its env pair", () => {
     expect(detectPaneHost({ HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" })).toBe("herdr");
   });

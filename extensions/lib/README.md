@@ -7,7 +7,7 @@ Shared utilities for pi extensions. Import via `../lib/index.js`.
 Flat utility modules for model selection, fallback, fast requests, logging, clipboard, status, and tool output. [index.ts](index.ts) re-exports the public set.
 
 - [Prompt variants](prompt-variants.ts) — shared variant-directory reading, body selection, and overlay placement.
-- [Pane host](pane-host.ts) — `detectPaneHost` names the Herdr or Orca terminal host from the injected environment.
+- [Pane host](pane-host.ts) — `detectPaneHost` selects herdr-app, native Herdr, or Orca from the injected environment. [herdr-app.mjs](herdr-app.mjs) resolves app terminal/pane associations and graph ownership for extensions and the standalone Node viewer.
 - [Run mode](mode.ts) — `isTui` gates terminal-only behavior; `registerTuiCommand` and `registerTuiShortcut` register terminal-only commands and shortcuts only in TUI sessions.
 
 ## Usage

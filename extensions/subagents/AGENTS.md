@@ -57,6 +57,8 @@ Run isolated Agent sessions with foreground results and background supervision. 
 - There is no filesystem isolation backend. A node's validation gate MUST run in the effective child cwd; NEVER add automatic branches, commits, or filesystem copies.
 - Full-result artifacts for truncated notifications persist in the ephemeral session task area; artifact failures MUST remain visible. Execution is not a sandbox, transaction, rollback, or cross-session recovery guarantee.
 
+- [Graph side panes](src/graph/pane/controller.ts) support native Herdr, herdr-app, and Orca without changing rendering. App adoption and close MUST verify both the live pane/terminal association and HC ownership metadata; app state is host-qualified. Preserve manual closes and suppress automatic respawns after ambiguous app splits or ownership-label failures. [The standalone viewer](src/graph/pane/viewer.mjs) uses the same app ownership boundary and MUST NOT fall through to native Herdr teardown.
+
 ## Work Guidance
 
 - [README](README.md) owns configuration, supervision, and storage behavior; NEVER infer disk isolation from transcript settings alone.

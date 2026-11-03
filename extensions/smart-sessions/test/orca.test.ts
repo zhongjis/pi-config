@@ -17,6 +17,7 @@ function cli(paneTitle?: string) {
 }
 
 beforeEach(() => {
+	vi.stubEnv("HC_TERMINAL_ID", "");
 	vi.stubEnv("PI_CODING_AGENT_DIR", "/nonexistent-smart-sessions-test");
 	vi.stubEnv("HERDR_ENV", "");
 	vi.stubEnv("HERDR_PANE_ID", "");
