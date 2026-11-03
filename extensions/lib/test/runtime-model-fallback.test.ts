@@ -76,7 +76,7 @@ const quotaError = (errorMessage = "quota exceeded") => ({
 
 async function settleQuota(harness: ReturnType<typeof createHarness>, errorMessage?: string): Promise<void> {
 	await harness.fire("message_end", quotaError(errorMessage));
-	await harness.fire("agent_settled", { type: "agent_settled" });
+	await harness.fire("agent_settled", { type: "agent_settled", aborted: harness.ctx.signal.aborted });
 }
 
 describe("registerRuntimeModelFallback", () => {

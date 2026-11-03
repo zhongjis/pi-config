@@ -1,7 +1,7 @@
 import { isContextOverflow, type AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { parseModelChain, resolveAllAvailable } from "./model-selection.js";
-import { isAccessDeniedError, isQuotaOrRateLimitError } from "./provider-errors.js";
+import { isAccessDeniedError, isQuotaError, isQuotaOrRateLimitError } from "./provider-errors.js";
 
 export type RuntimeModelCandidate = ReturnType<typeof resolveAllAvailable>[number];
 
@@ -19,8 +19,9 @@ export function registerRuntimeModelFallback(pi: ExtensionAPI, policy: RuntimeMo
 	let pending: AssistantMessage | undefined;
 	let attempted = new Set<string>();
 	let coordinatorSelection: string | undefined;
+	let failures = 0;
 
-	const reset = () => { pending = undefined; attempted = new Set(); };
+	const reset = () => { pending = undefined; attempted = new Set(); failures = 0; };
 	const identity = (model: { provider: string; id: string }) => `${model.provider}/${model.id}`;
 
 	pi.on("session_start", reset);
@@ -33,17 +34,39 @@ export function registerRuntimeModelFallback(pi: ExtensionAPI, policy: RuntimeMo
 	pi.on("message_end", (event, ctx) => {
 		if (event.message.role !== "assistant") return;
 		const message = event.message;
+		failures = message.stopReason === "error" ? failures + 1 : 0;
 		pending = message.stopReason === "error"
 			&& !isContextOverflow(message, ctx.model?.contextWindow)
 			&& (isQuotaOrRateLimitError(message) || isAccessDeniedError(message))
 			? message
 			: undefined;
 	});
-	pi.on("agent_settled", async (_event, ctx) => {
+	pi.on("agent_before_settle", (event, ctx) => {
+		if (event.outcome !== "error" || event.continue || !pending || !ctx.model
+			|| ctx.model.provider !== "cliproxyapi" || !isQuotaError(pending) || failures >= 5) return;
+		const model = ctx.model;
+		const message = pending;
+		const chain = policy.chain(ctx);
+		if (!chain || !resolveAllAvailable(parseModelChain(chain), ctx.modelRegistry)
+			.some(candidate => identity(candidate.model) === identity(model) || !attempted.has(identity(candidate.model)))) return;
+
+		const entries = event.context.contextEntries;
+		const index = entries.findIndex(entry => entry.messages.includes(message));
+		const failed = entries[index];
+		if (!failed) return;
+		const failedToolCalls = new Set(message.content.flatMap(block => block.type === "toolCall" ? [block.id] : []));
+		const targets = [failed];
+		for (const entry of entries.slice(index + 1)) {
+			if (entry.messages.some(message => message.role === "assistant")) break;
+			if (entry.messages.some(message => message.role === "toolResult" && failedToolCalls.has(message.toolCallId))) targets.push(entry);
+		}
+		pending = undefined;
+		return { continue: true, entries: targets.map(entry => ({ type: "context_edit" as const, targetId: entry.sourceEntry.id, replacement: null })) };
+	});
+	pi.on("agent_settled", async (event, ctx) => {
 		const message = pending;
 		pending = undefined;
-		const signal = ctx.signal;
-		if (signal?.aborted || !message || message.stopReason === "aborted" || !ctx.model) return;
+		if (event.aborted || !message || !ctx.model) return;
 
 		attempted.add(identity(ctx.model));
 		const chain = policy.chain(ctx);
@@ -57,7 +80,8 @@ export function registerRuntimeModelFallback(pi: ExtensionAPI, policy: RuntimeMo
 		coordinatorSelection = identity(next.model);
 		let selected = false;
 		try { selected = await pi.setModel(next.model); } finally { coordinatorSelection = undefined; }
-		if (!selected || signal?.aborted) return;
+		if (!selected) return;
+		failures = 0;
 		if (next.thinkingLevel !== undefined) pi.setThinkingLevel(next.thinkingLevel);
 		policy.apply(next, ctx);
 		pi.sendMessage({
