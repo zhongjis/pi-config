@@ -14,6 +14,7 @@ import { LOCAL_PLAN_URI } from "./constants.js";
 import { getLocalPlanPath, hydratePlanState } from "./plan-storage.js";
 import { isPlannotatorAvailable, startDirectPlanReview, resetPlannotatorCache } from "./plannotator-direct.js";
 import type { PlannotatorReviewResultEvent } from "./types.js";
+import { isTui } from "../../lib/mode.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -101,6 +102,27 @@ export async function prepareApprovedPlanHandoff(
 	}
 
 	const planPath = getLocalPlanPath(ctx);
+	const details = { planTitle: state.planTitle, planPath, mode: "houtu" };
+
+	// /handoff:start-work is terminal-only: RPC clients cannot follow a session replacement.
+	if (!isTui(ctx)) {
+		if (ctx.hasUI) {
+			ctx.ui.notify(`Plan "${state.planTitle}" approved! Start execution in a new session from the plan at ${planPath}`, "info");
+		}
+		state.persistState();
+		return {
+			success: true,
+			message: [
+				`Plan "${state.planTitle}" has been approved.`,
+				`The user starts execution in a new session from the plan at ${planPath}.`,
+				`Do NOT start implementation, create tasks, or write code. Execution happens in a separate session.`,
+				`Wait for the user.`,
+			].join("\n"),
+			level: "info",
+			details,
+		};
+	}
+
 	const uiNotification = buildCompletionNotification(state.planTitle);
 	const agentMessage = buildCompletionAgentMessage(state.planTitle);
 
@@ -131,11 +153,7 @@ export async function prepareApprovedPlanHandoff(
 		success: true,
 		message: agentMessage,
 		level: "info" as const,
-		details: {
-			planTitle: state.planTitle,
-			planPath,
-			mode: "houtu",
-		},
+		details,
 	};
 }
 

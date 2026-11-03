@@ -51,9 +51,10 @@ function createMockPi() {
 	};
 }
 
-function createCtx() {
+function createCtx(mode = "tui") {
 	return {
 		hasUI: true,
+		mode,
 		sessionManager: {
 			getSessionFile: () => "/tmp/session.jsonl",
 		},
@@ -85,6 +86,21 @@ describe("plannotator handoff prep", () => {
 		expect(ctx.ui.setEditorText).toHaveBeenCalledWith("/handoff:start-work");
 		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("approved!"), "info");
 		expect(mock.pi.sendUserMessage).not.toHaveBeenCalled();
+	});
+
+	it("prepareApprovedPlanHandoff points RPC clients at a new session instead of /handoff:start-work", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.planTitle = "Ship feature";
+
+		const ctx = createCtx("rpc");
+		const result = await prepareApprovedPlanHandoff(mock.pi as never, state, ctx as never);
+
+		expect(result.success).toBe(true);
+		expect(result.message).not.toContain("/handoff:start-work");
+		expect(result.message).toContain("/tmp/PLAN.md");
+		expect(ctx.ui.setEditorText).not.toHaveBeenCalled();
+		expect(ctx.ui.notify).toHaveBeenCalledWith(expect.stringContaining("/tmp/PLAN.md"), "info");
 	});
 
 	it("prepareApprovedPlanHandoff returns failure when no plan title is set", async () => {

@@ -20,7 +20,7 @@ Each mode reads its prompt from `modes/<mode>/default.md`. Global AGENTS.md rule
 
 1. Fu Xi drafts a plan with Di Renjie gap review
 2. `plan_approve` tool presents choices: Approve, High Accuracy Review (Yan Luo), Refine
-3. Approved plan prepares Hou Tu handoff via `/handoff:start-work`
+3. Approved plan prepares Hou Tu handoff via `/handoff:start-work` in terminal sessions; elsewhere the approval names the plan path for a new session
 
 
 ### Mode frontmatter
