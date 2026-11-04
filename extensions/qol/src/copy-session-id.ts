@@ -6,7 +6,7 @@ function formatSessionMetadata(
   sessionLogPath?: string,
 ): string {
   return [
-    `use pi-jsonl-logs skill to analyze the following session log based on user request`,
+    `use pi-session-logs skill to analyze the following session log based on user request`,
     `session-id: ${JSON.stringify(sessionId)}`,
     `session-log-path: ${sessionLogPath ? JSON.stringify(sessionLogPath) : "null"}`,
   ].join("\n");

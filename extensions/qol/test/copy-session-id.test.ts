@@ -27,12 +27,12 @@ type RegisteredCommand = {
 const SESSION_ID = "019f7cb7-d269-7868-a64d-bbb2e14fc944";
 const SESSION_FILE = "/tmp/session.jsonl";
 const PAYLOAD = [
-  "use pi-jsonl-logs skill to analyze the following session log based on user request",
+  "use pi-session-logs skill to analyze the following session log based on user request",
   `session-id: ${JSON.stringify(SESSION_ID)}`,
   `session-log-path: ${JSON.stringify(SESSION_FILE)}`,
 ].join("\n");
 const UNSAVED_PAYLOAD = [
-  "use pi-jsonl-logs skill to analyze the following session log based on user request",
+  "use pi-session-logs skill to analyze the following session log based on user request",
   `session-id: ${JSON.stringify(SESSION_ID)}`,
   "session-log-path: null",
 ].join("\n");
