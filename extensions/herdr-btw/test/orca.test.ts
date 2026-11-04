@@ -16,7 +16,7 @@ import {
 } from "../src/core.ts";
 
 const launch: HerdrLaunchOptions = {
-	paneName: "btw", cwd: "/tmp", payloadPath: "/tmp/it's a dir/payload.json", model: "test/model",
+	cwd: "/tmp", payloadPath: "/tmp/it's a dir/payload.json", model: "test/model",
 	sessionDir: "/tmp/btw sessions/s", thinkingLevel: "standard", toolMode: "none", activeTools: [], split: "right",
 	initialMessage: "/btw --launch-draft",
 };
@@ -57,8 +57,6 @@ describe("Orca parent launch", () => {
 		root = await mkdtemp(join(tmpdir(), "btw-orca-"));
 		vi.stubEnv("HC_TERMINAL_ID", "");
 		vi.stubEnv("PI_HERDR_BTW_PAYLOAD", "");
-		vi.stubEnv("HERDR_ENV", "");
-		vi.stubEnv("HERDR_PANE_ID", "");
 		vi.stubEnv("ORCA_TERMINAL_HANDLE", "term_parent");
 		ui.notify.mockClear();
 	});
@@ -121,8 +119,6 @@ describe("Orca child shutdown", () => {
 	beforeEach(async () => {
 		root = await mkdtemp(join(tmpdir(), "btw-orca-child-"));
 		vi.stubEnv("HC_TERMINAL_ID", "");
-		vi.stubEnv("HERDR_ENV", "");
-		vi.stubEnv("HERDR_PANE_ID", "");
 		vi.stubEnv("ORCA_TERMINAL_HANDLE", "term_child");
 	});
 	afterEach(async () => {

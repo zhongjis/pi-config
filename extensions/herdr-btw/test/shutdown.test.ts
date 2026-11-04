@@ -35,10 +35,9 @@ describe("child pane auto-close on session_shutdown", () => {
 
 	beforeEach(async () => {
 		vi.stubEnv("HC_TERMINAL_ID", "");
-		vi.stubEnv("HERDR_ENV", "1");
 		tempDir = await mkdtemp(join(tmpdir(), "herdr-btw-test-"));
 		savedPayloadEnv = process.env.PI_HERDR_BTW_PAYLOAD;
-		savedPaneIdEnv = process.env.HERDR_PANE_ID;
+		savedPaneIdEnv = process.env.ORCA_TERMINAL_HANDLE;
 	});
 
 	afterEach(async () => {
@@ -49,9 +48,9 @@ describe("child pane auto-close on session_shutdown", () => {
 			process.env.PI_HERDR_BTW_PAYLOAD = savedPayloadEnv;
 		}
 		if (savedPaneIdEnv === undefined) {
-			delete process.env.HERDR_PANE_ID;
+			delete process.env.ORCA_TERMINAL_HANDLE;
 		} else {
-			process.env.HERDR_PANE_ID = savedPaneIdEnv;
+			process.env.ORCA_TERMINAL_HANDLE = savedPaneIdEnv;
 		}
 		await rm(tempDir, { recursive: true, force: true });
 		vi.unstubAllEnvs();
@@ -64,7 +63,7 @@ describe("child pane auto-close on session_shutdown", () => {
 		const payloadPath = await store.create(payload);
 
 		process.env.PI_HERDR_BTW_PAYLOAD = payloadPath;
-		process.env.HERDR_PANE_ID = "%pane-child";
+		process.env.ORCA_TERMINAL_HANDLE = "%pane-child";
 
 		vi.resetModules();
 		const mock = createMockPi();
@@ -76,8 +75,8 @@ describe("child pane auto-close on session_shutdown", () => {
 
 		await mock.fireLifecycle("session_shutdown", { reason: "quit" }, { mode: "tui" });
 
-		expect(exec).toHaveBeenCalledWith("herdr", ["agent", "focus", "%pane-parent"], expect.objectContaining({ timeout: 5_000 }));
-		expect(exec).toHaveBeenCalledWith("herdr", ["pane", "close", "%pane-child"], expect.objectContaining({ timeout: 5_000 }));
+		expect(exec).toHaveBeenCalledWith("orca", ["terminal", "switch", "--terminal", "%pane-parent"], expect.objectContaining({ timeout: 5_000 }));
+		expect(exec).toHaveBeenCalledWith("orca", ["terminal", "close", "--terminal", "%pane-child"], expect.objectContaining({ timeout: 5_000 }));
 	});
 
 	it("does NOT close the pane when closeOnExit is false", async () => {
@@ -86,7 +85,7 @@ describe("child pane auto-close on session_shutdown", () => {
 		const payloadPath = await store.create(payload);
 
 		process.env.PI_HERDR_BTW_PAYLOAD = payloadPath;
-		process.env.HERDR_PANE_ID = "%pane-child";
+		process.env.ORCA_TERMINAL_HANDLE = "%pane-child";
 
 		vi.resetModules();
 		const mock = createMockPi();
@@ -110,7 +109,7 @@ describe("child pane auto-close on session_shutdown", () => {
 		const payloadPath = await store.create(payload);
 
 		process.env.PI_HERDR_BTW_PAYLOAD = payloadPath;
-		process.env.HERDR_PANE_ID = "%pane-child";
+		process.env.ORCA_TERMINAL_HANDLE = "%pane-child";
 
 		vi.resetModules();
 		const mock = createMockPi();
@@ -134,7 +133,7 @@ describe("child pane auto-close on session_shutdown", () => {
 		const payloadPath = await store.create(payload);
 
 		process.env.PI_HERDR_BTW_PAYLOAD = payloadPath;
-		process.env.HERDR_PANE_ID = "%pane-child";
+		process.env.ORCA_TERMINAL_HANDLE = "%pane-child";
 
 		vi.resetModules();
 		const mock = createMockPi();

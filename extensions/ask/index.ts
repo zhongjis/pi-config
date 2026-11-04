@@ -189,10 +189,6 @@ export default function ask(pi: ExtensionAPI) {
 			}
 
 			pi.events.emit("user-prompted", { tool: "ask" });
-			// Herdr's agent-state integration counts blockers on this channel; the .finally()
-			// below emits the mandatory balancing `active:false`.
-			pi.events.emit("herdr:blocked", { active: true, label: "Ask" });
-
 			// ponytail: ctx.ui.custom() does not report OSC 7501 "blocked" program status
 			// (pi-side gap; built-in dialogs set it inside interactive-mode). Delete the
 			// setProgramStatus pair when pi wires it into showExtensionCustom. The restore in
@@ -205,7 +201,6 @@ export default function ask(pi: ExtensionAPI) {
 				return createAskDialog({ questions, input, title: params.title, tui, theme, keybindings: kb, autocompleteProvider: createAskAutocompleteProvider(ctx.cwd, pi.getCommands()), signal, done });
 			}).finally(() => {
 				dialogTui?.terminal.setProgramStatus({ state: "working", message: pi.getSessionName(), app: "pi" });
-				pi.events.emit("herdr:blocked", { active: false });
 			});
 			const details: AskDetails = outcome.aborted ? { ...outcome.details, aborted: true } : outcome.details;
 			return { content: [{ type: "text", text: formatResultText(questions, outcome.details, outcome.aborted) }], details };

@@ -1,6 +1,6 @@
 # herdr-btw
 
-Opens a tool-enabled Pi side thread in a focused [Herdr](https://herdr.dev), herdr-app or Orca pane
+Opens a tool-enabled Pi side thread in a focused herdr-app or Orca pane
 without changing the parent transcript — a `/btw` side-question flow that runs in a
 separate Pi process and can merge its findings back into the parent.
 
@@ -15,8 +15,8 @@ separate Pi process and can merge its findings back into the parent.
 
 ## Requirements
 
-- Pi running inside a native Herdr, herdr-app, or Orca pane, with its host CLI available on PATH. Native Herdr requires v0.7.4+.
-- [Host selection](../lib/pane-host.ts) prioritizes HC terminals over inherited native host variables. herdr-app requires an exact terminal/pane association in the running window; unmatched terminals fail without falling back to focus. [Native/Orca argv](src/core.ts) and [app launch](src/herdr-app.ts) own launch mechanics. App splits carry cwd and payload through positional argv; unknown outcomes keep the payload and warn against blind retries.
+- Pi running inside a herdr-app or Orca pane, with its host CLI available on PATH.
+- [Host selection](../lib/pane-host.ts) prioritizes HC terminals over inherited Orca variables. herdr-app requires an exact terminal/pane association in the running window; unmatched terminals fail without falling back to focus. [Orca argv](src/core.ts) and [app launch](src/herdr-app.ts) own launch mechanics. App splits carry cwd and payload through positional argv; unknown outcomes keep the payload and warn against blind retries.
 
 ## Commands
 
@@ -90,8 +90,8 @@ Current divergences from upstream; re-apply each on upstream sync:
 - **Patched:** `index.ts`, `src/config.ts`, and `src/core.ts` add a `closeOnExit` config flag (default `false`)
   that auto-closes the child pane on quit, and set `PAYLOAD_VERSION` to 5 for that config field.
 - **Patched:** `index.ts` runs the child-side quit cleanup (payload removal, pane close) only in TUI sessions, so UI-less subagent children of a side-thread process leave the pane and payload alone.
-- **Patched:** `index.ts` and `src/core.ts` separate registered availability from ordered active names in an optional version-5 `parentAvailableTools` field. Inherit launches allow the registered names through CLI filtering and restore the exact active selection once at startup `resources_discover`, only for TUI children. Reload/resume/new/fork and UI-less descendants do not restore; later activation persists. Legacy payloads retain active-name CLI fallback; cache comparisons remain active-name based. Inherit CLI allowlists omit `mcp__*` names (pi keeps MCP tools unless an entry starts with `mcp__`), keeping the typed `herdr agent start` command under the 1024-byte terminal line limit; MCP-only lists pass unchanged.
-- **Patched:** [registration](index.ts), [argv builders](src/core.ts), and [app launcher](src/herdr-app.ts) support native Herdr, herdr-app, and Orca launch/child-shutdown paths through [shared host selection](../lib/pane-host.ts). App cleanup resolves the child’s own HC terminal before focusing the parent and closing its pane.
+- **Patched:** `index.ts` and `src/core.ts` separate registered availability from ordered active names in an optional version-5 `parentAvailableTools` field. Inherit launches allow the registered names through CLI filtering and restore the exact active selection once at startup `resources_discover`, only for TUI children. Reload/resume/new/fork and UI-less descendants do not restore; later activation persists. Legacy payloads retain active-name CLI fallback; cache comparisons remain active-name based. Inherit CLI allowlists omit `mcp__*` names (pi keeps MCP tools unless an entry starts with `mcp__`), keeping the typed Pi command under the 1024-byte terminal line limit; MCP-only lists pass unchanged.
+- **Patched:** [registration](index.ts), [argv builders](src/core.ts), and [app launcher](src/herdr-app.ts) support herdr-app and Orca launch/child-shutdown paths through [shared host selection](../lib/pane-host.ts). App cleanup resolves the child’s own HC terminal before focusing the parent and closing its pane.
 - **Patched:** `index.ts` fallback `before_agent_start` sets the `herdr_btw` prompt section (`SIDE_PANE_INSTRUCTIONS`) instead of returning a rewritten `systemPrompt`. The `native` cache branch still returns the parent's exact `systemPrompt`; sections would change the cached prefix.
 - **Patched:** `index.ts` and `src/core.ts` launch the child with `--session-dir <agentDir>/btw-sessions/<parentSessionId>` instead of upstream `--no-session`, so the side thread writes a session log.
 - **Patched:** `index.ts` registers both `/btw` commands (parent and child side thread) through `registerTuiCommand` from [`../lib/mode.ts`](../lib/mode.ts), so RPC `get_commands` never lists them; the upstream non-TUI guard stays in place.

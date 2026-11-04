@@ -48,6 +48,7 @@ function twoPhaseTask(id: string, startTime: number): GraphRunTask {
 function manager(getTasks: () => GraphRunTask[], viewAgentConversation?: (recordId: string) => void) {
   const mgr = createGraphRunPaneManager({
     enabled: true,
+    host: "orca",
     exec: vi.fn(ok) as any,
     parentPaneId: "%p0",
     socket: "sock",
@@ -168,10 +169,11 @@ describe("external stage folding", () => {
 describe("esc-at-overview closes via the extension", () => {
   it("closes the recorded pane, marks closedByUser, and writes no new snapshot", async () => {
     const task = twoPhaseTask("agr_a", 1000);
-    const exec = vi.fn(ok);
+    const exec = vi.fn(async () => ({ code: 0, stderr: "", stdout: JSON.stringify({ result: { terminal: { paneTitle: "Agent Graph · sess1234" } } }) }));
     const mgr = createGraphRunPaneManager({
       enabled: true,
-      exec: exec as any,
+      host: "orca",
+      exec,
       parentPaneId: "%p0",
       socket: "sock",
       cwd: "/work",
@@ -188,7 +190,7 @@ describe("esc-at-overview closes via the extension", () => {
     writeInputAtomic(dir, { seq: 1, data: b64("\x1b") });
     await processInput(mgr);
 
-    expect(exec).toHaveBeenCalledWith("herdr", ["pane", "close", "%p9"], expect.anything());
+    expect(exec).toHaveBeenCalledWith("orca", ["terminal", "close", "--terminal", "%p9"], expect.anything());
     expect(readRecord(dir)?.closedByUser).toBe(true);
     // The close path returns before writing a snapshot.
     expect(existsSync(join(dir, STATE_FILE))).toBe(false);
@@ -205,12 +207,13 @@ describe("esc-at-overview closes via the extension", () => {
 
 describe("auto-open gating", () => {
   const splitCalled = (exec: any) =>
-    exec.mock.calls.some((c: any[]) => c[0] === "herdr" && c[1]?.[1] === "split");
+    exec.mock.calls.some((c: any[]) => c[0] === "orca" && c[1]?.[1] === "split");
   const syncNow = (mgr: GraphRunPaneManager, force: boolean) =>
     (mgr as unknown as { syncNow: (f: boolean) => Promise<void> }).syncNow(force);
   function mgrWith(exec: any, getTasks: () => GraphRunTask[]) {
     const mgr = createGraphRunPaneManager({
       enabled: true,
+      host: "orca",
       exec,
       parentPaneId: "%p0",
       socket: "sock",
@@ -251,6 +254,7 @@ describe("disabled manager", () => {
   it("never processes input and holds no view state machinery", () => {
     const mgr = createGraphRunPaneManager({
       enabled: false,
+      host: "orca",
       exec: vi.fn(ok) as any,
       parentPaneId: "",
       socket: "",

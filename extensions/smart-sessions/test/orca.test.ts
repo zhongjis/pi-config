@@ -65,10 +65,10 @@ describe("pane context selection", () => {
 		expect(getPaneContext()).toEqual({ host: "orca", handle: context.handle });
 	});
 
-	it("prefers Herdr when both hosts are present", () => {
+	it("selects Orca despite stale native environment variables", () => {
 		vi.stubEnv("HERDR_ENV", "1");
 		vi.stubEnv("HERDR_PANE_ID", "w1:current");
-		expect(getPaneContext()).toEqual({ host: "herdr", paneId: "w1:current" });
+		expect(getPaneContext()).toEqual({ host: "orca", handle: context.handle });
 	});
 });
 

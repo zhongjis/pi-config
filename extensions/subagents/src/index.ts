@@ -431,14 +431,14 @@ export default function (pi: ExtensionAPI) {
     const paneHost = detectPaneHost(process.env);
     const appPane = paneHost === "herdr-app" && ctx.mode === "tui"
       ? await resolveHerdrAppTerminal(pi.exec.bind(pi), process.env.HC_TERMINAL_ID ?? "") : undefined;
-    graphRunPane = createGraphRunPaneManager({
+    graphRunPane = paneHost ? createGraphRunPaneManager({
       enabled: isPaneHostEnabled(process.env, ctx.mode) && (paneHost !== "herdr-app" || appPane !== undefined),
       host: paneHost,
       exec: (command, args, options) => pi.exec(command, args, options),
       parentPaneId: paneHost === "herdr-app" ? appPane?.paneId ?? ""
-        : (paneHost === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_PANE_ID) ?? "",
+        : process.env.ORCA_TERMINAL_HANDLE ?? "",
       socket: paneHost === "herdr-app" ? `herdr-app:${process.env.HERDR_APP_HOME ?? ""}:${process.env.HC_SESSION ?? ""}`
-        : (paneHost === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_SOCKET_PATH) ?? "",
+        : process.env.ORCA_TERMINAL_HANDLE ?? "",
       cwd: ctx.cwd,
       sessionId: ctx.sessionManager.getSessionId(),
       ppid: process.pid,
@@ -449,8 +449,8 @@ export default function (pi: ExtensionAPI) {
       },
       onError: (err, label) =>
         console.warn(`[pi-subagents] ${label}: ${err instanceof Error ? err.message : String(err)}`),
-    });
-    await graphRunPane.reconcile();
+    }) : undefined;
+    await graphRunPane?.reconcile();
     resumeDurableGraphRuns(ctx);
   });
 

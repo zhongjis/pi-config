@@ -9,7 +9,7 @@
  * That keeps the shared layout the single source of truth and needs no bundler,
  * no dist, and no runtime dependencies here — only Node built-ins.
  *
- * Invocation:  node viewer.mjs --dir <paneStateDir> --ppid <piPid> [--pane <herdrPaneId> | --host orca]
+ * Invocation:  node viewer.mjs --dir <paneStateDir> --ppid <piPid> --host <herdr-app|orca>
  *
  * It repaints on `fs.watch` (debounced) plus a slow safety poll (watch is
  * unreliable on macOS), reports its terminal size back through `viewport.json`,
@@ -30,17 +30,16 @@ const SAFETY_POLL_MS = 400;
 const PARENT_POLL_MS = 1000;
 
 function parseArgs(argv) {
-  const out = { dir: undefined, ppid: undefined, pane: undefined, host: undefined };
+  const out = { dir: undefined, ppid: undefined, host: undefined };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === "--dir") out.dir = argv[++i];
     else if (argv[i] === "--ppid") out.ppid = Number(argv[++i]);
-    else if (argv[i] === "--pane") out.pane = argv[++i];
     else if (argv[i] === "--host") out.host = argv[++i];
   }
   return out;
 }
 
-const { dir, ppid, pane: herdrPane, host } = parseArgs(process.argv.slice(2));
+const { dir, ppid, host } = parseArgs(process.argv.slice(2));
 
 if (!dir) {
   process.stderr.write("viewer.mjs: --dir <paneStateDir> is required\n");
@@ -212,9 +211,7 @@ async function quit(userInitiated) {
   }
   const closeCommand = host === "herdr-app"
     ? appPane && ["herdr-app", ["do", "pane.close", "--pane", appPane]]
-    : host === "orca"
-    ? process.env.ORCA_TERMINAL_HANDLE && ["orca", ["terminal", "close", "--terminal", process.env.ORCA_TERMINAL_HANDLE]]
-    : herdrPane && ["herdr", ["pane", "close", herdrPane]];
+    : host === "orca" && process.env.ORCA_TERMINAL_HANDLE && ["orca", ["terminal", "close", "--terminal", process.env.ORCA_TERMINAL_HANDLE]];
   if (userInitiated && closeCommand) {
     try {
       execFileSync(closeCommand[0], closeCommand[1], { timeout: 5000, stdio: "ignore" });

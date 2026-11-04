@@ -73,7 +73,7 @@ describe("ask execution", () => {
 		expect(custom).not.toHaveBeenCalled();
 		expect(emit).not.toHaveBeenCalled();
 	});
-	it("runs the real component end-to-end and balances prompt/block events and OSC status", async () => {
+	it("runs the real component end-to-end, signals prompting and restores OSC status", async () => {
 		const { execute, emit, status, custom } = setup(["N", "explain scope", "\r", "1", "2"]);
 		const result = await execute(undefined, undefined, "Decisions");
 		expect(custom).toHaveBeenCalledTimes(1);
@@ -81,7 +81,7 @@ describe("ask execution", () => {
 		expect(result.content[0].text).toContain("Decisions\nScope: user selected: 1. src\nNotes:\n- Scope: explain scope");
 		expect(result.details).toMatchObject({ title: "Decisions", cancelled: false, mode: "elaborate", answers: [{ values: ["src"] }], notes: [{ questionId: "q", text: "explain scope" }] });
 		expect(emit.mock.calls).toEqual([
-			["user-prompted", { tool: "ask" }], ["herdr:blocked", { active: true, label: "Ask" }], ["herdr:blocked", { active: false }],
+			["user-prompted", { tool: "ask" }],
 		]);
 		expect(status.mock.calls).toEqual([
 			[{ state: "blocked", kind: "question", message: "Ask", app: "pi" }], [{ state: "working", message: "test-session", app: "pi" }],
@@ -89,12 +89,11 @@ describe("ask execution", () => {
 	});
 	it("abort while the UI is open returns aborted text and restores status", async () => {
 		const controller = new AbortController();
-		const { execute, status, emit } = setup(["1"], "tui", () => controller.abort());
+		const { execute, status } = setup(["1"], "tui", () => controller.abort());
 		const result = await execute(undefined, controller.signal);
 		expect(result.content[0].text).toBe("Ask was aborted before the user answered.");
 		expect(result.details).toMatchObject({ cancelled: true, aborted: true });
 		expect(status.mock.calls.at(-1)?.[0].state).toBe("working");
-		expect(emit.mock.calls.at(-1)).toEqual(["herdr:blocked", { active: false }]);
 	});
 	it("quickPick submit includes title, answer details and no notes", async () => {
 		const { execute } = setup();

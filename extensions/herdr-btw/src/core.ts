@@ -33,7 +33,7 @@ export type BtwPayload = {
 	capability: string;
 	/** Exact parent session ID at launch; merges are bound to it. */
 	parentSessionId: string;
-	/** Herdr pane ID of the parent at launch; /btw merge refocuses it. */
+	/** Parent pane ID or Orca terminal handle; /btw merge refocuses it. */
 	parentPaneId: string | null;
 	metadata: ParentContextMetadata;
 	/** Exact effective parent system prompt for the native-prefix cache path, if known. */
@@ -74,9 +74,8 @@ export type ParentContextMetadata = {
 };
 
 export type HerdrLaunchOptions = {
-	paneName: string;
 	cwd: string;
-	/** Herdr pane ID of the parent; the side pane splits from it. Falls back to the focused pane. */
+	/** Exact parent pane ID for herdr-app splits. */
 	parentPaneId?: string;
 	payloadPath: string;
 	/** Child session storage; keeps side threads persisted but out of the parent's /resume list. */
@@ -220,47 +219,6 @@ export function buildNativeBridgeMessage(instructions: string, draftHint?: strin
 	};
 }
 
-/**
- * Step 1 of the launch: split a new pane off the parent (or focused) pane.
- * Herdr >= 0.7 removed pane creation from `agent start`, so /btw first
- * creates the pane (`pane split`) and then adopts pi into it (`agent start`).
- */
-export function buildPaneSplitArgs(options: HerdrLaunchOptions): string[] {
-	return [
-		"pane",
-		"split",
-		...(options.parentPaneId ? ["--pane", options.parentPaneId] : ["--current"]),
-		"--direction",
-		options.split,
-		"--cwd",
-		options.cwd,
-		"--env",
-		`PI_HERDR_BTW_PAYLOAD=${options.payloadPath}`,
-		"--focus",
-	];
-}
-
-/** Extract the new pane ID from `herdr pane split` JSON output. */
-export function parsePaneSplitPaneId(stdout: string): string | null {
-	try {
-		const parsed = JSON.parse(stdout) as {
-			result?: { pane?: { pane_id?: unknown } };
-		};
-		const paneId = parsed?.result?.pane?.pane_id;
-		return typeof paneId === "string" && paneId.length > 0 ? paneId : null;
-	} catch {
-		return null;
-	}
-}
-
-/**
- * Step 2 of the launch: start pi in the freshly split pane. Herdr prepends
- * the canonical executable for `--kind pi`, so only pi's own args follow `--`.
- */
-export function buildAgentStartArgs(options: HerdrLaunchOptions, paneId: string): string[] {
-	return ["agent", "start", options.paneName, "--kind", "pi", "--pane", paneId, "--", ...buildPiArgs(options)];
-}
-
 /** Child pi CLI arguments shared by every pane host. */
 export function buildPiArgs(options: HerdrLaunchOptions): string[] {
 	const inheritTools = options.availableTools ?? options.activeTools;
@@ -336,12 +294,12 @@ export function classifyLaunchResult(result: LaunchResult): LaunchOutcome {
 }
 
 /**
- * Herdr CLI failures print the whole JSON response on stderr
+ * Host CLI failures can print the whole JSON response on stderr
  * (`{"id":...,"error":{"code":...,"message":...}}`, exit 1); extract the
  * human message when present, otherwise fall back to the raw text.
  */
 export function safeErrorText(stdout: string, stderr: string): string {
-	const raw = stderr.trim() || stdout.trim() || "Herdr failed to create the side pane";
+	const raw = stderr.trim() || stdout.trim() || "Host failed to create the side pane";
 	try {
 		const parsed = JSON.parse(raw) as { error?: { message?: unknown } };
 		const message = parsed?.error?.message;

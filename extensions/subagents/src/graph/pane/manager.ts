@@ -43,10 +43,10 @@ const LIVENESS_TICK_MS = 1_000;
 export interface GraphRunPaneManagerOptions {
   enabled: boolean;
   exec: PaneExec;
-  /** Which CLI manages the panes; defaults to Herdr. */
-  host?: PaneHost;
+  /** Which host manages the panes. */
+  host: PaneHost;
   parentPaneId: string;
-  /** State-dir scope: the Herdr socket path, or the parent terminal handle under Orca. */
+  /** State-dir scope: the app home/session, or the parent terminal handle under Orca. */
   socket: string;
   cwd: string;
   sessionId: string;
@@ -168,7 +168,7 @@ export class GraphRunPaneManager {
 
   /**
    * Reopen the pane for the active run, overriding a manual close. Returns false
-   * when there is no Herdr or Orca pane to open, so the caller can explain why.
+   * when there is no herdr-app or Orca pane to open, so the caller can explain why.
    */
   async forceOpen(runId?: string): Promise<boolean> {
     if (!this.enabled || this.disposed) return false;

@@ -2,66 +2,20 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
-import { getHerdrContext, parseHerdrSummary, renameHerdrPane, restorePane } from "../herdr.js";
+import { getPaneContext, parseHerdrSummary } from "../herdr.js";
 import sessionSummaryExtension from "../index.js";
 
-const context = { paneId: "w1:current" };
-// Herdr omits `label` for unlabeled panes.
-const pane = { pane_id: context.paneId, tab_id: "w1:t1" };
 const summary = "Investigate railway deployment failure and identify the next debugging step";
-
-function cli(label?: string) {
-	return vi.fn<ExtensionAPI["exec"]>(async () => ({
-		code: 0, stderr: "", killed: false,
-		stdout: JSON.stringify({ result: { pane: label === undefined ? pane : { ...pane, label } } }),
-	}));
-}
-
 beforeEach(() => {
-	vi.stubEnv("HC_TERMINAL_ID", "");
+	vi.stubEnv("HC_TERMINAL_ID", "t-current");
 	vi.stubEnv("PI_CODING_AGENT_DIR", "/nonexistent-smart-sessions-test");
 	vi.stubEnv("HERDR_ENV", "1");
-	vi.stubEnv("HERDR_PANE_ID", context.paneId);
+	vi.stubEnv("HERDR_PANE_ID", "stale-native");
 	vi.stubEnv("ORCA_TERMINAL_HANDLE", "");
 });
 afterEach(() => vi.unstubAllEnvs());
 
-describe("Herdr title ownership", () => {
-	it.each([undefined, "[w] old title", "[w]"])("renames eligible current label %s", async (label) => {
-		const exec = cli(label);
-		await renameHerdrPane({ exec }, context, "railway issue");
-		expect(exec.mock.calls.map((call) => call[1])).toEqual([
-			["pane", "get", context.paneId],
-			["pane", "rename", context.paneId, "[w] railway issue"],
-		]);
-	});
-
-	it.each(["[o] owned", "my project", "railway issue", "2", "[W] custom", ""])("preserves manual current label %j", async (label) => {
-		const exec = cli(label);
-		await renameHerdrPane({ exec }, context, "railway issue");
-		expect(exec).toHaveBeenCalledTimes(1);
-	});
-
-	it.each([
-		{ code: 1, stdout: "" },
-		{ code: 0, stdout: "not json" },
-		{ code: 0, stdout: "{}" },
-		{ code: 0, stdout: JSON.stringify({ result: { pane: { ...pane, pane_id: "w1:focused" } } }) },
-	])("does not mutate for an unusable or mismatched current-pane read: %j", async ({ code, stdout }) => {
-		const exec = cli();
-		exec.mockResolvedValueOnce({ code, stdout, stderr: "", killed: false });
-		await renameHerdrPane({ exec }, context, "railway issue");
-		expect(exec).toHaveBeenCalledTimes(1);
-	});
-
-	it("skips an empty title without reading Herdr", async () => {
-		const exec = cli();
-		await renameHerdrPane({ exec }, context, "");
-		expect(exec).not.toHaveBeenCalled();
-	});
-});
-
-describe("separate Herdr title output", () => {
+describe("separate host title output", () => {
 	it.each([
 		["railway issue", "railway issue"],
 		["user-managed-wayfinder", "user managed wayfinder"],
@@ -70,19 +24,29 @@ describe("separate Herdr title output", () => {
 	])("bounds whitespace and hyphen separated words in %s", (title, expected) => {
 		expect(parseHerdrSummary(JSON.stringify({ summary, title }))).toEqual({ summary, title: expected });
 	});
-
 	it.each(["not json", "{}", '{"summary": 1, "title": "issue"}'])("rejects malformed model output %s", (text) => {
 		expect(parseHerdrSummary(text)).toBeUndefined();
 	});
 });
 
-// Lifecycle surface driver: every CLI execution is replaced; never reaches live Herdr.
-async function surface(insideHerdr: boolean, exec = cli()) {
-	if (!insideHerdr) vi.stubEnv("HERDR_ENV", "");
+// Stateful app fake: tab.rename changes the name returned by ls.
+function app() {
+	let name = "Pi";
+	const exec = vi.fn<ExtensionAPI["exec"]>(async (_cmd, args) => {
+		if (args[0] === "do") name = args[5];
+		return { code: 0, stderr: "", killed: false, stdout: JSON.stringify({ spaces: [{ tabs: [
+			{ id: "tab-current", name, terminals: [{ terminal: "t-current", pane: "p-current", app: "pi" }] },
+		] }] }) };
+	});
+	return { exec, setName: (next: string) => { name = next; } };
+}
+
+async function surface(exec = app().exec) {
+	const insideHost = getPaneContext() !== undefined;
 	const mock = createMockPi();
 	const setSessionName = vi.fn();
 	const streamSimple = vi.fn(() => ({ result: async () => ({
-		stopReason: "stop", content: [{ type: "text", text: insideHerdr
+		stopReason: "stop", content: [{ type: "text", text: insideHost
 			? JSON.stringify({ summary, title: "railway issue" }) : summary }],
 	}) }));
 	const base = createMockContext();
@@ -96,80 +60,54 @@ async function surface(insideHerdr: boolean, exec = cli()) {
 	expect(streamSimple).not.toHaveBeenCalled();
 	expect(exec).not.toHaveBeenCalled();
 	await mock.fireLifecycle("agent_end", {}, ctx);
-	// Drain the fire-and-forget summary and mocked CLI microtasks without clock sleeps.
 	for (let i = 0; i < 20; i++) await Promise.resolve();
 	return { mock, ctx, exec, streamSimple, setSessionName };
 }
 
 describe("mocked lifecycle surface", () => {
-	it("updates Herdr and Pi separately in one existing call, retaining debounce", async () => {
-		const { mock, ctx, exec, streamSimple, setSessionName } = await surface(true);
+	it("updates app and Pi separately in one existing call, retaining debounce", async () => {
+		const { mock, ctx, exec, streamSimple, setSessionName } = await surface();
 		expect(setSessionName).toHaveBeenCalledWith(summary);
-		expect(exec).toHaveBeenLastCalledWith("herdr", ["pane", "rename", context.paneId, "[w] railway issue"], expect.any(Object));
+		expect(exec).toHaveBeenLastCalledWith("herdr-app", ["do", "tab.rename", "--id", "tab-current", "--name", "[w] railway issue"], expect.any(Object));
 		await mock.fireLifecycle("agent_end", {}, ctx);
 		expect(streamSimple).toHaveBeenCalledTimes(1);
 	});
-
-	it("preserves the plain summary path and never executes Herdr outside its context", async () => {
-		const { exec, streamSimple, setSessionName } = await surface(false);
+	it("uses plain summaries when only stale native environment variables remain", async () => {
+		vi.stubEnv("HC_TERMINAL_ID", "");
+		expect(getPaneContext()).toBeUndefined();
+		const { exec, streamSimple, setSessionName } = await surface();
 		expect(setSessionName).toHaveBeenCalledWith(summary);
 		expect(streamSimple).toHaveBeenCalledTimes(1);
 		expect(exec).not.toHaveBeenCalled();
-		expect(getHerdrContext()).toBeUndefined();
-	});
-
-	it("requires an explicit current-pane identifier", () => {
-		vi.stubEnv("HERDR_PANE_ID", "");
-		expect(getHerdrContext()).toBeUndefined();
 	});
 });
 
-// Stateful fake Herdr: `rename` sets the label, `rename --clear` removes it.
-function liveHerdr() {
-	let label: string | undefined;
-	const exec = vi.fn<ExtensionAPI["exec"]>(async (_cmd, args) => {
-		if (args[1] === "rename") label = args[2] === "--clear" ? undefined : args[3];
-		return { code: 0, stderr: "", killed: false, stdout: JSON.stringify({ result: { pane: label === undefined ? pane : { ...pane, label } } }) };
-	});
-	return { exec, setLabel: (next: string) => { label = next; } };
-}
-const cleared = ["pane", "rename", "--clear", context.paneId];
-
-describe("title restore on shutdown", () => {
-	it.each(["quit", "new", "resume", "fork"])("clears its own title on %s", async (reason) => {
-		const { exec } = liveHerdr();
-		const { mock } = await surface(true, exec);
+describe("app title restore on shutdown", () => {
+	it.each(["quit", "new", "resume", "fork"])("restores its own title on %s", async (reason) => {
+		const { exec } = app();
+		const { mock } = await surface(exec);
 		await mock.fireLifecycle("session_shutdown", { reason });
-		expect(exec).toHaveBeenLastCalledWith("herdr", cleared, expect.any(Object));
+		expect(exec).toHaveBeenLastCalledWith("herdr-app", ["do", "tab.rename", "--id", "tab-current", "--name", "Pi"], expect.any(Object));
 	});
-
 	it("keeps the title across reload", async () => {
-		const { exec } = liveHerdr();
-		const { mock } = await surface(true, exec);
+		const { exec } = app();
+		const { mock } = await surface(exec);
 		const calls = exec.mock.calls.length;
 		await mock.fireLifecycle("session_shutdown", { reason: "reload" });
 		expect(exec).toHaveBeenCalledTimes(calls);
 	});
-
-	it("preserves a label the user set after the takeover", async () => {
-		const { exec, setLabel } = liveHerdr();
-		const { mock } = await surface(true, exec);
-		setLabel("my project");
+	it("preserves a name the user set after the takeover", async () => {
+		const { exec, setName } = app();
+		const { mock } = await surface(exec);
+		setName("my project");
 		await mock.fireLifecycle("session_shutdown", { reason: "quit" });
-		expect(exec.mock.calls.map((call) => call[1])).not.toContainEqual(cleared);
+		expect(exec).toHaveBeenLastCalledWith("herdr-app", ["ls"], expect.any(Object));
 	});
-
-	it("never touches the pane when it never renamed", async () => {
-		const { exec } = liveHerdr();
+	it("never touches the host when it never renamed", async () => {
+		const { exec } = app();
 		const mock = createMockPi();
 		Reflect.apply(sessionSummaryExtension, undefined, [{ ...mock.pi, exec }]);
 		await mock.fireLifecycle("session_shutdown", { reason: "quit" });
 		expect(exec).not.toHaveBeenCalled();
-	});
-
-	it("restorePane clears only the matching label", async () => {
-		const { exec } = liveHerdr();
-		await restorePane({ exec }, { host: "herdr", paneId: context.paneId, written: "[w] gone" });
-		expect(exec.mock.calls.map((call) => call[1])).toEqual([["pane", "get", context.paneId]]);
 	});
 });

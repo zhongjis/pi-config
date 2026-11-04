@@ -1,13 +1,13 @@
 ## Purpose
 
-Vendored `/btw` extension: open a tool-enabled Pi side thread in a focused Herdr, herdr-app or Orca pane
+Vendored `/btw` extension: open a tool-enabled Pi side thread in a focused herdr-app or Orca pane
 without changing the parent transcript, with an optional merge back into the parent.
 
 ## Ownership
 
 - Owns the `/btw` command grammar, parent/child launch coordination, context snapshot
   payloads, config store, and the merge mailbox protocol.
-- External host CLIs own pane/agent lifecycle; this extension only invokes them. Host selection uses [`detectPaneHost`](../lib/pane-host.ts); the payload `parentPaneId` holds the native/app pane ID or Orca terminal handle. herdr-app launches and child closes MUST resolve exact HC terminal associations, never inherited native IDs or focused context. Unknown app launch outcomes retain payloads without blind retries.
+- External host CLIs own pane/agent lifecycle; this extension only invokes them. Host selection uses [`detectPaneHost`](../lib/pane-host.ts); the payload `parentPaneId` holds the app pane ID or Orca terminal handle. herdr-app launches and child closes MUST resolve exact HC terminal associations, never focused context. Unknown app launch outcomes retain payloads without blind retries.
 
 ## Local Contracts
 

@@ -1,197 +1,71 @@
-// graph-run-pane-controller.test.ts (S2 + S4) — the Herdr pane lifecycle. Every
-// `herdr` call goes through an injected exec, so these assert the EXACT argv the
-// controller shells out with, and the own-only-what-you-create rules: never
-// close a pane the user renamed/repurposed, and never reopen after a manual
-// close unless forced.
+// Shared lifecycle mechanics exercised through the Orca backend.
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { GraphRunPaneController, isPaneHostEnabled } from "../src/graph/pane/controller.js";
+import { GraphRunPaneController, isPaneHostEnabled, type PaneExec } from "../src/graph/pane/controller.js";
 import { readRecord, writeRecord } from "../src/graph/pane/store.js";
 
 let dir: string;
-
-beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "wfpane-ctrl-"));
-});
-afterEach(() => {
-  rmSync(dir, { recursive: true, force: true });
-});
-
-const SENTINEL = "Graph run · sess1234";
-
-function controller(exec: ReturnType<typeof vi.fn>) {
+beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "wfpane-ctrl-")); });
+afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+const sentinel = "Graph run · sess1234";
+const ok = (stdout = "") => ({ code: 0, stdout, stderr: "" });
+function controller(exec: PaneExec) {
   return new GraphRunPaneController({
-    exec: exec as any,
-    dir,
-    parentPaneId: "%p0",
-    cwd: "/work/dir",
-    sessionId: "sess1234",
-    viewerPath: "/viewer/viewer.mjs",
-    ppid: 4242,
-    sentinel: SENTINEL,
+    exec, host: "orca", dir, parentPaneId: "term_parent", cwd: "/work/dir",
+    sessionId: "sess1234", viewerPath: "/viewer/viewer.mjs", ppid: 4242, sentinel,
   });
 }
 
-const ok = (stdout = "") => ({ code: 0, stdout, stderr: "", killed: false });
-const fail = (stderr = "") => ({ code: 1, stdout: "", stderr, killed: false });
-const splitOut = (paneId: string) => JSON.stringify({ result: { pane: { pane_id: paneId } } });
-const getOut = (paneId: string, label: string) =>
-  JSON.stringify({ result: { pane: { pane_id: paneId, title: label } } });
-
 describe("isPaneHostEnabled", () => {
-  it("is true only inside a Herdr- or Orca-managed TUI pane", () => {
-    const base = { HERDR_ENV: "1", HERDR_PANE_ID: "%p0" } as NodeJS.ProcessEnv;
-    expect(isPaneHostEnabled(base, "tui")).toBe(true);
-    expect(isPaneHostEnabled(base, "rpc")).toBe(false);
-    expect(isPaneHostEnabled(base, "print")).toBe(false);
-    expect(isPaneHostEnabled({ HERDR_PANE_ID: "%p0" } as NodeJS.ProcessEnv, "tui")).toBe(false);
-    expect(isPaneHostEnabled({ HERDR_ENV: "1" } as NodeJS.ProcessEnv, "tui")).toBe(false);
-    expect(isPaneHostEnabled({ HERDR_ENV: "0", HERDR_PANE_ID: "%p0" } as NodeJS.ProcessEnv, "tui")).toBe(false);
+  it("accepts supported hosts only in TUI mode", () => {
+    for (const env of [{ HC_TERMINAL_ID: "t1" }, { ORCA_TERMINAL_HANDLE: "term_1" }]) {
+      expect(isPaneHostEnabled(env, "tui")).toBe(true);
+      expect(isPaneHostEnabled(env, "rpc")).toBe(false);
+      expect(isPaneHostEnabled(env, "print")).toBe(false);
+    }
+    expect(isPaneHostEnabled({ HERDR_ENV: "1", HERDR_PANE_ID: "%p0" }, "tui")).toBe(false);
   });
 });
 
-describe("ensurePane — fresh split", () => {
-  it("splits with the exact argv, renames, runs the viewer, and records the pane", async () => {
-    const exec = vi.fn(async (_cmd: string, args: string[]) => {
-      if (args[0] === "pane" && args[1] === "split") return ok(splitOut("%p9"));
-      return ok();
-    });
-    await controller(exec).ensurePane(false);
-
-    expect(exec).toHaveBeenCalledWith(
-      "herdr",
-      [
-        "pane",
-        "split",
-        "--pane",
-        "%p0",
-        "--direction",
-        "right",
-        "--ratio",
-        "0.65",
-        "--cwd",
-        "/work/dir",
-        "--env",
-        `PI_GRAPH_RUN_PANE_DIR=${dir}`,
-        "--no-focus",
-      ],
-      expect.anything(),
-    );
-    expect(exec).toHaveBeenCalledWith("herdr", ["pane", "rename", "%p9", SENTINEL], expect.anything());
-    expect(exec).toHaveBeenCalledWith(
-      "herdr",
-      ["pane", "run", "%p9", "node", "/viewer/viewer.mjs", "--dir", dir, "--ppid", "4242", "--pane", "%p9"],
-      expect.anything(),
-    );
-    expect(readRecord(dir)).toEqual({ paneId: "%p9", sentinel: SENTINEL, closedByUser: false });
-  });
-});
-
-describe("ensurePane — adopt / gone / repurposed", () => {
-  it("adopts a live pane that is still ours without splitting again", async () => {
-    writeRecord(dir, { paneId: "%p9", sentinel: SENTINEL, closedByUser: false });
-    const exec = vi.fn(async (_cmd: string, args: string[]) => {
-      if (args[0] === "pane" && args[1] === "get") return ok(getOut("%p9", SENTINEL));
-      return ok();
-    });
-    await controller(exec).ensurePane(false);
-    expect(exec).toHaveBeenCalledWith("herdr", ["pane", "get", "%p9"], expect.anything());
-    expect(exec).not.toHaveBeenCalledWith("herdr", expect.arrayContaining(["split"]), expect.anything());
-    expect(readRecord(dir)?.paneId).toBe("%p9");
+describe("shared pane lifecycle", () => {
+  it("coalesces concurrent ensures into a single split", async () => {
+    const exec = vi.fn<PaneExec>(async (_command, args) =>
+      ok(args[1] === "split" ? JSON.stringify({ result: { split: { handle: "term_new" } } }) : ""));
+    const pane = controller(exec);
+    await Promise.all([pane.ensurePane(false), pane.ensurePane(false), pane.ensurePane(false)]);
+    expect(exec.mock.calls.filter(([, args]) => args[1] === "split")).toHaveLength(1);
   });
 
-  it("never closes a pane the user renamed/repurposed, and splits a fresh one", async () => {
-    writeRecord(dir, { paneId: "%p9", sentinel: SENTINEL, closedByUser: false });
-    const exec = vi.fn(async (_cmd: string, args: string[]) => {
-      if (args[0] === "pane" && args[1] === "get") return ok(getOut("%p9", "my editor"));
-      if (args[0] === "pane" && args[1] === "split") return ok(splitOut("%pNEW"));
-      return ok();
-    });
-    await controller(exec).ensurePane(false);
-    expect(exec).not.toHaveBeenCalledWith("herdr", ["pane", "close", "%p9"], expect.anything());
-    expect(exec).toHaveBeenCalledWith("herdr", expect.arrayContaining(["pane", "split"]), expect.anything());
-    expect(readRecord(dir)?.paneId).toBe("%pNEW");
-  });
-
-  it("does not close a pane that `get` reports as gone; it splits a fresh one", async () => {
-    writeRecord(dir, { paneId: "%p9", sentinel: SENTINEL, closedByUser: false });
-    const exec = vi.fn(async (_cmd: string, args: string[]) => {
-      if (args[0] === "pane" && args[1] === "get") return fail("no such pane");
-      if (args[0] === "pane" && args[1] === "split") return ok(splitOut("%pNEW"));
-      return ok();
-    });
-    await controller(exec).ensurePane(false);
-    expect(exec).not.toHaveBeenCalledWith("herdr", ["pane", "close", "%p9"], expect.anything());
-    expect(readRecord(dir)?.paneId).toBe("%pNEW");
-  });
-});
-
-describe("closedByUser", () => {
-  it("blocks ensurePane(false) with zero shell-outs", async () => {
-    writeRecord(dir, { paneId: "%pX", sentinel: SENTINEL, closedByUser: true });
-    const exec = vi.fn(async () => ok());
-    await controller(exec).ensurePane(false);
-    expect(exec).not.toHaveBeenCalled();
-    expect(readRecord(dir)?.closedByUser).toBe(true);
-  });
-
-  it("is overridden by ensurePane(true), which reopens and clears the flag", async () => {
-    writeRecord(dir, { paneId: "%pX", sentinel: SENTINEL, closedByUser: true });
-    const exec = vi.fn(async (_cmd: string, args: string[]) => {
-      if (args[0] === "pane" && args[1] === "get") return fail("gone");
-      if (args[0] === "pane" && args[1] === "split") return ok(splitOut("%pNEW"));
-      return ok();
-    });
+  it("force reopens a manually closed pane and clears the close flag", async () => {
+    writeRecord(dir, { paneId: "term_old", sentinel, closedByUser: true });
+    const exec = vi.fn<PaneExec>(async (_command, args) =>
+      ok(args[1] === "split" ? JSON.stringify({ result: { split: { handle: "term_new" } } }) : ""));
     await controller(exec).ensurePane(true);
-    expect(exec).toHaveBeenCalled();
-    expect(readRecord(dir)).toEqual({ paneId: "%pNEW", sentinel: SENTINEL, closedByUser: false });
+    expect(readRecord(dir)).toEqual({ paneId: "term_new", sentinel, closedByUser: false });
   });
-});
 
-describe("closeOwned", () => {
-  it("closes only the recorded pane id, best-effort", async () => {
-    writeRecord(dir, { paneId: "%p9", sentinel: SENTINEL, closedByUser: false });
-    const exec = vi.fn(async () => ok());
-    await controller(exec).closeOwned();
-    expect(exec).toHaveBeenCalledWith("herdr", ["pane", "close", "%p9"], expect.anything());
+  it("keeps a live pane while clearing a stale manual-close flag on force", async () => {
+    writeRecord(dir, { paneId: "term_live", sentinel, closedByUser: true });
+    const exec = vi.fn<PaneExec>(async () => ok(JSON.stringify({ result: { terminal: { paneTitle: sentinel } } })));
+    await controller(exec).ensurePane(true);
+    expect(readRecord(dir)).toEqual({ paneId: "term_live", sentinel, closedByUser: false });
     expect(exec).toHaveBeenCalledTimes(1);
   });
 
-  it("is a no-op when there is no recorded pane", async () => {
-    const exec = vi.fn(async () => ok());
+  it("does not invoke a host when closing without a record", async () => {
+    const exec = vi.fn<PaneExec>(async () => ok());
     await controller(exec).closeOwned();
     expect(exec).not.toHaveBeenCalled();
   });
-});
 
-describe("closeForUser", () => {
-  it("closes the recorded pane but KEEPS the record with closedByUser set", async () => {
-    writeRecord(dir, { paneId: "%p9", sentinel: SENTINEL, closedByUser: false });
-    const exec = vi.fn(async () => ok());
-    await controller(exec).closeForUser();
-    expect(exec).toHaveBeenCalledWith("herdr", ["pane", "close", "%p9"], expect.anything());
-    // Unlike closeOwned, the record is preserved (paneId intact) with the user-close flag.
-    expect(readRecord(dir)).toEqual({ paneId: "%p9", sentinel: SENTINEL, closedByUser: true });
-  });
-});
-
-describe("reconcile", () => {
-  it("adopts an alive pane and clears a dead record", async () => {
-    // Alive + ours: keep it.
-    writeRecord(dir, { paneId: "%p9", sentinel: SENTINEL, closedByUser: false });
-    let exec = vi.fn(async (_cmd: string, args: string[]) =>
-      args[1] === "get" ? ok(getOut("%p9", SENTINEL)) : ok(),
-    );
-    await controller(exec).reconcile();
-    expect(readRecord(dir)?.paneId).toBe("%p9");
-    expect(exec).not.toHaveBeenCalledWith("herdr", expect.arrayContaining(["close"]), expect.anything());
-
-    // Dead: forget it, without closing anything.
-    exec = vi.fn(async (_cmd: string, args: string[]) => (args[1] === "get" ? fail("gone") : ok()));
-    await controller(exec).reconcile();
-    expect(readRecord(dir)).toBeUndefined();
-    expect(exec).not.toHaveBeenCalledWith("herdr", expect.arrayContaining(["close"]), expect.anything());
+  it("remembers a user close even without a pane record", async () => {
+    const exec = vi.fn<PaneExec>(async () => ok());
+    const pane = controller(exec);
+    await pane.closeForUser();
+    await pane.ensurePane(false);
+    expect(exec).not.toHaveBeenCalled();
+    expect(readRecord(dir)?.closedByUser).toBe(true);
   });
 });

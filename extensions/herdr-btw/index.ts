@@ -20,7 +20,6 @@ import { detectPaneHost } from "../lib/pane-host.js";
 import { registerTuiCommand } from "../lib/mode.js";
 import { ContextStore } from "./src/context-store.ts";
 import {
-	buildAgentStartArgs,
 	buildContextDocument,
 	buildNativeBridgeMessage,
 	buildParentContextMessage,
@@ -29,10 +28,8 @@ import {
 	LAUNCH_DRAFT_ARG,
 	LAUNCH_DRAFT_COMMAND,
 	buildOrcaSplitArgs,
-	buildPaneSplitArgs,
 	parseOrcaRetrySplitLeaf,
 	parseOrcaSplitHandle,
-	parsePaneSplitPaneId,
 	safeErrorText,
 	type BtwPayload,
 	type HerdrLaunchOptions,
@@ -123,17 +120,11 @@ async function closeOwnPane(pi: Pick<ExtensionAPI, "exec">, parentPaneId: string
 		if (parentPaneId) await pi.exec("herdr-app", ["do", "pane.focus", "--pane", parentPaneId], options).catch(() => undefined);
 		return pi.exec("herdr-app", ["do", "pane.close", "--pane", own.paneId], options).then(result => result.code === 0).catch(() => false);
 	}
-	const herdrPaneId = host === "herdr" ? process.env.HERDR_PANE_ID : undefined;
 	const orcaHandle = host === "orca" ? process.env.ORCA_TERMINAL_HANDLE : undefined;
-	const [command, focusArgs, closeArgs] = herdrPaneId
-		? ["herdr", ["agent", "focus"], ["pane", "close", herdrPaneId]]
-		: orcaHandle
-			? ["orca", ["terminal", "switch", "--terminal"], ["terminal", "close", "--terminal", orcaHandle]]
-			: [];
-	if (!command || !focusArgs || !closeArgs) return false;
-	if (parentPaneId) await pi.exec(command, [...focusArgs, parentPaneId], options).catch(() => undefined);
+	if (!orcaHandle) return false;
+	if (parentPaneId) await pi.exec("orca", ["terminal", "switch", "--terminal", parentPaneId], options).catch(() => undefined);
 	return pi
-		.exec(command, closeArgs, options)
+		.exec("orca", ["terminal", "close", "--terminal", orcaHandle], options)
 		.then((result) => result.code === 0)
 		.catch(() => false);
 }
@@ -306,7 +297,7 @@ async function configureChild(
 			// A successful close tears this process down with the pane.
 			if (await closeOwnPane(pi, payload.parentPaneId)) return;
 
-			// Fallback (not in a Herdr or Orca pane, or the close failed): stay open and
+			// Fallback (not in a herdr-app or Orca pane, or the close failed): stay open and
 			// watch for the acknowledgement instead.
 			ctx.ui.notify("Merge pending: waiting for the parent session to accept it.", "info");
 
@@ -544,9 +535,9 @@ export async function registerBtwExtension(
 			const host = detectPaneHost();
 			const parentPaneId = host === "herdr-app"
 				? (await resolveHerdrAppTerminal(pi.exec.bind(pi), process.env.HC_TERMINAL_ID ?? ""))?.paneId
-				: host === "orca" ? process.env.ORCA_TERMINAL_HANDLE : process.env.HERDR_PANE_ID;
+				: host === "orca" ? process.env.ORCA_TERMINAL_HANDLE : undefined;
 			if (!host || !parentPaneId) {
-				ctx.ui.notify("/btw must be run inside a Herdr, herdr-app or Orca pane", "error");
+				ctx.ui.notify("/btw must be run inside a herdr-app or Orca pane", "error");
 				return;
 			}
 			if (!ctx.model) {
@@ -603,7 +594,6 @@ export async function registerBtwExtension(
 				);
 
 				const launchOptions: HerdrLaunchOptions = {
-					paneName: `btw-${sessionId.slice(0, 6)}-${Date.now().toString(36).slice(-4)}`,
 					cwd: ctx.cwd,
 					parentPaneId,
 					payloadPath,
@@ -636,63 +626,6 @@ export async function registerBtwExtension(
 					await launchOrcaPane(pi, store, ctx.ui, launchOptions, parentPaneId, payloadPath, ensurePolling);
 					return;
 				}
-
-				// Step 1: create the side pane (carries cwd + payload env var).
-				const splitResult = await pi.exec("herdr", buildPaneSplitArgs(launchOptions), {
-					timeout: 10_000,
-				});
-				const splitOutcome = classifyLaunchResult(splitResult);
-				if (splitOutcome === "failed") {
-					await store.remove(payloadPath);
-					ctx.ui.notify(
-						`/btw failed: ${safeErrorText(splitResult.stdout, splitResult.stderr)}`,
-						"error",
-					);
-					return;
-				}
-				if (splitOutcome === "ambiguous") {
-					ensurePolling();
-					ctx.ui.notify(
-						"/btw launch timed out or was killed after it may have reached Herdr. Context cleanup is deferred in case the child pane is still starting.",
-						"warning",
-					);
-					return;
-				}
-
-				const paneId = parsePaneSplitPaneId(splitResult.stdout);
-				if (!paneId) {
-					await store.remove(payloadPath);
-					ctx.ui.notify(
-						"/btw failed: could not determine the new pane ID from `herdr pane split` output",
-						"error",
-					);
-					return;
-				}
-
-				// Step 2: adopt pi into the new pane; herdr waits for readiness.
-				const result = await pi.exec("herdr", buildAgentStartArgs(launchOptions, paneId), {
-					timeout: 45_000,
-				});
-				const outcome = classifyLaunchResult(result);
-				if (outcome === "success") {
-					ensurePolling();
-					return;
-				}
-
-				if (outcome === "failed") {
-					await pi
-						.exec("herdr", ["pane", "close", paneId], { timeout: 5_000 })
-						.catch(() => undefined);
-					await store.remove(payloadPath);
-					ctx.ui.notify(`/btw failed: ${safeErrorText(result.stdout, result.stderr)}`, "error");
-					return;
-				}
-
-				ensurePolling();
-				ctx.ui.notify(
-					"/btw launch timed out or was killed after it may have reached Herdr. Context cleanup is deferred in case the child pane is still starting.",
-					"warning",
-				);
 			} catch (error) {
 				if (payloadPath) await store.remove(payloadPath).catch(() => undefined);
 				const message = error instanceof Error ? error.message : String(error);

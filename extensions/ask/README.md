@@ -25,4 +25,4 @@ Use the `ask` tool when a decision depends on a user preference. [Registration a
 
 ## Integration
 
-The [execution lifecycle](index.ts) signals user prompting and balances the blocking notification and terminal status when the dialog closes. It runs sequentially so another tool dialog cannot displace it. The shared [event conventions](../CONVENTIONS.md) own integration contracts; the local terminal-status shim is documented beside its implementation.
+The [execution lifecycle](index.ts) signals user prompting and restores terminal status when the dialog closes. It runs sequentially so another tool dialog cannot displace it. The shared [event conventions](../CONVENTIONS.md) own integration contracts; the local terminal-status shim is documented beside its implementation.

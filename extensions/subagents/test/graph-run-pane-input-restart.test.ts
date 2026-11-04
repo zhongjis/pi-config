@@ -41,6 +41,7 @@ function manager() {
   ];
   const mgr = createGraphRunPaneManager({
     enabled: true,
+    host: "orca",
     exec: vi.fn(async () => ({ code: 0, stdout: "", stderr: "", killed: false })),
     parentPaneId: "%p0", socket: "sock", cwd: "/work", sessionId: "sess1234", ppid: 4242,
     getTasks: () => [task], viewerPath: "/viewer/viewer.mjs", dir,

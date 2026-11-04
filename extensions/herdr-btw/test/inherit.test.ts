@@ -6,7 +6,7 @@ import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 import { decideCacheMode, registerBtwExtension } from "../index.ts";
 import { DEFAULT_CONFIG } from "../src/config.ts";
 import { ContextStore } from "../src/context-store.ts";
-import { buildAgentStartArgs, createPayload, isBtwPayload, type BtwPayload, type HerdrLaunchOptions } from "../src/core.ts";
+import { buildPiArgs, createPayload, isBtwPayload, type BtwPayload, type HerdrLaunchOptions } from "../src/core.ts";
 
 const available = ["read", "web_enable", "web_search", "web_fetch"];
 const selected = ["web_enable", "read"];
@@ -19,7 +19,7 @@ const payloadOptions = {
 	config: { ...DEFAULT_CONFIG },
 };
 const launch: HerdrLaunchOptions = {
-	paneName: "btw", cwd: "/tmp", payloadPath: "/tmp/payload", model: "test/model",
+	cwd: "/tmp", payloadPath: "/tmp/payload", model: "test/model",
 	sessionDir: "/Users/someone/.pi/agent/btw-sessions/019e0000-0000-7000-8000-000000000000",
 	thinkingLevel: "standard", toolMode: "inherit", activeTools: selected, split: "right",
 };
@@ -82,28 +82,28 @@ describe("inherit availability", () => {
 	});
 
 	it("uses registered availability for CLI and falls back only when absent", () => {
-		const args = buildAgentStartArgs({ ...launch, availableTools: available }, "child");
+		const args = buildPiArgs({ ...launch, availableTools: available });
 		expect(args[args.indexOf("--tools") + 1]).toBe(available.join(","));
-		const withoutAvailability = buildAgentStartArgs(launch, "child");
+		const withoutAvailability = buildPiArgs(launch);
 		expect(withoutAvailability[withoutAvailability.indexOf("--tools") + 1]).toBe(selected.join(","));
-		expect(buildAgentStartArgs({ ...launch, availableTools: [] }, "child")).toContain("--no-tools");
-		expect(buildAgentStartArgs({ ...launch, activeTools: [] }, "child")).toContain("--no-tools");
+		expect(buildPiArgs({ ...launch, availableTools: [] })).toContain("--no-tools");
+		expect(buildPiArgs({ ...launch, activeTools: [] })).toContain("--no-tools");
 	});
 
 	it("persists the child session under the btw session dir", () => {
-		const args = buildAgentStartArgs(launch, "child");
+		const args = buildPiArgs(launch);
 		expect(args[args.indexOf("--session-dir") + 1]).toBe(launch.sessionDir);
 		expect(args).not.toContain("--no-session");
 	});
 
 	it("omits mcp__ names from the inherit CLI allowlist", () => {
-		const args = buildAgentStartArgs({ ...launch, availableTools: ["read", "mcp__srv__a", "web_search", "mcp__srv__b"] }, "child");
+		const args = buildPiArgs({ ...launch, availableTools: ["read", "mcp__srv__a", "web_search", "mcp__srv__b"] });
 		expect(args[args.indexOf("--tools") + 1]).toBe("read,web_search");
 	});
 
 	it("passes MCP-only availability unchanged", () => {
 		const names = ["mcp__srv__a", "mcp__srv__b"];
-		const args = buildAgentStartArgs({ ...launch, availableTools: names }, "child");
+		const args = buildPiArgs({ ...launch, availableTools: names });
 		expect(args[args.indexOf("--tools") + 1]).toBe(names.join(","));
 		expect(args).not.toContain("--no-tools");
 	});
@@ -114,13 +114,13 @@ describe("inherit availability", () => {
 			...Array.from({ length: 40 }, (_, i) => `tool_${i}`),
 			...Array.from({ length: 100 }, (_, i) => `mcp__server__tool_${String(i).padStart(3, "0")}`),
 		];
-		const args = buildAgentStartArgs({ ...launch, availableTools: names }, "child");
-		const typed = "pi " + args.slice(args.indexOf("--") + 1).join(" ");
+		const args = buildPiArgs({ ...launch, availableTools: names });
+		const typed = "pi " + args.join(" ");
 		expect(Buffer.byteLength(typed)).toBeLessThan(MAX_CANON);
 	});
 
 	it.each(["all", "read-only", "none"] as const)("leaves %s CLI behavior unchanged", toolMode => {
-		const args = buildAgentStartArgs({ ...launch, toolMode, availableTools: available }, "child");
+		const args = buildPiArgs({ ...launch, toolMode, availableTools: available });
 		if (toolMode === "all") {
 			expect(args).not.toContain("--tools"); expect(args).not.toContain("--no-tools");
 		} else if (toolMode === "none") expect(args).toContain("--no-tools");
@@ -212,9 +212,9 @@ describe("inherit availability", () => {
 	});
 
 	it("captures parent registry separately and passes it to the launch", async () => {
-		vi.stubEnv("HC_TERMINAL_ID", ""); vi.stubEnv("PI_HERDR_BTW_PAYLOAD", ""); vi.stubEnv("HERDR_ENV", "1"); vi.stubEnv("HERDR_PANE_ID", "parent-pane");
+		vi.stubEnv("HC_TERMINAL_ID", ""); vi.stubEnv("PI_HERDR_BTW_PAYLOAD", ""); vi.stubEnv("ORCA_TERMINAL_HANDLE", "term_parent");
 		const mock = localPi(); mock.api.setActiveTools(selected);
-		const exec = vi.fn().mockResolvedValueOnce({ code: 0, stdout: '{"result":{"pane":{"pane_id":"child"}}}', stderr: "" }).mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+		const exec = vi.fn().mockResolvedValueOnce({ code: 0, stdout: '{"result":{"split":{"handle":"term_child"}}}', stderr: "" }).mockResolvedValue({ code: 0, stdout: "", stderr: "" });
 		Object.assign(mock.pi, { exec });
 		const store = new ContextStore(root);
 		const create = vi.spyOn(store, "create");
@@ -229,8 +229,8 @@ describe("inherit availability", () => {
 		}
 		await Reflect.apply(command.handler, command, ["question", ctx]);
 		expect(create.mock.calls[0][0]).toMatchObject({ parentActiveTools: selected, parentAvailableTools: available });
-		const args: string[] = exec.mock.calls[1][1];
-		expect(args[args.indexOf("--tools") + 1]).toBe(available.join(","));
+		const args: string[] = exec.mock.calls[0][1];
+		expect(args[args.indexOf("--command") + 1]).toContain(`'--tools' '${available.join(",")}'`);
 		await mock.fireLifecycle("session_shutdown");
 	});
 });

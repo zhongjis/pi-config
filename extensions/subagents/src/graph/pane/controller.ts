@@ -1,21 +1,20 @@
 /**
- * controller.ts — the Herdr or Orca pane lifecycle: create it, verify it is still
+ * controller.ts — the herdr-app or Orca pane lifecycle: create it, verify it is still
  * ours, close only what we created.
  *
- * Every host CLI call (`herdr` or `orca`) goes through an injected `exec` (pi.exec at runtime, a stub
+ * Every host CLI call (`herdr-app` or `orca`) goes through an injected `exec` (pi.exec at runtime, a stub
  * in tests) and every path is an argv array — never a shell string — so a cwd or
  * pane id can never be interpolated into a command. The controller owns exactly
  * one pane at a time, identified by a persisted record plus a sentinel label:
  * before touching a pane it re-reads the label, so a pane the user renamed or
- * repurposed is treated as "not ours" and left alone. It never focuses the pane
- * (`--no-focus`), so it can appear beside a run you are watching without
- * stealing the cursor from the main agent.
+ * repurposed is treated as "not ours" and left alone. Focus is restored to the
+ * parent after splitting so the main agent keeps the cursor.
  */
 
 import { isHerdrAppPaneOwned } from "../../../../lib/herdr-app.mjs";
 import { splitHerdrAppPane } from "./herdr-app.js";
 import { detectPaneHost, type PaneHost } from "../../../../lib/pane-host.js";
-import { clearRecord, type PaneRecord, readRecord, writeRecord } from "./store.js";
+import { clearRecord, readRecord, writeRecord } from "./store.js";
 
 /** The slice of `pi.exec` this module needs. */
 export type PaneExec = (
@@ -28,8 +27,8 @@ export interface GraphRunPaneControllerOptions {
   exec: PaneExec;
   /** The per-pane state directory (see `paneDirFor`). */
   dir: string;
-  /** Which CLI manages the panes; defaults to Herdr. */
-  host?: PaneHost;
+  /** Which host manages the panes. */
+  host: PaneHost;
   /** The pane (Orca: terminal handle) pi itself runs in — the new pane splits off it. */
   parentPaneId: string;
   cwd: string;
@@ -40,11 +39,11 @@ export interface GraphRunPaneControllerOptions {
   ppid: number;
   /** The pane label that identifies the pane as ours. Defaults from the session id. */
   sentinel?: string;
-  /** Per-call herdr timeout. */
+  /** Per-call host CLI timeout. */
   timeoutMs?: number;
 }
 
-/** Only inside a Herdr- or Orca-managed TUI pane is there a parent pane to split off. */
+/** Only inside a herdr-app- or Orca-managed TUI pane is there a parent pane to split off. */
 export function isPaneHostEnabled(env: NodeJS.ProcessEnv, mode: string): boolean {
   return detectPaneHost(env) !== undefined && mode === "tui";
 }
@@ -88,35 +87,6 @@ function findOrcaHandleByTitle(stdout: string, sentinel: string): string | undef
   return undefined;
 }
 
-/** Extract the new pane id from `herdr pane split` JSON output. */
-function parsePaneId(stdout: string): string | undefined {
-  try {
-    const parsed = JSON.parse(stdout) as { result?: { pane?: { pane_id?: unknown } } };
-    const paneId = parsed?.result?.pane?.pane_id;
-    return typeof paneId === "string" && paneId.length > 0 ? paneId : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Extract a pane's label from `herdr pane get` JSON output. Herdr's field name
- * for the label is checked across the plausible spellings so a version skew does
- * not silently make every pane read as "not ours".
- */
-function parsePaneLabel(stdout: string): string | undefined {
-  try {
-    const parsed = JSON.parse(stdout) as {
-      result?: { pane?: { label?: unknown; title?: unknown; name?: unknown } };
-    };
-    const pane = parsed?.result?.pane;
-    const label = pane?.label ?? pane?.title ?? pane?.name;
-    return typeof label === "string" ? label : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export class GraphRunPaneController {
   private readonly options: GraphRunPaneControllerOptions;
   private readonly exec: PaneExec;
@@ -134,7 +104,7 @@ export class GraphRunPaneController {
   constructor(options: GraphRunPaneControllerOptions) {
     this.options = options;
     this.exec = options.exec;
-    this.host = options.host ?? "herdr";
+    this.host = options.host;
     this.dir = options.dir;
     this.parentPaneId = options.parentPaneId;
     this.cwd = options.cwd;
@@ -184,13 +154,8 @@ export class GraphRunPaneController {
   /** True only when `paneId` still exists AND still carries our sentinel label. */
   private async isOursAlive(paneId: string): Promise<boolean> {
     if (this.host === "herdr-app") return isHerdrAppPaneOwned(this.exec, paneId, this.sentinel);
-    if (this.host === "orca") {
-      const res = await this.exec("orca", ["terminal", "show", "--terminal", paneId, "--json"], { timeout: this.timeoutMs });
-      return res.code === 0 && parseOrcaPaneTitle(res.stdout) === this.sentinel;
-    }
-    const res = await this.exec("herdr", ["pane", "get", paneId], { timeout: this.timeoutMs });
-    if (res.code !== 0) return false;
-    return parsePaneLabel(res.stdout) === this.sentinel;
+    const res = await this.exec("orca", ["terminal", "show", "--terminal", paneId, "--json"], { timeout: this.timeoutMs });
+    return res.code === 0 && parseOrcaPaneTitle(res.stdout) === this.sentinel;
   }
 
   /**
@@ -207,48 +172,12 @@ export class GraphRunPaneController {
 
   private closeArgs(paneId: string): string[] {
     return this.host === "herdr-app" ? ["do", "pane.close", "--pane", paneId]
-      : this.host === "orca" ? ["terminal", "close", "--terminal", paneId] : ["pane", "close", paneId];
+      : ["terminal", "close", "--terminal", paneId];
   }
 
   private async split(): Promise<void> {
     if (this.host === "herdr-app") return splitHerdrAppPane(this.options, this.sentinel);
-    if (this.host === "orca") {
-      await this.splitOrca();
-      return;
-    }
-    const res = await this.exec(
-      "herdr",
-      [
-        "pane",
-        "split",
-        "--pane",
-        this.parentPaneId,
-        "--direction",
-        "right",
-        "--ratio",
-        "0.65",
-        "--cwd",
-        this.cwd,
-        "--env",
-        `PI_GRAPH_RUN_PANE_DIR=${this.dir}`,
-        "--no-focus",
-      ],
-      { timeout: this.timeoutMs },
-    );
-    const paneId = res.code === 0 ? parsePaneId(res.stdout) : undefined;
-    if (!paneId) return; // Split failed; leave no record so the next sync retries cleanly.
-
-    // Label it so we can recognise it later, then run the viewer in it. Both are
-    // best-effort: a rename or run that fails still leaves a recorded, closable pane.
-    await this.exec("herdr", ["pane", "rename", paneId, this.sentinel], { timeout: this.timeoutMs });
-    await this.exec(
-      "herdr",
-      ["pane", "run", paneId, "node", this.viewerPath, "--dir", this.dir, "--ppid", String(this.ppid), "--pane", paneId],
-      { timeout: this.timeoutMs },
-    );
-
-    const next: PaneRecord = { paneId, sentinel: this.sentinel, closedByUser: false };
-    writeRecord(this.dir, next);
+    return this.splitOrca();
   }
 
   /**
@@ -278,7 +207,7 @@ export class GraphRunPaneController {
     const paneId = res.code === 0 ? parseOrcaHandle(res.stdout) : undefined;
     if (!paneId) return; // Split failed; leave no record so the next sync retries cleanly.
 
-    // Best-effort, like the Herdr path: a failed switch or title still leaves a recorded, closable pane.
+    // Best-effort, like the app path: a failed switch or title still leaves a recorded, closable pane.
     await this.exec("orca", ["terminal", "switch", "--terminal", this.parentPaneId], { timeout: this.timeoutMs });
     await this.exec("orca", ["terminal", "set-pane-title", "--terminal", paneId, "--title", this.sentinel], {
       timeout: this.timeoutMs,
@@ -290,7 +219,7 @@ export class GraphRunPaneController {
   async closeOwned(): Promise<void> {
     const record = readRecord(this.dir);
     if (!record?.paneId) return;
-    const paneId = this.host === "herdr" ? record.paneId : await this.resolveOwned(record.paneId);
+    const paneId = await this.resolveOwned(record.paneId);
     if (paneId !== undefined) await this.exec(this.host, this.closeArgs(paneId), { timeout: this.timeoutMs });
     clearRecord(this.dir);
   }
@@ -308,7 +237,7 @@ export class GraphRunPaneController {
       return;
     }
     writeRecord(this.dir, { ...record, closedByUser: true });
-    const paneId = this.host === "herdr" ? record.paneId : await this.resolveOwned(record.paneId);
+    const paneId = await this.resolveOwned(record.paneId);
     if (paneId !== undefined) await this.exec(this.host, this.closeArgs(paneId), { timeout: this.timeoutMs });
   }
 

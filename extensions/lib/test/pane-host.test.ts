@@ -5,20 +5,17 @@ describe("detectPaneHost", () => {
   it("prefers HC over inherited native hosts", () => {
     expect(detectPaneHost({ HC_TERMINAL_ID: "t-current", HERDR_ENV: "1", HERDR_PANE_ID: "stale", ORCA_TERMINAL_HANDLE: "stale-orca" })).toBe("herdr-app");
   });
-  it("detects Herdr from its env pair", () => {
-    expect(detectPaneHost({ HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" })).toBe("herdr");
-  });
-
   it("detects Orca from the terminal handle", () => {
     expect(detectPaneHost({ ORCA_TERMINAL_HANDLE: "term_1" })).toBe("orca");
   });
 
-  it("prefers Herdr over stale Orca variables", () => {
-    expect(detectPaneHost({ HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1", ORCA_TERMINAL_HANDLE: "term_1" })).toBe("herdr");
+  it("detects Orca despite stale native Herdr variables", () => {
+    expect(detectPaneHost({ HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1", ORCA_TERMINAL_HANDLE: "term_1" })).toBe("orca");
   });
 
   it.each([
     {},
+    { HERDR_ENV: "1", HERDR_PANE_ID: "w1:p1" },
     { HERDR_ENV: "1" },
     { HERDR_PANE_ID: "w1:p1" },
     { HERDR_ENV: "0", HERDR_PANE_ID: "w1:p1" },
