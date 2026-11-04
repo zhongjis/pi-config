@@ -1,12 +1,12 @@
 # Panda Harness — Documentation
 
-Design contracts, guides, and reference material for this Pi harness. [manifesto.md](manifesto.md) states the core principles for developing it.
+Design contracts, guides, and reference material for this Pi harness. [manifesto.md](manifesto.md) states the philosophy behind it.
 
 ## Documentation Buckets
 
 - `ideas/` — speculative, non-binding notes. Every document carries `Status: idea`.
 - `specs/` — Panda Harness contracts. Every spec declares exactly one `Status:` from the lifecycle statuses below.
-- `adr/` — append-only ADRs: one decision per `NNNN-short-title.md`, including why X was chosen over Y.
+- `adr/` — append-only ADRs: one decision per `NNNN-short-title.md`, including why X was chosen over Y. A consequential divergence from an upstream baseline gets an ADR.
 - `guides/` — task-oriented instructions for current behavior.
 - `references/` — stable, citable external material.
 - `diagrams/` — Archify diagrams of current behavior, one folder per diagram: source `<name>.<type>.json`, rendered `<name>.html`, and its `<name>.delivery.json` receipt.

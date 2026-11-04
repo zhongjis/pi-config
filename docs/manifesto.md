@@ -1,194 +1,221 @@
 # Manifesto
 
-Panda Harness is one user's [Pi](https://github.com/mariozechner/pi-coding-agent) coding-agent harness: Mode Agents, Subagents, Extensions, and typed agent graphs. This page holds the core principles for developing it. Code is anything that takes effect when the harness runs: prompts, extension source, agent graphs, and runtime config. Code wins any conflict with this page about what the harness does; when you change the harness, move it toward this page. This page outranks the other docs (`rules/`, ADRs, specs, guides, ideas): a doc that conflicts with it gets revised, and an ADR through a new ADR ([authority order](README.md#authority-order)).
+The principles and philosophy behind Panda Harness.
+
+Project reality check:
+
+- One user's [Pi](https://github.com/mariozechner/pi-coding-agent) coding-agent harness: Mode Agents, Subagents, Extensions, and typed agent graphs.
+- Personal by design: public to read, built for one user. No support, compatibility, or stability promises, and no generality only a hypothetical other user would need.
+- These principles are adopted from the [oh-my-openagent manifesto](https://github.com/code-yeongyu/oh-my-openagent/blob/dev/docs/manifesto.md). Where this harness works differently, the section says so.
 
 ---
 
-## Human Intervention Is a Failure Signal
+## Human Intervention is a Failure Signal
 
-**The human states intent; the harness does the work.**
+**HUMAN IN THE LOOP = BOTTLENECK**
 
-Intent is not intervention. These are intent:
+Think about autonomous driving. When a human has to take over the wheel, that's not a feature. It's a failure of the system. The car couldn't handle the situation on its own.
 
-- stating what to build
-- changing your mind mid-task, which is new intent
-- answering an interview or grilling the human asked for
-- approving a plan
+**Why is coding any different?**
 
-Intervention during the work is a failure signal: finishing half-done work, guiding step by step, or re-clarifying the same requirement. Investigate it and fix the prompt, contract, or runtime that caused it. This is a mindset; nothing tracks interventions.
+When you find yourself:
 
-Involve the human for exactly two reasons:
+- Fixing the agent's half-finished work
+- Manually correcting obvious mistakes
+- Guiding the agent step-by-step through a task
+- Repeatedly clarifying the same requirements
 
-1. Authorization or scope only the human can grant.
-2. Missing access, credentials, or external state.
+That's not "human-AI collaboration." That's the agent failing to do its job.
 
-Everything else is a harness defect, with its fix:
+**Panda Harness is built on this premise**: human intervention during agentic work is fundamentally a wrong signal. If the system is designed correctly, the agent completes the work without requiring you to babysit it.
 
-- A missing preference gets recorded in an `AGENTS.md` or a skill.
-- A destructive or irreversible action is avoided unless an approved requirement already covers it.
-- Exhausted recovery stops at the last green state and reports. That stop is a harness defect, not a valid escalation.
+In this harness:
 
-Existing mechanisms:
-
-- The [Kua Fu intent gate](../modes/kuafu/default.md) exhausts repo context before it asks one precise question.
-- [Kua Fu recovery](../modes/kuafu/default.md) tries a materially different hypothesis and consults Taishang before a third attempt.
-- Decision gates ask a classifier first and escalate only when it is unsure ([ADR 0005](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md)).
-- Fu Xi turns intent into an approved plan; Hou Tu runs it ([orchestration guide](guides/orchistration.md)).
-
-**Apply it:** Does this prompt or extension stop for the human for any reason other than authorization or scope only the human can grant, or missing access, credentials, or external state?
+- **The human is the only counterpart.** Every message that reaches the harness is the human's. The harness has no notion of who or what typed it.
+- **Intent is not intervention.** Stating what to build, changing your mind, answering an interview you asked for, and approving a plan are intent.
+- **The harness stops for the human for exactly two reasons:** authority or scope only the human can grant, or missing access, credentials, or external state. Every other stop is a harness defect: fix the prompt, contract, or runtime that caused it.
 
 ---
 
-## Personal by Design
+## Indistinguishable Code
 
-**Public to read, built for one user.**
+**Goal: Code written by the agent should be indistinguishable from code written by a senior engineer.**
 
-Panda Harness fits one person's work ([README](../README.md), [root AGENTS.md](../AGENTS.md)). It makes no support, compatibility, or stability promises.
+Not "AI-generated code that needs cleanup." Not "a good starting point." The actual, final, production-ready code.
 
-**Apply it:** Am I adding generality, compatibility, or configurability that only a hypothetical other user would need? YAGNI
+This means:
 
----
+- Following existing codebase patterns exactly
+- Proper error handling without being asked
+- Tests that actually test the right things
+- No AI slop (over-engineering, unnecessary abstractions, scope creep)
+- Comments only when they add value
 
-## No Evidence, No Done
-
-**Delegation does not replace verification.**
-
-- A worker's report is a claim. The parent reads the changed files, reviews the diff against the request, and runs integration checks and QA itself ([Kua Fu](../modes/kuafu/default.md); Hou Tu in the [orchestration guide](guides/orchistration.md)).
-- Kua Fu's finish gate adds independent Spec and Standards review for refactors, migrations, security changes, and larger ultrawork changes; the parent keeps acceptance ([ADR 0006](adr/0006-kuafu-finish-gate-uses-two-isolated-review-axes.md)).
-- Research follows the same rule. Claims need opened, cited sources, and the parent checks every cited URL against the researcher's source trace ([Wenchang](../agents/wenchang/default.md), [Kua Fu](../modes/kuafu/default.md)).
-
-**Apply it:** Before this agent reports done, what evidence has it opened or run itself?
+If you can tell whether a change was made by a human or an agent, the agent has failed.
 
 ---
 
-## Specialists, One Owner
+## Token Cost vs Productivity
 
-**Many hands, one accountable orchestrator; each worker answers to its parent.**
+**Higher token usage is acceptable if it significantly increases productivity.**
 
-Orchestrator side:
+Using more tokens to:
 
-- Mode Agents route work to leaf Subagents. Subagents do not delegate; nesting stays off unless an agent opts in with `delegation` rules that resolve to a valid target ([agent frontmatter](guides/agent-frontmatter.md)).
-- Each worker gets one cohesive packet; implementation travels with its tests.
-- Independent chunks run in parallel.
-- The orchestrator keeps routing, review, and acceptance ([agent orchestration](guides/agent-orchestration.md), [mode-scoped delegation](specs/mode-scoped-subagent-delegation.md)).
+- Have multiple specialized agents research in parallel
+- Get the job done completely without human intervention
+- Verify work thoroughly before completion
+- Retry with a materially different strategy before asking the human
 
-Worker side:
+That's a worthwhile investment when it means 10x, 20x, or 100x productivity gains.
 
-- A Subagent owns one bounded outcome inside the scope it was given.
-- Results, questions, and blockers go to the parent, never to the human or another channel ([communication contract](../extensions/subagents/src/prompts.ts)). The parent decides whether the human is needed, using the two escalation reasons.
-- The report is evidence the parent can verify: `COMPLETED`, `PARTIAL` with a last-green anchor, or `BLOCKED` ([agent contracts](../agents/AGENTS.md)).
-- Role, description, and tools agree: the model-visible description states the duty, and the tool allowlist grants only what that duty needs.
+**However:**
 
-**Apply it:** Who owns acceptance, does each worker get one complete packet, and does each agent definition give one role, matching tools, and a report the parent can verify?
+Unnecessary token waste is not pursued. The system optimizes for:
 
----
+- Doing small work directly when that is cheaper than delegating
+- Sending quick, mechanical work to a fast, cheap worker
+- Adding an agent only when it cuts elapsed time or adds distinct coverage
+- Stopping research when sufficient evidence is gathered
+- Keeping cost visible
 
-## Smallest Correct Change
-
-**Agent code is indistinguishable from the code around it.**
-
-- Follow existing patterns.
-- Stay in scope; add no speculative abstraction.
-- Prefer behavior-preserving changes.
-- Reuse before writing: existing code, then the standard library, then installed dependencies.
-
-See [README boundaries](../README.md) and the [extensions contract](../extensions/AGENTS.md).
-
-**Apply it:** Could a reviewer tell an agent wrote this diff, and is every changed line needed?
+Token efficiency matters. But not at the cost of work quality or human cognitive load.
 
 ---
 
-## Tokens Buy Evidence
+## Minimize Human Cognitive Load
 
-**Spend tokens before the human's attention.**
+**The human should only need to say what they want. Everything else is the agent's job.**
 
-- Cost stays visible: see `reportUsage` and `showCost` in [subagents.json](../subagents.json).
-- Every action buys evidence or progress.
-- Before escalating, retry with a materially different strategy.
-- Do small work directly when that is cheaper than delegating.
-- Add an agent only when it cuts elapsed time or adds distinct coverage.
-- Send quick, mechanical work to a fast worker.
-- Stop research once the evidence is enough to decide ([Kua Fu](../modes/kuafu/default.md)).
+Two approaches achieve this:
 
-**Apply it:** What evidence or progress does this action buy, and is there a cheaper way to get it?
+### Approach 1: Fu Xi → Hou Tu (Interview Mode)
+
+You say: "I want to add authentication."
+
+Fu Xi:
+
+- Researches your codebase to understand existing patterns
+- Asks clarifying questions based on actual findings
+- Surfaces edge cases you hadn't considered
+- Documents decisions as you make them
+- Produces a complete, reviewed plan that Hou Tu executes
+
+**You provide intent. The agent provides structure.**
+
+### Approach 2: Kua Fu (Just Do It Mode)
+
+You say: "add authentication", or "ulw add authentication" for ultrawork.
+
+Kua Fu:
+
+- Figures out the right approach
+- Researches what it needs
+- Implements following conventions
+- Verifies everything works
+- Keeps going until complete
+
+**You provide intent. The agent handles everything.**
+
+In both cases, the human's job is to **express what they want**, not to manage how it gets done.
 
 ---
 
-## Work Survives Interruptions
+## Predictable, Continuous, Delegatable
 
-**Work resumes from durable state, not from the human's memory.**
+**The ideal agent should work like a compiler**: intent goes in, working results come out.
 
-- [Tasks](../extensions/tasks/README.md) and [goals](../extensions/goal/README.md) record what remains.
-- Agent-tree `local://` storage holds scratch files and notepads ([session-local](../extensions/session-local/README.md), [ulw](../extensions/ulw/README.md)).
-- Subagent sessions resume with their context ([subagents](../extensions/subagents/README.md)).
+### Predictable
 
-**Apply it:** If this session stopped now, could the next one continue from recorded state alone?
+Given the same inputs:
 
----
+- Same codebase patterns
+- Same requirements
+- Same constraints
 
-## Same Rules, Model-Fit Prompts
+The output should be consistent. Not random, not surprising, not "creative" in ways you didn't ask for.
 
-**Shared contracts stay consistent; prompts fit each model.**
+In this harness, a prompt asks and the runtime guarantees: a rule that keeps failing in a prompt moves into extension code, where it is enforced. Prompts adapt to each model family, but the contracts they carry do not change.
 
-Author model-family prompts against the [shared contracts](../modes/MODEL-FAMILIES.md#parity-rule), not by mechanically restating the default prompt.
+### Continuous
 
-**Apply it:** Does this prompt preserve shared contracts while improving execution for its model?
+Work should survive interruptions:
 
----
+- Session crashed? Tasks and goals record what remains.
+- Need to step away? Notepads and scratch files persist in session-local storage.
+- Worker stopped mid-task? Resume it with its context.
 
-## Code Is Truth
+A session exists to settle one task: any problem with a done condition, coding or not. The session is only a container; the task outlives it through recorded state. The agent maintains state. You don't have to.
 
-**What takes effect at runtime is the truth; text describes it.**
+### Delegatable
 
-- Code is whatever takes effect at runtime: prompts, extension source, agent graphs, runtime config. Docs and comments are text and lose any conflict.
-- A conflict between a prompt and extension code is a bug. Until it is fixed, the behavior the runtime enforces is truth.
-- When a prompt rule keeps failing, enforce it in extension code. Typed agent graphs show the pattern: the runtime validates decisions, enforces budgets, bounds feedback loops, and checkpoints each transition ([bounded feedback](specs/agent-graph-bounded-feedback.md), [ADR 0002](adr/0002-remove-subagentworkflow-script-runtime.md), [ADR 0004](adr/0004-graph-actor-context-is-an-owned-mutable-aggregate.md)).
-- Docs describe current code and link to it ([documentation rules](../AGENTS.md#documentation-rules)). A hierarchy of DOX `AGENTS.md` files binds each subtree.
-- One vocabulary: [GLOSSARY.md](../GLOSSARY.md) ([ADR 0003](adr/0003-retire-workflow-terminology.md)).
-- Borrow from upstream openly. Consequential divergences get an ADR ([ADR 0001](adr/0001-orchestration-sizing-follows-upstream-omo.md)); the [prompt parity spec](specs/mode-prompt-parity.md) tracks the rest.
+Just like you can assign a task to a capable team member and trust them to handle it, you should be able to delegate to the agent.
 
-**Apply it:** Does the runtime enforce this rule, and does every doc that mentions it match the code?
+This means:
+
+- Clear acceptance criteria, verified independently: a worker's "done" is a claim, and the parent opens the changes and runs the checks itself
+- One accountable owner per task, with specialists working in parallel underneath
+- Self-correcting behavior when something goes wrong
+- Escalation (to Taishang, to the human) only when truly needed
+- Complete work, not "mostly done": every task settles as complete, partial with a resume point, or blocked, each with evidence
 
 ---
 
 ## The Core Loop
 
 ```
-  human: state intent (approve the plan when there is one)
-              |
-              v
-  +------------------------------+
-  | orchestrator routes work     |
-  |   -> specialists (parallel)  |<--+
-  |   -> runtime enforces rules  |   | recover: new hypothesis,
-  |   -> orchestrator verifies   |---+ consult, retry
-  +------------------------------+
-              |
-              v
-     verified evidence -> done
-
-  human re-enters only on a valid escalation;
-  any other stop becomes a harness fix
+Human Intent → Agent Execution → Verified Result
+       ↑                              ↓
+       └──────── Minimum ─────────────┘
+          (intervention only on true failure)
 ```
 
-| Principle                        | Where it lives                                                                                                                                                                                                                                                                       |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Intervention is a failure signal | [Kua Fu](../modes/kuafu/default.md), [ADR 0005](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md), [orchestration guide](guides/orchistration.md)                                                                                                                |
-| Personal by design               | [README](../README.md), [root AGENTS.md](../AGENTS.md)                                                                                                                                                                                                                               |
-| No evidence, no done             | [Kua Fu](../modes/kuafu/default.md), [Wenchang](../agents/wenchang/default.md)                                                                                                                                                                                                                  |
-| Specialists, one owner           | [agent orchestration](guides/agent-orchestration.md), [mode-scoped delegation](specs/mode-scoped-subagent-delegation.md), [agent frontmatter](guides/agent-frontmatter.md), [agent contracts](../agents/AGENTS.md), [communication contract](../extensions/subagents/src/prompts.ts) |
-| Smallest correct change          | [README](../README.md), [extensions contract](../extensions/AGENTS.md)                                                                                                                                                                                                               |
-| Tokens buy evidence              | [subagents.json](../subagents.json), [Kua Fu](../modes/kuafu/default.md)                                                                                                                                                                                                                |
-| Work survives interruptions      | [tasks](../extensions/tasks/README.md), [goal](../extensions/goal/README.md), [session-local](../extensions/session-local/README.md), [ulw](../extensions/ulw/README.md), [subagents](../extensions/subagents/README.md)                                                             |
-| Same rules, model-fit prompts    | [model families](../modes/MODEL-FAMILIES.md), [parity rule](../modes/MODEL-FAMILIES.md#parity-rule)                                                                                                                                                                                  |
-| Code is truth                    | [bounded feedback](specs/agent-graph-bounded-feedback.md), [GLOSSARY.md](../GLOSSARY.md), [prompt parity](specs/mode-prompt-parity.md), [ADR 0001](adr/0001-orchestration-sizing-follows-upstream-omo.md)                                                                            |
+Everything in Panda Harness is designed to make this loop work:
+
+| Feature | Purpose |
+| ------- | ------- |
+| [Fu Xi](../modes/fuxi/default.md) | Extract intent through interview; produce a reviewed plan |
+| [Hou Tu](../modes/houtu/default.md) | Execute an approved plan |
+| [Kua Fu](../modes/kuafu/default.md) | Classify intent, route work, verify evidence, accept |
+| [Ultrawork](../extensions/ulw/README.md) | Intensify Kua Fu to keep going until verified complete |
+| [Specialist Subagents](guides/agent-orchestration.md) | One role and one bounded outcome per worker, in parallel |
+| [Taishang](../agents/taishang/default.md) | Consultation on hard decisions before a third failed attempt |
+| [Finish gate](adr/0006-kuafu-finish-gate-uses-two-isolated-review-axes.md) | Independent Spec and Standards review of consequential changes |
+| [Decision gates](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md) | Classifier first; escalate only when unsure |
+| [Typed agent graphs](specs/agent-graph-bounded-feedback.md) | Runtime-enforced decisions, budgets, and bounded feedback |
+| [Tasks](../extensions/tasks/README.md) and [goals](../extensions/goal/README.md) | Record what remains; prevent "I'm done" lies |
+| [Session-local storage](../extensions/session-local/README.md) | Notepads and scratch files that survive the session |
+| [Resumable Subagents](../extensions/subagents/README.md) | Continue a worker with its context |
+| [Usage and cost display](../subagents.json) | Keep token spend visible |
+| [Model families](../modes/MODEL-FAMILIES.md) | Model-fit prompts carrying shared contracts |
 
 ---
 
-## What This Is Not
+## What This Means in Practice
 
-- Not a shared framework or template.
-- Not a roadmap; it describes the harness as it is.
+**You should be able to:**
+
+1. Describe what you want (high-level or detailed, your choice)
+2. Let the agent interview you if needed
+3. Confirm the plan (or just let Kua Fu handle it)
+4. Walk away
+5. Come back to completed, verified work, or to one precise question only you can answer
+
+**If you can't do this, something in the system needs to improve.**
+
+---
+
+## The Future We're Building
+
+A world where:
+
+- The human focuses on **what** to build, not **how** to get the agent to build it
+- Work quality is independent of who (or what) did it
+- Complex problems are as easy as simple ones (they just take longer)
+- "Prompt engineering" becomes as obsolete as "compiler debugging"
+
+**The agent should be invisible.** Not in the sense that it's hidden, but in the sense that it just works. You flip the switch. The light turns on.
+
+That's the goal.
 
 ---
 
@@ -197,6 +224,3 @@ Author model-family prompts against the [shared contracts](../modes/MODEL-FAMILI
 - [Documentation index](README.md)
 - [Orchestration guide](guides/orchistration.md)
 - [Agent orchestration across modes](guides/agent-orchestration.md)
-- [Modes](../modes/README.md)
-- [Model families](../modes/MODEL-FAMILIES.md)
-- [Glossary](../GLOSSARY.md)
