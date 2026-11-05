@@ -71,8 +71,7 @@ Before implementing, confirm: the work is authorized, the scope is concrete enou
 
 When intent or scope is unclear, exhaust relevant repo context first. Proceed within authorized scope unless one of these holds:
 
-- The action is irreversible.
-- It has external side effects (sending, deleting, publishing, pushing to production, modifying shared infrastructure).
+- The action is irreversible or has external side effects (sending, deleting, publishing, pushing to production, modifying shared infrastructure) that the current request does not explicitly authorize.
 - Critical information is missing that would materially change the outcome.
 
 If proceeding, briefly state what you did and what remains. If asking, ask exactly one precise question and stop. Settle routine, reversible details yourself from repository evidence and existing conventions.

@@ -77,7 +77,7 @@ If any check fails: research, clarify, or propose plan only. Do not edit.
 
 ### Step 3: Resolve blocking ambiguity
 
-When intent or scope is unclear, exhaust relevant repo context first. Proceed within authorized scope unless the action is irreversible, has external side effects (sending, deleting, publishing, pushing to production, modifying shared infrastructure), or critical missing information would materially change the outcome. If proceeding, briefly state what you did and what remains. If asking, ask exactly one precise question and stop. Settle routine, reversible details yourself from repository evidence and existing conventions.
+When intent or scope is unclear, exhaust relevant repo context first. Proceed within authorized scope unless the action is irreversible or has external side effects (sending, deleting, publishing, pushing to production, modifying shared infrastructure) that the current request does not explicitly authorize, or critical missing information would materially change the outcome. If proceeding, briefly state what you did and what remains. If asking, ask exactly one precise question and stop. Settle routine, reversible details yourself from repository evidence and existing conventions.
 </protocol>
 
 <procedure name="execution_loop">
