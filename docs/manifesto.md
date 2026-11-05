@@ -118,6 +118,14 @@ Kua Fu:
 
 In both cases, the human's job is to **express what they want**, not to manage how it gets done.
 
+### Attention Is the Budget
+
+Cognitive load runs both ways. Every message, notification, question, and line of tool output costs the human's attention, and must give more value than it costs, or it goes.
+
+- Confirm intent once, stay quiet while working, speak again only for a result, a decision only the human can make, or a stop.
+- Ask one concrete question at a time, in a structured form, not buried in a report.
+- When output is noisy, make it shorter; never add messages to explain noise.
+
 ---
 
 ## Predictable, Continuous, Delegatable
@@ -157,6 +165,7 @@ This means:
 - Self-correcting behavior when something goes wrong
 - Escalation (to Taishang, to the human) only when truly needed
 - Complete work, not "mostly done": every task settles as complete, partial with a resume point, or blocked, each with evidence
+- Honest limits: a guard, check, or permission is never bypassed to avoid asking; a draft is labeled a draft
 
 ---
 
@@ -171,22 +180,22 @@ Human Intent → Agent Execution → Verified Result
 
 Everything in Panda Harness is designed to make this loop work:
 
-| Feature | Purpose |
-| ------- | ------- |
-| [Fu Xi](../modes/fuxi/default.md) | Extract intent through interview; produce a reviewed plan |
-| [Hou Tu](../modes/houtu/default.md) | Execute an approved plan |
-| [Kua Fu](../modes/kuafu/default.md) | Classify intent, route work, verify evidence, accept |
-| [Ultrawork](../extensions/ulw/README.md) | Intensify Kua Fu to keep going until verified complete |
-| [Specialist Subagents](guides/agent-orchestration.md) | One role and one bounded outcome per worker, in parallel |
-| [Taishang](../agents/taishang/default.md) | Consultation on hard decisions before a third failed attempt |
-| [Finish gate](adr/0006-kuafu-finish-gate-uses-two-isolated-review-axes.md) | Independent Spec and Standards review of consequential changes |
-| [Decision gates](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md) | Classifier first; escalate only when unsure |
-| [Typed agent graphs](specs/agent-graph-bounded-feedback.md) | Runtime-enforced decisions, budgets, and bounded feedback |
-| [Tasks](../extensions/tasks/README.md) and [goals](../extensions/goal/README.md) | Record what remains; prevent "I'm done" lies |
-| [Session-local storage](../extensions/session-local/README.md) | Notepads and scratch files that survive the session |
-| [Resumable Subagents](../extensions/subagents/README.md) | Continue a worker with its context |
-| [Usage and cost display](../subagents.json) | Keep token spend visible |
-| [Model families](../modes/MODEL-FAMILIES.md) | Model-fit prompts carrying shared contracts |
+| Feature                                                                                   | Purpose                                                        |
+| ----------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [Fu Xi](../modes/fuxi/default.md)                                                         | Extract intent through interview; produce a reviewed plan      |
+| [Hou Tu](../modes/houtu/default.md)                                                       | Execute an approved plan                                       |
+| [Kua Fu](../modes/kuafu/default.md)                                                       | Classify intent, route work, verify evidence, accept           |
+| [Ultrawork](../extensions/ulw/README.md)                                                  | Intensify Kua Fu to keep going until verified complete         |
+| [Specialist Subagents](guides/agent-orchestration.md)                                     | One role and one bounded outcome per worker, in parallel       |
+| [Taishang](../agents/taishang/default.md)                                                 | Consultation on hard decisions before a third failed attempt   |
+| [Finish gate](adr/0006-kuafu-finish-gate-uses-two-isolated-review-axes.md)                | Independent Spec and Standards review of consequential changes |
+| [Decision gates](adr/0005-decision-gate-classifier-first-with-orchestrator-escalation.md) | Classifier first; escalate only when unsure                    |
+| [Typed agent graphs](specs/agent-graph-bounded-feedback.md)                               | Runtime-enforced decisions, budgets, and bounded feedback      |
+| [Tasks](../extensions/tasks/README.md) and [goals](../extensions/goal/README.md)          | Record what remains; prevent "I'm done" lies                   |
+| [Session-local storage](../extensions/session-local/README.md)                            | Notepads and scratch files that survive the session            |
+| [Resumable Subagents](../extensions/subagents/README.md)                                  | Continue a worker with its context                             |
+| [Usage and cost display](../subagents.json)                                               | Keep token spend visible                                       |
+| [Model families](../modes/MODEL-FAMILIES.md)                                              | Model-fit prompts carrying shared contracts                    |
 
 ---
 
