@@ -17,10 +17,9 @@ export function registerTasksCommand({ pi, runtime }: TaskToolDeps) {
         const taskCount = tasks.length;
         const completedCount = tasks.filter(t => t.status === "completed").length;
 
-        const choices: string[] = [
-          `View all tasks (${taskCount})`,
-          "Create task",
-        ];
+        const choices: string[] = [];
+        if (taskCount > 0) choices.push(`View all tasks (${taskCount})`);
+        choices.push("Create task");
         if (completedCount > 0) choices.push(`Clear completed (${completedCount})`);
         if (taskCount > 0) choices.push(`Clear all (${taskCount})`);
         choices.push("Settings");
@@ -49,10 +48,7 @@ export function registerTasksCommand({ pi, runtime }: TaskToolDeps) {
 
       const viewTasks = async (): Promise<void> => {
         const tasks = runtime.store.list();
-        if (tasks.length === 0) {
-          await ui.select("No tasks", ["← Back"]);
-          return mainMenu();
-        }
+        if (tasks.length === 0) return mainMenu();
 
         const statusIcon = (status: string) => {
           switch (status) {
