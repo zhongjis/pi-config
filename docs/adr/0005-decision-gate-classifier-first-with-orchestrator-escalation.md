@@ -3,6 +3,7 @@
 Status: shipped
 Date: 2026-10-08
 Related: [../../extensions/subagents/AGENTS.md](../../extensions/subagents/AGENTS.md) · [../../agent-graphs/deep-research.graph.json](../../agent-graphs/deep-research.graph.json) · [0004-graph-actor-context-is-an-owned-mutable-aggregate.md](0004-graph-actor-context-is-an-owned-mutable-aggregate.md)
+Superseded by: [ADR 0008](0008-graph-agnostic-runtime-and-caller-approved-research-plan.md) item 4 only (deep-research plan gate and deterministic pre-check)
 
 ## Context
 
