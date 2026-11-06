@@ -17,7 +17,7 @@
 import { randomUUID } from "node:crypto";
 import { GRAPH_RUN_RESULT_PREVIEW_CHARS } from "../constants.js";
 import type { GraphRunControl, GraphRunMeta, GraphRunResult } from "./graph-run-types.js";
-import { outcomeLabel, type GraphRunOutcome } from "./outcome.js";
+import { type GraphRunOutcome, outcomeLabel } from "./outcome.js";
 import { collapse, elapsedMs, type GraphRunEntry, type GraphRunStatus, stats } from "./progress.js";
 
 const escapeXml = (text: string) => text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -38,6 +38,9 @@ export interface GraphRunTask {
   /** Set by the graph-result artifact writer when the full result is saved or that save fails. */
   resultPath?: string;
   resultArtifactError?: string;
+  /** Markdown report artifact, independent of the full-result preview cap. */
+  reportPath?: string;
+  reportArtifactError?: string;
   args?: unknown;
   meta?: GraphRunMeta;
   graphRunName?: string;
@@ -255,15 +258,40 @@ function feedbackSummary(feedback: Record<string, unknown>): Record<string, Reco
   return summary;
 }
 
+/** A completed run may deliver Markdown through a reserved output, flat or wrapped with feedback. */
+export function graphRunReport(task: GraphRunTask): string | undefined {
+  if (task.status !== "completed" || task.error !== undefined || !plainRecord(task.value)) return undefined;
+  const outputs = Object.hasOwn(task.value, "outputs") && plainRecord(task.value.feedback) ? task.value.outputs : task.value;
+  if (!plainRecord(outputs)) return undefined;
+  const report = outputs.$report;
+  return typeof report === "string" && report.trim().length > 0 ? report : undefined;
+}
+
 /**
- * Model-facing retrieval text. A bounded-feedback value keeps compact outputs plus a summary
- * (`iterations` and other raw rounds stay in the artifact). Every other value matches
- * {@link graphRunResultText}.
+ * Model-facing retrieval text. Reports lead verbatim, followed by compact remaining outputs.
+ * A bounded-feedback value keeps compact outputs plus a summary (`iterations` and other raw
+ * rounds stay in the artifact). Without a report or feedback, matches {@link graphRunResultText}.
  *
  * ponytail: the round file is linked only when the full result exceeds the preview cap, same as
  * notifications. Always write feedback artifacts if a small run must keep rounds model-reachable.
  */
-export function graphRunModelText(task: GraphRunTask): string {
+export function graphRunModelText(task: GraphRunTask, jsonCap?: number): string {
+  const report = graphRunReport(task);
+  if (report !== undefined && plainRecord(task.value)) {
+    const wrapped = Object.hasOwn(task.value, "outputs") && plainRecord(task.value.feedback);
+    const source = wrapped ? task.value.outputs : task.value;
+    const outputs = Object.fromEntries(Object.entries(plainRecord(source) ? source : {}).filter(([key]) => key !== "$report"));
+    const remaining = wrapped && plainRecord(task.value.feedback) ? { outputs, feedback: feedbackSummary(task.value.feedback) } : outputs;
+    const json = JSON.stringify(remaining);
+    const body = jsonCap !== undefined && json.length > jsonCap ? `${json.slice(0, jsonCap - 1)}… (JSON truncated; full output in details.output or the full result file)` : json;
+    return [
+      report,
+      task.reportPath !== undefined ? `Report file: ${task.reportPath}` : undefined,
+      task.reportArtifactError,
+      body,
+      task.resultPath !== undefined ? `Full result with every round: ${task.resultPath}` : task.resultArtifactError,
+    ].filter(line => line !== undefined).join("\n");
+  }
   if (task.error !== undefined) return task.error;
   if (task.value === undefined) return "No output.";
   if (typeof task.value === "string") return task.value;
@@ -277,14 +305,12 @@ export function graphRunModelText(task: GraphRunTask): string {
 }
 
 /**
- * A bounded, model-facing preview of the run result.
- *
- * Prefers a top-level string `summary` field when the value is a plain object, otherwise a
- * compact encoding of the result body. Hard-capped to `cap` characters with a trailing ellipsis
- * when cut, so the completion notification never embeds an unbounded payload — the complete
- * result is written to an artifact and linked instead (see {@link formatGraphRunNotification}).
+ * A model-facing preview: reports stay verbatim and only their remaining JSON is capped.
+ * Without a report, prefers a top-level string `summary`, otherwise a compact result body,
+ * capped to `cap` characters. Full results are linked by {@link formatGraphRunNotification}.
  */
 export function graphRunResultPreview(task: GraphRunTask, cap = GRAPH_RUN_RESULT_PREVIEW_CHARS): string {
+  if (graphRunReport(task) !== undefined) return graphRunModelText(task, cap);
   const summary =
     task.value !== null && typeof task.value === "object" && !Array.isArray(task.value)
       ? (task.value as Record<string, unknown>).summary
@@ -359,7 +385,9 @@ export function formatGraphRunNotification(task: GraphRunTask, now = Date.now())
   const preview = graphRunResultPreview(task);
   const resultBody =
     resultPath !== undefined ? `${preview}\n...(truncated; the complete result is in the linked result file)` : preview;
+  const hasReport = graphRunReport(task) !== undefined;
   return [
+    hasReport ? preview : null,
     `<task-notification>`,
     `<task-id>${task.id}</task-id>`,
     task.toolCallId ? `<tool-use-id>${escapeXml(task.toolCallId)}</tool-use-id>` : null,
@@ -368,7 +396,7 @@ export function formatGraphRunNotification(task: GraphRunTask, now = Date.now())
     `<summary>Graph run "${escapeXml(task.graphRunName ?? task.id)}" — Execution: ${task.status} — ${totals.done}/${totals.total} agents completed, ${failed} failed, ${skipped} skipped${
       task.replayedCount > 0 ? `, ${task.replayedCount} replayed from ${escapeXml(task.resumedFrom ?? "an earlier run")}` : ""
     }</summary>`,
-    `<result>${escapeXml(resultBody)}</result>`,
+    hasReport ? null : `<result>${escapeXml(resultBody)}</result>`,
     resultPath !== undefined ? `<result-file>${escapeXml(resultPath)}</result-file>` : null,
     `<usage><total_tokens>${task.totalTokens}</total_tokens><tool_uses>${task.totalToolCalls}</tool_uses><duration_ms>${elapsedMs(task, now)}</duration_ms></usage>`,
     `</task-notification>`,

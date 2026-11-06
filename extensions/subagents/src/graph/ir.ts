@@ -102,13 +102,14 @@ export type ClassifierQuestion =
   | { type: "choice"; instructions: string; criteria: Record<string, string> }
   | { type: "score"; instructions: string; criteria: string[] };
 
-/** Classifier-first decision over resolved state; low confidence escalates to the invoking orchestrator. */
+/** Decision over resolved state; escalates on low confidence or when Caller approval is required. */
 export interface DecisionGateNode {
   readonly name?: string;
   type: "decision_gate";
   state: Record<string, ValueRef>;
   questions: Record<string, ClassifierQuestion>;
   minConfidence?: number;
+  readonly escalate?: "always";
 }
 
 /** Invokes a reusable saved graph as a node — the main composition mechanism. */
@@ -195,7 +196,6 @@ export interface AgentGraph {
   name?: string;
   /** Optional human-readable purpose shown only for live graph runs. */
   description?: string;
-  semanticPolicy?: "context-gather-v1" | "deep-research-v1";
   inputSchema?: JsonSchema;
   outputSchema?: JsonSchema;
   nodes: Record<NodeId, GraphNode>;

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { decisionSchema, type FeedbackState } from "../src/graph/bounded-feedback.js";
+import { decisionSchema, type FeedbackState, type FeedbackView } from "../src/graph/bounded-feedback.js";
 import { validateCheckpointTransition } from "../src/graph/graph-checkpoint-transition.js";
 import type { GraphRunSnapshot } from "../src/graph/graph-persist.js";
 import { validateGraphRestore } from "../src/graph/graph-restore-validation.js";
@@ -23,15 +23,15 @@ const gap = { id: "g", description: "missing" };
 const followup = { gaps: [gap], tasks: [{ gapId: "g", item: { kind: "local", query: "second" } }] };
 function graph(node: BoundedFeedbackNode = feedback): AgentGraph { return { nodes: { research: node }, edges: [], outputs: { evidence: { node: "research", path: "$" } } }; }
 const verdict = (value: boolean, confidence = 0.9, costUsd?: number): DecisionResult => ({ ok: true, answers: { covered: { value, confidence } }, decidedBy: "classifier", model: "test/classifier", ...(costUsd === undefined ? {} : { costUsd }) });
-/** The judge answers from the iteration count it was shown; the tasker writes one follow-up, then none. */
+/** The judge answers from the iteration it was shown (its last item's `r<iteration>`); the tasker writes one follow-up, then none. */
 function scripted(options: { verdicts?: (round: number) => boolean; tasks?: (round: number) => unknown; judgeCost?: number; workCost?: number } = {}) {
-  const round = (state: Record<string, unknown>): number => (state.feedback as { iterations: unknown[] }).iterations.length;
-  const decide = vi.fn<NonNullable<NodeHost["decide"]>>(async request => verdict((options.verdicts ?? (n => n > 1))(round(request.state)), 0.9, options.judgeCost));
+  const round = (feedback: unknown): number => Number(/^r(\d+)-/.exec((feedback as FeedbackView).items.at(-1)?.id ?? "")?.[1]);
+  const decide = vi.fn<NonNullable<NodeHost["decide"]>>(async request => verdict((options.verdicts ?? (n => n > 1))(round(request.state.feedback)), 0.9, options.judgeCost));
   const spawnAgent = vi.fn<NodeHost["spawnAgent"]>(async request => {
     if (request.agentType !== "tasker") return { ok: true, output: JSON.stringify({ evidence: request.nodeId }), ...(options.workCost === undefined ? {} : { costUsd: options.workCost }) };
     // A repair attempt appends the previous failure after the feedback JSON.
-    const iterations = (JSON.parse(request.prompt.split("\n\nPrevious attempt")[0]) as { iterations: unknown[] }).iterations.length;
-    return { ok: true, output: JSON.stringify((options.tasks ?? (n => n === 1 ? followup : { gaps: [gap], tasks: [] }))(iterations)) };
+    const iteration = round(JSON.parse(request.prompt.split("\n\nPrevious attempt")[0]));
+    return { ok: true, output: JSON.stringify((options.tasks ?? (n => n === 1 ? followup : { gaps: [gap], tasks: [] }))(iteration)) };
   });
   return { decide, spawnAgent };
 }
@@ -65,14 +65,49 @@ describe("bounded feedback judge", () => {
     expect(host.spawnAgent.mock.calls.map(([request]) => request.agentType)).toEqual(["worker"]);
     expect(checkpoints.flatMap(row => bindings(row.state)).some(binding => binding.endsWith(":evaluator"))).toBe(false);
     // The judge receives its authored state plus the runtime-owned feedback the evaluator would see.
-    expect(host.decide).toHaveBeenCalledWith(expect.objectContaining({ state: { goal: "G", feedback: { iterations: [expect.objectContaining({ iteration: 1, results: [expect.objectContaining({ status: "completed" })] })], gaps: [] } } }), expect.any(AbortSignal));
+    expect(host.decide).toHaveBeenCalledWith(expect.objectContaining({ state: { goal: "G", feedback: { items: [{ id: "r1-1", item: input.tasks[0], status: "completed", output: { evidence: expect.any(String) } }], gaps: [] } } }), expect.any(AbortSignal));
+  });
+
+  it("hands judge and evaluator one flat item list with positional IDs, and returns it in the terminal output", async () => {
+    const tasks = [{ kind: "local", query: "first" }, { kind: "local", query: "broken" }];
+    const first = { id: "r1-1", item: tasks[0], status: "completed", output: { evidence: "first" } };
+    const broken = { id: "r1-2", item: tasks[1], status: "failed", error: "offline" };
+    const second = { id: "r2-1", item: followup.tasks[0].item, status: "completed", output: { evidence: "second" } };
+    const evaluatorFeedback: unknown[] = [];
+    let judged = 0;
+    const decide = vi.fn<NonNullable<NodeHost["decide"]>>(async () => verdict(++judged > 1));
+    const result = await runGraph(graph(), { goal: "G", tasks }, { onCheckpoint: (state, effective) => validateGraphRestore(state, effective, { goal: "G", tasks }), host: { decide, spawnAgent: async request => {
+      if (request.agentType === "tasker") { evaluatorFeedback.push(JSON.parse(request.prompt)); return { ok: true, output: JSON.stringify(followup) }; }
+      const { query } = JSON.parse(request.prompt) as { query: string };
+      return query === "broken" ? { ok: false, error: "offline" } : { ok: true, output: JSON.stringify({ evidence: query }) };
+    } } });
+    expect(evaluatorFeedback).toEqual([{ items: [first, broken], gaps: [] }]);
+    expect(decide.mock.calls.map(([request]) => request.state.feedback)).toEqual([{ items: [first, broken], gaps: [] }, { items: [first, broken, second], gaps: [gap] }]);
+    expect(result.feedback?.research.items).toEqual([first, broken, second]);
+    expect(result.outputs.evidence).toMatchObject({ reason: "sufficient", items: [first, broken, second] });
+  });
+
+  it("keeps the previous evaluator's open gaps through a sufficient judge verdict for downstream nodes", async () => {
+    const outside = { id: "outside-foo", description: "Outside the plan" };
+    const open = { id: "p1-x", description: "Part one lacks a source" };
+    const definition: AgentGraph = { ...graph(), nodes: { ...graph().nodes, writer: { type: "agent", agent: "writer", prompt: `\${gaps}`, input: { gaps: { node: "research", path: "$.gaps" } } } }, edges: [{ from: "research", to: "writer" }] };
+    const host = scripted({ tasks: () => ({ gaps: [outside, open], tasks: [{ gapId: "p1-x", item: { kind: "local", query: "second" } }] }) });
+    const writerPrompts: string[] = [];
+    const result = await runGraph(definition, input, { onCheckpoint: durable().onCheckpoint, host: { ...host, spawnAgent: async (request, signal) => {
+      if (request.agentType !== "writer") return host.spawnAgent(request, signal);
+      writerPrompts.push(request.prompt);
+      return { ok: true, output: "report" };
+    } } });
+    expect(result.feedback?.research).toMatchObject({ reason: "sufficient", partial: true, gaps: [outside, open], counters: { iterations: 2 } });
+    expect(result.feedback?.research.iterations[1]).toMatchObject({ judge: "research:iteration:2:judge", decision: { decision: "sufficient", gaps: [], tasks: [] } });
+    expect(writerPrompts.map(prompt => JSON.parse(prompt))).toEqual([[outside, open]]);
   });
 
   it("materializes work and items first, then the judge, then the evaluator only after a false verdict", async () => {
     const host = scripted();
     const { checkpoints, onCheckpoint } = durable();
     const result = await runGraph(graph(), input, { host, onCheckpoint });
-    expect(result.feedback?.research).toMatchObject({ reason: "sufficient", counters: { iterations: 2, totalItems: 2 }, gaps: [] });
+    expect(result.feedback?.research).toMatchObject({ reason: "sufficient", counters: { iterations: 2, totalItems: 2 }, gaps: [gap] });
     expect(result.feedback?.research.iterations[0]).toMatchObject({ judge: "research:iteration:1:judge", evaluator: "research:iteration:1:evaluator", decision: { decision: "continue", ...followup } });
     const first = checkpoints.find(row => research(row.state)?.active?.iteration === 1);
     expect(research(first?.state ?? { nodes: {}, loopCounts: {} })?.active).toEqual({ iteration: 1, tasks: input.tasks, work: "research:iteration:1:work", workInstanceId: expect.any(String) });
@@ -162,7 +197,7 @@ describe("bounded feedback judge", () => {
     const skipped = structuredClone(final); const skippedRow = research(skipped.state)?.iterations[0];
     if (!skippedRow) throw new Error("missing feedback");
     Reflect.deleteProperty(skippedRow, "judge"); Reflect.deleteProperty(skippedRow, "judgeInstanceId");
-    expect(() => validateGraphRestore(skipped.state, skipped.graph, input)).toThrow(/deterministic coverage/);
+    expect(() => validateGraphRestore(skipped.state, skipped.graph, input)).toThrow(/skipped its judge/);
   });
 
   it("counts judge cost toward spendLimit before materializing the evaluator", async () => {
@@ -219,7 +254,7 @@ describe("bounded feedback judge", () => {
 });
 
 describe("judge validation", () => {
-  const errors = (node: unknown, semanticPolicy?: AgentGraph["semanticPolicy"]) => validateGraph({ ...graph(), ...(semanticPolicy ? { semanticPolicy } : {}), nodes: { research: node } }).errors;
+  const errors = (node: unknown) => validateGraph({ ...graph(), nodes: { research: node } }).errors;
   it("accepts one bool question and rejects other judge shapes", () => {
     expect(errors(feedback)).toEqual([]);
     expect(errors({ ...feedback, judge: { type: "agent", agent: "a", prompt: "p" } })).toContain("nodes.research.judge: must be a fixed decision_gate template");
@@ -227,11 +262,5 @@ describe("judge validation", () => {
     expect(errors({ ...feedback, judge: { ...judge, questions: { pick: { type: "choice", instructions: "Pick", criteria: { a: "A", b: "B" } } } } })).toContain("nodes.research.judge.questions: must declare exactly one bool question");
     expect(errors({ ...feedback, judge: { ...judge, state: { feedback: { path: "$.goal" } } } })).toContain("nodes.research: judge.state.feedback is reserved");
     expect(errors({ ...feedback, judge: { ...judge, prompt: "x" } })).toContain("nodes.research.judge.prompt: unknown decision_gate field");
-  });
-  it("deep-research-v1 requires a research judge; context-gather-v1 rejects one", () => {
-    const structured = { type: "agent", agent: "a", prompt: "p", outputSchema: { type: "object" } };
-    expect(validateGraph({ semanticPolicy: "context-gather-v1", nodes: { plan: structured, research: feedback, synthesize: structured }, edges: [] }).errors).toEqual(["semanticPolicy: context-gather-v1 research must not declare a judge"]);
-    const { judge: _judge, ...classic } = feedback;
-    expect(validateGraph({ semanticPolicy: "deep-research-v1", nodes: { planning: { type: "graph", graph: "plan" }, research: classic, synthesize: structured }, edges: [] }).errors).toEqual(["semanticPolicy: deep-research-v1 requires a research judge"]);
   });
 });

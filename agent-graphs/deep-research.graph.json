@@ -1,7 +1,6 @@
 {
   "name": "deep-research",
   "description": "Seed broad searches, plan and scope-check autonomously, research in bounded rounds with a coverage judge and a gap-task writer, and return a cited report with explicit gaps.",
-  "semanticPolicy": "deep-research-v1",
   "inputSchema": {
     "type": "object",
     "properties": {

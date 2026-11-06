@@ -21,6 +21,10 @@ describe("decision_gate validation", () => {
     expect(errors(gate)).toEqual([]);
   });
 
+  it("accepts a gate requiring Caller approval", () => {
+    expect(errors({ ...gate, escalate: "always" })).toEqual([]);
+  });
+
   it("accepts empty state", () => {
     expect(errors({ ...gate, state: {} })).toEqual([]);
   });
@@ -37,6 +41,9 @@ describe("decision_gate validation", () => {
     ["single score level", { ...gate, questions: { risk: { ...questions.risk, criteria: ["only"] } } }, "nodes.gate.questions.risk.criteria"],
     ["unknown question type", { ...gate, questions: { ship: { ...questions.ship, type: "rank" } } }, "nodes.gate.questions.ship.type"],
     ["unknown question field", { ...gate, questions: { ship: { ...questions.ship, examples: [] } } }, "nodes.gate.questions.ship.examples"],
+    ["unknown escalation policy", { ...gate, escalate: "sometimes" }, "nodes.gate.escalate"],
+    ["non-string escalation policy", { ...gate, escalate: true }, "nodes.gate.escalate"],
+    ["escalation with confidence threshold", { ...gate, escalate: "always", minConfidence: 0 }, "nodes.gate.escalate"],
     ["minConfidence above 1", { ...gate, minConfidence: 1.5 }, "nodes.gate.minConfidence"],
     ["non-finite minConfidence", { ...gate, minConfidence: Number.NaN }, "nodes.gate.minConfidence"],
     ["string minConfidence", { ...gate, minConfidence: "0.9" }, "nodes.gate.minConfidence"],
@@ -91,6 +98,21 @@ describe("derived decision schemas", () => {
     ["missing answer", { answers: { ship: false, route: "fast" }, decidedBy: "orchestrator" }],
   ])("response rejects %s", (_label, value) => {
     expect(response.check(value)).not.toBe(true);
+  });
+
+  it("retains an optional Caller note in the closed gate output", () => {
+    const resolved = responseToOutput(questions, { answers: { ship: false, route: "fast", risk: 2 }, decidedBy: "human", note: "Use the safe route instead." });
+    expect([resolved.note, output.check(resolved)]).toEqual(["Use the safe route instead.", true]);
+  });
+
+  it.each(["", " \t\n", "x".repeat(4001)])("rejects an invalid Caller note of length %s", note => {
+    const value = { answers: { ship: false, route: "fast", risk: 2 }, decidedBy: "human", note };
+    expect(response.check(value)).not.toBe(true);
+    expect(() => responseToOutput(questions, value)).toThrow(/note/);
+  });
+
+  it("accepts a note at the length limit", () => {
+    expect(response.check({ answers: { ship: false, route: "fast", risk: 2 }, decidedBy: "human", note: "x".repeat(4000) })).toBe(true);
   });
 
   it("agent schema asks for classifier-shaped evidence per question", () => {

@@ -8,7 +8,7 @@ A graph is data. The runtime validates it before anything runs. The graph owns r
 
 ### Determinism
 
-- **Rules live in the machine.** When typed data can decide a rule, enforce it with `enum` / `const` / `if`–`then`, a condition, a `semanticPolicy`, or `validation.gate`. A prompt may restate the rule; the machine enforces it.
+- **Rules live in the machine.** When typed data can decide a rule, enforce it with `enum` / `const` / `if`–`then`, a condition, or `validation.gate`. A prompt may restate the rule; the machine enforces it.
 - **Branches are typed events.** A branching node emits one enum field. Each value you want to take gets one guarded edge. Prompts describe the state's work; edges carry order.
 - **Side effects sit behind a decision.** Reach a node that writes, sends, or pushes only through a `decision_gate` edge on a `true` answer or a passing `validation.gate`.
 - **Outcome follows evidence.** Couple outcome fields to evidence with `if` / `then` so only the matching status validates. Read values the machine already holds, such as a fanout child's `item`, instead of asking an agent to echo them.
@@ -131,8 +131,7 @@ Implement → review (`event`: `approve` | `revise` | `escalate`) → fix loop �
 - `description` — optional; shown for the live run.
 - `inputSchema` — documents `input`. A direct `agent_graph` call does not enforce it. See [SKILL.md](../SKILL.md).
 - `outputSchema` — compiled for validity only, never enforced. Omit it.
-- `semanticPolicy` — `context-gather-v1` or `deep-research-v1`. `context-gather-v1` requires structured `plan`, `research` (`bounded_feedback`), and `synthesize` nodes and is reserved for `context-gather`. `deep-research-v1` requires `planning` (`graph` returning `{parts, tasks, seed, approved}`), `research` (`bounded_feedback`), and `synthesize` (`agent`) and is reserved for `deep-research`; see [bounded-feedback.md](bounded-feedback.md#deep-research-v1).
-- `nodes`, `edges`, `outputs` — the graph. Node ids are unique. `outputs` values are ValueRefs.
+- `nodes`, `edges`, `outputs` — the graph. Node ids are unique. `outputs` values are ValueRefs, including the reserved [report](#delivering-a-report) and [outcome](#declaring-the-run-outcome) keys.
 
 There is no shell or action node. A deterministic check is `validation.gate` on the node that owns it.
 
@@ -155,8 +154,9 @@ Optional `name` labels the node's monitor row; without it the row shows the node
 
 - `state` — ValueRefs resolved into the decision context. Optional `name` labels the row.
 - `questions` — keyed by answer ID. Each has `type`, nonempty `instructions`, and `criteria`: `bool` takes `{ "true", "false" }`; `choice` maps at least two labels to descriptions; `score` lists at least two level descriptions.
-- `minConfidence` — optional, in [0, 1]. Defaults to the `decisionGateMinConfidence` setting.
-- Output is `{ "answers": { <id>: { "value", "confidence" } }, "decidedBy" }`. Conditions read `$.answers.<id>.value`.
+- `minConfidence` — optional, in [0, 1]. Defaults to the `decisionGateMinConfidence` setting; cannot be combined with `escalate`.
+- `escalate: "always"` — optional; requires Caller approval without running the model chain, on first admission and restore. No other value is accepted.
+- Output is `{ "answers": { <id>: { "value", "confidence" } }, "decidedBy", "note"? }`. Conditions read `$.answers.<id>.value`. A Caller resolution may include a nonblank, length-bounded `note` ([response schema](../../../src/graph/decision-gate.ts)); model decisions never include one. On an agent's loop re-entry from this gate, [admission](../../../src/graph/graph-domain.ts) appends the note from durable gate output to its prompt, including after restore.
 
 The decider chain is the `subagents.decision_gate` key of `tool_models.json` ([defaults](../../../../lib/tool-model-defaults.ts)), walked in order ([node-host-adapter.ts](../../../src/graph/node-host-adapter.ts) `decide`). A classifier model classifies; any other entry runs the runtime-internal graph classifier agent on that model. An unavailable or failed entry advances to the next; the first valid answer is final. If any answer falls below `minConfidence`, or the chain is exhausted, the gate escalates to the invoking orchestrator ([SKILL.md](../SKILL.md#4-escalations)). With no agent selector, a gate adds nothing to delegation preflight.
 
@@ -221,6 +221,12 @@ A `loop` on `review → fix` validates yet skips `fix`. A loop target MUST NOT r
   { "from": "fix", "to": "review", "loop": { "maxIterations": 3 } }
 ]
 ```
+
+## Delivering a report
+
+Declare `$report` in graph outputs as a ValueRef to a Markdown string, just like any other output. [Report presentation](../../../src/graph/task.ts) treats a completed run's nonblank string as the report: retrieval, notifications and previews lead with its Markdown verbatim, then the report file path and compact remaining outputs with feedback summary. Preview caps apply only to the JSON. Blank or non-string values remain ordinary JSON outputs.
+
+[Artifact delivery](../../../src/graph/notification.ts) writes the exact report to `<runId>.report.md` beside the full-result artifact in the session task area. A save failure stays visible while the report remains inline. The complete value, including the report, remains available in retrieval details.
 
 ## Declaring the run outcome
 
@@ -311,15 +317,15 @@ The validator reports every error at once, with dotted paths (`nodes.review.prom
 
 ### Trace-driven refinement
 
-1. Capture the graph, inputs, structured outputs, activated branches, failures, retries, bounds, cost, and latency. The run result carries outputs and, for bounded feedback, `feedback` (iterations, `reason`, `exhaustedBounds`). Every run writes `<runId>.trace.jsonl` (header, input, per-node status/attempt/output/error, end) to the session task artifact area `<tmpdir>/pi-subagents-<uid>/<encoded cwd>/<sessionId>/tasks/`, kept after the run settles and capped at 8 MiB. Session `graph-history.json` keeps per-node status, attempts, timing, and tokens without outputs. `.pi/graph-runs/` checkpoints are deleted when a run settles.
+1. Capture the graph, inputs, structured outputs, activated branches, failures, retries, bounds, cost, and latency. The run result carries outputs and, for bounded feedback, `feedback` (iterations, flat `items`, `reason`, `exhaustedBounds`). Every run writes `<runId>.trace.jsonl` (header, input, per-node status/attempt/output/error, end) to the session task artifact area `<tmpdir>/pi-subagents-<uid>/<encoded cwd>/<sessionId>/tasks/`, kept after the run settles and capped at 8 MiB. Session `graph-history.json` keeps per-node status, attempts, timing, and tokens without outputs. `.pi/graph-runs/` checkpoints are deleted when a run settles.
 2. Name one transition failure. Have an agent other than the judged nodes propose one graph change. Keep authority, schemas, and hard bounds immutable.
 3. Run the baseline and the candidate against the same replayable cases. Grade states (per-node output), edges (branches fired, loop iterations, retries, evaluator `continue` rate, rounds without new validated output), outcome, cost, and latency. For a cheap first check, a human can run `/agent-graph-replay <runId> <candidate>` in the same session: it folds the recorded outputs through the candidate's planner without model calls and diffs statuses, edges, loop counts, and outputs, listing nodes that need a live run (changed `outputSchema` or no recorded output). `fanout`, `bounded_feedback`, `expand`, and `graph` nodes replay atomically from their recorded output, and a ready wave settles in wave order, so a replay never replaces a live run.
 4. Promote the candidate only after held-out improvement and human review. Retain the prior graph for rollback.
 
 ## Reference implementations
 
-- [context-gather.graph.json](../../../../../agent-graphs/context-gather.graph.json) — evidence gathering with `semanticPolicy: "context-gather-v1"`.
-- [deep-research.graph.json](../../../../../agent-graphs/deep-research.graph.json) — read-only cited research.
+- [context-gather.graph.json](../../../../../agent-graphs/context-gather.graph.json) — evidence gathering through `bounded_feedback`.
+- [deep-research.graph.json](../../../../../agent-graphs/deep-research.graph.json) — cited research with a Caller-approved plan.
 - Contracts: [agent-graphs/AGENTS.md](../../../../../agent-graphs/AGENTS.md).
 
 Promote a proven inline graph to a saved root: `<cwd>/.pi/agent-graphs`, `<cwd>/agent-graphs`, `<cwd>/.agents/agent-graphs`, or `~/.pi/agent/agent-graphs`. Save it as `<name>.graph.json`; `.graph.yaml` is the fallback format. A `/` in the name is a subdirectory. Keep one format per name in a root.

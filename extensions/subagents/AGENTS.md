@@ -66,7 +66,7 @@ Run isolated Agent sessions with foreground results and background supervision. 
 
 - Changing lifecycle, interruption provenance, activity, retention, queuing, resume, structured capture, result retrieval, delayed notifications, or retrieval call headers? You MUST read [Native Agent lifecycle](MAINTENANCE.md#native-agent-lifecycle).
 - Changing configuration preparation, internal agents, tool exposure, delegation hints, agent advertisements, model chains, thinking, Fast, usage, or cost? You MUST read [Invocation and model policy](MAINTENANCE.md#invocation-and-model-policy).
-- Changing graph registration, skill discovery, saved resolution, ValueRefs, semantic policies, or repair prompts? You MUST read [Graph tools and validation](MAINTENANCE.md#graph-tools-and-validation).
+- Changing graph registration, skill discovery, saved resolution, ValueRefs, or repair prompts? You MUST read [Graph tools and validation](MAINTENANCE.md#graph-tools-and-validation).
 - Changing root scheduling, NODE receipts, control acknowledgments, child release, nested graph actors, or checkpoint relays? You MUST read [Root and nested actor protocols](MAINTENANCE.md#root-and-nested-actor-protocols).
 - Changing COORD receipts, expand, fanout, bounded feedback, materialization, evaluator failures, or topology bounds? You MUST read [Dynamic coordinators and feedback](MAINTENANCE.md#dynamic-coordinators-and-feedback).
 - Changing checkpoint formats, migrations, manifests, leases, reconciliation, dispositions, or restore? You MUST read [Checkpoint and restore behavior](MAINTENANCE.md#checkpoint-and-restore-behavior).

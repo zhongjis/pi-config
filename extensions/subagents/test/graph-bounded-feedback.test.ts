@@ -71,13 +71,29 @@ describe("bounded feedback", () => {
   it.each([
     ["iteration limit", { maxIterations: 1 }, more],
     ["item limit", { maxTotalItems: 1 }, more],
-    ["item limit", { maxItemsPerIteration: 1 }, { ...more, tasks: [more.tasks[0], more.tasks[0]] }],
     ["no progress", {}, { ...more, tasks: [{ gapId: "g", item: { query: "first", kind: "local" } }] }],
     ["evaluator failure", {}, {}],
   ])("terminates with %s without a successor", async (reason, bounds, decision) => {
     const { result, requests } = await execute([decision, decision], { ...feedback, ...bounds });
     expect(result.outputs.evidence).toMatchObject({ reason, partial: true, counters: { iterations: 1 } });
     expect(requests.filter(r => r.agentType === "worker")).toHaveLength(1);
+  });
+  it.each([
+    [3, ["first", "a", "b"], ["maxTotalItems", "maxItemsPerIteration"]],
+    [2, ["first", "a"], ["maxTotalItems"]],
+  ])("with maxTotalItems %i runs the first decision tasks that fit, then stops with item limit once no slot remains", async (maxTotalItems, ran, exhaustedBounds) => {
+    const task = (query: string) => ({ gapId: "g", item: { kind: "local", query } });
+    const decisions = [{ ...more, tasks: [task("a"), task("b"), task("c")] }, { ...more, tasks: [task("d")] }];
+    const queries: string[] = [];
+    const result = await runGraph(graph({ ...feedback, maxIterations: 3, maxTotalItems }), { tasks: [initial] }, { onCheckpoint: durableFeedbackCheckpoints().onCheckpoint, host: { spawnAgent: async request => {
+      if (request.agentType === "judge") return { ok: true, output: JSON.stringify(decisions.shift()) };
+      const { query } = JSON.parse(request.prompt) as { query: string };
+      queries.push(query);
+      return { ok: true, output: JSON.stringify({ evidence: query }) };
+    } } });
+    expect(queries).toEqual(ran);
+    expect(result.feedback?.research.iterations[1]?.tasks).toEqual(ran.slice(1).map(query => task(query).item));
+    expect(result.feedback?.research).toMatchObject({ reason: "item limit", partial: true, exhaustedBounds, counters: { iterations: 2, totalItems: maxTotalItems } });
   });
   it("restores each intent/materialization/dispatch boundary without minting replacement IDs", async () => {
     const { checkpoints } = await execute([more, enough]);
@@ -158,7 +174,7 @@ it.each(["before intent", "after intent", "before manifest", "after manifest"])(
   let saved: { state: SchedulerState; graph: AgentGraph } | undefined;
   const host = { spawnAgent: async (request: { agentType: string; prompt: string; nodeId: string }) => {
     const context: unknown = request.agentType === "judge" ? JSON.parse(request.prompt) : undefined;
-    const first = typeof context === "object" && context !== null && "iterations" in context && Array.isArray(context.iterations) && context.iterations.length === 1;
+    const first = typeof context === "object" && context !== null && "items" in context && Array.isArray(context.items) && context.items.length === 1;
     return { ok: true, output: JSON.stringify(request.agentType === "judge" ? first ? more : enough : { evidence: request.nodeId }) };
   } };
   await expect(runGraph(graph(), { tasks: [initial] }, { host, onCheckpoint: (state, effective) => {
@@ -228,7 +244,7 @@ it("preserves the evaluator repair budget across a restart", async () => {
   expect(spawnAgent).toHaveBeenCalledTimes(0);
 });
 
-it.each(["child agent", "child prompt", "child schema", "child parent", "child iteration", "child item", "result status", "result attempt", "result output", "result error", "false sufficient", "false partial", "bounds"])("rejects forged v2 %s before replacement or dispatch", async mutation => {
+it.each(["child agent", "child prompt", "child schema", "child parent", "child iteration", "child item", "result status", "result attempt", "result output", "result error", "false sufficient", "false partial", "bounds", "items"])("rejects forged v2 %s before replacement or dispatch", async mutation => {
   const { checkpoints } = await execute(mutation === "false sufficient" ? [more, more] : [enough]);
   const saved = structuredClone(checkpoints.at(-1));
   const state = saved?.state.runtime?.feedback?.research;
@@ -249,6 +265,7 @@ it.each(["child agent", "child prompt", "child schema", "child parent", "child i
   if (mutation === "false sufficient") { state.gaps = []; Object.assign(state.terminal, { reason: "sufficient", partial: false, gaps: [] }); }
   if (mutation === "false partial") Object.assign(state.terminal, { partial: true });
   if (mutation === "bounds") Object.assign(state.terminal, { exhaustedBounds: ["made up"] });
+  if (mutation === "items") Object.assign(state.terminal, { items: [] });
   Object.assign(state.terminal, { iterations: structuredClone(state.iterations) });
   saved.state.nodes.research.output = structuredClone(state.terminal);
   const onCheckpoint = vi.fn(); const spawnAgent = vi.fn();

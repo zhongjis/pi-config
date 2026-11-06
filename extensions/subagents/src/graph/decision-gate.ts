@@ -13,9 +13,13 @@ export interface DecisionAnswer {
 export interface DecisionOutput {
   readonly answers: Readonly<Record<string, DecisionAnswer>>;
   readonly decidedBy: DecidedBy;
+  readonly note?: string;
 }
 type Questions = Readonly<Record<string, ClassifierQuestion>>;
 
+export const ALWAYS_ESCALATION_REASON = "Caller approval required";
+export const MAX_DECISION_NOTE_LENGTH = 4000;
+const noteSchema: JsonSchema = { type: "string", pattern: "\\S", maxLength: MAX_DECISION_NOTE_LENGTH };
 const MAX_REASON = 2000;
 const QUESTION_ID = /^[A-Za-z][A-Za-z0-9_]*$/;
 const unit = { type: "number", minimum: 0, maximum: 1 };
@@ -26,8 +30,8 @@ function record(value: unknown): value is Record<string, unknown> {
 function nonEmpty(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
-function closed(properties: Record<string, JsonSchema>): JsonSchema {
-  return { type: "object", properties, required: Object.keys(properties), additionalProperties: false };
+function closed(properties: Record<string, JsonSchema>, optional: Record<string, JsonSchema> = {}): JsonSchema {
+  return { type: "object", properties: { ...properties, ...optional }, required: Object.keys(properties), additionalProperties: false };
 }
 function perQuestion(questions: Questions, schema: (question: ClassifierQuestion) => JsonSchema): JsonSchema {
   return closed(Object.fromEntries(Object.entries(questions).map(([id, question]) => [id, schema(question)])));
@@ -41,19 +45,19 @@ function valueSchema(question: ClassifierQuestion, exact: boolean): JsonSchema {
   }
 }
 
-/** Closed exposed output: `{ answers: { <id>: { value, confidence } }, decidedBy }`. */
+/** Closed exposed output: answers, provenance, and an optional Caller note. */
 export function decisionOutputSchema(questions: Questions): JsonSchema {
   return closed({
     answers: perQuestion(questions, question => closed({ value: valueSchema(question, false), confidence: unit })),
     decidedBy: { type: "string", enum: [...DECIDED_BY] },
-  });
+  }, { note: noteSchema });
 }
 /** Escalation response: an exact value for every question plus truthful provenance. */
 export function decisionResponseSchema(questions: Questions): JsonSchema {
   return closed({
     answers: perQuestion(questions, question => valueSchema(question, true)),
     decidedBy: { type: "string", enum: ["orchestrator", "human"] },
-  });
+  }, { note: noteSchema });
 }
 /** Agent-fallback StructuredOutput: classifier-shaped evidence, never a bare chosen value. */
 export function agentAnswerSchema(questions: Questions): JsonSchema {
@@ -122,10 +126,12 @@ export function normalizeAgentAnswers(questions: Questions, output: unknown): Re
 /** An escalation response decides with certainty; provenance comes from the response. */
 export function responseToOutput(questions: Questions, response: unknown): DecisionOutput {
   if (!record(response) || !record(response.answers) || (response.decidedBy !== "orchestrator" && response.decidedBy !== "human")) throw new TypeError("Invalid escalation response");
+  if (response.note !== undefined && (!nonEmpty(response.note) || response.note.length > MAX_DECISION_NOTE_LENGTH)) throw new TypeError(`Escalation note must be nonblank and at most ${MAX_DECISION_NOTE_LENGTH} characters`);
   const answers = response.answers;
   if (Object.keys(answers).length !== Object.keys(questions).length) throw new TypeError("Escalation response must answer exactly the gate's questions");
   return {
     decidedBy: response.decidedBy,
+    ...(typeof response.note === "string" ? { note: response.note } : {}),
     answers: Object.fromEntries(Object.entries(questions).map(([id, question]): [string, DecisionAnswer] => {
       const value = Object.hasOwn(answers, id) ? answers[id] : undefined;
       if (typeof value === "boolean" && question.type === "bool") return [id, { value, confidence: 1 }];

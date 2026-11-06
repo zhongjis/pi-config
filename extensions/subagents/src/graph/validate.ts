@@ -302,10 +302,12 @@ class Validator {
         }
         break;
       case "decision_gate":
-        for (const key of Object.keys(node)) if (!["type", "name", "state", "questions", "minConfidence"].includes(key)) this.err(`${path}.${key}`, "unknown decision_gate field");
+        for (const key of Object.keys(node)) if (!["type", "name", "state", "questions", "minConfidence", "escalate"].includes(key)) this.err(`${path}.${key}`, "unknown decision_gate field");
         if (node.state === undefined) this.err(`${path}.state`, "is required (an object of { name: ValueRef }, may be empty)");
         else this.inputMap(`${path}.state`, node.state);
         validateQuestions(`${path}.questions`, node.questions, (where, message) => this.err(where, message));
+        if (node.escalate !== undefined && node.escalate !== "always") this.err(`${path}.escalate`, 'must be "always"');
+        if (node.escalate !== undefined && node.minConfidence !== undefined) this.err(`${path}.escalate`, "cannot be combined with minConfidence");
         if (node.minConfidence !== undefined && (typeof node.minConfidence !== "number" || !Number.isFinite(node.minConfidence) || node.minConfidence < 0 || node.minConfidence > 1)) {
           this.err(`${path}.minConfidence`, "must be a finite number from 0 to 1");
         }
@@ -433,23 +435,6 @@ export function validateGraph(graph: unknown, materializedPrompts: ReadonlySet<N
   if (graph.id !== undefined && !isNonEmptyString(graph.id)) errors.push("id: must be a non-empty string when present");
   if (graph.name !== undefined && typeof graph.name !== "string") errors.push("name: must be a string when present");
   if (graph.description !== undefined && typeof graph.description !== "string") errors.push("description: must be a string when present");
-  if (graph.semanticPolicy !== undefined && graph.semanticPolicy !== "context-gather-v1" && graph.semanticPolicy !== "deep-research-v1") errors.push("semanticPolicy: unsupported policy");
-  if (graph.semanticPolicy === "context-gather-v1") {
-    const nodes = isPlainObject(graph.nodes) ? graph.nodes : {};
-    if (!isPlainObject(nodes.research) || nodes.research.type !== "bounded_feedback" ||
-      [nodes.plan, nodes.synthesize].some(node => !isPlainObject(node) || node.type !== "agent" || node.outputSchema === undefined)) {
-      errors.push("semanticPolicy: context-gather-v1 requires plan/research/synthesize structured nodes");
-    }
-    if (isPlainObject(nodes.research) && nodes.research.judge !== undefined) errors.push("semanticPolicy: context-gather-v1 research must not declare a judge");
-  }
-  if (graph.semanticPolicy === "deep-research-v1") {
-    const nodes = isPlainObject(graph.nodes) ? graph.nodes : {};
-    if (!isPlainObject(nodes.planning) || nodes.planning.type !== "graph" || !isPlainObject(nodes.research) || nodes.research.type !== "bounded_feedback" ||
-      !isPlainObject(nodes.synthesize) || nodes.synthesize.type !== "agent") {
-      errors.push("semanticPolicy: deep-research-v1 requires planning (graph), research (bounded_feedback) and synthesize (agent) nodes");
-    }
-    if (isPlainObject(nodes.research) && nodes.research.type === "bounded_feedback" && nodes.research.judge === undefined) errors.push("semanticPolicy: deep-research-v1 requires a research judge");
-  }
   if (graph.inputSchema !== undefined) {
     const compiled = compileInputSchema(graph.inputSchema);
     if (compiled.ok === false) errors.push(`inputSchema: ${compiled.message}`);

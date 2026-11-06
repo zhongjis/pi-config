@@ -86,6 +86,15 @@ describe("decide", () => {
 });
 
 describe("escalation", () => {
+  it("requires Caller approval without invoking the decision chain", async () => {
+    const decide = vi.fn<NonNullable<NodeHost["decide"]>>(async () => answer(true, 1));
+    const awaitEscalation = vi.fn<NonNullable<NodeHost["awaitEscalation"]>>(async () => respond(true));
+    const result = await run({ decide, awaitEscalation }, graph({ escalate: "always" }));
+    expect(decide).not.toHaveBeenCalled();
+    expect(awaitEscalation).toHaveBeenCalledWith(expect.objectContaining({ reason: "Caller approval required" }), expect.any(AbortSignal));
+    expect(result.outputs.decision).toEqual({ answers: { ship: { value: true, confidence: 1 } }, decidedBy: "human" });
+    expect(result.nodes.gate.costAttempts ?? 0).toBe(0);
+  });
   it("publishes only after its escalation dispatch checkpoint", async () => {
     let latest: SchedulerState | undefined; let committed: unknown;
     await run({ decide: async () => answer(true, 0.3), awaitEscalation: async () => { committed = latest?.runtime?.executionLedger?.at(-1); return respond(true); } },
@@ -149,6 +158,53 @@ describe("escalation", () => {
   });
 });
 
+describe("Caller notes on loop re-entry", () => {
+  function loopingGraph(): AgentGraph {
+    const definition = graph({ escalate: "always" });
+    return { ...definition, nodes: { ...definition.nodes, start: { type: "agent", agent: "worker", prompt: "Start" } },
+      edges: [{ from: "start", to: "plan" }, ...definition.edges, { from: "gate", to: "plan", loop: { maxIterations: 1 }, when: { eq: [{ node: "gate", path: "$.answers.ship.value" }, false] } }] };
+  }
+
+  it.each([undefined, "Keep the scope narrow.\nUse primary evidence."])("re-enters with optional note %s, including checkpoint restore", async note => {
+    const definition = loopingGraph(); const prompts: string[] = [];
+    let pending: SchedulerState | undefined; let resolutions = 0;
+    const host: NodeHost = {
+      spawnAgent: async request => { if (request.agentType === "planner") prompts.push(request.prompt); return spawnAgent(request, new AbortController().signal); },
+      awaitEscalation: async () => ({ ok: true, output: JSON.stringify({ answers: { ship: resolutions++ > 0 }, decidedBy: "human", ...(note === undefined ? {} : { note }) }) }),
+    };
+    await runGraph(definition, {}, { host, onCheckpoint: state => {
+      check(definition)(state);
+      if (state.nodes.plan.status === "pending" && state.nodes.plan.attemptReason === "loop") pending = structuredClone(state);
+    } });
+    const expected = note === undefined ? "Plan" : "Plan\n\nCaller note on the previous result:\nKeep the scope narrow.\nUse primary evidence.";
+    expect(prompts).toEqual(["Plan", expected]);
+    prompts.length = 0;
+    await runGraph(definition, {}, { host, restore: required(pending), onCheckpoint: check(definition) });
+    expect(prompts).toEqual([expected]);
+  });
+
+  it("retains the note when a running loop re-entry is lifecycle-restored", async () => {
+    const definition = loopingGraph(); const controller = new AbortController(); const parked = deferred<NodeSpawnResult>();
+    const prompts: string[] = []; let resolutions = 0; let saved: SchedulerState | undefined;
+    const host: NodeHost = {
+      spawnAgent: async (request, signal) => {
+        if (request.agentType === "planner") { prompts.push(request.prompt); if (prompts.length === 2) return parked.promise; }
+        return spawnAgent(request, signal);
+      },
+      awaitEscalation: async () => ({ ok: true, output: JSON.stringify({ answers: { ship: resolutions++ > 0 }, decidedBy: "human", note: "Use a narrower scope." }) }),
+    };
+    const running = runGraph(definition, {}, { host, signal: controller.signal, onCheckpoint: state => { check(definition)(state); saved = state; } });
+    await vi.waitFor(() => expect(prompts).toHaveLength(2));
+    controller.abort("reload");
+    parked.resolve({ ok: false, skipped: true });
+    await running;
+    const restoredPrompts: string[] = [];
+    await runGraph(definition, {}, { host: { ...host, spawnAgent: async (request, signal) => { if (request.agentType === "planner") restoredPrompts.push(request.prompt); return spawnAgent(request, signal); } },
+      restore: required(saved), onCheckpoint: check(definition) });
+    expect(restoredPrompts).toEqual(["Plan\n\nCaller note on the previous result:\nUse a narrower scope."]);
+  });
+});
+
 describe("cancellation", () => {
   it("retains a parked decider until it settles and never escalates", async () => {
     const controller = new AbortController(); const parked = deferred<DecisionResult>(); const awaitEscalation = vi.fn<NonNullable<NodeHost["awaitEscalation"]>>();
@@ -189,8 +245,8 @@ describe("cancellation", () => {
 
 describe("restore", () => {
   /** Runs until a lifecycle reload interrupts a parked escalation; returns the undrained and drained checkpoints. */
-  async function interruptedEscalation() {
-    const definition = graph(); const controller = new AbortController(); const parked = deferred<NodeSpawnResult>();
+  async function interruptedEscalation(gate: Partial<DecisionGateNode> = {}) {
+    const definition = graph(gate); const controller = new AbortController(); const parked = deferred<NodeSpawnResult>();
     let entered: EscalationRequest | undefined; let saved: SchedulerState | undefined;
     const running = run({ decide: async () => answer(true, 0.3), awaitEscalation: request => { entered = request; return parked.promise; } }, definition,
       { signal: controller.signal, onCheckpoint: state => { check(definition)(state); saved = state; } });
@@ -202,6 +258,16 @@ describe("restore", () => {
     await running;
     return { reason: required(entered).reason, checkpoints: { undrained, drained: required(saved) } };
   }
+
+  it.each(["undrained", "drained"] as const)("restores an always-escalating %s gate without deciding", async kind => {
+    const definition = graph({ escalate: "always" });
+    const { checkpoints } = await interruptedEscalation({ escalate: "always" });
+    const decide = vi.fn<NonNullable<NodeHost["decide"]>>(async () => answer(true, 1));
+    const awaitEscalation = vi.fn<NonNullable<NodeHost["awaitEscalation"]>>(async () => respond(false));
+    await run({ decide, reconcileDrain: async () => true, awaitEscalation }, definition, { restore: checkpoints[kind], reclaimedDeadWriter: true });
+    expect(decide).not.toHaveBeenCalled();
+    expect(awaitEscalation.mock.calls.map(([request]) => request.reason)).toEqual(["Caller approval required"]);
+  });
 
   it.each(["undrained", "drained"] as const)("resumes an %s escalation without deciding again", async kind => {
     const { checkpoints } = await interruptedEscalation();

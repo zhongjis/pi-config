@@ -22,9 +22,9 @@ Every `agent_graph` call runs either a saved graph (`graph: "<name>"`) or an ad-
 
    Saved graphs are `.graph.json`; `.graph.yaml` is the fallback format, so read a YAML graph directly instead of using `jq`. The repo portfolio ships `context-gather.graph.json` and `deep-research.graph.json`; their contracts are in [agent-graphs/AGENTS.md](../../../../agent-graphs/AGENTS.md).
 
-2. **Read its contract:** `jq '{description, inputSchema, outputs}' <name>.graph.json`. Each output is a ValueRef. `$agentGraphOutcome` names the node that declares the outcome; it is not a caller field. An output whose source was skipped, or whose path does not exist, is omitted, not `null`.
+2. **Read its contract:** `jq '{description, inputSchema, outputs}' <name>.graph.json`. Each output is a ValueRef. Reserved outputs declare the [outcome](references/authoring.md#declaring-the-run-outcome) or deliver a [Markdown report](references/authoring.md#delivering-a-report); they are not caller fields. An output whose source was skipped, or whose path does not exist, is omitted, not `null`.
 
-3. **Build input** that satisfies `inputSchema`. A direct call does not enforce it: validation only checks that the schema compiles. Two paths check input: a user `$graph:<name>` token makes inline-skills reject a call that fails the schema, and `context-gather`'s `semanticPolicy` requires unique, nonempty `requiredCoverage` IDs before dispatch. Any other wrong input runs and spends. A string `input` is JSON-parsed when it parses. Ask the user only for required values you cannot infer.
+3. **Build input** that satisfies `inputSchema`. A direct call does not enforce it: validation only checks that the schema compiles. Only a user `$graph:<name>` token checks input: inline-skills rejects a call that fails the schema. Any other wrong input runs and spends. A string `input` is JSON-parsed when it parses. Ask the user only for required values you cannot infer.
 
    ```ts
    agent_graph({
@@ -79,22 +79,22 @@ The call returns a run ID in the tool text (`Task ID: <id>`). Continue only non-
 
 ## 4. Escalations
 
-A `decision_gate` that cannot decide confidently escalates to you. `wait: true` returns the pending escalation: `kind: "decision_gate"`, `gate_id`, `revision`, `reason`, `questions`, `state`, and `response_schema`. Decide yourself, or use `ask` when the human must choose, then:
+A `decision_gate` that cannot decide confidently or declares `escalate: "always"` escalates to you. `wait: true` returns the pending escalation: `kind: "decision_gate"`, `gate_id`, `revision`, `reason`, `questions`, `state`, and `response_schema`. Decide yourself, or use `ask` when the human must choose, then:
 
 ```ts
 resolve_agent_graph_gate({ run_id, gate_id, revision, response: { answers: { <questionId>: value }, decidedBy: "orchestrator" } })
 get_agent_result({ run_id, wait: true })
 ```
 
-Copy `run_id`, `gate_id`, and `revision` exactly. `response` MUST match `response_schema`. Set `decidedBy` truthfully: `"human"` only when the human chose, otherwise `"orchestrator"`. Retrieval does not consume an escalation. Identical responses are idempotent within the activation; stale or conflicting responses fail. Reload gives pending escalations fresh revisions, including nested ones; retrieve again before resolving. Cancelling retrieval stops only that wait.
+Copy `run_id`, `gate_id`, and `revision` exactly. `response` MUST match `response_schema`. Optionally add `response.note` with feedback for a loop-back agent: it must be nonblank and within the schema's length limit. The runtime keeps it in the gate output and appends it to that agent's next loop prompt, including after restore ([resolution](../../src/graph/decision-gate.ts), [admission](../../src/graph/graph-domain.ts)). Set `decidedBy` truthfully: `"human"` only when the human chose, otherwise `"orchestrator"`. Retrieval does not consume an escalation. Identical responses are idempotent within the activation; stale or conflicting responses fail. Reload gives pending escalations fresh revisions, including nested ones; retrieve again before resolving. Cancelling retrieval stops only that wait.
 
 ## 5. Read the result
 
-`get_agent_result` text is `Graph: <id>`, `Execution: <status>`, `Outcome: <json>` when declared, then the result body. `details` is `{kind:"graph", status, gate, output, outcome, error}`; `details.output` is the full value.
+When a run returns a report, the Caller presents it with the report file path plus a short summary and does not rewrite it. [Report-aware retrieval](../../src/graph/task.ts) leads with verbatim Markdown, its file path (or a visible save warning), then compact remaining outputs and feedback summary; graph metadata follows. Without a report, `get_agent_result` text is `Graph: <id>`, `Execution: <status>`, `Outcome: <json>` when declared, then the result body. `details` is `{kind:"graph", status, gate, output, outcome, error}`; `details.output` is the full value.
 
 - **Shape.** Flat `{ <outputName>: value }` is the complete result JSON. A `bounded_feedback` graph (both portfolio graphs) returns compact `{ outputs, feedback }`: read `outputs.*`, and `feedback.<nodeKey>` keeps `reason`, `partial`, `counters`, `gaps`, and `exhaustedBounds` ([reasons](references/bounded-feedback.md)). When the full result was saved, `Full result with every round: <path>` links the file that still has every round. If that file could not be saved, the text appends the save warning instead.
 - **Outcome.** `$agentGraphOutcome` is stripped from outputs and shown as Outcome: `succeeded`, `partial: <reason>`, or `failed: <reason>`. Without one, a completed run shows `Completed`. Execution status and Outcome are independent; trust Outcome for objective success.
 - **Execution `failed`.** A node failed outside a fanout or `bounded_feedback` collection. The text body is only the `node: error` list; partial outputs remain in `details.output`. `killed` means stopped.
-- **Completion notification.** `<status>` carries the Outcome, `Error: <node errors>`, or `Stopped`. `<summary>` counts completed, failed, and skipped agents. `<result>` is a ~500-character preview. `<result-file>`, present only when the preview overflowed, holds the full text.
+- **Completion notification.** `<status>` carries the Outcome, `Error: <node errors>`, or `Stopped`. `<summary>` counts completed, failed, and skipped agents. [Notification formatting](../../src/graph/task.ts) puts a returned report before the notification metadata without cutting or escaping its Markdown; only the remaining JSON preview is capped. Without a report, `<result>` is the bounded preview. `<result-file>` links the full-result artifact when saved.
 
 On a `partial`/`failed` Outcome, or any failed agent, inspect the failed children and the graph's gap fields, such as `context-gather`'s `unknowns`. Whether a failure matters is graph-specific: `context-gather` folds failed evidence into `unknowns`, so a failure there usually means degraded coverage; failed deterministic-gate children signal a real problem. Depend only on structured outputs, never on agent prose.

@@ -1,5 +1,5 @@
 import type { GateRequest } from "./gate-handoff.js";
-import { type GraphRunTask, graphRunModelText } from "./task.js";
+import { type GraphRunTask, graphRunModelText, graphRunReport } from "./task.js";
 
 const STATE_TEXT = 8000;
 /** Text carries bounded state; `details.gate` keeps the full request. */
@@ -7,7 +7,7 @@ function escalationText(runId: string, gate: GateRequest): string {
   const state = JSON.stringify(gate.state);
   return [
     `Decision escalated: ${gate.reason}`,
-    `Decide yourself or ask the human with ask, then call resolve_agent_graph_gate with run_id "${runId}", gate_id "${gate.gate_id}", revision "${gate.revision}" and a response matching response_schema; set decidedBy "human" only when the human chose.`,
+    `Decide yourself or ask the human with ask, then call resolve_agent_graph_gate with run_id "${runId}", gate_id "${gate.gate_id}", revision "${gate.revision}" and a response matching response_schema; set decidedBy "human" only when the human chose; add an optional note to explain a rejection or request changes.`,
     `questions: ${JSON.stringify(gate.questions)}`,
     `state: ${state.length > STATE_TEXT ? `${state.slice(0, STATE_TEXT)}… (truncated; full state in details.gate.state)` : state}`,
     `response_schema: ${JSON.stringify(gate.response_schema)}`,
@@ -47,8 +47,11 @@ export function createGraphResultObserver(lookup: (id: string) => GraphRunTask |
     const request = gate(id);
     if (request) observed(id, request);
     const details = { kind: "graph" as const, taskId: id, run_id: id, status: task.status, gate: request, output: task.value, outcome: task.outcome, error: task.error };
+    const header = `Graph: ${id}\nExecution: ${task.status}\n${task.outcome ? `Outcome: ${JSON.stringify(task.outcome)}\n` : ""}`;
+    const body = request ? escalationText(id, request) : graphRunModelText(task);
+    const text = !request && graphRunReport(task) !== undefined ? `${body}\n\n${header}` : `${header}\n${body}`;
     return {
-      content: [{ type: "text" as const, text: `Graph: ${id}\nExecution: ${task.status}\n${task.outcome ? `Outcome: ${JSON.stringify(task.outcome)}\n` : ""}\n${request ? escalationText(id, request) : graphRunModelText(task)}` }],
+      content: [{ type: "text" as const, text }],
       details,
     };
   }

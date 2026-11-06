@@ -1,7 +1,3 @@
-import { createGateNotifications } from "./gate-notifications.js";
-import { createGateResolutionTool } from "./gate-tool.js";
-import { createGateHandoff } from "./gate-handoff.js";
-import { createGraphResultObserver } from "./result-observer.js";
 import { defineTool, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { firstMeaningfulLine, renderToolCall, renderToolExpanded, renderToolSummary } from "../../../lib/tool-output.js";
@@ -12,6 +8,9 @@ import { renderGraphRunCard } from "../ui/graph-run-report.js";
 import { getLifetimeTotal } from "../usage.js";
 import { checkGraphDelegation } from "./delegation-preflight.js";
 import { graphRunEntryData } from "./entry.js";
+import { createGateHandoff } from "./gate-handoff.js";
+import { createGateNotifications } from "./gate-notifications.js";
+import { createGateResolutionTool } from "./gate-tool.js";
 import { type CheckpointLease, LiveWriterError } from "./graph-checkpoint-owner.js";
 import { deleteGraphSnapshot, graphRunHasLiveWriter, ownGraphRun, readGraphSnapshots, writeGraphSnapshot } from "./graph-persist.js";
 import { authorizeGraphResume } from "./graph-resume-preflight.js";
@@ -23,10 +22,11 @@ import type { AgentGraph } from "./ir.js";
 import { createNodeHost, type NodeHostOptions } from "./node-host-adapter.js";
 import { graphRunCompletionText, writeGraphResultArtifact } from "./notification.js";
 import { collapse, elapsedMs } from "./progress.js";
+import { createGraphResultObserver } from "./result-observer.js";
 import { coerceGraphInput, type RunGraphResult, runGraph } from "./run-graph.js";
 import { resolveSavedGraph } from "./saved-graph.js";
 import type { SchedulerState } from "./scheduler.js";
-import { createGraphRunTask, failGraphRunTask, type GraphRunTask, graphRunResultText, makeGraphRunId } from "./task.js";
+import { createGraphRunTask, failGraphRunTask, type GraphRunTask, graphRunReport, graphRunResultPreview, graphRunResultText, makeGraphRunId } from "./task.js";
 import { graphToolDescription } from "./tool-description.js";
 import { createGraphRuntimeLogPath, createGraphTracePath, GRAPH_RUNTIME_LOG_WARNING, GRAPH_TRACE_WARNING, type GraphRuntimeLog, type GraphTrace, openGraphRuntimeLog, openGraphTrace } from "./trace.js";
 import { validateGraph } from "./validate.js";
@@ -329,7 +329,7 @@ export function createGraphRuntime(
           totalTokens: task.totalTokens,
           durationMs: elapsedMs(task, Date.now()),
           error: task.error,
-          resultPreview: result.length > 500 ? `${result.slice(0, 500)}…` : result,
+          resultPreview: graphRunReport(task) !== undefined ? graphRunResultPreview(task) : result.length > 500 ? `${result.slice(0, 500)}…` : result,
           graphRun: graphRunEntryData(task),
         },
       }, { deliverAs: "followUp", triggerTurn: wake });

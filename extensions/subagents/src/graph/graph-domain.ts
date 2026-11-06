@@ -1,10 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { checkContextOutput, validateContextInput } from "./context-gather-policy.js";
-import { checkDeepResearchOutput, evaluatorFeedback, skipsJudge, visitedLine, writerResearch } from "./deep-research-policy.js";
 import { isDeepStrictEqual } from "node:util";
-import { decision, evaluatorTemplate, type FeedbackIteration, type FeedbackReason, type FeedbackState, feedbackBudgetBounds, feedbackContinuation, feedbackTerminal, JUDGED_SUFFICIENT, judgeTemplate, judgeVerdict } from "./bounded-feedback.js";
+import { decision, evaluatorTemplate, type FeedbackIteration, type FeedbackReason, type FeedbackState, type FeedbackView, feedbackBudgetBounds, feedbackContinuation, feedbackItems, feedbackTerminal, JUDGED_SUFFICIENT, judgeTemplate, judgeVerdict, openGaps, truncatingBounds } from "./bounded-feedback.js";
 import { type CoordinatorReceipt, type CoordinatorRequest, coordinatorReceipt, type FeedbackOwnerView } from "./coordinator-protocol.js";
-import { compileDerivedSchema, DEFAULT_MIN_CONFIDENCE, decidedByOf, decisionOutputSchema, decisionResponseSchema } from "./decision-gate.js";
+import { ALWAYS_ESCALATION_REASON, compileDerivedSchema, DEFAULT_MIN_CONFIDENCE, decidedByOf, decisionOutputSchema, decisionResponseSchema } from "./decision-gate.js";
 import { prepareFanout } from "./fanout.js";
 import { validateCheckpointTransition } from "./graph-checkpoint-transition.js";
 import { matchesExecution, upgradeLegacyExecution } from "./graph-execution.js";
@@ -108,7 +106,6 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     if (!validation.ok) throw new TypeError(validation.errors.join("; "));
   }
   input = coerceGraphInput(input);
-  validateContextInput(graph, input);
   if (options.restore) {
     if (options.restore.runtime) validateGraphRestore(options.restore, graph, input);
     else validateSchedulerState(options.restore, graph);
@@ -355,7 +352,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     return { ...child, ...instances.get(child.nodeId), index, status: run?.status === "completed" ? "completed" : run?.status === "failed" ? "failed" : "skipped", attempt: run?.attempt ?? 0, ...(run?.output !== undefined ? { output: run.output } : {}), ...(run?.error !== undefined ? { error: run.error } : {}) };
   });
   const finishFeedback = (id: string, reason: FeedbackReason, exhaustedBounds: readonly string[] = []): void => {
-    const state = feedbackTerminal(feedbackStates[id], reason, exhaustedBounds);
+    const state = feedbackTerminal(feedbackStates[id], reason, [...new Set([...exhaustedBounds, ...truncatingBounds(feedbackStates[id].iterations, feedbackNode(id))])]);
     feedbackStates[id] = state;
     const skipped = reason === "skipped before admission" || (reason === "cancellation" && projection.nodes.get(id)?.attempt === 0);
     complete(id, { ok: reason !== "materialization failure", skipped, output: state.terminal, ...(reason === "materialization failure" ? { error: exhaustedBounds.join("; ") || reason } : {}) });
@@ -459,7 +456,7 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
   const recordFeedback = (id: string, node: BoundedFeedbackNode, iteration: FeedbackIteration): void => {
     const state = feedbackStates[id];
     state.iterations.push(structuredClone(iteration)); delete state.active;
-    if (iteration.decision) state.gaps = iteration.decision.gaps;
+    state.gaps = openGaps(state.iterations);
     if (feedbackBudgetExceeded(id, node)) return;
     if (!iteration.decision) { finishFeedback(id, "evaluator failure"); return; }
     const next = feedbackContinuation(state.iterations, node);
@@ -468,15 +465,11 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
   };
   /** Step function over durable state; a judged iteration advances at most one step per transaction. */
   const decideFeedback = (id: string, node: BoundedFeedbackNode): void => {
-    const state = feedbackStates[id]; const active = state.active;
+    const active = feedbackStates[id].active;
     if (!active) throw new TypeError("Missing active feedback iteration");
     const results = feedbackResults(active.work);
     if (active.evaluator === undefined) {
-      if (active.judge === undefined) {
-        // deep-research-v1 sends an uncovered plan straight to the task writer; no judge this iteration.
-        const direct = skipsJudge(graph, id, projection.nodes.get("planning")?.output, [...state.iterations, { ...active, results }]);
-        materializeStep(id, node, direct ? "evaluator" : "judge", results); return;
-      }
+      if (active.judge === undefined) { materializeStep(id, node, "judge", results); return; }
       const judge = projection.nodes.get(active.judge);
       const verdict = judge?.status === "completed" ? judgeVerdict(node, judge.output) : undefined;
       if (verdict === false) {
@@ -515,9 +508,8 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     if (parent === undefined) return undefined;
     const state = feedbackStates[parent]; const active = state.active;
     if (!active) throw new TypeError("Missing active evaluator");
-    const iterations = [...state.iterations, { ...active, results: feedbackResults(active.work) }];
-    const feedback = graph.semanticPolicy === "deep-research-v1" && parent === "research" ? evaluatorFeedback(projection.nodes.get("planning")?.output, iterations, state.gaps) : { iterations, gaps: state.gaps };
-    return { node: feedbackNode(parent), role: active.judge === id ? "judge" as const : "evaluator" as const, iterations, feedback };
+    const feedback: FeedbackView = { items: feedbackItems([...state.iterations, { ...active, results: feedbackResults(active.work) }]), gaps: state.gaps };
+    return { node: feedbackNode(parent), role: active.judge === id ? "judge" as const : "evaluator" as const, feedback };
   };
   const recordFeedbackFailure = (id: string, error: string): void => {
     const state = Object.values(feedbackStates).find(state => state.active?.evaluator === id);
@@ -605,7 +597,8 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
     const previous = executions.current(id);
     const dispatch = previous && executions.rows(previous).filter(row => row.payload.kind === "dispatched").at(-1)?.payload;
     // An interrupted escalation must not become another automated decision.
-    const escalationReason = node.type === "decision_gate" && (restoringStarts.has(id) || projection.nodes.get(id)?.attemptReason === "restore") && dispatch?.kind === "dispatched" && dispatch.target === "escalation" ? dispatch.reason : undefined;
+    const escalationReason = node.type === "decision_gate" && node.escalate === "always" ? ALWAYS_ESCALATION_REASON
+      : node.type === "decision_gate" && (restoringStarts.has(id) || projection.nodes.get(id)?.attemptReason === "restore") && dispatch?.kind === "dispatched" && dispatch.target === "escalation" ? dispatch.reason : undefined;
     startNode(id);
     const correlation = executions.begin(id, node, escalationReason);
     if (!correlation) { complete(id, { ok: false, error: "Execution budget exhausted" }); report(id); return undefined; }
@@ -641,36 +634,14 @@ export function createGraphDomain(source: GraphActorInput, owned: () => readonly
         catch (error) { if (error instanceof Error) return error.message; throw error; }
       } };
     }
-    const feedback = feedbackStates.research;
-    const item = feedback && [...feedback.iterations, ...(feedback.active ? [feedback.active] : [])].flatMap(row => projection.collections.get(row.work) ?? []).find(child => child.nodeId === id)?.item;
-    const stage = id === "plan" || id === "synthesize" ? id : feedback?.active?.evaluator === id ? "evaluation" : item !== undefined ? "work" : undefined;
-    if (graph.semanticPolicy === "context-gather-v1" && stage && exec.schema) {
-      const schema = exec.schema;
-      exec.schema = { ...schema, check: value => {
-        const valid = schema.check(value);
-        if (valid !== true) return valid;
-        const current = feedbackStates.research;
-        const prior = [...(current?.iterations ?? []), ...(current?.active ? [current.active] : [])];
-        return checkContextOutput({ graph, input, stage, item, plan: projection.nodes.get("plan")?.output, research: stage === "synthesize" ? projection.nodes.get("research")?.output : { iterations: prior } }, value);
-      } };
-    }
-    if (graph.semanticPolicy === "deep-research-v1") {
-      const planning = projection.nodes.get("planning")?.output;
-      const round = stage === "work" ? [...(feedback?.iterations ?? []), ...(feedback?.active ? [feedback.active] : [])].find(row => projection.collections.get(row.work)?.some(child => child.nodeId === id)) : undefined;
-      const visited = round && round.iteration >= 2 ? visitedLine(planning, feedback?.iterations.filter(row => row.iteration < round.iteration) ?? []) : undefined;
-      if (visited) exec.prompt += visited;
-      if (id === "synthesize") {
-        const context = contextOf(projection, input);
-        exec.prompt = interpolate(node.prompt, node.input, { ...context, outputs: new Map([...context.outputs, ["research", writerResearch(planning, projection.nodes.get("research")?.output)]]) });
-      }
-      if ((stage === "evaluation" || stage === "synthesize") && exec.schema) {
-        const schema = exec.schema;
-        const iterations = evaluation?.iterations;
-        exec.schema = { ...schema, check: value => {
-          const valid = schema.check(value);
-          if (valid !== true) return valid;
-          return checkDeepResearchOutput({ graph, stage, planning: projection.nodes.get("planning")?.output, iterations, research: projection.nodes.get("research")?.output }, value);
-        } };
+    const run = projection.nodes.get(id);
+    // Lifecycle recovery relabels a loop activation as restore without changing its activation.
+    if (run?.attemptReason === "loop" || run?.attemptReason === "restore" && (run.activation ?? 0) > 1) {
+      const context = contextOf(projection, input);
+      for (const edge of effectiveEdges) {
+        if (edge.to !== id || !edge.loop || nodeDefs.get(edge.from)?.type !== "decision_gate") continue;
+        const note = resolveValueRef({ node: edge.from, path: "$.note" }, context);
+        if (typeof note === "string") exec.prompt += `\n\nCaller note on the previous result:\n${note}`;
       }
     }
     return { kind: "agent", id, input: { receipt, host: options.host, authorize: () => options.authorizeAgent?.(node.agent), node: exec } };

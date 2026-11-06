@@ -14,6 +14,14 @@ it("resolves an escalation through the registered tool and completes the graph",
   expect((await retrieve(host, id)).details).toMatchObject({ kind: "graph", status: "completed", output: { decision: { answers: { release: { value: true, confidence: 1 } }, decidedBy: "orchestrator" } } });
 });
 
+it("retains a Caller note submitted through the registered resolution tool", async () => {
+  const host = boot();
+  await host.lifecycle("session_start");
+  const id = await launch(host);
+  await resolveGate(host, await pendingGate(host, id), { ...approve, note: "Narrow the next attempt." });
+  expect((await retrieve(host, id)).details).toMatchObject({ output: { decision: { ...approve, answers: { release: { value: true, confidence: 1 } }, note: "Narrow the next attempt." } } });
+});
+
 it("accepts an identical duplicate response", async () => {
   const host = boot();
   await host.lifecycle("session_start");
@@ -29,6 +37,8 @@ it.each([
   ["wrong answer type", {}, { answers: { release: "yes" }, decidedBy: "human" }, /invalid/i],
   ["missing answer", {}, { answers: {}, decidedBy: "human" }, /invalid/i],
   ["extra answer", {}, { answers: { release: true, other: true }, decidedBy: "human" }, /invalid/i],
+  ["blank note", {}, { ...approve, note: " \t\n" }, /invalid/i],
+  ["over-long note", {}, { ...approve, note: "x".repeat(4001) }, /invalid/i],
   ["model provenance", {}, { answers: { release: true }, decidedBy: "classifier" }, /invalid/i],
 ])("rejects a %s without consuming the escalation", async (_label, identity, response, error) => {
   const host = boot();

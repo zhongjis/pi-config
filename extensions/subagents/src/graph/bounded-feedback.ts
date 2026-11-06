@@ -28,6 +28,8 @@ export interface FeedbackResult {
   readonly reason: FeedbackReason;
   readonly partial: boolean;
   readonly iterations: readonly FeedbackIteration[];
+  /** Every iteration's results, flattened in order. */
+  readonly items: readonly FeedbackItem[];
   readonly gaps: readonly FeedbackGap[];
   readonly counters: { readonly iterations: number; readonly totalItems: number };
   readonly exhaustedBounds: readonly string[];
@@ -43,6 +45,21 @@ export interface FeedbackState {
   retryError?: string;
   /** Last admission check, retained for deterministic terminal validation. */
   budgetCheckedAt?: number;
+}
+/** One work result; `id` is `r<iteration>-<index>`, both 1-based, with index in result order. */
+export interface FeedbackItem {
+  readonly id: string;
+  readonly item: JsonValue;
+  readonly status: FanoutResult["results"][number]["status"];
+  readonly output?: unknown;
+  readonly error?: string;
+}
+/** The judge's `state.feedback` and the evaluator's `${feedback}`: all items so far and the previous decision's gaps. */
+export interface FeedbackView { readonly items: readonly FeedbackItem[]; readonly gaps: readonly FeedbackGap[] }
+export function feedbackItems(iterations: readonly Pick<FeedbackIteration, "iteration" | "results">[]): FeedbackItem[] {
+  return iterations.flatMap(row => row.results.map(({ item, status, output, error }, index) => ({
+    id: `r${row.iteration}-${index + 1}`, item, status, ...(output !== undefined ? { output } : {}), ...(error !== undefined ? { error } : {}),
+  })));
 }
 /** A judged evaluator only writes gaps and tasks; the judge owns sufficiency. */
 export function decisionSchema(itemSchema: BoundedFeedbackNode["work"]["itemSchema"], judged = false): JsonSchema {
@@ -66,6 +83,10 @@ export function judgeVerdict(node: BoundedFeedbackNode, output: unknown): boolea
   return record(answer) && typeof answer.value === "boolean" ? answer.value : undefined;
 }
 export const JUDGED_SUFFICIENT: FeedbackDecision = { decision: "sufficient", gaps: [], tasks: [] };
+/** Gaps still open after these iterations: the latest evaluator decision's; a judged `sufficient` verdict closes none. */
+export function openGaps(iterations: readonly FeedbackIteration[]): readonly FeedbackGap[] {
+  return [...iterations].reverse().find(row => row.decision !== undefined && row.evaluator !== undefined)?.decision?.gaps ?? [];
+}
 function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }
 export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
@@ -100,7 +121,7 @@ export function feedbackTerminal(state: FeedbackState, reason: FeedbackReason, e
   const { intent, active: _active, ...prior } = state;
   return { ...prior, ...(intent ? { stoppedIntent: structuredClone(intent) } : {}), terminal: {
     reason, partial: reason !== "sufficient" || state.gaps.length > 0 || iterations.some(row => row.results.some(result => result.status !== "completed")),
-    iterations, gaps: state.gaps, counters: { iterations: iterations.length, totalItems: iterations.reduce((sum, row) => sum + row.tasks.length, 0) }, exhaustedBounds,
+    iterations, items: feedbackItems(iterations), gaps: state.gaps, counters: { iterations: iterations.length, totalItems: iterations.reduce((sum, row) => sum + row.tasks.length, 0) }, exhaustedBounds,
   } };
 }
 
@@ -113,10 +134,25 @@ export function feedbackContinuation(iterations: readonly FeedbackIteration[], n
   if (last.decision.decision === "sufficient") return { reason: "sufficient", exhaustedBounds: [] };
   if (!last.decision.tasks.length) return { reason: "no accessible route", exhaustedBounds: [] };
   if (iterations.length >= node.maxIterations) return { reason: "iteration limit", exhaustedBounds: ["maxIterations"] };
-  const tasks = last.decision.tasks.map(task => task.item);
-  if (tasks.length > node.maxItemsPerIteration || iterations.reduce((sum, row) => sum + row.tasks.length, 0) + tasks.length > node.maxTotalItems) return { reason: "item limit", exhaustedBounds: [tasks.length > node.maxItemsPerIteration ? "maxItemsPerIteration" : "maxTotalItems"] };
+  // Run the first tasks that fit, in evaluator order; dropped tasks keep their gaps in the decision.
+  const slots = itemSlots(node, iterations.reduce((sum, row) => sum + row.tasks.length, 0));
+  if (slots <= 0) return { reason: "item limit", exhaustedBounds: ["maxTotalItems"] };
+  const tasks = last.decision.tasks.slice(0, slots).map(task => task.item);
   if (iterations.some(row => canonical(row.tasks) === canonical(tasks))) return { reason: "no progress", exhaustedBounds: [] };
   return { tasks };
+}
+function itemSlots(node: BoundedFeedbackNode, used: number): number {
+  return Math.min(node.maxItemsPerIteration, node.maxTotalItems - used);
+}
+/** Item bounds that cut a decision's tasks short in its successor iteration, in iteration order. */
+export function truncatingBounds(iterations: readonly FeedbackIteration[], node: BoundedFeedbackNode): string[] {
+  const bounds = new Set<string>();
+  let used = 0;
+  iterations.forEach((row, index) => {
+    if (row.tasks.length < (iterations[index - 1]?.decision?.tasks.length ?? 0)) bounds.add(itemSlots(node, used) === node.maxItemsPerIteration ? "maxItemsPerIteration" : "maxTotalItems");
+    used += row.tasks.length;
+  });
+  return [...bounds];
 }
 
 /** Executions that ran a model; an escalation-only resume adds an admission without a cost row. */

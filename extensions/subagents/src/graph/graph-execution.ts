@@ -1,3 +1,4 @@
+import { ALWAYS_ESCALATION_REASON } from "./decision-gate.js";
 import type { GraphRuntimeState, NodeInstanceId } from "./graph-instance-id.js";
 import type { AgentGraph } from "./ir.js";
 import type { SchedulerState } from "./scheduler.js";
@@ -203,7 +204,7 @@ export function validateExecutionState(state: SchedulerState, graph: AgentGraph)
         const scope = `${row.activation}:${row.graphAttempt}`;
         if (!scopes.has(scope)) { scopes.add(scope); graphStarts++; }
       } else if (row.payload.kind === "dispatched") {
-        // Escalation carries a reason and exists only after this execution's model chain or as a lifecycle resume.
+        // Escalation follows a model chain, a declared Caller approval, or a lifecycle resume.
         requireValid(row.payload.target === "escalation" ? node.type === "decision_gate" : node.type === "agent" || node.type === "decision_gate");
         if (row.payload.target === "validation-gate") requireValid(node.type === "agent" && !!node.validation?.gate);
         if (node.type === "decision_gate") {
@@ -211,8 +212,8 @@ export function validateExecutionState(state: SchedulerState, graph: AgentGraph)
           const previousEscalation = prior.find(entry => entry.payload.kind === "dispatched" && entry.payload.target === "escalation")?.payload;
           const resumingEscalation = previousEscalation?.kind === "dispatched" && prior.some(entry => entry.payload.kind === "cancel-requested" && entry.payload.reason === "lifecycle");
           const decided = rows.some(entry => !baseline(entry) && matchesExecution(entry, row) && entry.payload.kind === "dispatched" && entry.payload.target === "agent");
-          if (row.payload.target === "escalation" && !decided) requireValid(resumingEscalation && row.payload.reason === previousEscalation.reason);
-          if (row.payload.target === "agent") requireValid(!resumingEscalation);
+          if (row.payload.target === "escalation" && !decided) requireValid(node.escalate === "always" && row.payload.reason === ALWAYS_ESCALATION_REASON || resumingEscalation && row.payload.reason === previousEscalation.reason);
+          if (row.payload.target === "agent") requireValid(node.escalate !== "always" && !resumingEscalation);
         }
       } else if (row.payload.kind === "cost") {
         costUsd += row.payload.costUsd ?? 0; costAttempts++; unavailable ||= row.payload.unavailable === true;

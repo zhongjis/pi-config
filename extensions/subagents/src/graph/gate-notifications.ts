@@ -14,7 +14,7 @@ export function createGateNotifications(pi: ExtensionAPI, notifications: GraphRu
       scheduled.set(gate.gate_id, key);
       notifications.schedule(key, wake => {
         if (!scheduled.delete(gate.gate_id) || !isPending(gate.gate_id)) return;
-        const next = `Call get_agent_result with run_id "${task.id}" and wait:true for the questions and state; decide yourself or ask the human with ask, then resolve_agent_graph_gate.`;
+        const next = `Call get_agent_result with run_id "${task.id}" and wait:true for the questions and state; decide yourself or ask the human with ask, then resolve_agent_graph_gate with an optional response.note for the loop-back agent.`;
         pi.sendMessage<NotificationDetails>({
           customType: "subagent-notification", display: true,
           content: `<task-notification>\n<task-id>${task.id}</task-id>\n<status>Decision escalated</status>\nReason: ${gate.reason}\n${next}\n</task-notification>`,
