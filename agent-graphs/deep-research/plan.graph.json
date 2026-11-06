@@ -1,6 +1,6 @@
 {
   "name": "deep-research/plan",
-  "description": "Seed broad searches, plan research parts and tasks from that evidence, and check the plan's scope autonomously.",
+  "description": "Seed broad searches, plan research parts with completion bars and tasks from that evidence, and send the plan to the Caller for approval.",
   "inputSchema": {
     "type": "object",
     "properties": {
@@ -15,7 +15,7 @@
       "type": "agent",
       "name": "Write seed queries",
       "agent": "wenchang",
-      "prompt": "Seed research for: ${question}\nOptional evidence context: ${context}\nWrite 2–4 short, broad search queries that map the topic before any plan exists: the topic itself, its origin or history, and the main sources or viewpoints that compete. When the question asks for an origin, first use or history, make one query date-bounded to find the earliest known use (for example a before:<year> operator or an archive search). Start wide; do not narrow to one source. Choose local for repository evidence, github for external GitHub evidence, web for public sources. Do not search or answer; write queries only. Return only structured JSON {items:[{source,question,purpose}]}.",
+      "prompt": "Seed research for: ${question}\nOptional evidence context: ${context}\nWrite 2–4 short, broad search queries that map the topic before any plan exists: the topic itself and the main sources or viewpoints that compete. Only when the question asks for an origin, first use or history, make one query date-bounded to find the earliest known use (for example a before:<year> operator or an archive search). Start wide; do not narrow to one source. Choose local for repository evidence, github for external GitHub evidence, web for public sources. Do not search or answer; write queries only. Return only structured JSON {items:[{source,question,purpose}]}.",
       "input": { "question": { "path": "$.question" }, "context": { "path": "$.context" } },
       "outputSchema": {
         "type": "object", "additionalProperties": false,
@@ -52,15 +52,15 @@
       "type": "agent",
       "name": "Decompose question",
       "agent": "wenchang",
-      "prompt": "Read-only research plan for: ${question}\nOptional evidence context: ${context}\nSeed evidence from broad searches (leads, not verified facts): ${seed}\nParts are ONLY the material parts of the user's question (ids p1..pN in order); extra evidence angles are tasks, not parts. Decompose into 1–6 distinct, verifiable tasks; each task lists the partIds it serves; every part needs at least one task. Use the seed evidence: name the real sources, people, dates and disagreements it shows, and add a task for each material lead it did not settle. Do not use overlapping summaries of the same docs. Prioritize the central product/scope question before ancillary setup, version pins or citation polish. When a part asks about origin, first use, history or dates, give it two tasks: discovery, and backward chaining (mentions dated before the earliest known one, and the sources that earliest source cites). For claims about whether a UI exists, inspect actual routes, assets or official product boundaries rather than relying on README silence; absence of evidence is not disproof. Choose local for repository evidence, github for external GitHub evidence, web for public sources. Treat context and search snippets only as leads; open sources before treating claims as facts. If a source cannot be opened, make verification a task, not a fact. Before returning, check that every material part of the question has a part and every part has a task. No writing or delegation. Return only structured JSON {parts:[{id,question}],tasks:[{source,question,purpose,partIds}]} where purpose names the question part and distinct evidence to check.",
+      "prompt": "Read-only research plan for: ${question}\nOptional evidence context (purpose, audience, constraints): ${context}\nSeed evidence from broad searches (leads, not verified facts): ${seed}\nParts are ONLY the material parts of the question (ids p1..pN in order); extra evidence angles are tasks, not parts. Give every part a doneWhen: the observable evidence condition that makes the part answered well enough for the question's purpose. Write bars the evidence can reach: when a source may not exist (for example an independent benchmark), say what search counts as an answer (for example two distinct routes each finding one or reporting none); when a part is derived from other parts (for example a recommendation), say so and give it no task. Decompose into 1–6 distinct, verifiable tasks; each task lists the partIds it serves; every part that is not derived needs at least one task. Use the seed evidence: name the real sources, people, dates and disagreements it shows, and add a task for each material lead it did not settle. Do not use overlapping summaries of the same docs. Prioritize the central product/scope question before ancillary setup, version pins or citation polish. When a part asks about origin, first use, history or dates, give it two tasks: discovery, and backward chaining (mentions dated before the earliest known one, and the sources that earliest source cites). For claims about whether a UI exists, inspect actual routes, assets or official product boundaries rather than relying on README silence; absence of evidence is not disproof. Choose local for repository evidence, github for external GitHub evidence, web for public sources. Treat context and search snippets only as leads; open sources before treating claims as facts. If a source cannot be opened, make verification a task, not a fact. Before returning, check that every material part of the question has a part with a doneWhen and every non-derived part has a task. No writing or delegation. Return only structured JSON {parts:[{id,question,doneWhen}],tasks:[{source,question,purpose,partIds}]} where purpose names the question part and distinct evidence to check.",
       "input": { "question": { "path": "$.question" }, "context": { "path": "$.context" }, "seed": { "node": "seedSearch", "path": "$" } },
       "outputSchema": {
         "type": "object", "additionalProperties": false,
         "properties": {
           "parts": { "type": "array", "minItems": 1, "maxItems": 6, "uniqueItems": true, "items": {
             "type": "object", "additionalProperties": false,
-            "properties": { "id": { "type": "string", "pattern": "^p[1-6]$" }, "question": { "type": "string", "minLength": 1 } },
-            "required": ["id", "question"]
+            "properties": { "id": { "type": "string", "pattern": "^p[1-6]$" }, "question": { "type": "string", "minLength": 1 }, "doneWhen": { "type": "string", "minLength": 1, "pattern": "\\S" } },
+            "required": ["id", "question", "doneWhen"]
           } },
           "tasks": { "type": "array", "minItems": 1, "maxItems": 6, "items": {
             "type": "object", "additionalProperties": false,
@@ -73,17 +73,18 @@
         }, "required": ["parts", "tasks"]
       }
     },
-    "scope": {
+    "approval": {
       "type": "decision_gate",
-      "name": "Check plan scope",
+      "name": "Caller approves plan",
+      "escalate": "always",
       "state": { "question": { "path": "$.question" }, "context": { "path": "$.context" }, "plan": { "node": "plan", "path": "$" } },
       "questions": {
-        "inScope": {
+        "approved": {
           "type": "bool",
-          "instructions": "Check the research plan's scope against the question. Every material part of the question must have a plan part, every plan part must have at least one task, and no part may be outside the question's scope. Answer false only when a material part is missing, two material parts are merged so one cannot be judged alone, or a part is outside the question's scope; otherwise answer true.",
+          "instructions": "Approve or reject this research plan: its parts, each part's doneWhen bar, and its tasks. Approve when the parts cover what the requester needs, nothing out of scope is included, and each doneWhen is reachable. Reject with a note that says what to change; the planner receives the note and replans.",
           "criteria": {
-            "true": "Every material part of the question has its own plan part, every plan part has at least one task, and no part is outside the question's scope.",
-            "false": "A material part of the question is missing, two material parts are merged so one cannot be judged alone, or a part is outside the question's scope."
+            "true": "The parts cover the requester's need, nothing is out of scope, and every doneWhen bar is reachable.",
+            "false": "A needed part is missing or merged, a part is out of scope, or a doneWhen bar is unreachable or vague."
           }
         }
       }
@@ -92,13 +93,13 @@
   "edges": [
     { "from": "seedQueries", "to": "seedSearch" },
     { "from": "seedSearch", "to": "plan" },
-    { "from": "plan", "to": "scope" },
-    { "from": "scope", "to": "plan", "when": { "eq": [{ "node": "scope", "path": "$.answers.inScope.value" }, false] }, "loop": { "maxIterations": 1 } }
+    { "from": "plan", "to": "approval" },
+    { "from": "approval", "to": "plan", "when": { "eq": [{ "node": "approval", "path": "$.answers.approved.value" }, false] }, "loop": { "maxIterations": 1 } }
   ],
   "outputs": {
     "parts": { "node": "plan", "path": "$.parts" },
     "tasks": { "node": "plan", "path": "$.tasks" },
     "seed": { "node": "seedSearch", "path": "$" },
-    "approved": { "node": "scope", "path": "$.answers.inScope.value" }
+    "approved": { "node": "approval", "path": "$.answers.approved.value" }
   }
 }
