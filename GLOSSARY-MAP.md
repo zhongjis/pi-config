@@ -7,4 +7,4 @@
 
 ## Relationships
 
-- **Panda Harness → Subagents Extension**: the extension builds on the harness terms *Subagent* and *Agent* and refines them for typed multi-agent orchestration; it owns the agent-graph vocabulary the root context does not define.
+- **Panda Harness → Subagents Extension**: the extension builds on the harness terms *Subagent* and *Agent* and refines them for typed multi-agent orchestration; it owns the agent-graph vocabulary the root context does not define. A *Caller* is the role a *Mode Agent* plays toward an agent graph run.
