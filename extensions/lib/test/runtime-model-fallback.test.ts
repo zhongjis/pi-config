@@ -1,9 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { registerRuntimeModelFallback } from "../runtime-model-fallback.js";
 
 type Model = { provider: string; id: string; name: string; contextWindow: number };
-type Handler = (event: never, ctx: ExtensionContext) => void | Promise<void>;
+type Handler = (event: never, ctx: ExtensionContext) => unknown;
 
 const MODELS: Model[] = [
 	{ provider: "test", id: "primary", name: "Primary", contextWindow: 100 },
@@ -31,7 +31,9 @@ function createHarness() {
 		},
 	};
 	const fire = async (event: string, payload: unknown = {}) => {
-		for (const handler of handlers.get(event) ?? []) await handler(payload as never, ctx as never);
+		let result: unknown;
+		for (const handler of handlers.get(event) ?? []) result = await handler(payload as never, ctx as never);
+		return result;
 	};
 	const pi = {
 		on(event: string, handler: Handler) {
@@ -158,6 +160,24 @@ describe("registerRuntimeModelFallback", () => {
 		await settleQuota(harness, "403 {\"type\":\"error\",\"error\":{\"type\":\"permission_error\",\"message\":\"Your role does not include access to this feature.\"}}");
 		expect(harness.selections).toEqual([MODELS[1]]);
 		expect(harness.continuations).toEqual([{ display: false, triggerTurn: true }]);
+	});
+
+	it("discards a delayed same-model continuation after manual model selection", async () => {
+		const harness = createHarness();
+		const message = { ...quotaError("Unable to connect").message, content: [] };
+		await harness.fire("message_end", { message });
+		vi.useFakeTimers();
+		try {
+			const waiting = harness.fire("agent_before_settle", {
+				outcome: "error", continue: false,
+				context: { contextEntries: [{ sourceEntry: { id: "failed" }, messages: [message] }] },
+			});
+			harness.ctx.model = MODELS[1];
+			await harness.fire("model_select", { model: MODELS[1] });
+			await vi.runAllTimersAsync();
+			expect(await waiting).toBeUndefined();
+			expect(harness.selections).toEqual([]);
+		} finally { vi.useRealTimers(); }
 	});
 
 	it("cancels a pending fallback when the user manually selects a model", async () => {

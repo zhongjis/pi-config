@@ -122,6 +122,15 @@ export function isAccessDeniedError(err: unknown): boolean {
 	return /\b403\b|forbidden|permission.?(?:error|denied)|access.?denied/.test(getErrorText(err));
 }
 
+/** Recoverable transport/proxy failures; invalid credentials and access denials are not transient. */
+export function isTransientProviderError(err: unknown): boolean {
+	const message = getErrorText(err);
+	return message.includes("socket connection closed unexpectedly")
+		|| message.includes("unable to connect")
+		|| message.includes("auth_unavailable")
+		|| /\b(?:invalid|malformed|truncated)\b[^\n]*(?:\bsse\b|server-sent event)|(?:\bsse\b|server-sent event)[^\n]*\b(?:invalid|malformed|truncated)\b/.test(message);
+}
+
 /** Either quota or rate-limit — common "should I failover?" predicate. */
 export function isQuotaOrRateLimitError(err: unknown): boolean {
 	return isQuotaError(err) || isRateLimitError(err);

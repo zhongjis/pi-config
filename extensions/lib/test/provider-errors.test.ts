@@ -5,6 +5,7 @@ import {
 	isQuotaError,
 	isQuotaOrRateLimitError,
 	isRateLimitError,
+	isTransientProviderError,
 } from "../provider-errors.js";
 
 describe("getErrorText", () => {
@@ -144,6 +145,23 @@ describe("isQuotaOrRateLimitError", () => {
 	it("returns false for neither", () => {
 		expect(isQuotaOrRateLimitError({ status: 500 })).toBe(false);
 		expect(isQuotaOrRateLimitError({ message: "bad request" })).toBe(false);
+	});
+});
+
+describe("isTransientProviderError", () => {
+	it.each([
+		{ message: "Socket connection closed unexpectedly" },
+		{ errorMessage: "Unable to connect" },
+		{ error: { message: "auth_unavailable: no auth available" } },
+		{ cause: { message: "Codex error: invalid SSE data JSON (len=262138)" } },
+		{ message: "truncated server-sent event" },
+		{ message: "SSE frame is malformed" },
+	])("recognizes recoverable transport/proxy failures: %j", error => {
+		expect(isTransientProviderError(error)).toBe(true);
+	});
+
+	it.each(["invalid API key", "403 permission denied", "invalid request JSON", "quota exhausted", "network disconnected"])("keeps other errors unchanged: %s", message => {
+		expect(isTransientProviderError({ message })).toBe(false);
 	});
 });
 

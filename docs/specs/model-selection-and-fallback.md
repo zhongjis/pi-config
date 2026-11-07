@@ -26,8 +26,9 @@ The profile filter sits under everything: every `getAvailable()` call the other
 surfaces make already returns a profile-filtered list.
 
 Resolution fallback happens before a request. Runtime behavior is separate: the
-shared extension coordinator can continue a settled quota/rate-limit/access-denied
-failure on the next configured model-chain candidate.
+shared extension coordinator retries transient failures on the same model before
+continuing on the next configured model-chain candidate; quota/rate-limit/access-denied
+failures also participate in runtime recovery.
 
 ---
 
@@ -207,20 +208,39 @@ request failure; it does not change Pi core.
 ### Post-native-retry chain continuation
 
 [`runtime-model-fallback.ts`](../../extensions/lib/runtime-model-fallback.ts) waits for
-Pi to settle its native retries. Only then, after an assistant quota/rate-limit/access-denied
-failure, it resolves the configured chain's authenticated identities in order and
-switches to the next untried candidate. The failed assistant entry remains in the
-transcript. A hidden continuation starts a new turn in that same transcript, retaining
-completed tool results and never replaying the user prompt; the newly selected fallback
-remains selected.
+Pi to settle its native retries. Transient transport/proxy failures and CLIProxyAPI
+quota failures then use its same-model backoff schedule before advancing the chain.
+The recognized transient signatures live in
+[`provider-errors.ts`](../../extensions/lib/provider-errors.ts), including closed sockets,
+connection failures, unavailable proxy auth, and malformed/truncated SSE frames.
+
+The coordinator permits five total attempts per model: the original request plus
+four retries. Native failed requests count toward this total; native
+`retry.maxRetries` counts **additional** retries, not total attempts. The coordinator
+does not replace native policy or extend an already-exhausted budget. If native
+policy already made more attempts, it advances without adding coordinator retries.
+The schedule is owned by the coordinator; tests exercise its delays and native
+accounting in the [real runtime](../../test/integration/runtime-model-fallback.integration.test.ts).
+
+Same-model continuation removes failed assistant/tool pairs from model context,
+not the transcript, preserving completed tool results. Once the same-model budget
+is spent, or immediately for other quota/rate-limit/access-denied failures, the
+coordinator resolves the chain's authenticated identities in order and selects
+the next untried candidate. A hidden continuation starts a new turn in that same
+transcript without replaying the user prompt; the fallback remains selected.
+
+Abort during an awaited backoff suppresses continuation and model switching after
+the handler returns. The wait itself is not interrupted: settlement can take up
+to the longest backoff slot (about two minutes). Manual model selection or new
+user input invalidates a delayed continuation.
 
 This coordinator is bound by [`modes/src/hooks.ts`](../../extensions/modes/src/hooks.ts)
 for main-mode sessions only, using the active `/mode-model` override or mode chain. It
 is also bound as the hidden `subagent-model-fallback` extension in
 [`subagents/src/agent-runner.ts`](../../extensions/subagents/src/agent-runner.ts), so
-configured subagents retain it even when isolated or excluded. An absent chain, an
-exhausted chain, an abort signal/aborted message, context overflow, and every other
-error stop recovery. It never cycles identities.
+configured subagents retain it even when isolated or excluded. An absent/unavailable
+chain, an exhausted same-model budget and chain, an abort/aborted message, context
+overflow, and unrelated errors stop recovery. It never cycles identities.
 
 The generic coordinator applies a selected candidate's thinking level with Pi's API;
 the caller owns Fast policy and validates/applies it. This path is for configured

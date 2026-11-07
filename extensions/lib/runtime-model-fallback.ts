@@ -1,7 +1,10 @@
 import { isContextOverflow, type AssistantMessage } from "@earendil-works/pi-ai";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { parseModelChain, resolveAllAvailable } from "./model-selection.js";
-import { isAccessDeniedError, isQuotaError, isQuotaOrRateLimitError } from "./provider-errors.js";
+import { isAccessDeniedError, isQuotaError, isQuotaOrRateLimitError, isTransientProviderError } from "./provider-errors.js";
+
+// Four additional attempts (five total); native failures consume the same budget.
+const RETRY_DELAYS_MS = [5_000, 30_000, 60_000, 120_000] as const;
 
 export type RuntimeModelCandidate = ReturnType<typeof resolveAllAvailable>[number];
 
@@ -14,7 +17,7 @@ export interface RuntimeModelFallbackPolicy {
 	apply(candidate: RuntimeModelCandidate, ctx: ExtensionContext): void;
 }
 
-/** Coordinates one user-input episode of post-native-retry quota/rate-limit/access-denied recovery. */
+/** Coordinates one user-input episode of provider recovery after native retries. */
 export function registerRuntimeModelFallback(pi: ExtensionAPI, policy: RuntimeModelFallbackPolicy): void {
 	let pending: AssistantMessage | undefined;
 	let attempted = new Set<string>();
@@ -37,13 +40,15 @@ export function registerRuntimeModelFallback(pi: ExtensionAPI, policy: RuntimeMo
 		failures = message.stopReason === "error" ? failures + 1 : 0;
 		pending = message.stopReason === "error"
 			&& !isContextOverflow(message, ctx.model?.contextWindow)
-			&& (isQuotaOrRateLimitError(message) || isAccessDeniedError(message))
+			&& (isQuotaOrRateLimitError(message) || isAccessDeniedError(message) || isTransientProviderError(message))
 			? message
 			: undefined;
 	});
-	pi.on("agent_before_settle", (event, ctx) => {
+	pi.on("agent_before_settle", async (event, ctx) => {
 		if (event.outcome !== "error" || event.continue || !pending || !ctx.model
-			|| ctx.model.provider !== "cliproxyapi" || !isQuotaError(pending) || failures >= 5) return;
+			|| !(isTransientProviderError(pending) || ctx.model.provider === "cliproxyapi" && isQuotaError(pending))) return;
+		const delayMs = RETRY_DELAYS_MS[failures - 1];
+		if (delayMs === undefined) return;
 		const model = ctx.model;
 		const message = pending;
 		const chain = policy.chain(ctx);
@@ -60,6 +65,9 @@ export function registerRuntimeModelFallback(pi: ExtensionAPI, policy: RuntimeMo
 			if (entry.messages.some(message => message.role === "assistant")) break;
 			if (entry.messages.some(message => message.role === "toolResult" && failedToolCalls.has(message.toolCallId))) targets.push(entry);
 		}
+		// Pi suppresses this continuation if aborted during the awaited boundary.
+		await new Promise<void>(resolve => setTimeout(resolve, delayMs));
+		if (pending !== message) return;
 		pending = undefined;
 		return { continue: true, entries: targets.map(entry => ({ type: "context_edit" as const, targetId: entry.sourceEntry.id, replacement: null })) };
 	});

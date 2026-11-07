@@ -15,7 +15,7 @@ import { getSessionFast } from "../src/session-fast.js";
 
 const chain = "anthropic/claude-opus-4-8:fast,anthropic/claude-sonnet-4-6:high";
 
-it("main mode override recovers in the same transcript after quota settlement", async () => {
+it.each([false, true])("main mode override recovers in the same transcript (transient: %s)", async transient => {
 	const t = await createFastSession([pi => {
 		const state = new ModeStateManager(pi);
 		vi.spyOn(state, "loadConfig").mockReturnValue({ body: "", model: "anthropic/claude-opus-4-8", toolRules: [] });
@@ -23,15 +23,23 @@ it("main mode override recovers in the same transcript after quota settlement", 
 		registerModeHooks(pi, state);
 	}]);
 	try {
-		t.fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: { type: "quota_error", message: "quota exhausted" } }), { status: 402 }));
-		await t.session.prompt("run once");
+		for (let attempt = 0; attempt < (transient ? 5 : 1); attempt++) {
+			t.fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ error: { type: "error", message: transient ? "socket connection closed unexpectedly" : "quota exhausted" } }), { status: transient ? 400 : 402 }));
+		}
+		vi.useFakeTimers();
+		const running = t.session.prompt("run once");
+		await vi.runAllTimersAsync();
+		await running;
 		await t.session.waitForIdle();
 		expect(t.session.model?.id).toBe("claude-sonnet-4-6");
 		expect(t.session.thinkingLevel).toBe("high");
 		expect(t.session.messages.filter(m => m.role === "user")).toHaveLength(1);
 		expect(t.session.messages.filter(m => m.role === "custom")).toEqual([expect.objectContaining({ display: false })]);
 		expect(t.requests).toHaveLength(1);
-	} finally { t.dispose(); }
+		expect(t.fetchMock.mock.calls.map(([, init]) => JSON.parse(String(init?.body)).model)).toEqual([
+			...Array.from({ length: transient ? 5 : 1 }, () => "claude-opus-4-8"), "claude-sonnet-4-6",
+		]);
+	} finally { vi.useRealTimers(); t.dispose(); }
 });
 
 it("isolated child waits through native retries and gated fallback before final output", async () => {
@@ -73,6 +81,38 @@ it("isolated child waits through native retries and gated fallback before final 
 		expect(session.messages.filter(m => m.role === "user")).toHaveLength(1);
 		expect(t.requests[0].payload.speed).toBeUndefined();
 	} finally { release(); await running; for (const child of children) child.dispose(); registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }
+});
+
+it("isolated child retries a transient failure on the same model before settling", async () => {
+	const t = await createFastSession();
+	vi.stubEnv("PI_CODING_AGENT_DIR", t.cwd);
+	writeFileSync(join(t.cwd, "settings.json"), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false } }));
+	registerAgents(new Map([["transient-recover", { name: "transient-recover", description: "test", model: chain, extensionRules: parseAccessRules("extensions", "-subagent-model-fallback").rules, toolRules: [], discoverSkills: false, preloadSkills: [], systemPrompt: "test", promptMode: "replace" }]]));
+	let child: AgentSession | undefined;
+	const requests: Array<{ model: string; time: number }> = [];
+	const success = t.fetchMock.getMockImplementation();
+	if (!success) throw new Error("Missing fetch fixture");
+	t.fetchMock.mockImplementation(async (input, init) => {
+		const payload = JSON.parse(String(init?.body));
+		requests.push({ model: payload.model, time: Date.now() });
+		if (requests.length === 1) return new Response(JSON.stringify({ error: { type: "error", message: "Unable to connect" } }), { status: 400 });
+		return success(input, init);
+	});
+	try {
+		const opened = await openSession(t.ctx, "transient-recover", { pi: t.pi, isolated: true });
+		child = opened.session;
+		vi.useFakeTimers();
+		const running = execute(child, (opened.promptPrefix ?? "") + "run once");
+		await vi.runAllTimersAsync();
+		const result = await running;
+		expect(result.failure).toBeUndefined();
+		expect(result.text).toBe("ok");
+		expect(requests.map(request => request.model)).toEqual(["claude-opus-4-8", "claude-opus-4-8"]);
+		expect(requests[1].time - requests[0].time).toBe(5_000);
+		expect(getSessionFast(child)).toBe(true);
+		expect(child.messages.filter(message => message.role === "custom")).toHaveLength(0);
+		expect(child.messages.filter(message => message.role === "user")).toHaveLength(1);
+	} finally { vi.useRealTimers(); child?.dispose(); registerAgents(new Map()); vi.unstubAllEnvs(); t.dispose(); }
 });
 
 it("resume waits for a fast fallback and reports only the recovered turn", async () => {
