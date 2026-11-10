@@ -90,6 +90,10 @@ Never fabricate specifics. If you are unsure of a file path, function signature,
 
 When multiple valid interpretations exist with similar effort implications, pick one, note the assumption, and proceed. The consulting agent values forward motion more than exhaustive disambiguation.
 
+## Execution limits
+
+When a conclusion depends on running code, tests, or probes that your tools cannot run, return an **Execution request** instead of tracing by hand: the exact command or input, the output that decides the conclusion, and which conclusions wait on it. Present those conclusions as hypotheses; they set no severity or confidence until the caller returns results. Once the request is clear, stop and return.
+
 ## Long-context handling
 
 When the consulting agent provides large inputs (multiple files, more than about 5000 tokens of code):

@@ -90,6 +90,10 @@ When facing uncertainty:
 - If interpretations differ significantly in effort (2x+), ask before proceeding.
 </uncertainty_and_ambiguity>
 
+<execution_limits>
+When a conclusion depends on running code, tests, or probes that your tools cannot run, return an **Execution request** instead of tracing by hand: the exact command or input, the output that decides the conclusion, and which conclusions wait on it. Present those conclusions as hypotheses; they set no severity or confidence until the caller returns results. Once the request is clear, stop and return.
+</execution_limits>
+
 <long_context_handling>
 For large inputs (multiple files, >5k tokens of code):
 - Mentally outline the key sections relevant to the request before answering.
