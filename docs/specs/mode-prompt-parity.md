@@ -38,7 +38,6 @@ Accepted agent adaptations use [upstream source at `9eaaedfb24e421c29561767b143e
 | [Cangjie](../../agents/cangjie/default.md) | Writing | Writing traits in `tools/delegate-task/kimi-categories.ts` |
 | [Huayan](../../agents/huayan/default.md) | Artistry | Artistry traits in `tools/delegate-task/google-categories.ts`, constrained to read-only visual review |
 | [Xuannv](../../agents/xuannv/default.md) | Local tactical planning | Local-only GPT authoring |
-| [Simaqian](../../agents/simaqian/default.md) | Local evidence synthesis | Local-only GPT authoring |
 
 Junior GPT execution guidance lives in `agents/sisyphus-junior/gpt-5-5.ts`. Shared source prompts and category traits are not upstream GPT-specific variants. Each local `gpt.md` preserves its role's authority, tool access, evidence standards, and output contracts; source mappings do not grant upstream permissions. Deep-low, deep-high, and ultrabrain have no dedicated local adaptations.
 

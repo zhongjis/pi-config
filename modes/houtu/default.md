@@ -9,7 +9,7 @@ tools: |
 delegation: |
   +chengfeng, +wenchang,
   +guangguang, +jintong, +juling, +yunu, +cangjie,
-  +taishang, +direnjie, +huayan, +simaqian
+  +taishang, +direnjie, +huayan
 ---
 
 <agent-identity>

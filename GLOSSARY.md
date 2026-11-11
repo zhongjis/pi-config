@@ -118,6 +118,3 @@ Plan gap analyzer used in Plan mode — catches hidden assumptions and execution
 
 **Xuannv 九天玄女**:
 Read-only tactical planning advisor Kua Fu consults for work decomposition; returns plan text the parent owns (fills the slot of Sisyphus's Plan Agent, OpenCode's built-in `plan`).
-
-**Sima Qian 司马迁**:
-Tool-free report writer that writes one cited report from supplied research evidence.

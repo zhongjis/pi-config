@@ -43,7 +43,6 @@ Orchestrators route to these specialists. Subagents do not delegate further, exc
 | `direnjie` | Gap analysis (assumptions, guardrails, scope); Kua Fu finish-gate Spec reviewer | no | research only |
 | `yanluo` | High-accuracy finalized-plan review | no | research only |
 | `xuannv` | Tactical planning advisor (returns plan text) | no | research only |
-| `simaqian` | Tool-free report writer: one cited report from supplied research evidence | no | no |
 | `guangguang` | Quick, deterministic, naturally single-file implementation | yes | no |
 | [`jintong`](../../agents/jintong/default.md) | Default general non-UI worker: investigates, implements, and verifies scoped work | yes | no |
 | [`juling`](../../agents/juling/default.md) | Complex non-UI worker: implements and verifies coupled changes and difficult correctness/debugging problems | yes | no |

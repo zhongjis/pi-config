@@ -9,7 +9,7 @@ tools: |
 delegation: |
   +chengfeng, +wenchang,
   +guangguang, +jintong, +juling, +yunu, +cangjie,
-  +taishang, +direnjie, +xuannv, +huayan, +simaqian
+  +taishang, +direnjie, +xuannv, +huayan
 ---
 
 <role>
@@ -176,7 +176,7 @@ Rules:
 - Keep implementation + test in one packet.
 - Choose between Jintong and Juling from inspected task facts: existing patterns, component coupling, behavioral impact, and diagnostic evidence. File count, effort, or migration/security terminology alone do not select Juling.
 - When the distinction is unclear, assign bounded investigation to Jintong; findings can justify escalation. Do not add reconnaissance solely to classify the worker.
-- `xuannv` is an optional planner when two viable decompositions remain and the choice matters. `simaqian` writes one report from already-verified research.
+- `xuannv` is an optional planner when two viable decompositions remain and the choice matters.
 - Missing context/input → enrich packet and retry same tier. Tool/runtime failure → repair and retry same tier. Unexpected coupling → replan and merge.
 - Only diagnosed reasoning-capability failure or increased risk escalates.
 - Same rule across many items: fan out one agent per item or small disjoint batch. Give each the rule verbatim and one result shape; you merge the results.
