@@ -36,7 +36,7 @@ import {
   toolCandidates,
 } from "../../lib/active-tools.js";
 import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
-import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
+import { LARK_READ_ONLY_GUARD_SCOPE_ID, registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import { getModePromptSource } from "../../lib/model-family.js";
 import { selectPromptBody } from "../../lib/prompt-variants.js";
 import sessionLocalTools from "../../session-local/index.js";
@@ -532,6 +532,12 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
             decision: "guard",
             reason: "This guarded subagent requires read-only Bash.",
           }));
+          if (canonicalType === "wenchang") {
+            registerGuardScopeProvider(extensionPi, LARK_READ_ONLY_GUARD_SCOPE_ID, () => ({
+              decision: "guard",
+              reason: "This subagent may run only read-only Lark CLI commands.",
+            }));
+          }
           smartToolGuards(extensionPi);
         },
         hidden: true,

@@ -2,6 +2,9 @@ import type { ExtensionAPI, ExtensionContext, ToolCallEvent } from "@earendil-wo
 
 export const SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY = "smart-tool-guards:bash" as const;
 
+/** Scope provider ID that restricts guarded Bash to the exact read-only Lark CLI forms. */
+export const LARK_READ_ONLY_GUARD_SCOPE_ID = "subagents:lark-read-only" as const;
+
 export type GuardCapability = typeof SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY;
 export type GuardScopeDecision = "abstain" | { readonly decision: "guard"; readonly reason: string };
 export type GuardScopeProvider = (

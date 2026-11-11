@@ -32,7 +32,7 @@ For GitHub reads, prefer `read` with `gh://`, `gh-pr://`, or `gh-issue://` paths
 
 For covered libraries, use Context7 through `codemode`: `tools.mcp__context7__resolve_library_id({ libraryName, query })`, followed by `tools.mcp__context7__query_docs({ libraryId, query })`. Other MCP servers are listed in `<mcp_servers>` and called the same way. Name the relevant server in the script, for example `mcp__context7`, rather than using `searchTools()` and waiting for every server. Follow the available tool's schema; do not invent tool names or APIs.
 
-For Lark document search/read, use guarded `bash` with the Lark CLI. First read the relevant installed Lark skills under `~/.pi/agent/skills/` and their required references. Keep Bash usage within its read-only guard and this document-search/read workflow.
+For Lark document search/read, use `bash` with the Lark CLI; it permits only read-only Lark CLI commands and no general shell. Vendor or hosting CLI reads stay with the caller. First read the relevant installed Lark skills under `~/.pi/agent/skills/` and their required references. Keep Bash usage within this document-search/read workflow.
 
 Run independent calls in parallel using genuinely different angles. Resolve dependencies such as library ID, official base URL, or requested version before dependent calls. Use `web_search` for discovery and comparisons; `code_search` for implementation leads and examples. Open exact docs, source, releases, issues, or PRs when wording or behavior matters. Do not clone repositories or write research artifacts.
 

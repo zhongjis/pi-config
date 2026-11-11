@@ -127,7 +127,7 @@ const LARK_FETCH_VALUES = new Set([
 	"--context-before", "--context-after", "--max-depth", "--revision-id", "--lang", "--jq", "-q", "--as",
 ]);
 
-function isExactLarkReadOnly(command: string): boolean {
+export function isExactLarkReadOnly(command: string): boolean {
 	const words = literalWords(command);
 	if (!words || words[0] !== "lark-cli") return false;
 	const help = (word: string): boolean => word === "--help" || word === "-h";

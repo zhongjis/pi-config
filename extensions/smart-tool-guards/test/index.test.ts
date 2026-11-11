@@ -3,6 +3,7 @@ import type { ExtensionAPI, ExtensionContext, ToolCallEvent } from "@earendil-wo
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	hasGuardCapability,
+	LARK_READ_ONLY_GUARD_SCOPE_ID,
 	registerGuardScopeProvider,
 	SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY,
 } from "../../lib/guard-registration.js";
@@ -100,6 +101,22 @@ describe("smart-tool-guards bash hook", () => {
 		smartToolGuards(pi);
 		expect(await handlers[0]({ type: "tool_call", toolCallId: "x", toolName: "write", input: {} } as ToolCallEvent, context())).toBeUndefined();
 		expect(await handlers[0](bashEvent({ command: "rm -rf out" }), context())).toBeUndefined();
+		expect(classifyMock).not.toHaveBeenCalled();
+	});
+
+	it("under the Lark-only scope allows exact lark-cli reads and refuses every other command without classifier", async () => {
+		const { pi, handlers } = makeRuntime();
+		guard(pi, LARK_READ_ONLY_GUARD_SCOPE_ID, "Lark only.");
+		smartToolGuards(pi);
+
+		expect(await handlers[0](bashEvent({ command: "lark-cli docs +search --query plan" }), context())).toBeUndefined();
+		expect(await handlers[0](bashEvent({ command: "lark-cli docs +fetch --doc abc --as user" }), context())).toBeUndefined();
+		for (const command of ["bun x @railway/cli logs", "pwd", "ls", "lark-cli docs +search --query plan | head", "lark-cli docs +create --title x"]) {
+			expect(await handlers[0](bashEvent({ command }), context())).toMatchObject({
+				block: true,
+				reason: expect.stringContaining("Lark-only scope permits only exact read-only lark-cli commands."),
+			});
+		}
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
 

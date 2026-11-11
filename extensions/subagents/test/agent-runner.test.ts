@@ -1110,12 +1110,11 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
       await expect(handlers[0](
         { type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "rm out" } },
         { cwd: "/tmp" },
-      )).resolves.toEqual({
+      )).resolves.toMatchObject({
         block: true,
-        reason: [
-          "[Smart Guard][BLOCK][source=policy][profile=bash-read-only-v1][scope=subagents:guarded]",
-          "Bash not run: Read-only policy matched: filesystem-mutation. Guard active: This guarded subagent requires read-only Bash. Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.",
-        ].join("\n"),
+        reason: expect.stringContaining(canonicalType === "wenchang"
+          ? "Lark-only scope permits only exact read-only lark-cli commands."
+          : "Read-only policy matched: filesystem-mutation."),
       });
     },
   );

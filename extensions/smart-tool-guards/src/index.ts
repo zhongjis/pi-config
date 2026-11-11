@@ -3,11 +3,12 @@ import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	evaluateGuardScope,
+	LARK_READ_ONLY_GUARD_SCOPE_ID,
 	registerGuardCapability,
 	SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY,
 	type GuardScopeEvaluation,
 } from "../../lib/guard-registration.js";
-import { evaluateBashPolicy } from "./bash-policy.js";
+import { evaluateBashPolicy, isExactLarkReadOnly } from "./bash-policy.js";
 import { classify } from "./classifier.js";
 
 const hookedApis = new WeakSet<ExtensionAPI>();
@@ -158,6 +159,15 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 
 		const effectiveCwd = resolve(ctx.cwd, input.cwd ?? ".");
 		const command = takeIssuedCommand(pi, event.toolCallId) ?? input.command;
+		if (
+			scope.activeScopes.some(({ id }) => id === LARK_READ_ONLY_GUARD_SCOPE_ID) &&
+			!isExactLarkReadOnly(command)
+		) {
+			return formatDenial(scope, {
+				kind: "policy",
+				detail: "Lark-only scope permits only exact read-only lark-cli commands.",
+			});
+		}
 		const policy = evaluateBashPolicy({
 			command,
 			requestedCwd: input.cwd,
