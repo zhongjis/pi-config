@@ -20,6 +20,7 @@ export function parseModeAgentConfig(content: string): ModeConfig | null {
     toolRules: parsed.toolRules,
     delegationRules: parsed.delegationRules,
     model: parsed.model,
+    smartGuard: parsed.smartGuard,
   };
 }
 

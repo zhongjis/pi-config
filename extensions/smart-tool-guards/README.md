@@ -6,25 +6,25 @@ Guards selected built-in `bash` calls with deterministic policy checks and a fai
 
 | Caller | Built-in `bash` behavior |
 |---|---|
-| Fu Xi mode | Guarded when the latest active mode is `fuxi`; missing guard capability blocks execution. |
-| Canonical read-only agents selected by [the subagent runner](../subagents/src/agent-runner.ts) | Guarded by a trusted hidden subagent factory, including when ordinary extensions are disabled, isolated, or filtered. |
-| Other modes and agents | Scope providers abstain; smart-tool-guards does not alter the call. |
+| Modes with `smart_guard` frontmatter | [Mode scope providers](../modes/src/hooks.ts) select the current config’s profile; missing guard capability blocks execution. |
+| Agents with `smart_guard` frontmatter | [The subagent runner](../subagents/src/agent-runner.ts) installs a trusted hidden guard, including for override configs and when ordinary extensions are disabled, isolated, or filtered. |
+| Modes and agents without `smart_guard` | Scope providers abstain; smart-tool-guards does not alter the call. |
 | Non-`bash` tools | Always bypassed. |
 
-Scope providers return `"abstain"` or `{ decision: "guard", reason }`. Evaluation returns a discriminated abstain, guard, or error result; active scopes and failed provider IDs are sorted. Error outranks guard, guard outranks abstain, and thrown, malformed, or blank-reason decisions are provider errors. Duplicate IDs retain latest-provider replacement semantics.
+The optional `smart_guard` field defaults off and is validated by [the shared frontmatter parser](../lib/agent-frontmatter.ts) against the [profile files](profiles/). Scope providers return `"abstain"` or `{ decision: "guard", reason, profile }`. Evaluation returns a discriminated abstain, guard, or error result; active scopes and failed provider IDs are sorted. Error outranks guard, guard outranks abstain, and thrown, malformed, blank-reason, or missing/non-string-profile decisions are provider errors. Unknown, invalid, or conflicting active profiles fail closed. Duplicate IDs retain latest-provider replacement semantics.
 
 ## Denial Messages
 
 Every guarded denial has this two-line envelope:
 
 ```text
-[Smart Guard][BLOCK|ERROR][source=<source>][profile=bash-read-only-v1][scope=<sorted provider IDs>]
+[Smart Guard][BLOCK|ERROR][source=<source>][profile=<profile ID>][scope=<sorted provider IDs>]
 Bash not run: <detail>[ Guard active: <successful provider activation reason(s)>] <agent capability restriction and reporting guidance>
 ```
 
 [Central denial formatting](src/index.ts) identifies the restriction as the current agent's capability scope, confirms no execution, and asks the agent to report that limitation rather than infer project-wide lack of access.
 
-`scope=none` is used only when no provider ID is available. `Guard active:` is appended only for successfully active provider scopes, so a scope-only error relies on its fail-closed detail. Dynamic classifier and provider reason whitespace is normalized to one line. `smart-tool-guards` alone formats messages; providers supply structured scope and activation reasons.
+`profile` names the active scopes' known profile; when none is known it lists every profile. `scope=none` is used only when no provider ID is available. `Guard active:` is appended only for successfully active provider scopes, so a scope-only error relies on its fail-closed detail. Dynamic classifier and provider reason whitespace is normalized to one line. `smart-tool-guards` alone formats messages; providers supply structured scope and activation reasons.
 
 Categories are stable: deterministic findings are `BLOCK/source=policy`, valid classifier denials are `BLOCK/source=classifier`, malformed input is `ERROR/source=input`, classifier unavailability is `ERROR/source=classifier`, and scope evaluation failure is `ERROR/source=scope`. Policy details name read-only policy finding codes without calling the command dangerous. Scope errors identify failed provider IDs and explain fail-closed behavior without exposing provider errors.
 
@@ -33,16 +33,28 @@ Categories are stable: deterministic findings are `BLOCK/source=policy`, valid c
 Guarded calls use this precedence:
 
 1. Invalid `command`, `cwd`, or `timeout` input blocks.
-2. Deterministic policy findings block before model use, with stable finding codes for filesystem, VCS, external-system, privilege/system-control, redirection, shell/interpreter, downloaded-code, and uninspectable-syntax hazards.
-3. The [Lark policy](src/bash-policy.ts) allows exact direct literal document search/fetch forms and syntax-discovery help/version queries, including wiki help, using only verified read flags and required selectors. Other recognized Lark calls block without classifier fallback, including path and known-wrapper variants; compounds, pipelines, environment overrides, expansions, output/download flags, and unknown operations are not allowed.
-4. Exact trimmed `pwd` and exact single-command, read-only `agent-browser` forms allow without a classifier call. The browser allowlist covers page inspection, runtime and metadata reads, documented output-only flags and filters, and help/version queries; URL reads, effectful waits, mutating siblings, wrappers, pipelines, and compound commands are excluded.
-5. [Bounded literal inspection](src/literal-inspection.ts) allows selected direct readers, hashing, config-free search, depth-bounded file discovery, syntax discovery, and bounded direct Git/RTK Git diff inspection, including pipelines only when every stage validates. Literal refs and paths, including `/tmp` and outside-repository paths, use the same rules; numeric options require decimal values. Its code owns the supported argv; unknown options, wrappers, expansions, and general compound commands are excluded. Arbitrary jq filters defer rather than entering this fast path.
-6. [Diagnostic inspection](src/diagnostic-inspection.ts) allows bounded, direct no-pager journal reads, selected service-property/status reads, and one fixed SQLite schema query. Its code owns the accepted argv. SQLite requires disabled initialization and an immutable read-only file URI: use only offline snapshots, because immutable reads ignore live writers/WAL and cannot establish current production state. Missing databases fail rather than being created. Plain database paths, arbitrary SQL, dot commands, startup scripts, and extra options do not receive fast approval.
-7. Every other command defers to the classifier, which assesses the exact effects of every command. Executables, outside-repository reads, and shell composition are not inherently mutations; ordinary inline jq inspection can be read-only. [Trusted classifier context](src/index.ts) identifies RTK as an output-filtering proxy whose underlying action determines safety; it does not blanket-approve RTK. RTK Git mutations retain deterministic Git checks. General-purpose interpreters remain blocked, and uncertain effects fail closed. Read access does not authorize secret access or transmission.
+2. Deterministic findings block before model use. Code-owned shell-structure checks report redirection, downloaded-code, and uninspectable-syntax codes for every profile; the active profile's denial rules report their effects, such as filesystem, VCS, external-system, privilege/system-control, and shell/interpreter codes.
+3. The active profile's approval rules allow without a classifier call. The [read-only profile](profiles/bash-read-only-v1.yaml) approves exact trimmed `pwd`; exact single-command `agent-browser` inspection forms; exact direct literal Lark document search/fetch and help/version queries, while every other Lark call blocks without classifier fallback; bounded literal readers, config-free search, depth-bounded file discovery, syntax discovery, and direct Git/RTK Git diff inspection, including pipelines only when every stage validates; and bounded no-pager journal and service reads plus one fixed SQLite schema query. SQLite requires disabled initialization and an immutable read-only file URI: use only offline snapshots, because immutable reads ignore live writers/WAL and cannot establish current production state. One `command -v NAME || true` compound is a code-owned approval in [literal inspection](src/literal-inspection.ts).
+4. Every other command defers to the classifier, which assesses the exact effects of every command. Executables, outside-repository reads, and shell composition are not inherently mutations; ordinary inline jq inspection can be read-only. The profile's trusted classifier instructions identify RTK as an output-filtering proxy whose underlying action determines safety; it does not blanket-approve RTK. RTK Git mutations retain deterministic Git checks. General-purpose interpreters remain blocked, and uncertain effects fail closed. Read access does not authorize secret access or transmission.
 
 [Shell scanning](src/bash-syntax.ts) recognizes only exact stderr-to-stdout descriptor duplication as distinct from file output. Other output redirections retain their checks. Descriptor duplication alone does not grant fast approval: an unrecognized pipeline stage, including sed, still requires classifier evaluation when no independent hazard blocks first.
 
 The guard evaluates the model-issued command recorded at assistant `message_end`, and falls back to the current input when no record exists. `tool_call` input mutations by other extensions (for example `rtk`) are trusted and not re-evaluated. The guard itself never rewrites input. Allowed calls continue through Pi's native `bash` executor with the current input, requested `cwd`, and requested `timeout`. Classifier context includes the evaluated command, the requested cwd and timeout, and an effective cwd resolved from the session cwd; omitted timeout remains omitted. Caller cancellation and the classifier's own five-second decision deadline both abort the nested model request, independently of native execution timeout.
+
+## Profiles
+
+Each guard profile is one self-contained file, `profiles/<id>.yaml`; its basename is the ID that `smart_guard` names, so adding a file adds a profile. Profiles are read only from this extension's directory. [The loader](src/profile.ts) owns the schema and rejects unknown keys, wrong types, and inconsistent rules; a missing or invalid profile denies every guarded call for that profile.
+
+A profile lists its allowed effects, sends unmatched commands to the classifier, carries its classifier instructions and choice labels, and tags command shapes with free-form effects. Rules in the `segment` view deny: they match a prefix of every shell command segment after variable assignments, `env`/`command`/`nohup` wrappers, and an `rtk` prefix before `git` are removed, and they report their effect as the finding code. A segment matching a denial blocks even when an approval also matches; a `fallback` denial applies only where no approval matched that segment. Rules in the other views approve with an allowed effect:
+
+| View | Matches |
+|---|---|
+| `text` | The trimmed command text. |
+| `words` | The whole command as one shell segment, without unwrapping; keywords must be unquoted. |
+| `command` | The whole command as one literal stage. |
+| `stage` | Each stage of a literal pipeline; every stage must match. |
+
+Literal views accept only plain and quoted words joined by spaces and `|` — no expansions, globs, redirections, or other operators — and require an unquoted executable unless a rule allows a quoted one. To allow or deny another command, edit its profile file.
 
 ## Classifier Contract
 
@@ -60,7 +72,7 @@ For chat models, trusted policy instructions stay in the system prompt. The comm
 
 Provider thinking blocks are ignored when accompanied by a text verdict. Markdown fences, extra keys, blank block reasons, thinking-only or tool-call/unknown content, non-stop completion, or any other shape are invalid.
 
-Classifier models get one `choice` question whose labels are the policy's [choices](src/index.ts). Trusted policy instructions travel in the question instructions; the target, `untrusted_action`, and context travel as classifier state. The guard allows only when the allow label's probability reaches the [threshold](src/classifier.ts), and otherwise blocks with the most probable other label as the reason. A non-stop result, a missing or non-choice answer, or a missing allow-label probability is invalid.
+Classifier models get one `choice` question whose labels are the active profile's choices. Trusted policy instructions travel in the question instructions; the target, `untrusted_action`, and context travel as classifier state. The guard allows only when the allow label's probability reaches the [threshold](src/classifier.ts), and otherwise blocks with the most probable other label as the reason. A non-stop result, a missing or non-choice answer, or a missing allow-label probability is invalid.
 
 ## Failure Semantics
 

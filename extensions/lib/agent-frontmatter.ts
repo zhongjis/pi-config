@@ -1,5 +1,6 @@
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import { type AccessRule, parseAccessRules } from "./active-tools.js";
+import { GUARD_PROFILE_IDS, type GuardProfileId } from "./guard-registration.js";
 
 export type PromptMode = "replace" | "system_instructions";
 
@@ -25,6 +26,7 @@ export interface ParsedAgentFrontmatter {
   discoverSkills: boolean;
   preloadSkills: string[];
   model?: string;
+  readonly smartGuard?: GuardProfileId;
   promptMode: PromptMode;
   inheritContext?: boolean;
   runInBackground?: boolean;
@@ -90,6 +92,11 @@ export function parseAgentFrontmatter(
     diagnostics.push(...extensionsParsed.diagnostics.map((d) => ({ field: "extensions", ...d })));
   }
 
+  const smartGuard = GUARD_PROFILE_IDS.find((profile) => profile === fm.smart_guard);
+  if (hasField(fm, "smart_guard") && smartGuard === undefined) {
+    diagnostics.push({ field: "smart_guard", severity: "error", message: `smart_guard must be a known profile ID: ${GUARD_PROFILE_IDS.join(", ")}.` });
+  }
+
   const invalidFields = [...new Set(diagnostics.filter((d) => d.severity === "error").map((d) => d.field))];
 
   return {
@@ -102,6 +109,7 @@ export function parseAgentFrontmatter(
     discoverSkills: parseDiscoverSkills(fm.discover_skills),
     preloadSkills: csvListOptional(fm.preload_skills) ?? [],
     model: str(fm.model),
+    smartGuard,
     promptMode: parsePromptMode(fm.prompt_mode),
     inheritContext: fm.inherit_context != null ? fm.inherit_context === true : undefined,
     runInBackground: fm.run_in_background != null ? fm.run_in_background === true : undefined,

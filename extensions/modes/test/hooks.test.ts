@@ -50,6 +50,7 @@ import { MODE_TOOL_CEILING_NAME } from "../src/constants.js";
 import modesExtension from "../src/index.js";
 import { registerModeGuardScope, registerModeHooks } from "../src/hooks.js";
 import { ModeStateManager } from "../src/mode-state.js";
+import type { Mode } from "../src/types.js";
 
 type MockTool = { name: string; exposure?: string; sourceInfo?: { path: string } };
 type MockToolDefinition = {
@@ -272,7 +273,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all") };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all"), smartGuard: "bash-read-only-v1" };
 
 		registerModeHooks(mock.pi as never, state);
 		const [result] = await mock.fire(
@@ -291,7 +292,7 @@ describe("mode hooks", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		state.currentMode = "fuxi";
-		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all") };
+		state.cachedConfigs["fuxi:default"] = { body: "", toolRules: toolRules("+@all"), smartGuard: "bash-read-only-v1" };
 		registerGuardCapability(mock.pi as never, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY);
 
 		registerModeHooks(mock.pi as never, state);
@@ -304,7 +305,27 @@ describe("mode hooks", () => {
 		expect(result).toBeUndefined();
 	});
 
-	it("registers the Fu Xi scope provider during extension initialization", async () => {
+	it.each(["fuxi", "kuafu", "houtu"] as const)("follows smart_guard config in %s rather than the mode name", async (mode: Mode) => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.currentMode = mode;
+		state.cachedConfigs[`${mode}:default`] = { body: "", toolRules: toolRules("+@all") };
+		registerModeGuardScope(mock.pi as never, state);
+		registerModeHooks(mock.pi as never, state);
+		const event = { type: "tool_call", toolCallId: "scope-call", toolName: "bash", input: { command: "pwd" } };
+		expect(await evaluateGuardScope(mock.pi as never, event as never, {} as never)).toEqual({ decision: "abstain" });
+		expect(await mock.fire("tool_call", event, {})).toEqual([undefined]);
+
+		state.cachedConfigs[`${mode}:default`] = { body: "", toolRules: toolRules("+@all"), smartGuard: "bash-read-only-v1" };
+		expect(await evaluateGuardScope(mock.pi as never, event as never, {} as never)).toMatchObject({
+			decision: "guard", activeScopes: [{ id: `modes:${mode}`, profile: "bash-read-only-v1" }],
+		});
+		expect(await mock.fire("tool_call", event, {})).toEqual([{
+			block: true, reason: expect.stringMatching(/smart guard.*not registered/i),
+		}]);
+	});
+
+	it("registers mode scope providers during extension initialization", async () => {
 		const mock = createMockPi();
 		modesExtension(mock.pi as never);
 		const event = { type: "tool_call", toolCallId: "call-1", toolName: "bash", input: { command: "pwd" } };
@@ -329,6 +350,7 @@ describe("mode hooks", () => {
 			registerMode();
 
 			state.currentMode = "fuxi";
+			state.cachedConfigs["fuxi:default"] = { body: "", toolRules: [], smartGuard: "bash-read-only-v1" };
 			expect(await evaluateGuardScope(mock.pi as never, {
 				type: "tool_call",
 				toolCallId: "scope-call",
@@ -338,6 +360,7 @@ describe("mode hooks", () => {
 				decision: "guard",
 				activeScopes: [{
 					id: "modes:fuxi",
+					profile: "bash-read-only-v1",
 					reason: "Fuxi plan mode requires read-only Bash.",
 				}],
 			});

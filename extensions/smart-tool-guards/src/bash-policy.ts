@@ -1,20 +1,9 @@
-import { isLiteralInspection, literalWords } from "./literal-inspection.js";
-import { isDiagnosticInspection } from "./diagnostic-inspection.js";
+import { isCommandDiscoveryFallback, literalStages, literalWords } from "./literal-inspection.js";
 import { scan, unwrap, subcommand, basename, optionName, type Word } from "./bash-syntax.js";
+import type { ApprovalRule, ArgvElement, DenialRule, GuardProfile, LiteralRule, ValueSpec } from "./profile.js";
 
-export const BASH_DANGER_CODES = [
-	"filesystem-mutation",
-	"vcs-mutation",
-	"external-system-mutation",
-	"privilege-or-system-control",
-	"output-redirection",
-	"dynamic-shell-execution",
-	"interpreter-execution",
-	"downloaded-code-execution",
-	"uninspectable-shell-syntax",
-] as const;
-
-export type BashDangerCode = (typeof BASH_DANGER_CODES)[number];
+/** A profile deny effect or a code-owned shell-structure code. */
+export type BashDangerCode = string;
 
 export interface BashDangerFinding {
 	readonly code: BashDangerCode;
@@ -33,176 +22,138 @@ export type BashPolicyOutcome =
 	| { readonly kind: "block"; readonly findings: readonly BashDangerFinding[] }
 	| { readonly kind: "defer" };
 
-const FILESYSTEM_COMMANDS = new Set([
-	"rm", "mv", "cp", "touch", "mkdir", "rmdir", "chmod", "chown", "ln", "truncate", "dd", "tee",
-]);
-const SHELL_COMMANDS = new Set(["bash", "sh", "dash", "zsh", "fish", "ksh", "csh", "tcsh", "eval", "source", "."]);
-const INTERPRETERS = new Set([
+// Shell-structure findings are code-owned for every profile; profiles cannot configure them.
+const STRUCTURAL_CODES = ["output-redirection", "downloaded-code-execution", "uninspectable-shell-syntax"] as const;
+const DOWNLOADERS = new Set(["curl", "wget"]);
+const CODE_RUNNERS = new Set([
+	"bash", "sh", "dash", "zsh", "fish", "ksh", "csh", "tcsh", "eval", "source", ".",
 	"python", "python2", "python3", "node", "deno", "bun", "ruby", "perl", "php", "lua", "luajit", "rscript",
 ]);
-const PRIVILEGE_COMMANDS = new Set([
-	"sudo", "doas", "su", "systemctl", "service", "launchctl", "shutdown", "reboot", "poweroff", "halt", "init", "loginctl",
-]);
-const GIT_MUTATIONS = new Set([
-	"add", "am", "apply", "bisect", "checkout", "cherry-pick", "clean", "clone", "commit", "fetch", "gc", "init", "merge",
-	"mv", "notes", "pull", "push", "rebase", "remote", "replace", "reset", "restore", "revert", "rm", "stash", "submodule",
-	"switch", "tag", "worktree",
-]);
-const GH_MUTATING_TOP_LEVELS = new Set([
-	"api", "auth", "attestation", "browse", "cache", "codespace", "completion", "config", "copilot", "extension", "gist", "gpg-key",
-	"label", "org", "pr", "project", "release", "ruleset", "run", "secret", "ssh-key", "status", "variable", "workflow",
-]);
-const GH_MUTATING_REPO = new Set([
-	"archive", "clone", "create", "delete", "deploy-key", "edit", "fork", "rename", "set-default", "sync", "unarchive",
-]);
-const GH_MUTATING_ISSUE = new Set([
-	"close", "comment", "create", "delete", "develop", "edit", "lock", "pin", "reopen", "transfer", "unlock", "unpin",
-]);
-const KUBECTL_MUTATIONS = new Set([
-	"annotate", "apply", "attach", "auth", "autoscale", "certificate", "config", "cordon", "cp", "create", "debug", "delete", "diff",
-	"drain", "edit", "exec", "expose", "krew", "label", "patch", "plugin", "port-forward", "proxy", "replace", "rollout", "run",
-	"scale", "set", "taint", "uncordon", "wait",
-]);
-const FLUX_MUTATIONS = new Set([
-	"bootstrap", "build", "completion", "create", "delete", "install", "mcp", "pull", "push", "reconcile", "resume", "suspend", "tag", "uninstall",
-]);
-const KUBERNETES_VALUE_OPTIONS = new Set([
-	"-n", "--namespace", "--context", "--kubeconfig", "--as", "--as-group", "--as-uid", "--cluster", "--user", "--request-timeout",
-	"--timeout", "--log-level",
-]);
-const KUBERNETES_BOOLEAN_OPTIONS = new Set(["-A", "--all-namespaces"]);
-const KUBERNETES_DANGEROUS_OPTIONS = new Set([
-	"--raw", "--profile", "--profile-output", "--cache-dir", "-w", "--watch", "--watch-only", "-f", "--follow",
-]);
-const GIT_VALUE_OPTIONS = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--super-prefix"]);
-function isExactAgentBrowserReadOnly(words: Word[]): boolean {
-	const keyword = (index: number, value: string): boolean => words[index]?.text === value && !words[index]?.quoted;
-	const value = (index: number): boolean => words[index] !== undefined && !words[index].text.startsWith("-");
-	if (!keyword(0, "agent-browser")) return false;
 
-	if (words.length === 2 && ["--help", "-h", "--version", "-V"].some((flag) => keyword(1, flag))) return true;
-	if (words.length === 3 && value(1) && ["--help", "-h"].some((flag) => keyword(2, flag))) return true;
-
-	if (words.length === 2 && ["snapshot", "read", "cookies", "tab", "console", "errors", "session", "profiles"].some((command) => keyword(1, command))) return true;
-	if (words.length === 3 && (
-		["title", "url", "cdp-url"].some((command) => keyword(1, "get") && keyword(2, command)) ||
-		keyword(2, "list") && ["tab", "session", "device", "auth"].some((command) => keyword(1, command)) ||
-		["local", "session"].some((scope) => keyword(1, "storage") && keyword(2, scope)) ||
-		keyword(1, "clipboard") && keyword(2, "read") ||
-		keyword(1, "dialog") && keyword(2, "status") ||
-		keyword(1, "stream") && keyword(2, "status") ||
-		keyword(1, "webmcp") && keyword(2, "list") ||
-		keyword(1, "react") && ["tree", "suspense"].some((action) => keyword(2, action)) ||
-		keyword(1, "snapshot") && ["-i", "--json"].some((flag) => keyword(2, flag)) ||
-		keyword(2, "--json") && ["console", "profiles"].some((command) => keyword(1, command))
-	)) return true;
-
-	if (keyword(1, "get")) {
-		if (words.length === 4 && ["text", "html", "value", "count", "box", "styles"].some((action) => keyword(2, action)) && value(3)) return true;
-		if (words.length === 5 && keyword(2, "attr") && value(3) && value(4)) return true;
-	}
-	if (words.length === 4 && keyword(1, "is") && ["visible", "enabled", "checked"].some((action) => keyword(2, action)) && value(3)) return true;
-	if (words.length === 5 && keyword(1, "find") && value(2) && value(3) && keyword(4, "text")) return true;
-	if (keyword(1, "wait")) {
-		if (words.length === 3 && value(2)) return true;
-		if (words.length === 4 && ["--text", "--url", "--load"].some((flag) => keyword(2, flag)) && value(3)) return true;
-	}
-	if (words.length === 3 && keyword(1, "network") && keyword(2, "requests")) return true;
-	if (words.length === 5 && keyword(1, "network") && keyword(2, "requests") && ["--filter", "--type", "--method", "--status"].some((flag) => keyword(3, flag)) && value(4)) return true;
-	if (words.length === 4 && keyword(1, "network") && keyword(2, "request") && value(3)) return true;
-	if (words.length === 4 && keyword(1, "tab") && keyword(2, "list") && keyword(3, "--json")) return true;
-	if (words.length === 4 && keyword(1, "storage") && ["local", "session"].some((scope) => keyword(2, scope)) && value(3) && !["set", "clear"].includes(words[3].text)) return true;
-	if (words.length === 4 && keyword(1, "auth") && keyword(2, "show") && value(3)) return true;
-	if (words.length === 4 && ["plugin", "state"].some((command) => keyword(1, command)) && keyword(2, "show") && value(3)) return true;
-	if (words.length === 3 && ["plugin", "state"].some((command) => keyword(1, command)) && keyword(2, "list")) return true;
-	if (words.length === 4 && keyword(1, "react") && keyword(2, "inspect") && value(3)) return true;
-	if (words.length === 4 && keyword(1, "react") && keyword(2, "suspense") && ["--only-dynamic", "--json"].some((flag) => keyword(3, flag))) return true;
-	if (words.length === 5 && keyword(1, "react") && keyword(2, "suspense") && new Set(words.slice(3).map((word) => word.text)).size === 2 && words.slice(3).every((word) => !word.quoted && ["--only-dynamic", "--json"].includes(word.text))) return true;
-	return false;
-}
-
-const LARK_SEARCH_VALUES = new Set(["--query", "--filter", "--page-size", "--page-token", "--format", "--jq", "-q", "--as"]);
-const LARK_FETCH_VALUES = new Set([
-	"--doc", "--doc-format", "--detail", "--scope", "--start-block-id", "--end-block-id", "--keyword",
-	"--context-before", "--context-after", "--max-depth", "--revision-id", "--lang", "--jq", "-q", "--as",
-]);
-
-export function isExactLarkReadOnly(command: string): boolean {
-	const words = literalWords(command);
-	if (!words || words[0] !== "lark-cli") return false;
-	const help = (word: string): boolean => word === "--help" || word === "-h";
-	if (words.length === 2 && (help(words[1]) || words[1] === "--version")) return true;
-	if (words.length === 3 && words[1] === "wiki" && words[2] === "--help") return true;
-	if (words[1] !== "docs") return false;
-	if (words.length === 3 && help(words[2])) return true;
-	const search = words[2] === "+search";
-	if (!search && words[2] !== "+fetch") return false;
-	const values = search ? LARK_SEARCH_VALUES : LARK_FETCH_VALUES;
-	let selector = false;
-	let wantsHelp = false;
-	for (let index = 3; index < words.length; index += 1) {
-		const word = words[index];
-		if (help(word)) { wantsHelp = true; continue; }
-		if (word === "--dry-run" || search && word === "--json") continue;
-		const equals = word.indexOf("=");
-		const flag = equals < 0 ? word : word.slice(0, equals);
-		if (!values.has(flag)) return false;
-		const value = equals < 0 ? words[++index] : word.slice(equals + 1);
-		// Do not swallow another option as a value; signed numeric selectors are valid.
-		if (!value || value.startsWith("-") && !/^-\d+$/.test(value)) return false;
-		if (flag === "--as" && value !== "user") return false;
-		if (flag === "--format" && !["json", "pretty", "table", "ndjson", "csv"].includes(value)) return false;
-		if (flag === "--doc-format" && !["xml", "markdown", "im-markdown"].includes(value)) return false;
-		if (flag === "--detail" && !["simple", "with-ids", "full"].includes(value)) return false;
-		if (flag === "--scope" && !["full", "outline", "range", "keyword", "section"].includes(value)) return false;
-		if (flag === (search ? "--query" : "--doc")) selector = true;
-	}
-	return selector || wantsHelp;
-}
-
-function inspectCommand(words: Word[], add: (code: BashDangerCode, position: number) => void, exactReads: { readonly lark: boolean; readonly diagnostic: boolean }): { name: string; position: number } | undefined {
+/** A shell segment's argv without assignments or known wrappers; RTK Git keeps Git's hazards without making RTK a general wrapper. */
+function segmentArgv(words: Word[]): Word[] {
 	const unwrapped = unwrap(words);
-	// RTK Git actions retain Git's hazards without making RTK a general wrapper.
-	const argv = basename(unwrapped[0]?.text ?? "") === "rtk" && unwrapped[1]?.text === "git" ? unwrapped.slice(1) : unwrapped;
-	const executable = argv[0];
-	if (!executable) return undefined;
-	const name = basename(executable.text);
-	if (name === "lark-cli" && !exactReads.lark) add("external-system-mutation", executable.start);
-	if (FILESYSTEM_COMMANDS.has(name)) add("filesystem-mutation", executable.start);
-	if (SHELL_COMMANDS.has(name)) add("dynamic-shell-execution", executable.start);
-	if (INTERPRETERS.has(name)) add("interpreter-execution", executable.start);
-	if (PRIVILEGE_COMMANDS.has(name) && !(name === "systemctl" && exactReads.diagnostic)) add("privilege-or-system-control", executable.start);
-
-	if (name === "git") {
-		const action = subcommand(argv, GIT_VALUE_OPTIONS);
-		const args = action ? argv.slice(argv.indexOf(action) + 1) : [];
-		const separator = args.findIndex((word) => word.text === "--");
-		const options = separator < 0 ? args : args.slice(0, separator);
-		if (action && (GIT_MUTATIONS.has(action.text.toLowerCase()) ||
-			action.text.toLowerCase() === "branch" && argv.slice(argv.indexOf(action) + 1).some((word) => ["-d", "-D", "--delete", "-m", "-M", "--move", "-c", "-C", "--copy", "--set-upstream-to", "--unset-upstream", "--edit-description"].includes(optionName(word.text))) ||
-			["diff", "show"].includes(action.text.toLowerCase()) && options.some((word) => optionName(word.text) === "--output"))) {
-			add("vcs-mutation", action.start);
-		}
-	}
-	if (name === "gh") {
-		const top = argv[1]?.text.toLowerCase();
-		const nested = argv[2]?.text.toLowerCase();
-		if (top && (GH_MUTATING_TOP_LEVELS.has(top) || top === "repo" && nested !== undefined && GH_MUTATING_REPO.has(nested) ||
-			top === "issue" && nested !== undefined && GH_MUTATING_ISSUE.has(nested) || argv.slice(1).some((word) => ["--web", "-w"].includes(optionName(word.text))))) {
-			add("vcs-mutation", argv[1]?.start ?? executable.start);
-		}
-	}
-	if (name === "kubectl" || name === "flux") {
-		const action = subcommand(argv, KUBERNETES_VALUE_OPTIONS, KUBERNETES_BOOLEAN_OPTIONS);
-		const mutationSet = name === "kubectl" ? KUBECTL_MUTATIONS : FLUX_MUTATIONS;
-		if (action && mutationSet.has(action.text.toLowerCase()) || argv.slice(1).some((word) => KUBERNETES_DANGEROUS_OPTIONS.has(optionName(word.text)))) {
-			add("external-system-mutation", action?.start ?? executable.start);
-		}
-	}
-	return { name, position: executable.start };
+	return basename(unwrapped[0]?.text ?? "") === "rtk" && unwrapped[1]?.text === "git" ? unwrapped.slice(1) : unwrapped;
 }
 
-export function evaluateBashPolicy(input: BashPolicyInput): BashPolicyOutcome {
+/** Where a matching denial is reported: rules that inspect past the executable point at its subcommand. */
+function denialPosition(rule: DenialRule, argv: Word[]): number | undefined {
+	const [executable] = argv;
+	if (!executable || !rule.argv[0].includes(basename(executable.text))) return undefined;
+	const action = rule.globalOptions ? subcommand(argv, rule.globalOptions) : argv[1];
+	const start = action ? argv.indexOf(action) : argv.length;
+	if (rule.argv.slice(1).some((words, index) => {
+		const word = argv[start + index];
+		return !word || !words.includes(word.text.toLowerCase());
+	})) return undefined;
+	if (rule.anyOption) {
+		const rest = argv.slice(rule.argv.length > 1 ? start + rule.argv.length - 1 : 1);
+		const separator = rule.operands ? rest.findIndex((word) => word.text === "--") : -1;
+		const options = separator < 0 ? rest : rest.slice(0, separator);
+		if (!options.some((word) => rule.anyOption?.has(optionName(word.text)))) return undefined;
+	}
+	return rule.argv.length > 1 || rule.anyOption ? (action ?? executable).start : executable.start;
+}
+
+type Token = Pick<Word, "text" | "quoted">;
+
+function valueMatches(spec: ValueSpec, value: string | undefined, signed: boolean): boolean {
+	// Do not swallow another option as a value unless signed integers are valid values.
+	if (!value || value.startsWith("-") && !(signed && /^-\d+$/.test(value))) return false;
+	if (spec.int && !/^\d+$/.test(value)) return false;
+	if (spec.enum && !spec.enum.includes(value)) return false;
+	if (spec.pattern && !spec.pattern.test(value)) return false;
+	return spec.max === undefined || Number(value) <= spec.max;
+}
+
+/** Matches the leading tokens; keywords never match quoted tokens. */
+function matchesArgv(argv: readonly ArgvElement[], tokens: readonly Token[]): boolean {
+	return argv.every((element, index) => {
+		const token = tokens[index];
+		if (!token) return false;
+		switch (element.kind) {
+			case "keyword": return !token.quoted && element.words.includes(token.text);
+			case "value": return valueMatches(element.spec, token.text, false);
+			default: {
+				const unreachable: never = element;
+				return unreachable;
+			}
+		}
+	});
+}
+
+function matchesOptions(rule: LiteralRule, args: readonly string[]): boolean {
+	const seen = new Set<string>();
+	let operandsOnly = false;
+	for (let index = 0; index < args.length; index += 1) {
+		const arg = args[index];
+		if (operandsOnly || rule.operands && (arg === "-" || !arg.startsWith("-"))) continue;
+		if (rule.operands && arg === "--") {
+			operandsOnly = true;
+			continue;
+		}
+		if (rule.countShorthand && /^-\d+$/.test(arg)) continue;
+		let name = arg;
+		if (rule.options.get(arg)?.kind !== "flag") {
+			const compact = /^(-[A-Za-z])(\d+)$/.exec(arg);
+			const compactOption = compact ? rule.options.get(compact[1]) : undefined;
+			if (compact && compactOption?.kind === "value" && compactOption.spec.int) name = compact[1];
+			else {
+				const equals = rule.equals ? arg.indexOf("=") : -1;
+				name = equals < 0 ? arg : arg.slice(0, equals);
+				const option = rule.options.get(name);
+				const value = equals < 0 ? args[++index] : arg.slice(equals + 1);
+				if (option?.kind !== "value" || !valueMatches(option.spec, value, rule.signedValues)) return false;
+			}
+		}
+		if (rule.unique.has(name) && seen.has(name)) return false;
+		seen.add(name);
+	}
+	return rule.require.every((name) => seen.has(name)) &&
+		(rule.requireOneOf.length === 0 || rule.requireOneOf.some((name) => seen.has(name)));
+}
+
+function matchesLiteral(rule: LiteralRule, words: readonly string[]): boolean {
+	// Literal views compare dequoted text, so their keywords treat every token as unquoted.
+	const tokens = words.map((text) => ({ text, quoted: false }));
+	return words.every((word) => word.length > 0) && matchesArgv(rule.argv, tokens) &&
+		matchesOptions(rule, words.slice(rule.argv.length));
+}
+
+/** The lexical views of one command that approval rules match. */
+type CommandViews = {
+	readonly text: string;
+	readonly shell: readonly Word[][];
+	readonly literal: readonly string[][] | undefined;
+};
+
+function matchesCommand(rule: ApprovalRule, views: CommandViews): boolean {
+	switch (rule.on) {
+		case "text": return views.text.trim() === rule.text;
+		case "words": return views.shell.length === 1 && views.shell[0].length === rule.argv.length && matchesArgv(rule.argv, views.shell[0]);
+		case "command": {
+			const words = rule.quotedExecutable ? literalWords(views.text) : views.literal?.length === 1 ? views.literal[0] : undefined;
+			return words !== undefined && matchesLiteral(rule, words);
+		}
+		case "stage": return false;
+		default: {
+			const unreachable: never = rule;
+			return unreachable;
+		}
+	}
+}
+
+/** Whole-command approval, plus which shell segments an approval rule matched. */
+function approve(profile: GuardProfile, command: string, shellStages: readonly Word[][]): { readonly command: boolean; readonly segments: readonly boolean[] } {
+	const views: CommandViews = { text: command, shell: shellStages, literal: literalStages(command, true) };
+	const stages = views.literal?.map((words) => profile.approvals.some((rule) => rule.on === "stage" && matchesLiteral(rule, words))) ?? [];
+	const whole = isCommandDiscoveryFallback(command) || stages.length > 0 && stages.every(Boolean) ||
+		profile.approvals.some((rule) => matchesCommand(rule, views));
+	// An accepted literal pipeline has one literal stage per shell segment.
+	return { command: whole, segments: shellStages.map((_, index) => whole || stages[index] === true) };
+}
+
+export function evaluateBashPolicy(profile: GuardProfile, input: BashPolicyInput): BashPolicyOutcome {
 	const earliest = new Map<BashDangerCode, number>();
 	const add = (code: BashDangerCode, position: number): void => {
 		const previous = earliest.get(code);
@@ -229,16 +180,26 @@ export function evaluateBashPolicy(input: BashPolicyInput): BashPolicyOutcome {
 			add("uninspectable-shell-syntax", lexeme.start);
 		}
 	});
-	const exactLark = isExactLarkReadOnly(input.command);
-	const commands = stages.map((stage) => inspectCommand(stage, add, { lark: exactLark, diagnostic: isDiagnosticInspection(input.command) }));
+	const approval = approve(profile, input.command, stages);
+	const executables = stages.map((stage, index) => {
+		const argv = segmentArgv(stage);
+		for (const rule of profile.denials) {
+			// Fallback denials cover an executable only where no approval rule matched its segment.
+			if (rule.fallback && approval.segments[index]) continue;
+			const position = denialPosition(rule, argv);
+			if (position !== undefined) add(rule.effect, position);
+		}
+		return argv[0] && { name: basename(argv[0].text), position: argv[0].start };
+	});
 	for (const indexes of pipelineGroups) {
-		const downloader = indexes.map((index) => commands[index]).find((command) => command && ["curl", "wget"].includes(command.name));
-		const executor = indexes.map((index) => commands[index]).find((command) => command && (SHELL_COMMANDS.has(command.name) || INTERPRETERS.has(command.name)));
-		if (downloader && executor) add("downloaded-code-execution", downloader.position);
+		const downloader = indexes.map((index) => executables[index]).find((command) => command && DOWNLOADERS.has(command.name));
+		const runner = indexes.map((index) => executables[index]).find((command) => command && CODE_RUNNERS.has(command.name));
+		if (downloader && runner) add("downloaded-code-execution", downloader.position);
 	}
+	const rank: readonly string[] = [...new Set(profile.denials.map(({ effect }) => effect)), ...STRUCTURAL_CODES];
 	const findings = [...earliest].map(([code, position]) => ({ code, position })).sort((left, right) =>
-		left.position - right.position || BASH_DANGER_CODES.indexOf(left.code) - BASH_DANGER_CODES.indexOf(right.code));
+		left.position - right.position || rank.indexOf(left.code) - rank.indexOf(right.code));
 	if (findings.length > 0) return { kind: "block", findings };
-	if (isDiagnosticInspection(input.command) || isLiteralInspection(input.command) || exactLark || input.command.trim() === "pwd" || stages.length === 1 && isExactAgentBrowserReadOnly(stages[0])) return { kind: "allow" };
+	if (approval.command) return { kind: "allow" };
 	return { kind: "defer" };
 }

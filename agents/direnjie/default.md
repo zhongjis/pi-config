@@ -3,6 +3,7 @@ display_name: Di Renjie 狄仁杰
 description: A plan gap analyzer — catches hidden assumptions, guardrail gaps, and execution risks before finalization for planning.
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6.1-sol:high,opencode-go/glm-5.2:high,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
+smart_guard: bash-read-only-v1
 discover_skills: false
 extensions: |
   +better-bash-tool, +rtk, +direnv, +filter-outputs,

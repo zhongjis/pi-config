@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { AccessRule } from "../../lib/active-tools.js";
+import type { GuardProfileId } from "../../lib/guard-registration.js";
 
 type ThinkingLevel = ReturnType<ExtensionAPI["getThinkingLevel"]>;
 
@@ -13,6 +14,7 @@ export interface ModeConfig {
   errors?: string[];
   delegationRules?: AccessRule[];
   model?: string;
+  readonly smartGuard?: GuardProfileId;
 }
 
 export type PlanTitleSource = "content-h1" | "explicit-exit" | "cached-state";

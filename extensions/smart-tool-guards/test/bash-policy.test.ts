@@ -4,6 +4,11 @@ import {
 	type BashDangerCode,
 	type BashPolicyInput,
 } from "../src/bash-policy.js";
+import { loadGuardProfile } from "../src/profile.js";
+
+const loaded = loadGuardProfile("bash-read-only-v1");
+if (loaded.kind !== "loaded") throw new Error(loaded.error);
+const PROFILE = loaded.profile;
 
 const BASE_INPUT: BashPolicyInput = {
 	command: "pwd",
@@ -13,15 +18,15 @@ const BASE_INPUT: BashPolicyInput = {
 };
 
 function codes(command: string): BashDangerCode[] {
-	const outcome = evaluateBashPolicy({ ...BASE_INPUT, command });
+	const outcome = evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command });
 	return outcome.kind === "block" ? outcome.findings.map((finding) => finding.code) : [];
 }
 
 describe("aggregate bash danger policy", () => {
 	it("allows only exact trimmed expansion/operator-free pwd", () => {
-		expect(evaluateBashPolicy({ ...BASE_INPUT, command: "  pwd\n" })).toEqual({ kind: "allow" });
+		expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command: "  pwd\n" })).toEqual({ kind: "allow" });
 		for (const command of ["pwd -P", '"pwd"', "PWD=x pwd", "pwd; pwd", "echo pwd", "git status"]) {
-			expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "defer" });
+			expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command })).toEqual({ kind: "defer" });
 		}
 	});
 
@@ -92,7 +97,7 @@ describe("aggregate bash danger policy", () => {
 		"agent-browser click --help",
 		"agent-browser snapshot -h",
 	])("directly allows exact observational agent-browser command: %s", (command) => {
-		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "allow" });
+		expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command })).toEqual({ kind: "allow" });
 	});
 
 	it.each([
@@ -122,7 +127,7 @@ describe("aggregate bash danger policy", () => {
 		"env agent-browser snapshot",
 		"npx agent-browser snapshot",
 	])("defers non-allowlisted or non-single agent-browser sibling: %s", (command) => {
-		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "defer" });
+		expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command })).toEqual({ kind: "defer" });
 	});
 
 	it.each([
@@ -186,7 +191,7 @@ describe("aggregate bash danger policy", () => {
 	});
 
 	it("aggregates stable deduplicated findings by source position then stable code", () => {
-		const outcome = evaluateBashPolicy({
+		const outcome = evaluateBashPolicy(PROFILE, {
 			...BASE_INPUT,
 			command: "rm one; rm two; git push; sudo reboot; echo x > out",
 		});
@@ -209,7 +214,7 @@ describe("aggregate bash danger policy", () => {
 
 	it("retains RTK Git hazard source positions", () => {
 		const command = "cat /tmp/file | env rtk git push";
-		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({
+		expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command })).toEqual({
 			kind: "block",
 			findings: [{ code: "vcs-mutation", position: command.indexOf("push") }],
 		});
@@ -228,7 +233,7 @@ describe("aggregate bash danger policy", () => {
 			'printf "%s" "kubectl delete pod"',
 			"rg 'touch|chmod|bash' .",
 		]) {
-			expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "defer" });
+			expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command })).toEqual({ kind: "defer" });
 		}
 	});
 
@@ -274,7 +279,7 @@ describe("aggregate bash danger policy", () => {
 		"rtk git diff HEAD -- --output=literal-path", "git diff 'HEAD^{tree}' -- /tmp/file",
 		"fd -d0 -t f . /tmp | head -n2", "rg --no-config --after-context=1 --before-context 2 error /tmp",
 	])("allows only validated literal inspection stages: %s", (command) => {
-		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "allow" });
+		expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command })).toEqual({ kind: "allow" });
 	});
 
 	it.each([
@@ -310,7 +315,7 @@ describe("aggregate bash danger policy", () => {
 		"git diff HEAD | rtk git diff --ext-diff HEAD", "fd -d= /tmp", "fd --max-depth=1.5 /tmp",
 		"git diff HEAD --unified=-1", "rtk git diff -U '' HEAD", "fd -d +1 /tmp",
 	])("defers unsupported argv or shell syntax without fast approval: %s", (command) => {
-		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "defer" });
+		expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command })).toEqual({ kind: "defer" });
 	});
 
 	it.each([
@@ -323,7 +328,7 @@ describe("aggregate bash danger policy", () => {
 		"rtk git diff HEAD > /tmp/patch", "fd . /tmp -d1 | touch /tmp/out",
 		"rtk git diff HEAD | git push", "git diff HEAD; rm /tmp/out",
 	])("keeps danger checks ahead of literal inspection: %s", (command) => {
-		expect(evaluateBashPolicy({ ...BASE_INPUT, command }).kind).toBe("block");
+		expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command }).kind).toBe("block");
 	});
 
 	it.each([
@@ -341,7 +346,7 @@ describe("aggregate bash danger policy", () => {
 		String.raw`lark-cli docs +search --query "escaped\" quote"`,
 		"lark-cli docs +search --query '$literal * [text] ; data'",
 	])("allows exact literal Lark reads and discovery: %s", (command) => {
-		expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "allow" });
+		expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command })).toEqual({ kind: "allow" });
 	});
 
 	it.each([
@@ -379,11 +384,11 @@ describe("aggregate bash danger policy", () => {
 		"lark-cli docs +fetch --doc x; rm out",
 		"bash -c 'lark-cli docs +fetch --doc x'",
 	])("retains ordinary shell danger checks for Lark: %s", (command) => {
-		expect(evaluateBashPolicy({ ...BASE_INPUT, command }).kind).toBe("block");
+		expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command }).kind).toBe("block");
 	});
 
 	it.each(["ls -la", "echo hello", "echo lark-cli docs +create", "git status", "kubectl get pods", "curl https://example.test/data"])(
 		"defers non-dangerous remainder: %s",
-		(command) => expect(evaluateBashPolicy({ ...BASE_INPUT, command })).toEqual({ kind: "defer" }),
+		(command) => expect(evaluateBashPolicy(PROFILE, { ...BASE_INPUT, command })).toEqual({ kind: "defer" }),
 	);
 });

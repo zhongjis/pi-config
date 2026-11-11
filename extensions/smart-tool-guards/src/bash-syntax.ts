@@ -173,11 +173,10 @@ export function unwrap(words: Word[]): Word[] {
 	return words.slice(index);
 }
 
-export function subcommand(words: Word[], valueOptions: Set<string>, booleanOptions: Set<string> = new Set()): Word | undefined {
+export function subcommand(words: Word[], valueOptions: ReadonlySet<string>): Word | undefined {
 	for (let index = 1; index < words.length; index += 1) {
 		const value = words[index].text;
 		const option = optionName(value);
-		if (booleanOptions.has(option)) continue;
 		if (valueOptions.has(option)) {
 			if (!value.includes("=")) index += 1;
 			continue;

@@ -1,12 +1,17 @@
+import { readdirSync } from "node:fs";
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent } from "@earendil-works/pi-coding-agent";
 
 export const SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY = "smart-tool-guards:bash" as const;
 
-/** Scope provider ID that restricts guarded Bash to the exact read-only Lark CLI forms. */
-export const LARK_READ_ONLY_GUARD_SCOPE_ID = "subagents:lark-read-only" as const;
+/** One profile per `extensions/smart-tool-guards/profiles/<id>.yaml`; adding a file adds a profile. */
+export const GUARD_PROFILE_IDS: readonly string[] = readdirSync(new URL("../smart-tool-guards/profiles/", import.meta.url))
+	.filter((name) => name.endsWith(".yaml"))
+	.map((name) => name.slice(0, -".yaml".length))
+	.sort();
+export type GuardProfileId = string;
 
 export type GuardCapability = typeof SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY;
-export type GuardScopeDecision = "abstain" | { readonly decision: "guard"; readonly reason: string };
+export type GuardScopeDecision = "abstain" | { readonly decision: "guard"; readonly reason: string; readonly profile: string };
 export type GuardScopeProvider = (
 	event: ToolCallEvent,
 	ctx: ExtensionContext,
@@ -14,6 +19,7 @@ export type GuardScopeProvider = (
 export interface GuardActiveScope {
 	readonly id: string;
 	readonly reason: string;
+	readonly profile: string;
 }
 export type GuardScopeEvaluation =
 	| { readonly decision: "abstain" }
@@ -87,10 +93,11 @@ export async function evaluateGuardScope(
 				if (
 					isRecord(decision) &&
 					decision.decision === "guard" &&
-					typeof decision.reason === "string"
+					typeof decision.reason === "string" &&
+					typeof decision.profile === "string"
 				) {
 					const reason = decision.reason.replace(/\s+/g, " ").trim();
-					return reason ? { id, reason } : { id, error: true as const };
+					return reason ? { id, reason, profile: decision.profile } : { id, error: true as const };
 				}
 				return { id, error: true as const };
 			} catch {
@@ -102,7 +109,7 @@ export async function evaluateGuardScope(
 		.map(({ id }) => id);
 	const activeScopes = evaluations
 		.filter((evaluation): evaluation is GuardActiveScope => "reason" in evaluation)
-		.map(({ id, reason }) => ({ id, reason }));
+		.map(({ id, reason, profile }) => ({ id, reason, profile }));
 	if (failedProviderIds.length > 0) {
 		return { decision: "error", failedProviderIds, activeScopes };
 	}

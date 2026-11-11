@@ -3,6 +3,7 @@ display_name: Taishang 太上老君
 description: Read-only consultant for complex architecture decisions, hard debugging, and consequential security, performance, or multi-system trade-offs.
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6.1-sol:xhigh,opencode-go/glm-5.2,llama-swap/qwen2.5-coder:14b:medium
 prompt_mode: system_instructions
+smart_guard: bash-read-only-v1
 discover_skills: false
 extensions: |
   +better-bash-tool, +rtk, +direnv, +filter-outputs,

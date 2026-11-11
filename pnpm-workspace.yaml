@@ -2,6 +2,7 @@ packages:
   - extensions/tasks
   - extensions/lsp
   - extensions/subagents
+  - extensions/smart-tool-guards
 catalog:
   "@earendil-works/pi-coding-agent": 1.4.0
   "@earendil-works/pi-tui": 1.4.0

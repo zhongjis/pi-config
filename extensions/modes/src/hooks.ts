@@ -150,9 +150,17 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 // ─── Hook registration ───────────────────────────────────────────────────────
 
 export function registerModeGuardScope(pi: ExtensionAPI, state: ModeStateManager): void {
-	registerGuardScopeProvider(pi, "modes:fuxi", () => state.currentMode === "fuxi"
-		? { decision: "guard", reason: "Fuxi plan mode requires read-only Bash." }
-		: "abstain");
+	for (const mode of MODES) {
+		registerGuardScopeProvider(pi, `modes:${mode}`, () => {
+			if (state.currentMode !== mode) return "abstain";
+			const profile = state.loadConfig(mode).smartGuard;
+			return profile === undefined ? "abstain" : {
+				decision: "guard",
+				reason: mode === "fuxi" ? "Fuxi plan mode requires read-only Bash." : `Mode ${mode} requires read-only Bash.`,
+				profile,
+			};
+		});
+	}
 }
 
 export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): void {
@@ -165,6 +173,14 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		// their own calls from frontmatter.
 		if (!isSubagentSession(ctx) && !(await state.isToolCallAllowed(ctx, event.toolName))) {
 			return { block: true, reason: `Mode ${state.currentMode}: tool "${event.toolName}" is not available.` };
+		}
+
+		if (event.toolName === "bash" && state.loadConfig(state.currentMode).smartGuard !== undefined &&
+			!hasGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)) {
+			return {
+				block: true,
+				reason: `Mode ${state.currentMode}: built-in bash blocked because smart guard capability is not registered.`,
+			};
 		}
 
 		if (state.currentMode !== "fuxi") return;
@@ -181,13 +197,6 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 				};
 			}
 			return;
-		}
-
-		if (event.toolName === "bash" && !hasGuardCapability(pi, SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY)) {
-			return {
-				block: true,
-				reason: "Plan mode: built-in bash blocked because smart guard capability is not registered.",
-			};
 		}
 	});
 

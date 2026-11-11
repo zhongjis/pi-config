@@ -110,6 +110,7 @@ export function toAgentConfig(name: string, parsed: ParsedAgentFrontmatter, sour
     discoverSkills: parsed.discoverSkills,
     preloadSkills: parsed.preloadSkills,
     model: parsed.model,
+    smartGuard: parsed.smartGuard,
     thinking: normalizeThinkingLevel(str(fm.thinking)),
     outputTranscript: fm.output_transcript != null ? fm.output_transcript !== false : undefined,
     sessionDir: str(fm.session_dir),

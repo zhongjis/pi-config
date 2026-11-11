@@ -12,6 +12,7 @@ describe("parseModeAgentConfig", () => {
 prompt_mode: replace
 tools: +@all, -edit, +@codegraph
 delegation: +chengfeng, +yanluo, -houtu
+smart_guard: bash-read-only-v1
 model: anthropic/claude-sonnet-4-6:medium
 ---
 
@@ -19,6 +20,7 @@ Mode prompt.`);
 
 		expect(config).toMatchObject({
 			body: "Mode prompt.",
+			smartGuard: "bash-read-only-v1",
 			toolRules: [
 				{ sign: "+", selector: "@all" },
 				{ sign: "-", selector: "edit" },

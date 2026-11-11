@@ -3,37 +3,18 @@ import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	evaluateGuardScope,
-	LARK_READ_ONLY_GUARD_SCOPE_ID,
+	GUARD_PROFILE_IDS,
 	registerGuardCapability,
 	SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY,
 	type GuardScopeEvaluation,
 } from "../../lib/guard-registration.js";
-import { evaluateBashPolicy, isExactLarkReadOnly } from "./bash-policy.js";
+import { evaluateBashPolicy } from "./bash-policy.js";
 import { classify } from "./classifier.js";
+import { loadGuardProfile } from "./profile.js";
 
 const hookedApis = new WeakSet<ExtensionAPI>();
 const issuedBashCommands = new WeakMap<ExtensionAPI, Map<string, string>>();
-const BASH_POLICY_ID = "bash-read-only-v1";
-const BASH_POLICY_INSTRUCTIONS = [
-	"Allow only bash actions that are read-only.",
-	"The guarded bash tool is the evaluation context; using it does not itself count as shell execution.",
-	"Block actions that may mutate local, version-control, service, or external-system state.",
-	"Executable invocation, reading outside the repository (including /tmp), pipes, and ;/&&/|| operators are not inherently mutations; assess the exact effects of every command and pipeline stage. Writes remain forbidden, including in /tmp.",
-	"RTK (rtk) is an output-filtering and summarizing CLI proxy, not inherently a mutating action. Judge the underlying command and its arguments: rtk git diff can inspect changes, while rtk git push mutates version-control state. RTK execution, configuration, and initialization commands are not automatically read-only.",
-	"Allow plain inspection and ordinary inline jq filters when all effects are read-only. This is not permission to access or transmit secrets; preserve all other restrictions.",
-	"Block commands that invoke a shell or general-purpose language interpreter (such as Python or Node) as an executable, or that execute downloaded or generated code.",
-	"Allow fixed text written only to stdout, such as `printf classifier-ok`, when no other side effect is present.",
-	"Unfamiliarity alone is not evidence of mutation; if effects cannot be established as read-only, block.",
-].join("\n");
-const BASH_POLICY_CHOICES = {
-	allow: "read_only",
-	criteria: {
-		read_only: "Every effect of every command and pipeline stage is read-only, or is fixed text written only to stdout.",
-		mutates_state: "May mutate local, version-control, service, or external-system state.",
-		runs_code: "Invokes a shell or general-purpose language interpreter as an executable, or executes downloaded or generated code.",
-		unknown_effects: "The effects cannot be established as read-only.",
-	},
-} as const;
+const PROFILES = new Map(GUARD_PROFILE_IDS.map((id) => [id, loadGuardProfile(id)]));
 
 interface ValidBashInput {
 	command: string;
@@ -109,6 +90,12 @@ function normalizeLine(value: string): string {
 	return value.replace(/\s+/g, " ").trim();
 }
 
+/** Active profiles this guard knows; when none is known, every profile it enforces. */
+function profileLabel(scope: ActiveGuardScope): string {
+	const active = GUARD_PROFILE_IDS.filter((id) => scope.activeScopes.some(({ profile }) => profile === id));
+	return (active.length > 0 ? active : GUARD_PROFILE_IDS).join(",");
+}
+
 function formatDenial(
 	scope: ActiveGuardScope,
 	denial: GuardDenial,
@@ -127,7 +114,7 @@ function formatDenial(
 	return {
 		block: true,
 		reason: [
-			`[Smart Guard][${category}][source=${source}][profile=${BASH_POLICY_ID}][scope=${scopeIds.join(",") || "none"}]`,
+			`[Smart Guard][${category}][source=${source}][profile=${profileLabel(scope)}][scope=${scopeIds.join(",") || "none"}]`,
 			`Bash not run: ${terminatedDetail}${activation ? ` Guard active: ${activation}` : ""} Agent capability restriction: this agent is not authorized to run this Bash action; this does not establish a project-wide lack of access. Report the capability limitation and that the command was not executed.`,
 		].join("\n"),
 	};
@@ -152,6 +139,17 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 			});
 		}
 
+		// Scopes that disagree on a profile, or name a missing or invalid one, fail closed rather than pick one.
+		const profileIds = [...new Set(scope.activeScopes.map(({ profile }) => profile))];
+		const loaded = profileIds.length === 1 ? PROFILES.get(profileIds[0]) : undefined;
+		if (loaded?.kind !== "loaded") {
+			return formatDenial(scope, {
+				kind: "scope-error",
+				detail: "Unsupported guard profile; guard failed closed.",
+			});
+		}
+		const { profile } = loaded;
+
 		const input: unknown = event.input;
 		if (!validBashInput(input)) {
 			return formatDenial(scope, { kind: "input-error", detail: "Malformed tool input." });
@@ -159,16 +157,7 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 
 		const effectiveCwd = resolve(ctx.cwd, input.cwd ?? ".");
 		const command = takeIssuedCommand(pi, event.toolCallId) ?? input.command;
-		if (
-			scope.activeScopes.some(({ id }) => id === LARK_READ_ONLY_GUARD_SCOPE_ID) &&
-			!isExactLarkReadOnly(command)
-		) {
-			return formatDenial(scope, {
-				kind: "policy",
-				detail: "Lark-only scope permits only exact read-only lark-cli commands.",
-			});
-		}
-		const policy = evaluateBashPolicy({
+		const policy = evaluateBashPolicy(profile, {
 			command,
 			requestedCwd: input.cwd,
 			requestedTimeout: input.timeout,
@@ -183,9 +172,9 @@ export default function smartToolGuards(pi: ExtensionAPI): void {
 		if (policy.kind === "allow") return;
 
 		const verdict = await classify({
-			policyId: BASH_POLICY_ID,
-			policyInstructions: BASH_POLICY_INSTRUCTIONS,
-			choices: BASH_POLICY_CHOICES,
+			policyId: profile.id,
+			policyInstructions: profile.classifier.instructions,
+			choices: profile.classifier.choices,
 			target: "bash" as const,
 			action: {
 				command,

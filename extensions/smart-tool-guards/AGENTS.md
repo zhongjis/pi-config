@@ -4,7 +4,7 @@ Authorize selected native bash calls through deterministic policy and model clas
 
 ## Ownership
 
-- Owns scope evaluation, read-only policy, classifier validation, and denial formatting.
+- Owns scope evaluation, guard profiles and their loader, rule matching, classifier validation, and denial formatting.
 - Scope providers identify guarded callers; Pi retains native bash execution.
 
 ## Local Contracts
@@ -16,10 +16,14 @@ Authorize selected native bash calls through deterministic policy and model clas
 - Trusted policy MUST remain separate from untrusted command/context JSON.
 - Chat-model classifier verdicts MUST match the exact allow/block schema; classifier-model verdicts MUST allow only at or above the allow-label probability threshold.
 - Denials MUST retain the stable envelope without raw provider errors and identify the current agent's capability restriction and non-execution, not a project-wide lack of access.
-- [Lark policy](src/bash-policy.ts) MUST allow only exact direct literal document search/fetch and discovery forms after shell danger checks; other recognized Lark calls, including path and known-wrapper variants, MUST block without classifier fallback. Verified flags and required read selectors are code-owned.
-- The Lark-only scope (`LARK_READ_ONLY_GUARD_SCOPE_ID`, registered for Wenchang by the subagent runner) MUST refuse every command that is not an exact allowed Lark read, before any other policy or classifier use.
-- [Literal inspection](src/literal-inspection.ts) MUST run only after full danger checks and approve only direct, literal argv with every pipeline stage validated. Bounded direct Git diff and RTK Git diff reads MAY fast-approve; other RTK actions MUST NOT gain blanket approval, and RTK Git mutations MUST retain Git hazard checks. Reads in `/tmp` and outside the repository follow the same inspection rules; writes remain forbidden. Unknown options, wrappers, expansions, and general compound commands MUST defer or block; command discovery has one exact fallback exception.
-- [Diagnostic inspection](src/diagnostic-inspection.ts) MUST fast-approve only validated direct no-pager journal/service reads and fixed SQLite schema inspection with disabled initialization and an immutable read-only snapshot URI. Immutable inspection is for offline snapshots, not live WAL evidence; unsupported argv MUST NOT gain fast approval.
+- [Guard profiles](profiles/) MUST each be one self-contained `profiles/<id>.yaml` whose basename is the profile ID, read only from this extension's directory. The [loader](src/profile.ts) MUST reject unknown keys, wrong types, and inconsistent rules; a missing or invalid profile MUST fail closed for every guarded call, never fall back to allow.
+- A segment matching a rule whose effect the profile does not allow MUST block even when an approval also matches; `fallback` denials apply only where no approval matched that segment. Classifier instructions and choices come verbatim from the active profile.
+- Shell-structure findings (`output-redirection`, `downloaded-code-execution`, `uninspectable-shell-syntax`) are code-owned in [bash-policy.ts](src/bash-policy.ts) for every profile and MUST NOT become profile-configurable.
+- The [read-only profile](profiles/bash-read-only-v1.yaml) MUST allow only exact direct literal Lark document search/fetch and discovery forms after shell danger checks; other recognized Lark calls, including path and known-wrapper variants, MUST block without classifier fallback.
+- Activation comes from optional `smart_guard` frontmatter via [scope providers](../lib/guard-registration.ts); absent means off. Unsupported profiles MUST fail closed.
+- Add commands by editing `profiles/<id>.yaml` and add a profile by adding a file; never add a scope for one agent.
+- Literal approvals (`stage`/`command` rules over the [literal lexer](src/literal-inspection.ts)) MUST run only after full danger checks and approve only direct, literal argv with every pipeline stage validated. Bounded direct Git diff and RTK Git diff reads MAY fast-approve; other RTK actions MUST NOT gain blanket approval, and RTK Git mutations MUST retain Git hazard checks. Reads in `/tmp` and outside the repository follow the same inspection rules; writes remain forbidden. Unknown options, wrappers, expansions, and general compound commands MUST defer or block; command discovery has one exact code-owned fallback exception.
+- Diagnostic approvals MUST fast-approve only validated direct no-pager journal/service reads and fixed SQLite schema inspection with disabled initialization and an immutable read-only snapshot URI. Immutable inspection is for offline snapshots, not live WAL evidence; unsupported argv MUST NOT gain fast approval.
 - [Shell scanning](src/bash-syntax.ts) MUST distinguish exact stderr-to-stdout descriptor duplication from file output while retaining independent danger checks. This does not authorize arbitrary pipeline stages or sed programs.
 - Classifier policy MUST assess exact effects rather than treating executables, outside-repository reads, or shell composition as mutations; uncertain effects MUST block. Other safety restrictions remain in force.
 - This authorization guard is not a shell sandbox; allowed commands retain native power.
@@ -32,7 +36,7 @@ Authorize selected native bash calls through deterministic policy and model clas
 ## Verification
 
 - From repository root: `pnpm exec vitest run --project unit extensions/smart-tool-guards/test`.
-- [Policy](test/bash-policy.test.ts), [classifier](test/classifier.test.ts), and [wiring](test/index.test.ts) cover distinct trust boundaries.
+- [Policy](test/bash-policy.test.ts), [profile loading](test/profile.test.ts), [classifier](test/classifier.test.ts), and [wiring](test/index.test.ts) cover distinct trust boundaries.
 
 ## Child DOX Index
 

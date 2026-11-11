@@ -3,6 +3,7 @@ display_name: Yan Luo 阎罗
 description: A high-accuracy plan reviewer — validates finalized plans for clarity, verification quality, context completeness, and blocking ambiguity.
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:high,opencode-go/glm-5.2,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
+smart_guard: bash-read-only-v1
 discover_skills: false
 extensions: |
   +better-bash-tool, +rtk, +direnv, +filter-outputs,

@@ -1,0 +1,13 @@
+{
+  "name": "@panda/pi-smart-tool-guards",
+  "private": true,
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "yaml": "^2.9.0"
+  }
+}

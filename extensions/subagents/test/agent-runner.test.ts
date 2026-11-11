@@ -154,6 +154,7 @@ import {
 import smartToolGuards from "../../smart-tool-guards/index.js";
 import {
   getAgentConversation,
+  isGuardedBashType,
   openSession,
   SUBAGENT_LAUNCH_ENTRY,
   SUBAGENT_TOOL_NAMES,
@@ -998,14 +999,15 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     }>;
   }
 
-  it.each(["chengfeng", "wenchang", "direnjie", "taishang", "xuannv", "yanluo", "huayan"] as const)(
-    "guards canonical type %s through registry resolution without extension rules",
-    async (canonicalType) => {
-      vi.mocked(resolveType).mockReturnValueOnce(canonicalType);
+  it.each(["registered", "override"] as const)(
+    "guards a %s config through frontmatter without extension rules",
+    async (source) => {
+      const config = { ...makeAgentConfig(), extensionRules: [], toolRules: rules("tools", "+read"), smartGuard: "bash-read-only-v1" as const };
+      if (source === "registered") vi.mocked(getAgentConfig).mockReturnValueOnce(config);
       const { session } = createSession("OK");
       createAgentSession.mockResolvedValue({ session });
 
-      await openSession(ctx, canonicalType, { pi });
+      await openSession(ctx, "researcher", { pi, agentConfig: source === "override" ? config : undefined });
 
       expect(factories()).toEqual(expect.arrayContaining([
         expect.objectContaining({ name: "session-local", hidden: true }),
@@ -1021,19 +1023,22 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     },
   );
 
-  it.each(["jintong", "yunu"] as const)("leaves adjacent canonical type %s unguarded", async (canonicalType) => {
-    vi.mocked(resolveType).mockReturnValueOnce(canonicalType);
+  it("leaves a config without smart_guard unguarded", async () => {
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
 
-    await openSession(ctx, canonicalType, { pi });
+    await openSession(ctx, "researcher", { pi });
 
     expect(factories().map(({ name }) => name)).toEqual(["subagent-model-fallback", "subagent-fast", "session-local"]);
   });
 
+  it.each([undefined, "bash-read-only-v1"] as const)("reports guarding from config profile %s", (smartGuard) => {
+    vi.mocked(getAgentConfig).mockReturnValueOnce({ ...makeAgentConfig(), smartGuard });
+    expect(isGuardedBashType("researcher")).toBe(smartGuard !== undefined);
+  });
+
   it("survives isolation without widening tools", async () => {
-    vi.mocked(resolveType).mockReturnValueOnce("chengfeng");
-    setupRules("+@all", "+read");
+    setupRules("+@all", "+read", { smartGuard: "bash-read-only-v1" });
     withExtensions({ "/ext/unrelated.ts": ["unrelated_tool"] });
     const { session } = createSession("OK");
     createAgentSession.mockResolvedValue({ session });
@@ -1052,7 +1057,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
 
   it("survives rule filtering while discovered smart-tool-guards coexists", async () => {
     vi.mocked(resolveType).mockReturnValueOnce("chengfeng");
-    setupRules("+mcp, +smart-tool-guards, -smart-tool-guards", "+read, +@all");
+    setupRules("+mcp, +smart-tool-guards, -smart-tool-guards", "+read, +@all", { smartGuard: "bash-read-only-v1" });
     withExtensions({
       "/ext/mcp.ts": ["mcp_tool"],
       "/ext/smart-tool-guards/index.ts": [],
@@ -1075,13 +1080,13 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
     expect(lastToolsPassed()).not.toContain("unrelated_tool");
   });
 
-  it.each(["chengfeng", "wenchang", "huayan"] as const)(
-    "coexists with repeated auto registration as one effective bash hook for %s",
-    async (canonicalType) => {
-      vi.mocked(resolveType).mockReturnValueOnce(canonicalType);
+  it(
+    "coexists with repeated auto registration as one effective bash hook",
+    async () => {
+      vi.mocked(getAgentConfig).mockReturnValueOnce({ ...makeAgentConfig(), smartGuard: "bash-read-only-v1" });
       const { session } = createSession("OK");
       createAgentSession.mockResolvedValue({ session });
-      await openSession(ctx, canonicalType, { pi });
+      await openSession(ctx, "researcher", { pi });
       const inline = factories().find(({ name }) => name === "smart-tool-guards");
       const eventListeners = new Map<string, Set<(data: unknown) => void>>();
       const handlers: Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>> = [];
@@ -1112,9 +1117,7 @@ describe("agent-runner trusted smart-tool-guards binding", () => {
         { cwd: "/tmp" },
       )).resolves.toMatchObject({
         block: true,
-        reason: expect.stringContaining(canonicalType === "wenchang"
-          ? "Lark-only scope permits only exact read-only lark-cli commands."
-          : "Read-only policy matched: filesystem-mutation."),
+        reason: expect.stringContaining("Read-only policy matched: filesystem-mutation."),
       });
     },
   );

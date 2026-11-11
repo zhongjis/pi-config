@@ -64,6 +64,7 @@ differ from the default. Parsing rules worth knowing while authoring:
 
 - `extensions` and `tools` are signed rule lists; see [Access rules](#access-rules). `delegation` uses the same rule shape; see [Delegation](#delegation-fields).
 - Boolean flags are strict: only the literal `true` enables them.
+- Optional `smart_guard` selects a [known guard profile](../../extensions/lib/guard-registration.ts) for agent or mode Bash authorization; absent means off. Invalid values invalidate the definition ([parser](../../extensions/lib/agent-frontmatter.ts)).
 
 Fields whose purpose the code does not make obvious:
 
@@ -84,7 +85,7 @@ Thinking can be expressed as a model-spec suffix or the Subagent loader's `think
 ## Mode frontmatter
 
 A mode file uses the **same parser**, but [`parseModeAgentConfig`](../../extensions/modes/src/config-loader.ts) reads only
-`tools`, `delegation`, and `model`.
+`tools`, `delegation`, `model`, and `smart_guard`.
 Mode-specific differences:
 
 - The body becomes the `modes` system-prompt section; modes always run with project AGENTS.md present.

@@ -3,7 +3,6 @@ import type { ExtensionAPI, ExtensionContext, ToolCallEvent } from "@earendil-wo
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	hasGuardCapability,
-	LARK_READ_ONLY_GUARD_SCOPE_ID,
 	registerGuardScopeProvider,
 	SMART_TOOL_GUARDS_BASH_GUARD_CAPABILITY,
 } from "../../lib/guard-registration.js";
@@ -77,7 +76,7 @@ function messageEnd(message: Record<string, unknown>) {
 }
 
 function guard(pi: ExtensionAPI, id = "scope", reason = "Guard reason."): void {
-	registerGuardScopeProvider(pi, id, () => ({ decision: "guard", reason }));
+	registerGuardScopeProvider(pi, id, () => ({ decision: "guard", reason, profile: "bash-read-only-v1" }));
 }
 
 beforeEach(() => {
@@ -104,19 +103,29 @@ describe("smart-tool-guards bash hook", () => {
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
 
-	it("under the Lark-only scope allows exact lark-cli reads and refuses every other command without classifier", async () => {
+	it("allows plain inspection and exact Lark reads in a guarded research scope", async () => {
 		const { pi, handlers } = makeRuntime();
-		guard(pi, LARK_READ_ONLY_GUARD_SCOPE_ID, "Lark only.");
+		guard(pi, "subagents:guarded", "Read-only research.");
 		smartToolGuards(pi);
 
-		expect(await handlers[0](bashEvent({ command: "lark-cli docs +search --query plan" }), context())).toBeUndefined();
-		expect(await handlers[0](bashEvent({ command: "lark-cli docs +fetch --doc abc --as user" }), context())).toBeUndefined();
-		for (const command of ["bun x @railway/cli logs", "pwd", "ls", "lark-cli docs +search --query plan | head", "lark-cli docs +create --title x"]) {
-			expect(await handlers[0](bashEvent({ command }), context())).toMatchObject({
-				block: true,
-				reason: expect.stringContaining("Lark-only scope permits only exact read-only lark-cli commands."),
-			});
+		for (const command of ["rg --no-config foo", "lark-cli docs +search --query plan", "lark-cli docs +fetch --doc abc --as user"]) {
+			expect(await handlers[0](bashEvent({ command }), context())).toBeUndefined();
 		}
+		expect(classifyMock).not.toHaveBeenCalled();
+	});
+
+	it("fails closed before policy or classification for an unsupported profile", async () => {
+		const { pi, handlers } = makeRuntime();
+		guard(pi);
+		registerGuardScopeProvider(pi, "unsupported", () => ({
+			decision: "guard", reason: "Unsupported.", profile: "unknown-profile",
+		}));
+		smartToolGuards(pi);
+
+		expect(await handlers[0](bashEvent({ command: "pwd" }), context())).toMatchObject({
+			block: true,
+			reason: expect.stringContaining("[ERROR][source=scope][profile=bash-read-only-v1]"),
+		});
 		expect(classifyMock).not.toHaveBeenCalled();
 	});
 
@@ -299,7 +308,7 @@ describe("smart-tool-guards bash hook", () => {
 		const second = makeRuntime(bus);
 		const providers = {
 			mode: () => "abstain" as const,
-			subagent: () => ({ decision: "guard" as const, reason: "Guarded subagent." }),
+			subagent: () => ({ decision: "guard" as const, reason: "Guarded subagent.", profile: "bash-read-only-v1" }),
 		};
 		for (const id of order) registerGuardScopeProvider(providerRuntime.pi, id, providers[id]);
 

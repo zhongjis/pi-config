@@ -2,6 +2,7 @@
 display_name: Huayan 画眼
 description: "Read-only screenshot-grounded visual design reviewer for reference fidelity and optional UI-specific frontend implementation review; Yunu implements fixes, while the orchestrator owns browser QA, general code quality, and final acceptance."
 prompt_mode: system_instructions
+smart_guard: bash-read-only-v1
 discover_skills: false
 preload_skills: impeccable
 extensions: |

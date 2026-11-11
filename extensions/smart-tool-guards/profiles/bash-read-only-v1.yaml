@@ -1,0 +1,234 @@
+# Guard profile bash-read-only-v1. The file basename is the profile ID.
+# Rule vocabulary and evaluation order: ../README.md#profiles
+allow: [read]
+unmatched: classifier
+
+classifier:
+  instructions: |-
+    Allow only bash actions that are read-only.
+    The guarded bash tool is the evaluation context; using it does not itself count as shell execution.
+    Block actions that may mutate local, version-control, service, or external-system state.
+    Executable invocation, reading outside the repository (including /tmp), pipes, and ;/&&/|| operators are not inherently mutations; assess the exact effects of every command and pipeline stage. Writes remain forbidden, including in /tmp.
+    RTK (rtk) is an output-filtering and summarizing CLI proxy, not inherently a mutating action. Judge the underlying command and its arguments: rtk git diff can inspect changes, while rtk git push mutates version-control state. RTK execution, configuration, and initialization commands are not automatically read-only.
+    Allow plain inspection and ordinary inline jq filters when all effects are read-only. This is not permission to access or transmit secrets; preserve all other restrictions.
+    Block commands that invoke a shell or general-purpose language interpreter (such as Python or Node) as an executable, or that execute downloaded or generated code.
+    Allow fixed text written only to stdout, such as `printf classifier-ok`, when no other side effect is present.
+    Unfamiliarity alone is not evidence of mutation; if effects cannot be established as read-only, block.
+  choices:
+    allow: read_only
+    criteria:
+      read_only: Every effect of every command and pipeline stage is read-only, or is fixed text written only to stdout.
+      mutates_state: May mutate local, version-control, service, or external-system state.
+      runs_code: Invokes a shell or general-purpose language interpreter as an executable, or executes downloaded or generated code.
+      unknown_effects: The effects cannot be established as read-only.
+
+rules:
+  # Denials: every shell command segment. A segment matching a denial blocks even when an approval also matches;
+  # a fallback denial applies only where no approval matched the segment.
+  - effect: filesystem-mutation
+    on: segment
+    argv: [[rm, mv, cp, touch, mkdir, rmdir, chmod, chown, ln, truncate, dd, tee]]
+  - effect: vcs-mutation
+    on: segment
+    argv:
+      - git
+      - [add, am, apply, bisect, checkout, cherry-pick, clean, clone, commit, fetch, gc, init, merge, mv, notes, pull, push,
+         rebase, remote, replace, reset, restore, revert, rm, stash, submodule, switch, tag, worktree]
+    global_options: &git-value-options [-C, -c, --git-dir, --work-tree, --namespace, --super-prefix]
+  - effect: vcs-mutation
+    on: segment
+    argv: [git, branch]
+    global_options: *git-value-options
+    any_option: [-d, -D, --delete, -m, -M, --move, -c, -C, --copy, --set-upstream-to, --unset-upstream, --edit-description]
+  - effect: vcs-mutation
+    on: segment
+    argv: [git, [diff, show]]
+    global_options: *git-value-options
+    any_option: [--output]
+    operands: true
+  - effect: vcs-mutation
+    on: segment
+    argv:
+      - gh
+      - [api, auth, attestation, browse, cache, codespace, completion, config, copilot, extension, gist, gpg-key, label, org,
+         pr, project, release, ruleset, run, secret, ssh-key, status, variable, workflow]
+  - effect: vcs-mutation
+    on: segment
+    argv: [gh, repo, [archive, clone, create, delete, deploy-key, edit, fork, rename, set-default, sync, unarchive]]
+  - effect: vcs-mutation
+    on: segment
+    argv: [gh, issue, [close, comment, create, delete, develop, edit, lock, pin, reopen, transfer, unlock, unpin]]
+  - {effect: vcs-mutation, on: segment, argv: [gh], any_option: [--web, -w]}
+  - {effect: external-system-mutation, on: segment, argv: [lark-cli], fallback: true}
+  - effect: external-system-mutation
+    on: segment
+    argv:
+      - kubectl
+      - [annotate, apply, attach, auth, autoscale, certificate, config, cordon, cp, create, debug, delete, diff, drain, edit,
+         exec, expose, krew, label, patch, plugin, port-forward, proxy, replace, rollout, run, scale, set, taint, uncordon, wait]
+    global_options: &kubernetes-value-options
+      [-n, --namespace, --context, --kubeconfig, --as, --as-group, --as-uid, --cluster, --user, --request-timeout, --timeout, --log-level]
+  - effect: external-system-mutation
+    on: segment
+    argv:
+      - flux
+      - [bootstrap, build, completion, create, delete, install, mcp, pull, push, reconcile, resume, suspend, tag, uninstall]
+    global_options: *kubernetes-value-options
+  - effect: external-system-mutation
+    on: segment
+    argv: [[kubectl, flux]]
+    global_options: *kubernetes-value-options
+    any_option: [--raw, --profile, --profile-output, --cache-dir, -w, --watch, --watch-only, -f, --follow]
+  - effect: privilege-or-system-control
+    on: segment
+    argv: [[sudo, doas, su, service, launchctl, shutdown, reboot, poweroff, halt, init, loginctl]]
+  - {effect: privilege-or-system-control, on: segment, argv: [systemctl], fallback: true}
+  - {effect: dynamic-shell-execution, on: segment, argv: [[bash, sh, dash, zsh, fish, ksh, csh, tcsh, eval, source, .]]}
+  - effect: interpreter-execution
+    on: segment
+    argv: [[python, python2, python3, node, deno, bun, ruby, perl, php, lua, luajit, rscript]]
+
+  # Exact commands.
+  - {effect: read, on: text, text: pwd}
+
+  # agent-browser: one unwrapped command; keywords unquoted, values may be quoted.
+  - {effect: read, on: words, argv: [agent-browser, [--help, -h, --version, -V]]}
+  - {effect: read, on: words, argv: [agent-browser, {}, [--help, -h]]}
+  - {effect: read, on: words, argv: [agent-browser, [snapshot, read, cookies, tab, console, errors, session, profiles]]}
+  - {effect: read, on: words, argv: [agent-browser, snapshot, [-i, --json]]}
+  - {effect: read, on: words, argv: [agent-browser, [console, profiles], --json]}
+  - {effect: read, on: words, argv: [agent-browser, get, [title, url, cdp-url]]}
+  - {effect: read, on: words, argv: [agent-browser, get, [text, html, value, count, box, styles], {}]}
+  - {effect: read, on: words, argv: [agent-browser, get, attr, {}, {}]}
+  - {effect: read, on: words, argv: [agent-browser, is, [visible, enabled, checked], {}]}
+  - {effect: read, on: words, argv: [agent-browser, find, {}, {}, text]}
+  - {effect: read, on: words, argv: [agent-browser, wait, {}]}
+  - {effect: read, on: words, argv: [agent-browser, wait, [--text, --url, --load], {}]}
+  - {effect: read, on: words, argv: [agent-browser, [tab, session, device, auth, webmcp, plugin, state], list]}
+  - {effect: read, on: words, argv: [agent-browser, tab, list, --json]}
+  - {effect: read, on: words, argv: [agent-browser, [auth, plugin, state], show, {}]}
+  - {effect: read, on: words, argv: [agent-browser, storage, [local, session]]}
+  - {effect: read, on: words, argv: [agent-browser, storage, [local, session], {pattern: '^(?!(?:set|clear)$)'}]}
+  - {effect: read, on: words, argv: [agent-browser, clipboard, read]}
+  - {effect: read, on: words, argv: [agent-browser, [dialog, stream], status]}
+  - {effect: read, on: words, argv: [agent-browser, network, requests]}
+  - {effect: read, on: words, argv: [agent-browser, network, requests, [--filter, --type, --method, --status], {}]}
+  - {effect: read, on: words, argv: [agent-browser, network, request, {}]}
+  - {effect: read, on: words, argv: [agent-browser, react, [tree, suspense]]}
+  - {effect: read, on: words, argv: [agent-browser, react, inspect, {}]}
+  - {effect: read, on: words, argv: [agent-browser, react, suspense, [--only-dynamic, --json]]}
+  - {effect: read, on: words, argv: [agent-browser, react, suspense, --only-dynamic, --json]}
+  - {effect: read, on: words, argv: [agent-browser, react, suspense, --json, --only-dynamic]}
+
+  # Lark: exact document search/fetch and discovery; the executable may be quoted.
+  - {effect: read, on: command, quoted_executable: true, argv: [lark-cli, [--help, -h, --version]]}
+  - {effect: read, on: command, quoted_executable: true, argv: [lark-cli, wiki, --help]}
+  - {effect: read, on: command, quoted_executable: true, argv: [lark-cli, docs, [--help, -h]]}
+  - effect: read
+    on: command
+    quoted_executable: true
+    argv: [lark-cli, docs, +search]
+    flags: [--help, -h, --dry-run, --json]
+    values:
+      --query: {}
+      --filter: {}
+      --page-size: {}
+      --page-token: {}
+      --format: {enum: [json, pretty, table, ndjson, csv]}
+      --jq: {}
+      -q: {}
+      --as: {enum: [user]}
+    signed_values: true
+    require_one_of: [--query, --help, -h]
+  - effect: read
+    on: command
+    quoted_executable: true
+    argv: [lark-cli, docs, +fetch]
+    flags: [--help, -h, --dry-run]
+    values:
+      --doc: {}
+      --doc-format: {enum: [xml, markdown, im-markdown]}
+      --detail: {enum: [simple, with-ids, full]}
+      --scope: {enum: [full, outline, range, keyword, section]}
+      --start-block-id: {}
+      --end-block-id: {}
+      --keyword: {}
+      --context-before: {}
+      --context-after: {}
+      --max-depth: {}
+      --revision-id: {}
+      --lang: {}
+      --jq: {}
+      -q: {}
+      --as: {enum: [user]}
+    signed_values: true
+    require_one_of: [--doc, --help, -h]
+
+  # Diagnostics: bounded no-pager service reads and a fixed schema query on an offline snapshot.
+  # Immutable SQLite reads avoid WAL/SHM creation but ignore live writers.
+  - effect: read
+    on: command
+    argv: [journalctl]
+    flags: [--user, --no-pager]
+    values:
+      -u: {pattern: &service-unit '^[A-Za-z0-9][A-Za-z0-9_.@:-]*\.service$'}
+      -n: {pattern: '^[1-9]\d{0,4}$', max: 10000}
+    equals: false
+    require: [--user, --no-pager, -u, -n]
+    unique: [--user, --no-pager, -u, -n]
+  - {effect: read, on: command, argv: [systemctl, --user, status, {pattern: *service-unit}, --no-pager]}
+  - effect: read
+    on: command
+    argv: [systemctl, --user, show, {pattern: *service-unit}]
+    flags: [--no-pager]
+    values:
+      -p: {enum: [ExecStart, FragmentPath, ActiveEnterTimestamp]}
+    equals: false
+    require: [--no-pager, -p]
+    unique: [--no-pager]
+  - effect: read
+    on: command
+    argv:
+      - sqlite3
+      - -batch
+      - -readonly
+      - -init
+      - /dev/null
+      - {pattern: '^file:\/[A-Za-z0-9/_.-]+\?mode=ro&immutable=1$'}
+      - "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name;"
+
+  # Literal inspection: every pipeline stage must match one of these.
+  - {effect: read, on: stage, argv: [cat], operands: true, flags: [-n, -b, -s, -v, -E, -T, -A]}
+  - {effect: read, on: stage, argv: [nl], operands: true}
+  - {effect: read, on: stage, argv: [[head, tail]], operands: true, count_shorthand: true, flags: [-q, -v], ints: [-n, -c, --lines, --bytes]}
+  - {effect: read, on: stage, argv: [wc], operands: true, flags: [-l, -w, -c, -m, -L]}
+  - {effect: read, on: stage, argv: [sha256sum], operands: true, flags: [-b, -t, --binary, --text, --tag]}
+  - effect: read
+    on: stage
+    argv: [rg]
+    operands: true
+    flags: [--no-config, --files, --hidden, -n, --line-number, -i, --ignore-case, -l, --files-with-matches, -c, --count, -F, --fixed-strings, -w, --word-regexp, -S, --smart-case]
+    values: [-e, --regexp, -g, --glob, -t, --type, -T, --type-not]
+    ints: [-A, --after-context, -B, --before-context, -C, --context, -m, --max-count, --max-depth]
+    require: [--no-config]
+  - effect: read
+    on: stage
+    argv: [fd]
+    operands: true
+    flags: [--hidden, -H, --no-ignore, -I, --absolute-path, -a, --full-path, -p, --fixed-strings, -F, --case-sensitive, -s, --ignore-case, -i]
+    values: [-t, --type, -e, --extension, -E, --exclude, --search-path]
+    ints: [-d, --max-depth]
+  - effect: read
+    on: stage
+    argv: [git, diff]
+    operands: true
+    flags: [--cached, --staged, --stat, --numstat, --name-only, --name-status, --check, --no-color, --no-ext-diff, --no-textconv]
+    ints: [-U, --unified]
+  - effect: read
+    on: stage
+    argv: [rtk, git, diff]
+    operands: true
+    flags: [--cached, --staged, --stat, --numstat, --name-only, --name-status, --check, --no-color, --no-ext-diff, --no-textconv, --no-compact]
+    ints: [-U, --unified]
+  - {effect: read, on: stage, argv: [jq, [--version, --help]]}
+  - {effect: read, on: stage, argv: [command, -v, {pattern: '^[A-Za-z_][A-Za-z0-9_-]*$'}]}

@@ -4,6 +4,7 @@
 
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { AccessRule } from "../../lib/active-tools.js";
+import type { GuardProfileId } from "../../lib/guard-registration.js";
 import type { PromptVariants } from "../../lib/prompt-variants.js";
 import type { GraphRunEntryData } from "./graph/entry.js";
 import type { LifetimeUsage, SessionLike } from "./usage.js";
@@ -44,6 +45,7 @@ export interface AgentConfig {
   /** Skill names whose full content is eagerly injected into the system prompt. Default []. */
   preloadSkills: string[];
   model?: string;
+  readonly smartGuard?: GuardProfileId;
   thinking?: ThinkingLevel;
   /** Write the subagent's .output transcript. Defaults to true; false suppresses only that transcript. */
   outputTranscript?: boolean;

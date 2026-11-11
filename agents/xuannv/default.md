@@ -3,6 +3,7 @@ display_name: Xuannv 九天玄女
 description: Read-only tactical planning advisor that compares viable work decompositions and returns coarsest-cohesive packets with worker-fit and escalation evidence; the parent owns the plan.
 model: github-copilot/claude-opus-5.5:xhigh,cliproxyapi/gpt-6-astra:medium,opencode-go/kimi-k3:max,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
+smart_guard: bash-read-only-v1
 discover_skills: false
 extensions: |
   +better-bash-tool, +rtk, +direnv, +filter-outputs,

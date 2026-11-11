@@ -36,7 +36,7 @@ import {
   toolCandidates,
 } from "../../lib/active-tools.js";
 import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
-import { LARK_READ_ONLY_GUARD_SCOPE_ID, registerGuardScopeProvider } from "../../lib/guard-registration.js";
+import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
 import { getModePromptSource } from "../../lib/model-family.js";
 import { selectPromptBody } from "../../lib/prompt-variants.js";
 import sessionLocalTools from "../../session-local/index.js";
@@ -148,16 +148,7 @@ function mcpToolExcludes(
   return { excludeTools: [...deniedNamespaces.map((namespace) => `${namespace}__*`), ...deniedNames], deniedNamespaces };
 }
 
-const GUARDED_CANONICAL_AGENT_TYPES = new Set([
-  "chengfeng",
-  "wenchang",
-  "direnjie",
-  "taishang",
-  "xuannv",
-  "yanluo",
-  "huayan",
-]);
-export const isGuardedBashType = (type: string) => GUARDED_CANONICAL_AGENT_TYPES.has(type.toLowerCase());
+export const isGuardedBashType = (type: string) => getAgentConfig(type)?.smartGuard !== undefined;
 
 /**
  * Tool names registered by THIS extension. Single source of truth so the
@@ -327,9 +318,10 @@ export async function openSession(
   // An internal definition replaces registry lookup.
   const override = options.agentConfig;
   const canonicalType = override?.name ?? resolveType(type) ?? type;
-  const guardBash = isGuardedBashType(canonicalType);
   const config = override ?? getConfig(type);
   const agentConfig = override ?? getAgentConfig(type);
+  const guardProfile = agentConfig?.smartGuard;
+  const guardBash = guardProfile !== undefined;
   // Preserve an already selected candidate, but never let direct options bypass frontmatter.
   const selected: SelectedAgentModel = options.selectedModel && options.selectedModel.modelInput === agentConfig?.model
     ? options.selectedModel
@@ -531,13 +523,8 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
           registerGuardScopeProvider(extensionPi, "subagents:guarded", () => ({
             decision: "guard",
             reason: "This guarded subagent requires read-only Bash.",
+            profile: guardProfile,
           }));
-          if (canonicalType === "wenchang") {
-            registerGuardScopeProvider(extensionPi, LARK_READ_ONLY_GUARD_SCOPE_ID, () => ({
-              decision: "guard",
-              reason: "This subagent may run only read-only Lark CLI commands.",
-            }));
-          }
           smartToolGuards(extensionPi);
         },
         hidden: true,

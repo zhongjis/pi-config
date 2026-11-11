@@ -481,6 +481,19 @@ describe("toolCandidates", () => {
 // ─── agent-frontmatter parser: toolRules/extensionRules/diagnostics ───────
 
 describe("parseAgentFrontmatter tools/extensions rules", () => {
+  it.each(["subagent", "mode"] as const)("parses optional smart_guard for %s definitions", (kind) => {
+    const guarded = parseAgentFrontmatter({ smart_guard: "bash-read-only-v1" }, "", { kind });
+    expect(guarded.smartGuard).toBe("bash-read-only-v1");
+    expect(guarded.invalidFields).toEqual([]);
+    expect(parseAgentFrontmatter({}, "", { kind }).smartGuard).toBeUndefined();
+  });
+
+  it.each([null, false, 1, ["bash-read-only-v1"], "unknown-profile"])("invalidates smart_guard: %j", (smart_guard) => {
+    const parsed = parseAgentFrontmatter({ smart_guard });
+    expect(parsed.invalidFields).toEqual(["smart_guard"]);
+    expect(parsed.diagnostics).toContainEqual(expect.objectContaining({ field: "smart_guard", severity: "error" }));
+  });
+
   it.each([["", false], ["-leaf", false], ["+leaf, -leaf", true], ["+missing", true]])("recognizes positive delegation intent in %s", (delegation, expected) => {
     expect(hasPositiveDelegationRule(parseAgentFrontmatter({ delegation }).delegationRules)).toBe(expected);
   });

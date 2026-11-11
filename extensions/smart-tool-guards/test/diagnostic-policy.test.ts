@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { evaluateBashPolicy } from "../src/bash-policy.js";
+import { loadGuardProfile } from "../src/profile.js";
+
+const loaded = loadGuardProfile("bash-read-only-v1");
+if (loaded.kind !== "loaded") throw new Error(loaded.error);
+const PROFILE = loaded.profile;
 
 function outcome(command: string) {
-	return evaluateBashPolicy({ command, effectiveCwd: "/repo" });
+	return evaluateBashPolicy(PROFILE, { command, effectiveCwd: "/repo" });
 }
 
 const SCHEMA = "SELECT name FROM sqlite_schema WHERE type='table' ORDER BY name;";
