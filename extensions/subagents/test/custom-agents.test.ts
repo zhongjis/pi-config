@@ -78,7 +78,7 @@ Pi prompt.`);
     expect(result.get("dupe")?.systemPrompt).toBe("Pi prompt.");
   });
 
-  it("workspace project agents override global agents", () => {
+  it("global agents shadow project agents with the same name", () => {
     const globalAgentDir = join(tmpDir, "global-agent-dir");
     process.env.PI_CODING_AGENT_DIR = globalAgentDir;
     const globalAgents = join(globalAgentDir, "agents");
@@ -94,10 +94,11 @@ description: Workspace Project
 
 Workspace prompt.`);
 
-    const result = loadCustomAgents(tmpDir);
-    expect(result.size).toBe(1);
-    expect(result.get("dupe")?.description).toBe("Workspace Project");
-    expect(result.get("dupe")?.systemPrompt).toBe("Workspace prompt.");
+    const { agents, diagnostics } = loadCustomAgentsWithDiagnostics(tmpDir);
+    expect(agents.size).toBe(1);
+    expect(agents.get("dupe")?.description).toBe("Global");
+    expect(agents.get("dupe")?.source).toBe("global");
+    expect(diagnostics).toContainEqual(expect.objectContaining({ agentName: "dupe", severity: "warning", message: "shadowed by global agent; ignored" }));
   });
 
   it("loads a basic agent with all frontmatter fields", () => {

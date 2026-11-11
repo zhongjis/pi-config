@@ -25,7 +25,7 @@ interface DefinitionCandidate {
   readonly source: "project" | "global";
 }
 
-/** Scan names first, then resolve each name from its highest-priority valid definition. */
+/** Scan names first, then resolve each name from its highest-priority valid definition. Global names cannot be shadowed by project definitions. */
 export function loadCustomAgentsWithDiagnostics(cwd: string): CustomAgentsLoadResult {
   const candidates = new Map<string, DefinitionCandidate[]>();
   for (const [dir, source] of [
@@ -54,7 +54,12 @@ export function loadCustomAgentsWithDiagnostics(cwd: string): CustomAgentsLoadRe
 
   const agents = new Map<string, AgentConfig>();
   const diagnostics: AgentDefinitionDiagnostic[] = [];
-  for (const [name, entries] of candidates) {
+  for (const [name, allEntries] of candidates) {
+    const hasGlobal = allEntries.some(entry => entry.source === "global");
+    const entries = hasGlobal ? allEntries.filter(entry => entry.source === "global") : allEntries;
+    for (const shadowed of allEntries.filter(entry => !entries.includes(entry))) {
+      diagnostics.push({ file: shadowed.path, agentName: name, severity: "warning", message: "shadowed by global agent; ignored" });
+    }
     const invalidPaths: string[] = [];
     let usedPath: string | undefined;
     for (const candidate of entries) {

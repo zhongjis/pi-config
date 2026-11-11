@@ -44,8 +44,8 @@ describe("directory agent definitions", () => {
     expect(result.diagnostics).toEqual([]);
   });
 
-  it.each([0, 1, 2, 3, 4, 5])("selects first valid candidate at priority %s and warns for every skipped definition", (validIndex) => {
-    const candidates = locations.flatMap(location => [join(location, "worker", "default.md"), join(location, "worker.md")]);
+  it.each([0, 1, 2, 3])("selects first valid project candidate at priority %s and warns for every skipped definition", (validIndex) => {
+    const candidates = locations.slice(0, 2).flatMap(location => [join(location, "worker", "default.md"), join(location, "worker.md")]);
     candidates.forEach((path, index) => write(path, `---\ntools: ${index < validIndex ? "read" : "+read"}\n---\nBODY_${index}`));
 
     const result = loadCustomAgentsWithDiagnostics(root);
@@ -87,7 +87,7 @@ describe("directory agent definitions", () => {
 
   it("keeps field errors and reports unavailable when every candidate is invalid", () => {
     write(join(root, ".pi", "agents", "worker", "default.md"), "---\ntools: read\n---\nDIRECTORY_BODY");
-    write(join(root, "global", "agents", "worker.md"), "---\nextensions: false\n---\nGLOBAL_BODY");
+    write(join(root, ".agents", "agents", "worker.md"), "---\nextensions: false\n---\nWORKSPACE_BODY");
 
     const result = loadCustomAgentsWithDiagnostics(root);
 

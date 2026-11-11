@@ -28,7 +28,7 @@ The delegation allowlist becomes the only gate on a `subagent` call: an unknown 
 8. As an agent author, I want other files in an agent directory (such as `AGENTS.md` or notes) to be ignored, so that the directory can hold maintenance material.
 9. As an agent author, I want directory definitions to work in the global, workspace, and project agent locations, so that every location supports variants.
 10. As a user, I want an invalid `<name>/default.md` to fall back to `<name>.md` in the same location, so that a typo does not remove the agent.
-11. As a user, I want an invalid definition in a higher-priority location to fall back to lower-priority locations, so that a broken project override leaves the global agent usable.
+11. As a user, I want an invalid definition in a higher-priority location to fall back to lower-priority locations, so that a broken `.pi/agents` definition leaves the `.agents/agents` definition usable.
 12. As a user, I want a warning for every invalid candidate skipped, naming the file, the problem, and the definition actually used, so that I know which prompt is running.
 13. As a user, I want a warning when no valid definition of a name remains, so that I know why the agent is unavailable.
 14. As a user, I want each warning shown once per message rather than on every reload, so that diagnostics do not flood the session.

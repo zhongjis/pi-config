@@ -150,7 +150,7 @@ Notes:
 ${listed ? `Configured agent types and defaults (not invocation overrides; current mode may permit only a subset). Runtime access also depends on extension loading, authentication, and permissions:
 ${formatTypeList(getAvailableTypes(), false)}` : "Permitted agent types are listed in the system prompt. Runtime access also depends on extension loading, authentication, and permissions."}
 
-Custom agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents override global ones. Creating a .md file with the same name as a default agent overrides it.
+Custom agents can be defined in .pi/agents/<name>.md (project) or ${getAgentDir()}/agents/<name>.md (global) — they are picked up automatically. Project-level agents with the same name as a global agent are ignored.
 
 When using the \`subagent\` tool, specify a subagent_type parameter to select which agent type to use.
 
