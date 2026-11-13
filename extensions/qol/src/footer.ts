@@ -10,7 +10,8 @@ const ANSI_ESCAPE_REGEX = /\u001B\[[0-9;]*m/g;
 // Status keys to hide from the status line entirely.
 // - thinking-steps: duplicates thinking level already shown in the stats-line model segment
 // - caveman: noise; user opts in via /caveman
-const HIDDEN_STATUS_KEYS = new Set(["thinking-steps", "caveman", "fast"]);
+// - background-tasks: re-rendered right-aligned as "◉ N bg task(s)"
+const HIDDEN_STATUS_KEYS = new Set(["thinking-steps", "caveman", "fast", "background-tasks"]);
 
 // Leading decorative glyphs to strip from status text.
 const LEADING_GLYPH_REGEX = /^[\u25CF\u25CB\u2022\u2023\u2219\u26AB\u26AA\u25A0\u25A1\u25AA\u25AB\u2B24]\s*/;
@@ -410,6 +411,9 @@ export function installFooterVisuals(pi: ExtensionAPI): void {
           // the left of LSP), followed by the infra statuses. LSP is colorized and only
           // shown when it has active servers; other infra keeps its muted "KEY detail" form.
           const rightParts: string[] = [];
+          // ponytail: parses pi-simple-background-tasks' "◉ N task(s) running" text; reword upstream hides it.
+          const bgCount = Number(stripAnsi(statuses.get("background-tasks") ?? "").match(/(\d+) tasks? running/)?.[1] ?? 0);
+          if (bgCount > 0) rightParts.push(theme.fg("accent", `◉ ${bgCount} bg task${bgCount === 1 ? "" : "s"}`));
           const goalIndicator = getGoalIndicator(ctx);
           if (goalIndicator) {
             rightParts.push(theme.fg(goalIndicator.color, goalIndicator.text));

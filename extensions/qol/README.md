@@ -13,7 +13,7 @@ The footer uses up to four compact lines for:
 - repository name and git branch (linked worktrees show the main repository name), or the working directory outside git;
 - session name, when set;
 - context usage, model/thinking level, latest generation TPS, cost, token totals, and session cache hit rate;
-- extension statuses, goal state, and active infrastructure status such as LSP.
+- extension statuses, running background-task count, goal state, and active infrastructure status such as LSP.
 
 Generation TPS in [src/footer.ts](src/footer.ts) divides provider-reported `usage.output` minus one by elapsed seconds from the first to the last nonempty text, thinking, or tool-call delta. It excludes pre-output waiting and failed retry attempts, retains the last valid completed rate during the next stream and after error/aborted or unmeasurable completions (including durations below 250 ms). It is temporary, resets on session start/tree navigation/shutdown, and is absent until measured. The dim `tok/s` segment keeps its existing position, precision, and width priority; it does not claim exact parity with OpenRouter's undocumented formula.
 
