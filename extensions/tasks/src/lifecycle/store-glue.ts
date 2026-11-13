@@ -1,5 +1,6 @@
 import { join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { findLatestModeStateEntry } from "../../../lib/mode-state-entry.js";
 import { pandaWarn } from "../../../lib/warn.js";
 import { AutoClearManager } from "../auto-clear.js";
 import { AUTO_CLEAR_DELAY, REMINDER_INTERVAL } from "../constants.js";
@@ -37,15 +38,11 @@ export const RESERVED_PROVENANCE_KEYS = new Set([
 ]);
 
 export function getCurrentMode(ctx?: SessionStateContext): string | undefined {
-  const entries = ctx?.sessionManager.getEntries() ?? [];
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const entry = entries[i];
-    if (entry.type !== "custom" || entry.customType !== "agent-mode") continue;
-    if (typeof entry.data?.mode === "string" && entry.data.mode.trim()) {
-      return entry.data.mode;
-    }
-  }
-  return undefined;
+  const entry = findLatestModeStateEntry(
+    ctx?.sessionManager.getEntries() ?? [],
+    (candidate) => typeof candidate.data?.mode === "string" && candidate.data.mode.trim(),
+  );
+  return entry?.data?.mode as string | undefined;
 }
 
 export function sanitizeUserMetadata(metadata?: Record<string, any>): { metadata?: Record<string, any>; ignoredKeys: string[] } {

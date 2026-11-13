@@ -207,6 +207,20 @@ describe("mode hooks", () => {
 			expect(state.planContent).toBe(restores ? "plan" : undefined);
 		},
 	);
+	it("restores the saved mode past a missing trailing entry slot", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		registerModeHooks(mock.pi as never, state);
+		const entries: unknown[] = [{ type: "custom", customType: "agent-mode", data: { mode: "fuxi" } }];
+		entries.length = 2;
+		await mock.fire("session_start", {}, {
+			hasUI: false, ui: { setStatus: vi.fn() },
+			modelRegistry: { getAll: () => [], getAvailable: () => [] },
+			sessionManager: { getSessionId: () => "sparse", getEntries: () => entries },
+		});
+		expect(state.currentMode).toBe("fuxi");
+	});
+
 	it("publishes the mode body as the modes prompt section during before_agent_start", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);

@@ -22,6 +22,7 @@ import type {
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { getUltraworkPrompt } from "./prompt.js";
+import { findLatestModeStateEntry, isModeStateEntry } from "../lib/mode-state-entry.js";
 // @ts-expect-error repo test/runtime alias resolves @earendil-works/pi-tui; LSP may miss it.
 import { Box, Text } from "@earendil-works/pi-tui";
 
@@ -72,13 +73,10 @@ function hasUlwKeyword(text: string): boolean {
 /** Read current mode from session entries (persisted by modes extension). */
 function getCurrentMode(ctx: ExtensionContext): string {
   try {
-    const entries = ctx.sessionManager.getEntries();
-    const modeEntry = entries
-      .filter(
-        (e: { type: string; customType?: string }) =>
-          e.type === "custom" && e.customType === "agent-mode",
-      )
-      .pop() as { data?: { mode?: string } } | undefined;
+    // Full-history filter: skips holes; a nullish entry or non-array result falls back to kuafu.
+    const modeEntry = findLatestModeStateEntry(ctx.sessionManager.getEntries().filter(isModeStateEntry)) as
+      | { data?: { mode?: string } }
+      | undefined;
     return modeEntry?.data?.mode ?? "kuafu";
   } catch {
     // Defensive: if sessionManager or getEntries() unavailable, default to kuafu

@@ -103,6 +103,17 @@ describe("delegation-policy", () => {
 	});
 
 	it.each([
+		["non-iterable entries", {}],
+		["nullish entry", [null]],
+	])("rejects %s instead of granting unrestricted delegation", (_label, entries) => {
+		expect(() => resolvePersistedDelegationPolicy({
+			entries: entries as never,
+			availableTypes,
+			requestedType: "jintong",
+		})).toThrow(TypeError);
+	});
+
+	it.each([
 		["missing policy", { mode: "fuxi" }],
 		["v1 policy", { mode: "fuxi", delegationPolicy: { version: 1, allowDelegationTo: ["jintong"], disallowDelegationTo: [] } }],
 		["unknown version", { mode: "fuxi", delegationPolicy: { version: 3, rules: [] } }],

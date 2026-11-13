@@ -1,15 +1,12 @@
 import { type AccessRule, BUILTIN_TOOL_NAMES, hasPositiveDelegationRule, parseAccessRules, resolveToolAccess } from "../../lib/active-tools.js";
+import { findLatestModeStateEntry, type ModeStateEntryLike } from "../../lib/mode-state-entry.js";
 import type { AgentConfig } from "./types.js";
 
 export interface DelegationPolicy {
 	readonly rules: AccessRule[];
 }
 
-export interface ModeStateEntryLike {
-	type?: string;
-	customType?: string;
-	data?: unknown;
-}
+export type { ModeStateEntryLike };
 
 interface VersionedDelegationPolicyV2 extends DelegationPolicy {
 	version: 2;
@@ -195,9 +192,8 @@ export function resolvePersistedDelegationPolicyContext(input: {
 	entries: readonly ModeStateEntryLike[];
 	availableTypes: string[];
 }): ResolvedDelegationPolicyContext {
-	const latestEntry = [...input.entries].reverse().find(
-		(entry) => entry.type === "custom" && entry.customType === "agent-mode",
-	);
+	// Spread rejects non-iterable entries so authorization fails closed instead of reading as "no mode".
+	const latestEntry = findLatestModeStateEntry([...input.entries]);
 	if (!latestEntry) {
 		return resolveDelegationPolicyContext({
 			activeMode: undefined,
@@ -269,13 +265,8 @@ export function buildDelegationBlockedMessage(
 export function getCurrentDelegatorType(
 	entries: ModeStateEntryLike[],
 ): string | undefined {
-	for (let i = entries.length - 1; i >= 0; i--) {
-		const entry = entries[i];
-		if (entry.type !== "custom" || entry.customType !== "agent-mode") continue;
-		if (!entry.data || typeof entry.data !== "object") return undefined;
-		const mode = (entry.data as Record<string, unknown>).mode;
-		return typeof mode === "string" && mode.trim() ? mode : undefined;
-	}
-
-	return undefined;
+	const entry = findLatestModeStateEntry(entries);
+	if (!entry?.data || typeof entry.data !== "object") return undefined;
+	const mode = (entry.data as Record<string, unknown>).mode;
+	return typeof mode === "string" && mode.trim() ? mode : undefined;
 }
