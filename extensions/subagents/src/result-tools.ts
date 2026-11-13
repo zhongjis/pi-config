@@ -72,7 +72,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
 
     const executionId = record.executionId;
     // Cancellation stops only this wait, not the background agent or its notification.
-    const checkIn = params.wait ? await manager.waitForSettlementOrCheckIn(record.id, signal) : undefined;
+    const outcome = params.wait ? await manager.waitForOutcome(record.id, signal) : manager.getOutcome(record.id);
 
     if (record.executionId !== executionId) {
       return textResult(`Agent "${record.id}" started another execution while this retrieval waited. Retrieve its current result again.`);
@@ -88,9 +88,9 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     if (record.compactionCount) statsParts.push(`Compactions: ${record.compactionCount}`);
     statsParts.push(`Duration: ${duration}`);
 
-    const pending = manager.hasPendingExecution(params.agent_id);
+    const pending = outcome.kind !== "settled";
     let output =
-      (checkIn !== undefined && pending ? `${turnCheckInNotice(record, checkIn)}\n\n` : "") +
+      (outcome.kind === "check-in" ? `${turnCheckInNotice(record, outcome.threshold)}\n\n` : "") +
       `Agent: ${record.id}\n` +
       `Type: ${displayName} | Status: ${record.status}${getStatusNote(record.status, record.interruptionCause)} | ${statsParts.join(" | ")}\n` +
       `Description: ${record.description}\n\n`;
@@ -153,7 +153,7 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
       }
       const result = manager.steer(record.id, params.message);
       if (result.status === "refused") {
-        return notRunning(record.status, !manager.hasPendingExecution(record.id));
+        return notRunning(record.status, manager.getOutcome(record.id).kind === "settled");
       }
       if (result.status === "pending") {
         pi.events.emit("subagents:steered", { id: record.id, message: params.message });

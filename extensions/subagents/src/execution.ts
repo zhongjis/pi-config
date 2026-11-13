@@ -4,6 +4,8 @@
  * fields (status, result, error, interruption cause, completion time,
  * structured output, and the session label). Knows nothing about graphs,
  * pools, or manager ownership.
+ * Internal to the AgentManager lifecycle: only agent-manager.ts starts, stops,
+ * steers, or fails an Execution; callers read its LifecycleOutcome instead.
  */
 
 import type { AgentSession, AgentSessionEvent } from "@earendil-works/pi-coding-agent";

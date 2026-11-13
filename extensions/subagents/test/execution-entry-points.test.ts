@@ -247,7 +247,7 @@ describe("fresh spawn", () => {
       expect(manager.steer(id, "after stop")).toEqual({ status: "refused" });
       expect(record).toMatchObject({ status: "stopped", interruptionCause: "user" });
       expect(record.session).toBeUndefined();
-      expect(manager.hasPendingExecution(id)).toBe(true);
+      expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
       expect(manager.hasRunning()).toBe(true);
     } finally { opening.open(); }
     const stoppedAt = record.completedAt;
@@ -259,7 +259,7 @@ describe("fresh spawn", () => {
     expect(late.steer).not.toHaveBeenCalled();
     expect(sessionListener).toHaveBeenCalledExactlyOnceWith(record);
     expect(onComplete).toHaveBeenCalledExactlyOnceWith(record);
-    expect(manager.hasPendingExecution(id)).toBe(false);
+    expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
     expect(late.dispose).not.toHaveBeenCalled();
 
     await manager.resume(id, "again");
@@ -406,7 +406,7 @@ describe("evicted resume", () => {
       await new Promise((resolve) => setImmediate(resolve));
       expect(sessionManagerOpen).not.toHaveBeenCalled();
       expect(record.status).toBe("stopped");
-      expect(manager.hasPendingExecution(id)).toBe(true);
+      expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
     } finally { shutdown.open(); }
     const stoppedAt = record.completedAt;
     await record.promise;
@@ -415,7 +415,7 @@ describe("evicted resume", () => {
     expect(sessionManagerOpen).toHaveBeenCalledOnce();
     expect(record).toMatchObject({ status: "stopped", interruptionCause: "user", completedAt: stoppedAt, session: reopened });
     expect(reopened.prompt).not.toHaveBeenCalled();
-    expect(manager.hasPendingExecution(id)).toBe(false);
+    expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
     await manager.waitForAll();
   });
 
@@ -433,7 +433,7 @@ describe("evicted resume", () => {
     expect(record.completedAt).toBeDefined();
     expect(record.session).toBeUndefined();
     expect(manager.getRecord(id)).toBe(record);
-    expect(manager.hasPendingExecution(id)).toBe(false);
+    expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
     expect(createAgentSession).not.toHaveBeenCalled();
     expect(sessionListener).not.toHaveBeenCalled();
     expect(onComplete).toHaveBeenCalledExactlyOnceWith(record);
@@ -619,7 +619,7 @@ describe("orchestrator check-in", () => {
       if (entry === "fresh spawn") id = manager.spawn(pi, ctx, "probe", "work", { description: "probe", isBackground: true });
       else await manager.resume(id, "work", undefined, undefined, { isBackground: true });
       expect(manager.getRecord(id)?.status).toBe("queued");
-      const woken = manager.waitForSettlementOrCheckIn(id);
+      const woken = manager.waitForOutcome(id);
       const buildDetails = createAgentResultBuilder(() => false);
       const cancelNudge = vi.fn();
       const tools = createResultTools(pi, manager, {
@@ -632,12 +632,12 @@ describe("orchestrator check-in", () => {
       try {
         holding.open();
         await busy.promise;
-        await expect(woken).resolves.toBe(1);
+        await expect(woken).resolves.toEqual({ kind: "check-in", threshold: 1 });
         // Let tool-result promise continuations run without advancing timer tasks.
         for (let tick = 0; tick < 10; tick++) await Promise.resolve();
         expect(retrieved?.details).toMatchObject({ status: "running" });
         expect(manager.getRecord(id)).toMatchObject({ status: "running", resultConsumed: false });
-        expect(manager.hasPendingExecution(id)).toBe(true);
+        expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
         expect(cancelNudge).not.toHaveBeenCalled();
         expect(listener).not.toHaveBeenCalled();
       } finally { working.open(); await retrieval; }
@@ -660,11 +660,11 @@ describe("orchestrator check-in", () => {
         await manager.resume(id, "work", undefined, undefined, { isBackground: true });
       }
       await vi.waitFor(() => expect(sessions[0]?.prompt).toHaveBeenCalledWith("work"));
-      const waiting = manager.waitForSettlementOrCheckIn(id);
+      const waiting = manager.waitForOutcome(id);
       manager.abort(id, "user");
       working.open();
 
-      await expect(waiting).resolves.toBeUndefined();
+      await expect(waiting).resolves.toEqual({ kind: "settled" });
       expect(manager.getRecord(id)).toMatchObject({ status: "stopped", turnCount: 1 });
       expect(listener).not.toHaveBeenCalled();
     } finally { working.open(); }
