@@ -35,7 +35,7 @@ The Mode Agent session that starts an agent graph run, supplies its input, resol
 _Avoid_: orchestrator (in this context), parent, orchestrator node
 
 **Saved agent graph**:
-An agent graph definition stored on disk as `<name>.graph.json` and invoked by name. The short form "saved graph" is fine where "agent graph" is already established.
+An agent graph definition stored on disk as `<name>.graph.yaml` (or `.graph.json`) and invoked by name. The short form "saved graph" is fine where "agent graph" is already established.
 _Avoid_: saved workflow
 
 **Agent graph run**:

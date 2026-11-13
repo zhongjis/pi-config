@@ -326,6 +326,7 @@ The validator reports every error at once, with dotted paths (`nodes.review.prom
 
 - [context-gather.graph.json](../../../../../agent-graphs/context-gather.graph.json) — evidence gathering through `bounded_feedback`.
 - [deep-research.graph.json](../../../../../agent-graphs/deep-research.graph.json) — cited research with a Caller-approved plan.
+- [deep-plan.graph.yaml](../../../../../agent-graphs/deep-plan.graph.yaml) — YAML graph: subgraph evidence, typed draft, single-pass gap analysis, and conditional review.
 - Contracts: [agent-graphs/AGENTS.md](../../../../../agent-graphs/AGENTS.md).
 
-Promote a proven inline graph to a saved root: `<cwd>/.pi/agent-graphs`, `<cwd>/agent-graphs`, `<cwd>/.agents/agent-graphs`, or `~/.pi/agent/agent-graphs`. Save it as `<name>.graph.json`; `.graph.yaml` is the fallback format. A `/` in the name is a subdirectory. Keep one format per name in a root.
+Promote a proven inline graph to a saved root: `<cwd>/.pi/agent-graphs`, `<cwd>/agent-graphs`, `<cwd>/.agents/agent-graphs`, or `~/.pi/agent/agent-graphs`. Save it as `<name>.graph.yaml`; `.graph.json` is also accepted. YAML anchors and aliases may share repeated schemas and prompts; the resolver caps alias expansion, so alias large blocks, not small leaf schemas. A `/` in the name is a subdirectory. Keep one format per name in a root.

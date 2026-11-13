@@ -13,16 +13,17 @@ Every `agent_graph` call runs either a saved graph (`graph: "<name>"`) or an ad-
 
 ## 2a. Saved graph
 
-1. **Find it.** Resolution roots, highest priority first: `<cwd>/.pi/agent-graphs`, `<cwd>/agent-graphs`, `<cwd>/.agents/agent-graphs`, `~/.pi/agent/agent-graphs` (`install.sh` links the repo portfolio here). The first root that contains the name wins. A `/` in the name maps to a subdirectory (`team/review` → `team/review.graph.json`). The same name as `.graph.json` and `.graph.yaml` in one root is an error. List graphs with their descriptions:
+1. **Find it.** Resolution roots, highest priority first: `<cwd>/.pi/agent-graphs`, `<cwd>/agent-graphs`, `<cwd>/.agents/agent-graphs`, `~/.pi/agent/agent-graphs` (`install.sh` links the repo portfolio here). The first root that contains the name wins. A `/` in the name maps to a subdirectory (`team/review` → `team/review.graph.yaml`). The same name as `.graph.yaml` and `.graph.json` in one root is an error. List graphs with their descriptions:
 
    ```sh
-   fd -g '*.graph.json' .pi/agent-graphs agent-graphs .agents/agent-graphs ~/.pi/agent/agent-graphs \
-     -X jq -r '"\(input_filename): \(.description // "-")"' 2>/dev/null
+   for f in $(fd -g '*.graph.{yaml,json}' .pi/agent-graphs agent-graphs .agents/agent-graphs ~/.pi/agent/agent-graphs 2>/dev/null); do
+     echo "$f: $(yq -r '.description // "-"' "$f")"
+   done
    ```
 
-   Saved graphs are `.graph.json`; `.graph.yaml` is the fallback format, so read a YAML graph directly instead of using `jq`. The repo portfolio ships `context-gather.graph.json` and `deep-research.graph.json`; their contracts are in [agent-graphs/AGENTS.md](../../../../agent-graphs/AGENTS.md).
+   Saved graphs default to `.graph.yaml`; `.graph.json` is also accepted. `yq` reads both. The repo portfolio ships `context-gather`, `deep-research`, and `deep-plan`; their contracts are in [agent-graphs/AGENTS.md](../../../../agent-graphs/AGENTS.md).
 
-2. **Read its contract:** `jq '{description, inputSchema, outputs}' <name>.graph.json`. Each output is a ValueRef. Reserved outputs declare the [outcome](references/authoring.md#declaring-the-run-outcome) or deliver a [Markdown report](references/authoring.md#delivering-a-report); they are not caller fields. An output whose source was skipped, or whose path does not exist, is omitted, not `null`.
+2. **Read its contract:** `yq '{description, inputSchema, outputs}' <file>`. Each output is a ValueRef. Reserved outputs declare the [outcome](references/authoring.md#declaring-the-run-outcome) or deliver a [Markdown report](references/authoring.md#delivering-a-report); they are not caller fields. An output whose source was skipped, or whose path does not exist, is omitted, not `null`.
 
 3. **Build input** that satisfies `inputSchema`. A direct call does not enforce it: validation only checks that the schema compiles. Only a user `$graph:<name>` token checks input: inline-skills rejects a call that fails the schema. Any other wrong input runs and spends. A string `input` is JSON-parsed when it parses. Ask the user only for required values you cannot infer.
 
