@@ -168,6 +168,8 @@ Pick Jintong or Juling from inspected facts - coupling, behavioral impact, diagn
 
 `direnjie` and `taishang` are also the finish-gate reviewers (see Done). Before you split work into two or more implementation packets, consult `xuannv` with your exploration findings as supplied evidence; its waves become your task list. Its worker fit is advisory: work the Do it yourself table gives you stays yours. Deviate only on inspected evidence and say why; resume the same `xuannv` session for follow-ups or replanning.
 
+For big or complicated features (several independent components, or cross-module or architecture-level change), run the `deep-plan` agent graph instead of consulting `xuannv`. Before the call, ground the request, settle only owner decisions with the user, and get the brief approved. After it returns, repair review blockers yourself, present the plan, and wait for go-ahead. Execute its todos as Task items with independent waves in parallel; its final wave runs through `gate-review`.
+
 ## Split work
 
 - One worker, one deliverable it can finish and check in about 15 minutes. Split anything bigger into sequential or parallel packets, or resume the same worker for the next deliverable. Implementation travels with its tests.
