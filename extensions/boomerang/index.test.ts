@@ -185,7 +185,6 @@ describe("Boomerang Extension", () => {
   let handlers: Map<string, Function[]>;
   let commands: Map<string, { description: string; handler: Function }>;
   let tools: Map<string, { name: string; execute: Function; renderCall?: Function; renderResult?: Function }>;
-  let shortcuts: Map<string, { description: string; handler: Function }>;
   let sentMessages: string[];
   let sentCustomMessages: Array<{ message: { customType: string; content: string; display: boolean }; options: { triggerTurn?: boolean; deliverAs?: string } | undefined }>;
   let sessionEntries: SessionEntry[];
@@ -237,10 +236,6 @@ describe("Boomerang Extension", () => {
 
   function getTool(name: string) {
     return tools.get(name);
-  }
-
-  function getShortcut(key: string) {
-    return shortcuts.get(key)!.handler;
   }
 
   function ensureParent(filePath: string) {
@@ -575,7 +570,6 @@ describe("Boomerang Extension", () => {
     handlers = new Map();
     commands = new Map();
     tools = new Map();
-    shortcuts = new Map();
     sentMessages = [];
     sentCustomMessages = [];
     sessionEntries = [];
@@ -685,7 +679,7 @@ describe("Boomerang Extension", () => {
       }),
       registerCommand: vi.fn((name: string, options: { description: string; handler: Function }) => commands.set(name, options)),
       registerTool: vi.fn((tool: { name: string; execute: Function; renderCall?: Function; renderResult?: Function }) => tools.set(tool.name, tool)),
-      registerShortcut: vi.fn((key: string, options: { description: string; handler: Function }) => shortcuts.set(key, options)),
+      registerShortcut: vi.fn(),
       sendUserMessage: vi.fn((content: string, options?: { deliverAs?: "steer" | "followUp" }) => {
         if (!agentIdle && !options?.deliverAs) {
           throw new Error("Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.");
@@ -2462,6 +2456,90 @@ describe("Boomerang Extension", () => {
       expect(reloadCalls).toBe(1);
     });
 
+    async function runToolFallback(ctx: ExtensionContext = mockCtx, options: { idle?: boolean } = {}) {
+      await runBoomerang("tool on");
+      await fireSessionSwitch();
+
+      const tool = getTool("boomerang");
+      await tool.execute("id-1", {}, undefined, undefined, ctx);
+      addAssistantTextEntry("tool work");
+      await tool.execute("id-2", {}, undefined, undefined, ctx);
+      await triggerAgentEnd(ctx, options);
+    }
+
+    it("waits for agent idle before tool fallback editor reload", async () => {
+      vi.useFakeTimers();
+      await runToolFallback(mockCtx, { idle: false });
+
+      expect(branchWithSummaryCalls).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(editorReloadSubmissions).toEqual([]);
+      expect(sentCustomMessages).toHaveLength(0);
+
+      agentIdle = true;
+      await vi.advanceTimersByTimeAsync(25);
+
+      expect(editorReloadSubmissions).toEqual(["/reload"]);
+      expect(reloadCalls).toBe(1);
+      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
+    });
+
+    it("still sends the hidden handoff when editor reload emits session shutdown", async () => {
+      editorReloadShutdownReason = "reload";
+      await runToolFallback();
+
+      expect(branchWithSummaryCalls).toHaveLength(1);
+      await flushDeferredFallbackHandoff();
+
+      expect(editorReloadSubmissions).toEqual(["/reload"]);
+      expect(reloadCalls).toBe(1);
+      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
+    });
+
+    it("preserves draft editor text around tool fallback editor reload", async () => {
+      await runToolFallback();
+      editorText = "draft follow-up";
+
+      await flushDeferredFallbackHandoff();
+
+      expect(editorReloadSubmissions).toEqual(["/reload"]);
+      expect(editorText).toBe("draft follow-up");
+      expect(uiMock.setEditorText).toHaveBeenCalledWith("draft follow-up");
+      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
+    });
+
+    it("warns when tool fallback cannot auto-reload the display", async () => {
+      editorReloadShouldFail = true;
+      await runToolFallback();
+
+      expect(branchWithSummaryCalls).toHaveLength(1);
+      expect(sentCustomMessages).toHaveLength(0);
+
+      await flushDeferredFallbackHandoff();
+
+      expect(editorReloadSubmissions).toEqual(["/reload"]);
+      expect(uiMock.notify).toHaveBeenCalledWith(
+        "Boomerang summary created, but automatic /reload failed: Error: editor reload failed",
+        "warning"
+      );
+      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
+    });
+
+    it("completes tool fallback without editor reload when UI is unavailable", async () => {
+      const noUiCtx = { ...mockCtx, hasUI: false, mode: "print" } as ExtensionContext;
+      await runToolFallback(noUiCtx);
+
+      expect(branchWithSummaryCalls).toHaveLength(1);
+      expect(editorReloadSubmissions).toEqual([]);
+      expect(reloadCalls).toBe(0);
+
+      await flushDeferredFallbackHandoff();
+
+      expect(notifyMessages().some(({ message }) => message.includes("Run /reload to refresh"))).toBe(false);
+      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
+    });
+
     it("does not cancel compaction after unrelated entries follow the fallback handoff", async () => {
       await runBoomerang("tool on");
       await fireSessionSwitch();
@@ -2644,13 +2722,13 @@ describe("Boomerang Extension", () => {
       expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", undefined);
     });
 
-    it("toggles auto mode with Ctrl+Alt+B", async () => {
-      await getShortcut("ctrl+alt+b")(mockCtx);
+    it("toggles auto mode with bare /boomerang auto", async () => {
+      await runBoomerang("auto");
 
       expect(uiMock.notify).toHaveBeenCalledWith("Auto-boomerang on.", "info");
       expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", "[accent]🪃 auto");
 
-      await getShortcut("ctrl+alt+b")(mockCtx);
+      await runBoomerang("auto");
 
       expect(uiMock.notify).toHaveBeenLastCalledWith("Auto-boomerang off.", "info");
       expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", undefined);
@@ -2687,153 +2765,10 @@ describe("Boomerang Extension", () => {
       expectBoomerangHandoff(1, capturedSummary?.summary.summary);
     });
 
-    it("falls back to branchWithSummary when shortcut enabled before a command context exists", async () => {
-      await getShortcut("ctrl+alt+b")(mockCtx);
-
-      await fireInput("shortcut task");
-      const beforeStart = await fireBeforeAgentStart("original");
-      addSessionEntry({
-        type: "message",
-        message: { role: "user", content: "shortcut task", timestamp: Date.now() },
-        timestamp: new Date().toISOString(),
-      });
-      addAssistantTextEntry("Shortcut task done.");
-      await triggerAgentEnd();
-
-      expectPromptPatch(beforeStart);
-      expect(navigateTreeCalls).toHaveLength(0);
-      expect(branchWithSummaryCalls).toHaveLength(1);
-      expect(branchWithSummaryCalls[0].summary).toContain('Task: "shortcut task"');
-      expect(branchWithSummaryCalls[0].details).toMatchObject({ task: "shortcut task" });
-      expect(sentCustomMessages).toHaveLength(0);
-
-      await flushDeferredFallbackHandoff();
-
-      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
-      expect(editorReloadSubmissions).toEqual(["/reload"]);
-      expect(reloadCalls).toBe(1);
-      expect(notifyMessages().some(({ message }) => message.includes("Run /reload to refresh"))).toBe(false);
-    });
-
-    it("waits for agent idle before shortcut-first fallback reload", async () => {
-      vi.useFakeTimers();
-      await getShortcut("ctrl+alt+b")(mockCtx);
-
-      await fireInput("idle-gated shortcut task");
-      await fireBeforeAgentStart("original");
-      addUserTextEntry("idle-gated shortcut task");
-      addAssistantTextEntry("Shortcut task done.");
-
-      await triggerAgentEnd(mockCtx, { idle: false });
-
-      expect(branchWithSummaryCalls).toHaveLength(1);
-      await vi.advanceTimersByTimeAsync(0);
-
-      expect(editorReloadSubmissions).toEqual([]);
-      expect(sentCustomMessages).toHaveLength(0);
-
-      agentIdle = true;
-      await vi.advanceTimersByTimeAsync(25);
-
-      expect(editorReloadSubmissions).toEqual(["/reload"]);
-      expect(reloadCalls).toBe(1);
-      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
-    });
-
-    it("still sends the hidden handoff when editor reload emits session shutdown", async () => {
-      editorReloadShutdownReason = "reload";
-      await getShortcut("ctrl+alt+b")(mockCtx);
-
-      await fireInput("editor reload emits shutdown task");
-      await fireBeforeAgentStart("original");
-      addUserTextEntry("editor reload emits shutdown task");
-      addAssistantTextEntry("Editor reload emits shutdown task done.");
-      await triggerAgentEnd();
-
-      expect(branchWithSummaryCalls).toHaveLength(1);
-      await flushDeferredFallbackHandoff();
-
-      expect(editorReloadSubmissions).toEqual(["/reload"]);
-      expect(reloadCalls).toBe(1);
-      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
-    });
-
-    it("preserves draft editor text around shortcut-first fallback reload", async () => {
-      await getShortcut("ctrl+alt+b")(mockCtx);
-
-      await fireInput("shortcut task with draft");
-      await fireBeforeAgentStart("original");
-      addSessionEntry({
-        type: "message",
-        message: { role: "user", content: "shortcut task with draft", timestamp: Date.now() },
-        timestamp: new Date().toISOString(),
-      });
-      addAssistantTextEntry("Shortcut task done.");
-      await triggerAgentEnd();
-      editorText = "draft follow-up";
-
-      await flushDeferredFallbackHandoff();
-
-      expect(editorReloadSubmissions).toEqual(["/reload"]);
-      expect(editorText).toBe("draft follow-up");
-      expect(uiMock.setEditorText).toHaveBeenCalledWith("draft follow-up");
-      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
-    });
-
-    it("warns when shortcut-first fallback cannot auto-reload the display", async () => {
-      editorReloadShouldFail = true;
-      await getShortcut("ctrl+alt+b")(mockCtx);
-
-      await fireInput("shortcut reload failure task");
-      await fireBeforeAgentStart("original");
-      addSessionEntry({
-        type: "message",
-        message: { role: "user", content: "shortcut reload failure task", timestamp: Date.now() },
-        timestamp: new Date().toISOString(),
-      });
-      addAssistantTextEntry("Shortcut task done.");
-      await triggerAgentEnd();
-
-      expect(branchWithSummaryCalls).toHaveLength(1);
-      expect(sentCustomMessages).toHaveLength(0);
-
-      await flushDeferredFallbackHandoff();
-
-      expect(editorReloadSubmissions).toEqual(["/reload"]);
-      expect(uiMock.notify).toHaveBeenCalledWith(
-        "Boomerang summary created, but automatic /reload failed: Error: editor reload failed",
-        "warning"
-      );
-      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
-    });
-
-    it("completes shortcut-first fallback without editor reload when UI is unavailable", async () => {
-      const noUiCtx = { ...mockCtx, hasUI: false, mode: "print" } as ExtensionContext;
-      await getShortcut("ctrl+alt+b")(noUiCtx);
-
-      await getHandler("input")({ type: "input", text: "no ui shortcut task", source: "interactive" }, noUiCtx);
-      const beforeStart = await fireBeforeAgentStart("original", noUiCtx);
-      addSessionEntry({
-        type: "message",
-        message: { role: "user", content: "no ui shortcut task", timestamp: Date.now() },
-        timestamp: new Date().toISOString(),
-      });
-      addAssistantTextEntry("No UI task done.");
-      await triggerAgentEnd(noUiCtx);
-
-      expectPromptPatch(beforeStart);
-      expect(branchWithSummaryCalls).toHaveLength(1);
-      expect(editorReloadSubmissions).toEqual([]);
-      expect(reloadCalls).toBe(0);
-
-      await flushDeferredFallbackHandoff();
-
-      expect(notifyMessages().some(({ message }) => message.includes("Run /reload to refresh"))).toBe(false);
-      expectBoomerangHandoff(1, branchWithSummaryCalls[0].summary);
-    });
-
     it("turns auto mode off after wrapping one prompt", async () => {
-      await getShortcut("ctrl+alt+b")(mockCtx);
+      sessionEntries = [];
+      currentLeafId = null;
+      await runBoomerang("auto on");
 
       await fireInput("one-shot task");
       const wrappedStart = await fireBeforeAgentStart("original");
@@ -3042,7 +2977,7 @@ describe("Boomerang Extension", () => {
     it("falls back to branchWithSummary for the first prompt in an empty session", async () => {
       sessionEntries = [];
       currentLeafId = null;
-      await getShortcut("ctrl+alt+b")(mockCtx);
+      await runBoomerang("auto on");
 
       await fireInput("first task");
       const beforeStart = await fireBeforeAgentStart("original");
@@ -3063,7 +2998,9 @@ describe("Boomerang Extension", () => {
     });
 
     it("does not get stuck if a staged auto prompt never starts an agent turn", async () => {
-      await getShortcut("ctrl+alt+b")(mockCtx);
+      sessionEntries = [];
+      currentLeafId = null;
+      await runBoomerang("auto on");
 
       await fireInput("handled elsewhere");
       expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", "[accent]🪃 auto");
@@ -3151,7 +3088,9 @@ describe("Boomerang Extension", () => {
       branchWithSummary.mockImplementationOnce(() => {
         throw new Error("auto fallback failed");
       });
-      await getShortcut("ctrl+alt+b")(mockCtx);
+      sessionEntries = [];
+      currentLeafId = null;
+      await runBoomerang("auto on");
 
       await fireInput("fallback failure task");
       await fireBeforeAgentStart("original");
@@ -3173,7 +3112,7 @@ describe("Boomerang Extension", () => {
     });
 
     it("resets auto mode on session_start", async () => {
-      await getShortcut("ctrl+alt+b")(mockCtx);
+      await runBoomerang("auto on");
       expect(uiMock.setStatus).toHaveBeenLastCalledWith("boomerang", "[accent]🪃 auto");
 
       await fireSessionStart();
@@ -3187,7 +3126,7 @@ describe("Boomerang Extension", () => {
     });
 
     it("resets in-flight auto mode on session_switch", async () => {
-      await getShortcut("ctrl+alt+b")(mockCtx);
+      await runBoomerang("auto on");
       await fireInput("switching prompt");
       await fireBeforeAgentStart("original");
 
@@ -3202,7 +3141,7 @@ describe("Boomerang Extension", () => {
     });
 
     it("wraps extension-sourced prompt template command output", async () => {
-      await getShortcut("ctrl+alt+b")(mockCtx);
+      await runBoomerang("auto on");
 
       await fireInput("Expanded /tldr prompt", "extension");
       const beforeStart = await fireBeforeAgentStart("original");

@@ -22,7 +22,7 @@ Current divergences from upstream; re-apply each on upstream sync:
 - `/boomerang:commit [args]` — run `commit [args]` through boomerang with the `git-master` skill injected.
 - `boomerang` tool — agent-callable, disabled until `/boomerang tool on`.
 
-Commands, subcommands, shortcuts, the tool schema, and lifecycle hooks are registered in [`index.ts`](index.ts); `/boomerang:commit` lives in [`commit.ts`](commit.ts).
+Commands, subcommands, the tool schema, and lifecycle hooks are registered in [`index.ts`](index.ts); `/boomerang:commit` lives in [`commit.ts`](commit.ts).
 
 ## Configuration
 

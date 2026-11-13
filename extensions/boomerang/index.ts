@@ -2156,13 +2156,6 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerShortcut("ctrl+alt+b", {
-    description: "Toggle auto-boomerang mode",
-    handler: async (ctx) => {
-      setAutoBoomerang(!autoBoomerangEnabled, ctx);
-    },
-  });
-
   pi.on("input", async (event, ctx) => {
     autoBoomerangCandidate = null;
     if (!autoBoomerangEnabled) return;
