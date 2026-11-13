@@ -33,7 +33,7 @@ RFC 2119 applies to MUST, REQUIRED, SHOULD, RECOMMENDED, MAY, OPTIONAL. NEVER an
 - Tests MUST protect mechanics and contracts, not prompt prose or mutable personal model choices; controlled string fixtures MAY exercise those contracts.
 
 - From repository root: `pnpm test:extensions` runs shared unit coverage.
-- Before committing, run `pnpm test`; renderer, mode, and registration changes can break integration tests that unit runs skip.
+- Git checks run through [pre-commit](../.husky/pre-commit) and [pre-push](../.husky/pre-push). For renderer, mode, and registration changes, also run `pnpm test` for full integration coverage.
 - Focused checks: `pnpm exec vitest run --project unit <path>`; use an existing test file or directory.
 - [Root Vitest config](../vitest.config.ts) owns project selection and exclusions; [package scripts](../package.json) own common commands.
 

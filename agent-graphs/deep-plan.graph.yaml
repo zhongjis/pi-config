@@ -13,7 +13,7 @@ inputSchema:
     brief:
       type: object
       additionalProperties: false
-      required: [goal, components, scopeIn, scopeOut, decisions, defaults, testStrategy]
+      required: [goal, components, scopeIn, scopeOut, unchanged, decisions, defaults, testStrategy]
       properties:
         goal: { type: string, pattern: '\S' }
         components:
@@ -29,6 +29,7 @@ inputSchema:
               outcome: { type: string, pattern: '\S' }
         scopeIn: { type: array, items: { type: string, pattern: '\S' } }
         scopeOut: { type: array, items: { type: string, pattern: '\S' } }
+        unchanged: { type: array, items: { type: string, pattern: '\S' } }
         decisions:
           type: array
           items:
@@ -72,12 +73,13 @@ nodes:
       Draft one decision-complete implementation plan. A worker who never saw the user conversation will execute it and must make zero judgment calls.
 
       Request: ${request}
-      Approved brief (goal, components, scope, owner decisions, adopted defaults, test strategy): ${brief}
+      Approved brief (goal, components, scope, unchanged behavior, owner decisions, adopted defaults, test strategy): ${brief}
       Gathered evidence (answer, verified coverage, unknowns, evidence, conflicts): ${evidence}
 
       Rules:
       - Plan the entire request and approved scope. Never invent an MVP, phase, deferral, reduction, or adjacent expansion. Scope out guards against additions only.
       - Treat the brief's decisions and defaults as settled. Do not reopen them.
+      - Keep every item in the brief's unchanged list exactly as on the base, including how it fails on malformed input. A todo or risk that alters one is out of scope.
       - Verify paths, symbols, and patterns yourself before citing them. Cite each reference as path:line or a named pattern.
       - Give every must-have a stable ID (M1, M2, ...) tied to one brief component. List explicit must-nots.
       - Size each todo as the coarsest cohesive packet that is independently verifiable and fits one worker run. Keep implementation and its tests in one todo. Split only for an independent outcome, context, or verification boundary.
@@ -161,7 +163,8 @@ nodes:
       - a must-have with no todo, or a todo serving a must-not;
       - blockedBy naming an unknown todo, or a wave that runs before its blockers;
       - wrong paths or symbols, missing acceptance, or QA without an exact invocation;
-      - any judgment call left to the executor.
+      - any judgment call left to the executor;
+      - a todo, risk, or accepted deviation that changes an item in the brief's unchanged list, or weakens an authorization, ownership, or isolation check, even on input the runtime never produces.
       Also challenge the highest-leverage adopted default: report it as blocking only when evidence shows it breaks the request. Never propose reducing, phasing, or expanding scope.
       Put everything else in advisory. Give each finding its target (todo ID, must-have ID, or "plan"), the issue, and a concrete fix.
       Return JSON only.
@@ -190,7 +193,7 @@ nodes:
       Draft plan: ${plan}
       Gap findings: ${gap}
 
-      Apply every blocking fix. Adopt an advisory fix only when it stays inside the brief's scope. Verify any new reference in the repository. A blocking finding that only the user can settle goes into unresolved and under "Open questions" in the TL;DR; do not guess it.
+      Apply every blocking fix. Adopt an advisory fix only when it stays inside the brief's scope. Never list a change to the brief's unchanged list as an accepted risk: fix it, or put it in unresolved. Verify any new reference in the repository. A blocking finding that only the user can settle goes into unresolved and under "Open questions" in the TL;DR; do not guess it.
 
       Write these eight headers once each, in this order:
       ## TL;DR (For humans)
@@ -258,7 +261,7 @@ nodes:
       Plan:
       ${plan}
 
-      Reject only for blockers: a todo an executor cannot carry out without guessing, missing or non-executable acceptance or QA, references that do not exist, a must-have without coverage, or scope that differs from the brief. Put everything else in suggestions.
+      Reject only for blockers: a todo an executor cannot carry out without guessing, missing or non-executable acceptance or QA, references that do not exist, a must-have without coverage, scope that differs from the brief, or a change to an item in the brief's unchanged list or to an authorization, ownership, or isolation check. Put everything else in suggestions.
       Approve with no blockers, or reject with at least one blocker giving its target, issue, and concrete fix.
       Return JSON only.
     input: &reviewInput

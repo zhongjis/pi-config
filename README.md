@@ -33,6 +33,8 @@ direnv reload
 pnpm install
 ```
 
+Installation also activates the repository's [pre-commit](.husky/pre-commit) and [pre-push](.husky/pre-push) hooks. Run Git from the direnv dev shell so the hooks can find `pnpm`.
+
 ### Run the standard checks
 
 ```bash

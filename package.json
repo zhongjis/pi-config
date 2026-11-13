@@ -5,6 +5,7 @@
   "type": "module",
   "packageManager": "pnpm@10.18.3",
   "scripts": {
+    "prepare": "husky",
     "test": "vitest run",
     "test:extensions": "vitest run --project unit",
     "test:extensions:watch": "vitest --project unit",
@@ -20,6 +21,7 @@
     "@earendil-works/pi-tui": "catalog:",
     "typebox": "catalog:",
     "@types/node": "^24.6.0",
+    "husky": "catalog:",
     "typescript": "^5.9.3",
     "vitest": "^4.0.7"
   }

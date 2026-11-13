@@ -1,0 +1,6 @@
+if ! command -v pnpm >/dev/null 2>&1; then
+  echo "pnpm not on PATH; run git from the direnv dev shell"
+  exit 1
+fi
+
+pnpm typecheck && pnpm test:extensions && pnpm exec vitest run --project integration test/integration/pi-runtime-version.integration.test.ts
