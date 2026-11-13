@@ -333,7 +333,7 @@ Terse command-style prompts produce shallow, generic work.
           if (background && restored) trackBackground(restored);
           if (!background && restored) {
             const outcome = await manager.waitForOutcome(resumeId, undefined, true);
-            if (outcome.kind === "check-in") return convertToBackground(restored, outcome.threshold);
+            if (outcome.kind === "check-in" && manager.getOutcome(resumeId).kind === "pending") return convertToBackground(restored, outcome.threshold);
           }
           try {
             return resumedResult(await pending);
@@ -353,7 +353,7 @@ Terse command-style prompts produce shallow, generic work.
         if (background && existing.executionId !== executionId) trackBackground(existing);
         if (!background && existing.executionId !== executionId) {
           const outcome = await manager.waitForOutcome(resumeId, undefined, true);
-          if (outcome.kind === "check-in") return convertToBackground(existing, outcome.threshold);
+          if (outcome.kind === "check-in" && manager.getOutcome(resumeId).kind === "pending") return convertToBackground(existing, outcome.threshold);
         }
         const record = await pending;
         if (!record) return textResult(`Failed to resume agent "${resumeId}".`);
@@ -528,7 +528,7 @@ Terse command-style prompts produce shallow, generic work.
         return { ...textResult(err instanceof Error ? err.message : String(err)), isError: true };
       }
       clearInterval(spinnerInterval);
-      if (outcome.kind === "check-in") return convertToBackground(record, outcome.threshold, detailBase);
+      if (outcome.kind === "check-in" && manager.getOutcome(record.id).kind === "pending") return convertToBackground(record, outcome.threshold, detailBase);
       if (fgId) {
         fleet.onAgentFinished(fgId);
       }

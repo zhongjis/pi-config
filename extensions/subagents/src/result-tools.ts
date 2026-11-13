@@ -88,9 +88,9 @@ export function createResultTools(pi: ExtensionAPI, manager: AgentManager, deliv
     if (record.compactionCount) statsParts.push(`Compactions: ${record.compactionCount}`);
     statsParts.push(`Duration: ${duration}`);
 
-    const pending = outcome.kind !== "settled";
+    const pending = manager.getOutcome(params.agent_id).kind === "pending";
     let output =
-      (outcome.kind === "check-in" ? `${turnCheckInNotice(record, outcome.threshold)}\n\n` : "") +
+      (outcome.kind === "check-in" && pending ? `${turnCheckInNotice(record, outcome.threshold)}\n\n` : "") +
       `Agent: ${record.id}\n` +
       `Type: ${displayName} | Status: ${record.status}${getStatusNote(record.status, record.interruptionCause)} | ${statsParts.join(" | ")}\n` +
       `Description: ${record.description}\n\n`;
