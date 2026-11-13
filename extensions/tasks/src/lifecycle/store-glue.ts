@@ -38,10 +38,11 @@ export const RESERVED_PROVENANCE_KEYS = new Set([
 ]);
 
 export function getCurrentMode(ctx?: SessionStateContext): string | undefined {
-  const entries = (ctx?.sessionManager.getEntries() ?? []).filter(
-    (entry) => typeof entry.data?.mode === "string" && entry.data.mode.trim(),
+  const entry = findLatestModeStateEntry(
+    ctx?.sessionManager.getEntries() ?? [],
+    (candidate) => typeof candidate.data?.mode === "string" && candidate.data.mode.trim(),
   );
-  return (findLatestModeStateEntry(entries)?.data as { mode: string } | undefined)?.mode;
+  return entry?.data?.mode as string | undefined;
 }
 
 export function sanitizeUserMetadata(metadata?: Record<string, any>): { metadata?: Record<string, any>; ignoredKeys: string[] } {

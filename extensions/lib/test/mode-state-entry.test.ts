@@ -30,4 +30,10 @@ describe("findLatestModeStateEntry", () => {
 		const empty = mode();
 		expect(findLatestModeStateEntry([older, empty])).toBe(empty);
 	});
+
+	it("selects the latest accepted agent-mode entry", () => {
+		const older = mode({ mode: "fuxi" });
+		const rejected = mode({ mode: "  " });
+		expect(findLatestModeStateEntry([older, rejected], (entry) => entry !== rejected)).toBe(older);
+	});
 });

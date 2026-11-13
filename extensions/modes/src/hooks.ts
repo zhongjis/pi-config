@@ -115,7 +115,8 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 	}
 
 	if (!flagValue || flagValue === "kuafu") {
-		const modeEntry = findLatestModeStateEntry(ctx.sessionManager.getEntries()) as { data?: ModeState } | undefined;
+		// Spread rejects non-iterable entries instead of reading them as "no saved mode".
+		const modeEntry = findLatestModeStateEntry([...ctx.sessionManager.getEntries()]) as { data?: ModeState } | undefined;
 
 		if (modeEntry && !MODES.some((mode) => mode === modeEntry.data?.mode)) {
 			state.currentMode = "kuafu";

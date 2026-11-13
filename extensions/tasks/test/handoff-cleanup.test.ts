@@ -282,6 +282,26 @@ describe("Fu Xi planning provenance", () => {
     });
   });
 
+  it.each([
+    ["skips a blank latest mode", [
+      { type: "custom", customType: "agent-mode", data: { mode: "fuxi" } },
+      { type: "custom", customType: "agent-mode", data: { mode: "  " } },
+    ], true],
+    ["ignores mode data on other entry types", [
+      { type: "custom", customType: "agent-mode", data: { mode: "kuafu" } },
+      { type: "custom", customType: "fast-policy", data: { mode: "fuxi" } },
+    ], false],
+  ])("stamps planning provenance from the latest valid mode: %s", async (_label, entries, planning) => {
+    const mock = mockPi();
+    const session = mockCtx("session-latest-valid", entries);
+
+    await initFreshExtension(mock);
+    await mock.executeTool("Task", { op: "create", tasks: [{ subject: "Task", description: "Desc" }] }, session.ctx);
+
+    const metadata = getTaskMetadata(await mock.executeTool("Task", { op: "get", taskId: "1" }, session.ctx));
+    expect(metadata._piWorkflowPhase === "planning").toBe(planning);
+  });
+
   it("strips reserved provenance keys from non-fuxi task creation", async () => {
     const mock = mockPi();
     const session = mockCtx("session-kuafu", [

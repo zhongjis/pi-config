@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readGoalForContext } from "../../../goal/src/goal/context.js";
-import { findLatestModeStateEntry } from "../../../lib/mode-state-entry.js";
+import { findLatestModeStateEntry, type ModeStateEntryLike } from "../../../lib/mode-state-entry.js";
 import type { TaskStore } from "../task-store.js";
 import type { Task } from "../types.js";
 
@@ -29,7 +29,7 @@ function eligible(task: Task): boolean {
 
 function waiting(ctx: ExtensionContext): boolean {
   if (/<active_agent\s+name\s*=/.test(ctx.getSystemPrompt())) return true;
-  const entry = findLatestModeStateEntry(ctx.sessionManager.getEntries());
+  const entry = findLatestModeStateEntry<ModeStateEntryLike>(ctx.sessionManager.getEntries(), (candidate) => candidate != null);
   if (!entry) return false;
   const data: unknown = entry.data;
   if (!isRecord(data)) return true;

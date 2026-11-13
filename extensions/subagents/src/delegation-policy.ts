@@ -192,7 +192,8 @@ export function resolvePersistedDelegationPolicyContext(input: {
 	entries: readonly ModeStateEntryLike[];
 	availableTypes: string[];
 }): ResolvedDelegationPolicyContext {
-	const latestEntry = findLatestModeStateEntry(input.entries);
+	// Spread rejects non-iterable entries so authorization fails closed instead of reading as "no mode".
+	const latestEntry = findLatestModeStateEntry([...input.entries]);
 	if (!latestEntry) {
 		return resolveDelegationPolicyContext({
 			activeMode: undefined,
