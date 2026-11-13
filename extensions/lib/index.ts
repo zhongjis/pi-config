@@ -12,6 +12,7 @@ export * from "./status-group.js";
 export * from "./utils.js";
 export * from "./ux.js";
 export * from "./mode.js";
+export * from "./mode-state-entry.js";
 export * from "./model-selection.js";
 export * from "./runtime-model-fallback.js";
 export * from "./fast.js";
