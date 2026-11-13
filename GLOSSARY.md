@@ -32,7 +32,7 @@ A local runtime capability living under `extensions/`, editable in-repo. See htt
 _Avoid_: plugin
 
 **Package**:
-A Pi package installed from an external source (git or npm), immutable in use. See https://pi.dev/docs/latest/packages.
+A Pi package installed from an external source (git preferred, or npm), immutable in use. See https://pi.dev/docs/latest/packages.
 _Avoid_: plugin, module
 
 **Git package**:
