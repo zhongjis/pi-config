@@ -258,17 +258,18 @@ describe("task finish continuation", () => {
       expect(h.sendMessage).not.toHaveBeenCalled();
     });
 
-  it("skips a nullish entry newer than the latest mode entry", async () => {
-    const h = setup();
-    await h.start();
-    await h.enroll(h.runtime.store.create("A", "A").id);
-    h.ctx.sessionManager.getEntries().push(
-      { type: "custom", customType: "agent-mode", id: "mode", parentId: null, timestamp: "now", data: { mode: "wukong" } },
-      null as never);
-    vi.stubGlobal(Symbol.for("pi-subagents:manager"), { hasRunning: () => false });
-    await h.settle();
-    expect(h.sendMessage).toHaveBeenCalledTimes(1);
-  });
+  it.each([["wukong", 1], ["fuxi", 0]] as const)(
+    "skips a nullish entry newer than the latest %s mode entry", async (mode, nudges) => {
+      const h = setup();
+      await h.start();
+      await h.enroll(h.runtime.store.create("A", "A").id);
+      h.ctx.sessionManager.getEntries().push(
+        { type: "custom", customType: "agent-mode", id: "mode", parentId: null, timestamp: "now", data: { mode } },
+        null as never);
+      vi.stubGlobal(Symbol.for("pi-subagents:manager"), { hasRunning: () => false });
+      await h.settle();
+      expect(h.sendMessage).toHaveBeenCalledTimes(nudges);
+    });
 
   it("uses only the latest mode entry and fails closed on invalid worker accessors", async () => {
     const h = setup();
