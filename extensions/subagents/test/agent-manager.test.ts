@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AgentManager } from "../src/agent-manager.js";
+import { AgentManager, type LifecycleOutcome } from "../src/agent-manager.js";
 import type { AgentRecord } from "../src/types.js";
 
 vi.mock("../src/agent-runner.js", async (importOriginal) =>
@@ -433,7 +433,7 @@ describe("AgentManager — execution-correlated retrieval", () => {
       controller.abort(new Error("retrieval cancelled"));
       await expect(waiting).rejects.toThrow("retrieval cancelled");
       expect(record).toMatchObject({ status: "queued", resultConsumed: false });
-      expect(manager.hasPendingExecution(id)).toBe(true);
+      expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
       expect(cancelNudge).not.toHaveBeenCalled();
       holding.resolve();
       await manager.waitForAll();
@@ -525,7 +525,7 @@ describe("AgentManager — physical settlement", () => {
       try {
         const queued = manager.spawn(mockPi, mockCtx, "fixture", "next", { description: "next", isBackground: true });
         expect(manager.getRecord(queued)?.status).toBe("queued");
-        expect(manager.hasPendingExecution(id)).toBe(true);
+        expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
         release?.();
         await expect(record.promise).resolves.toBe(kind === "error" ? "" : "finished successfully");
         await manager.getRecord(queued)?.promise;
@@ -534,7 +534,7 @@ describe("AgentManager — physical settlement", () => {
         expect(record.error).toBe(kind === "error" ? "provider failed" : undefined);
         expect(cleanup).toHaveBeenCalledOnce();
         expect(record.outputCleanup).toBeUndefined();
-        expect(manager.hasPendingExecution(id)).toBe(false);
+        expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
         expect(manager.getRecord(queued)?.status).toBe("completed");
         expect(manager.hasRunning()).toBe(false);
         expect(record.diagnostics).toContain("Output cleanup failed: transcript flush failed");
@@ -571,8 +571,8 @@ describe("AgentManager — physical settlement", () => {
       await expect(record.promise).resolves.toBe("");
       expect(cleanup).toHaveBeenCalledOnce();
       expect(record.outputCleanup).toBeUndefined();
-      expect(manager.hasPendingExecution(queued)).toBe(false);
-      expect(manager.hasPendingExecution(active)).toBe(true);
+      expect(manager.getOutcome(queued)).toEqual({ kind: "settled" });
+      expect(manager.getOutcome(active)).toEqual({ kind: "pending" });
       expect(onComplete.mock.results[0]?.value).toMatchObject({ status: "stopped", interruptionCause: "caller", diagnostics: ["Output cleanup failed: queued flush failed"], outputCleanup: undefined });
     } finally { release?.(); await manager.waitForAll(); await manager.dispose(); }
   });
@@ -1399,11 +1399,11 @@ describe("AgentManager — abortAll", () => {
     expect(manager.abortAll()).toBe(2);
     expect(manager.getRecord(running)?.status).toBe("stopped");
     expect(manager.getRecord(queued)?.status).toBe("stopped");
-    expect(manager.hasPendingExecution(queued)).toBe(false);
-    expect(manager.hasPendingExecution(running)).toBe(true);
+    expect(manager.getOutcome(queued)).toEqual({ kind: "settled" });
+    expect(manager.getOutcome(running)).toEqual({ kind: "pending" });
     expect(manager.hasRunning()).toBe(true);
     await manager.waitForAll();
-    expect(manager.hasPendingExecution(running)).toBe(false);
+    expect(manager.getOutcome(running)).toEqual({ kind: "settled" });
     expect(manager.hasRunning()).toBe(false);
   });
 
@@ -1535,7 +1535,7 @@ describe("AgentManager — resolved runs with a failed final turn map to error (
     expect(record.result).toBe("partial");
     expect(record.error).toBe("late error");
     expect(onComplete.mock.results[0]?.value).toMatchObject({ status: record.status, interruptionCause: record.interruptionCause, error: "late error", result: "partial" });
-    expect(manager.hasPendingExecution(id)).toBe(false);
+    expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
   });
 
   it("resume(): a failed final turn on the resumed prompt maps to error too", async () => {
@@ -2048,22 +2048,22 @@ describe("AgentManager — orchestrator check-in", () => {
     vi.mocked(openSession).mockResolvedValueOnce(opened(run.session));
     const id = manager.spawn(mockPi, mockCtx, "fixture", "go", { description: "worker", isBackground: true });
     try {
-      const first = manager.waitForSettlementOrCheckIn(id);
-      const second = manager.waitForSettlementOrCheckIn(id);
+      const first = manager.waitForOutcome(id);
+      const second = manager.waitForOutcome(id);
       await run.checkIn();
-      await expect(Promise.all([first, second])).resolves.toEqual([TURN_CHECK_IN, TURN_CHECK_IN]);
+      await expect(Promise.all([first, second])).resolves.toEqual([{ kind: "check-in", threshold: TURN_CHECK_IN }, { kind: "check-in", threshold: TURN_CHECK_IN }]);
       expect(listener).not.toHaveBeenCalled();
-      expect(manager.hasPendingExecution(id)).toBe(true);
+      expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
       expect(manager.getRecord(id)?.resultConsumed).toBe(false);
       // Edge-triggered: a waiter that starts after the check-in waits for Settlement.
-      let late: number | undefined | "pending" = "pending";
-      const waiting = manager.waitForSettlementOrCheckIn(id).then(value => { late = value; });
+      let late: LifecycleOutcome | undefined;
+      const waiting = manager.waitForOutcome(id).then(value => { late = value; });
       await Promise.resolve();
-      expect(late).toBe("pending");
+      expect(late).toBeUndefined();
       run.release();
       await waiting;
-      expect(late).toBeUndefined();
-      expect(manager.hasPendingExecution(id)).toBe(false);
+      expect(late).toEqual({ kind: "settled" });
+      expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
     } finally { run.release(); await manager.dispose(); }
   });
 
@@ -2076,7 +2076,7 @@ describe("AgentManager — orchestrator check-in", () => {
     const id = manager.spawn(mockPi, mockCtx, "fixture", "go", { description: "worker", isBackground: true });
     try {
       const controller = new AbortController();
-      const aborted = manager.waitForSettlementOrCheckIn(id, controller.signal);
+      const aborted = manager.waitForOutcome(id, controller.signal);
       controller.abort(new Error("retrieval cancelled"));
       await expect(aborted).rejects.toThrow("retrieval cancelled");
       expect(manager.getRecord(id)?.status).toBe("running");
@@ -2100,9 +2100,9 @@ describe("AgentManager — orchestrator check-in", () => {
       const run = parkRun(session);
       vi.mocked(openSession).mockClear();
       await manager.resume(id, "again", undefined, mockCtx, { isBackground: true });
-      const woken = manager.waitForSettlementOrCheckIn(id);
+      const woken = manager.waitForOutcome(id);
       await run.checkIn();
-      await expect(woken).resolves.toBe(TURN_CHECK_IN);
+      await expect(woken).resolves.toEqual({ kind: "check-in", threshold: TURN_CHECK_IN });
       expect(openSession).not.toHaveBeenCalled();
       run.release();
       await manager.getRecord(id)?.promise;
@@ -2118,9 +2118,9 @@ describe("AgentManager — orchestrator check-in", () => {
     const waiting = manager.spawnAndWait(mockPi, mockCtx, "fixture", "go", { description: "worker", signal: controller.signal }, undefined, true);
     try {
       await run.checkIn();
-      const { id, record, checkIn } = await waiting;
-      expect(checkIn).toBe(TURN_CHECK_IN);
-      expect(manager.hasPendingExecution(id)).toBe(true);
+      const { id, record, outcome } = await waiting;
+      expect(outcome).toEqual({ kind: "check-in", threshold: TURN_CHECK_IN });
+      expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
       controller.abort();
       expect(record.status).toBe("running");
       resolvedRun();
@@ -2129,8 +2129,66 @@ describe("AgentManager — orchestrator check-in", () => {
       expect(queued?.status).toBe("queued");
       run.release();
       await record.promise;
-      await expect(next).resolves.toMatchObject({ record: { status: "completed" } });
+      await expect(next).resolves.toMatchObject({ record: { status: "completed" }, outcome: { kind: "settled" } });
       expect(record.status).toBe("completed");
     } finally { run.release(); await manager.dispose(); }
+  });
+});
+
+describe("AgentManager — lifecycle interface", () => {
+  it("holds the session source, forwards its prefix, and settles a rejected source as an error", async () => {
+    const manager = new AgentManager();
+    try {
+      const opening = deferred<ReturnType<typeof opened>>();
+      vi.mocked(openSession).mockImplementationOnce(() => opening.promise);
+      const session = mockSession((prompt) => prompt);
+      const id = manager.spawn(mockPi, mockCtx, "fixture", "task", { description: "source", isBackground: true });
+      await flush();
+      expect(manager.getRecord(id)?.status).toBe("running");
+      expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
+      expect(session.prompt).not.toHaveBeenCalled();
+      opening.resolve(opened(session, "prefix: "));
+      await expect(manager.waitForOutcome(id)).resolves.toEqual({ kind: "settled" });
+      expect(session.prompt).toHaveBeenCalledExactlyOnceWith("prefix: task");
+      expect(manager.getRecord(id)).toMatchObject({ status: "completed", result: "prefix: task" });
+      vi.mocked(openSession).mockRejectedValueOnce(new Error("open failed"));
+      const failed = await manager.spawnAndWait(mockPi, mockCtx, "fixture", "task", { description: "rejected" });
+      expect(failed.outcome).toEqual({ kind: "settled" });
+      expect(failed.record).toMatchObject({ status: "error", error: "open failed" });
+    } finally { await manager.dispose(); }
+  });
+
+  it("does not prompt when the Execution signal aborts during session startup", async () => {
+    const manager = new AgentManager();
+    try {
+      const session = mockSession(() => "UNREACHABLE");
+      vi.mocked(openSession).mockImplementationOnce(async (_ctx, _type, options) => {
+        manager.getRecord(options.agentId ?? "")?.abortController?.abort();
+        return opened(session);
+      });
+      const { record, outcome } = await manager.spawnAndWait(mockPi, mockCtx, "fixture", "go", { description: "startup abort" });
+      expect(outcome).toEqual({ kind: "settled" });
+      expect(session.prompt).not.toHaveBeenCalled();
+      expect(record).toMatchObject({ status: "aborted", interruptionCause: "unknown" });
+    } finally { await manager.dispose(); }
+  });
+
+  it("forwards real tool completions separately from setup diagnostics", async () => {
+    const manager = new AgentManager();
+    try {
+      const session = mockSession((_prompt, child) => { child.toolEnd("read"); return "DONE"; });
+      vi.mocked(openSession).mockImplementationOnce(async (_ctx, _type, options) => {
+        options.onToolActivity?.({ type: "diagnostic", toolName: "tools-warning:missing-extension" });
+        return opened(session);
+      });
+      const activities: Array<{ type: string; toolName: string }> = [];
+      const { record } = await manager.spawnAndWait(mockPi, mockCtx, "fixture", "go", {
+        description: "diagnostics",
+        onToolActivity: (activity) => activities.push(activity),
+      });
+      expect(activities.filter((activity) => activity.type === "end")).toEqual([{ type: "end", toolName: "read" }]);
+      expect(record.toolUses).toBe(1);
+      expect(record.diagnostics).toEqual(["tools-warning:missing-extension"]);
+    } finally { await manager.dispose(); }
   });
 });

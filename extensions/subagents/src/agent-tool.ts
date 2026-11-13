@@ -5,7 +5,7 @@ import { Type } from "typebox";
 import { formatAccessRules } from "../../lib/active-tools.js";
 import { isTui } from "../../lib/mode.js";
 import { SPINNER } from "../../lib/widget-style.js";
-import type { AgentManager } from "./agent-manager.js";
+import type { AgentManager, LifecycleOutcome } from "./agent-manager.js";
 import { createAgentResultBuilder, formatLifetimeTokens, partialOutputSuffix, textResult } from "./agent-result.js";
 import { SUBAGENT_TOOL_NAMES } from "./agent-runner.js";
 import { getAgentConfig, getAvailableTypes } from "./agent-types.js";
@@ -332,8 +332,8 @@ Terse command-style prompts produce shallow, generic work.
           }
           if (background && restored) trackBackground(restored);
           if (!background && restored) {
-            const checkIn = await manager.waitForSettlementOrCheckIn(resumeId, undefined, true);
-            if (checkIn !== undefined && manager.hasPendingExecution(resumeId)) return convertToBackground(restored, checkIn);
+            const outcome = await manager.waitForOutcome(resumeId, undefined, true);
+            if (outcome.kind === "check-in" && manager.getOutcome(resumeId).kind === "pending") return convertToBackground(restored, outcome.threshold);
           }
           try {
             return resumedResult(await pending);
@@ -352,8 +352,8 @@ Terse command-style prompts produce shallow, generic work.
         });
         if (background && existing.executionId !== executionId) trackBackground(existing);
         if (!background && existing.executionId !== executionId) {
-          const checkIn = await manager.waitForSettlementOrCheckIn(resumeId, undefined, true);
-          if (checkIn !== undefined && manager.hasPendingExecution(resumeId)) return convertToBackground(existing, checkIn);
+          const outcome = await manager.waitForOutcome(resumeId, undefined, true);
+          if (outcome.kind === "check-in" && manager.getOutcome(resumeId).kind === "pending") return convertToBackground(existing, outcome.threshold);
         }
         const record = await pending;
         if (!record) return textResult(`Failed to resume agent "${resumeId}".`);
@@ -502,7 +502,7 @@ Terse command-style prompts produce shallow, generic work.
       }, 80) : undefined;
       streamUpdate();
       let record: AgentRecord;
-      let checkIn: number | undefined;
+      let outcome: LifecycleOutcome;
       try {
         const fgResult = await manager.spawnAndWait(pi, ctx, subagentType, params.prompt, {
           description: params.description,
@@ -522,13 +522,13 @@ Terse command-style prompts produce shallow, generic work.
           attachTranscript(fgRec, fgAgentId);
         }, true);
         record = fgResult.record;
-        checkIn = fgResult.checkIn;
+        outcome = fgResult.outcome;
       } catch (err) {
         clearInterval(spinnerInterval);
         return { ...textResult(err instanceof Error ? err.message : String(err)), isError: true };
       }
       clearInterval(spinnerInterval);
-      if (checkIn !== undefined && manager.hasPendingExecution(record.id)) return convertToBackground(record, checkIn, detailBase);
+      if (outcome.kind === "check-in" && manager.getOutcome(record.id).kind === "pending") return convertToBackground(record, outcome.threshold, detailBase);
       if (fgId) {
         fleet.onAgentFinished(fgId);
       }

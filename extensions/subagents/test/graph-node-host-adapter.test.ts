@@ -21,7 +21,7 @@ vi.mock("../src/agent-runner.js", async (importOriginal) =>
 import { openSession } from "../src/agent-runner.js";
 import { graphRunNodeArtifactId } from "../src/graph/history-artifact.js";
 import * as outputFiles from "../src/output-file.js";
-import { fakeSession, opened } from "./helpers/session-seam.js";
+import { fakeSession, flush, opened } from "./helpers/session-seam.js";
 
 const ui: Pick<ExtensionContext["ui"], "notify"> = { notify: vi.fn() };
 const ctx = {
@@ -103,6 +103,26 @@ describe("createNodeHost", () => {
     expect(result.ok).toBe(true);
     expect(result.output).toBe("hello");
     await host.dispose();
+  });
+
+  it("dispose waits for an owned spawn's physical Settlement", async () => {
+    const { host } = setup();
+    let releaseIdle: (() => void) | undefined;
+    const child = fakeSession(async (_prompt, session) => { releaseIdle = session.holdIdle(); await session.aborted; return { aborted: true }; });
+    vi.mocked(openSession).mockResolvedValue(opened(child));
+    const spawned = host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "fixture", prompt: "task" }, new AbortController().signal);
+    await vi.waitFor(() => expect(child.prompt).toHaveBeenCalled());
+    let disposed = false;
+    const disposing = host.dispose().then(() => { disposed = true; });
+    await flush();
+    expect(child.abort).toHaveBeenCalledOnce();
+    const id = manager.listAgents()[0]?.id ?? "";
+    expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
+    expect(disposed).toBe(false);
+    releaseIdle?.();
+    await disposing;
+    expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
+    await expect(spawned).resolves.toMatchObject({ ok: false, skipped: true });
   });
 
   it("returns a failed result (not a throw) when the manager denies the spawn", async () => {

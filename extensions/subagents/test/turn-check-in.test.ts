@@ -232,4 +232,85 @@ describe("orchestrator turn check-in", () => {
       expect(completion.content).toContain("<tool-use-id>tc-restore</tool-use-id>");
     } finally { for (const run of runs) run.release(); }
   });
+
+  /** The next wait wakes at the check-in, then returns only after that Execution's physical Settlement. */
+  async function settleAfterCheckIn(runs: ParkedRun[], index = 0) {
+    // Imported after the fixture so the real manager keeps its session-opening mock.
+    const { AgentManager } = await import("../src/agent-manager.js");
+    const wait = AgentManager.prototype.waitForOutcome;
+    return vi.spyOn(AgentManager.prototype, "waitForOutcome").mockImplementationOnce(async function (this: InstanceType<typeof AgentManager>, id, signal, detachCaller) {
+      const woken = await wait.call(this, id, signal, detachCaller);
+      runs[index]?.release();
+      await wait.call(this, id);
+      return woken;
+    });
+  }
+
+  it("returns the settled foreground result when the Execution settles between the check-in wake and the caller", async () => {
+    const runs = parkRuns();
+    const host = boot();
+    const spy = await settleAfterCheckIn(runs);
+    const foreground = host.tools.get("subagent")?.execute("tc-late", { prompt: "audit", description: "audit repo", subagent_type: "fixture" }, undefined, undefined, host.ctx);
+    try {
+      await checkIn(runs, 0);
+      const result = await foreground;
+      await expect(spy.mock.results[0]?.value).resolves.toMatchObject({ kind: "check-in" });
+      const text = textOf(result ?? { content: [] });
+      expect(text).toContain("audit answer");
+      expect(text).not.toContain("get_agent_result");
+      const id = /Agent ID: (\S+)/.exec(text)?.[1] ?? "";
+      expect(registry().getRecord(id)).toMatchObject({ status: "completed", isBackground: false, resultConsumed: true });
+    } finally { spy.mockRestore(); for (const run of runs) run.release(); }
+  });
+
+  it("returns and consumes the settled result when a waiting retrieval's Execution settles between the check-in wake and the caller", async () => {
+    const runs = parkRuns();
+    const host = boot();
+    const id = await launchBackground(host);
+    const spy = await settleAfterCheckIn(runs);
+    try {
+      const waiting = host.tools.get("get_agent_result")?.execute("tc-late-wait", { run_id: id, wait: true }, undefined, undefined, host.ctx);
+      await checkIn(runs, 0);
+      const text = textOf(await waiting ?? { content: [] });
+      expect(text.startsWith(`Agent: ${id}\n`)).toBe(true);
+      expect(text).not.toContain("Agent execution is still pending.");
+      expect(text).toContain("inspect answer");
+      expect(registry().getRecord(id)?.resultConsumed).toBe(true);
+    } finally { spy.mockRestore(); for (const run of runs) run.release(); }
+  });
+
+  it("returns the settled result when a foreground live resume settles between the check-in wake and the caller", async () => {
+    const runs = parkRuns();
+    const host = boot();
+    const agent = host.tools.get("subagent");
+    const first = agent?.execute("tc-first", { prompt: "audit", description: "audit repo", subagent_type: "fixture" }, undefined, undefined, host.ctx);
+    await vi.waitFor(() => expect(runs[0]).toBeDefined());
+    runs[0]?.release();
+    const id = /Agent ID: (\S+)/.exec(textOf(await first ?? { content: [] }))?.[1] ?? "";
+    const spy = await settleAfterCheckIn(runs, 1);
+    try {
+      const resuming = agent?.execute("tc-late-resume", { prompt: "continue", description: "continue audit", subagent_type: "fixture", resume: id }, undefined, undefined, host.ctx);
+      await checkIn(runs, 1);
+      const text = textOf(await resuming ?? { content: [] });
+      await expect(spy.mock.results[0]?.value).resolves.toMatchObject({ kind: "check-in" });
+      expect(text).toContain("continue answer");
+      expect(text).not.toContain("get_agent_result");
+      expect(registry().getRecord(id)).toMatchObject({ status: "completed", isBackground: false });
+    } finally { spy.mockRestore(); for (const run of runs) run.release(); }
+  });
+
+  it("returns the settled result when a foreground evicted resume settles between the check-in wake and the caller", async () => {
+    const runs = parkRuns();
+    const host = await bootIndexed();
+    const spy = await settleAfterCheckIn(runs);
+    try {
+      const resuming = host.tools.get("subagent")?.execute("tc-late-restore", { prompt: "again", description: "resume", subagent_type: "fixture", resume: "evicted-1" }, undefined, undefined, host.ctx);
+      await checkIn(runs, 0);
+      const text = textOf(await resuming ?? { content: [] });
+      await expect(spy.mock.results[0]?.value).resolves.toMatchObject({ kind: "check-in" });
+      expect(text).toContain("again answer");
+      expect(text).not.toContain("get_agent_result");
+      expect(registry().getRecord("evicted-1")).toMatchObject({ status: "completed", isBackground: false });
+    } finally { spy.mockRestore(); for (const run of runs) run.release(); }
+  });
 });

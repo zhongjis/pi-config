@@ -305,7 +305,7 @@ export function createNodeHost(deps: NodeHostOptions): ManagedNodeHost {
     async dispose() {
       disposed = true;
       for (const id of owned) manager.abort(id, "lifecycle");
-      await Promise.allSettled([...gates, ...[...owned].map(id => manager.getRecord(id)?.promise)]);
+      await Promise.allSettled([...gates, ...[...owned].map(id => manager.waitForOutcome(id))]);
       owned.clear();
       warned.clear();
     },

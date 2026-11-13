@@ -1,5 +1,8 @@
 /**
- * agent-manager.ts — Tracks agents, background execution, resume support.
+ * agent-manager.ts — the subagent lifecycle interface: admission, queues and
+ * pools, start, check-in, and Settlement of every Execution, reported to callers
+ * as one LifecycleOutcome. Execution (execution.ts) is its internal
+ * implementation; session opening (agent-runner.ts) is its adapter.
  *
  * Background agents are subject to a configurable concurrency limit (default: 4).
  * Excess agents are queued and auto-started as running agents complete.
@@ -24,6 +27,19 @@ export type OnAgentComplete = (record: AgentRecord) => void;
 export type OnAgentStart = (record: AgentRecord) => void;
 export type OnAgentCompact = (record: AgentRecord, info: CompactionInfo) => void;
 export type CompactionInfo = { reason: "manual" | "threshold" | "overflow"; tokensBefore: number };
+
+/**
+ * The one lifecycle outcome callers read for an agent's current Execution.
+ * `pending`: the manager owns it — queued, running, or stopped awaiting physical drain.
+ * `check-in`: the intermediate lifecycle outcome of a wait active at the orchestrator
+ * check-in; the Execution stays owned, keeps its pool slot, and settles later.
+ * `settled`: physical Settlement released it; the record's terminal fields are final.
+ * Visible `status` alone never implies Settlement.
+ */
+export type LifecycleOutcome =
+  | { readonly kind: "pending" }
+  | { readonly kind: "check-in"; readonly threshold: number }
+  | { readonly kind: "settled" };
 
 /**
  * Injected delegation-policy gate. Returns a denial message when a spawn is
@@ -532,14 +548,14 @@ export class AgentManager {
    * first. Edge-triggered: only waiters active at the check-in wake. Aborting
    * `signal` ends only this wait. `detachCaller` also detaches the caller's abort
    * signal at the check-in, for a foreground call that converts to background.
-   * Resolves the check-in threshold, or undefined at Settlement.
+   * Resolves `check-in` or `settled`, never `pending`.
    */
-  waitForSettlementOrCheckIn(id: string, signal?: AbortSignal, detachCaller = false): Promise<number | undefined> {
+  waitForOutcome(id: string, signal?: AbortSignal, detachCaller = false): Promise<LifecycleOutcome> {
     if (signal?.aborted) return Promise.reject(signal.reason);
     const settled = this.agents.get(id)?.promise;
     const run = this.runs.get(id);
     const waiters = run?.checkInWaiters;
-    return new Promise((resolve, reject) => {
+    return new Promise<LifecycleOutcome>((resolve, reject) => {
       let open = true;
       const finish = (settle: () => void) => {
         if (!open) return;
@@ -550,12 +566,12 @@ export class AgentManager {
       };
       const wake = (threshold: number) => finish(() => {
         if (detachCaller) run?.detach();
-        resolve(threshold);
+        resolve({ kind: "check-in", threshold });
       });
       const onAbort = () => finish(() => reject(signal?.reason));
       waiters?.add(wake);
       signal?.addEventListener("abort", onAbort, { once: true });
-      void Promise.resolve(settled).then(() => finish(() => resolve(undefined)));
+      void Promise.resolve(settled).then(() => finish(() => resolve({ kind: "settled" })));
     });
   }
 
@@ -614,12 +630,13 @@ export class AgentManager {
   /**
    * Spawn an agent and wait for completion (foreground use).
    * Only blocking calls use the foreground pool; detached spawn/resume bypass it.
-   * Returns { id, record } so callers can access the agent ID.
+   * Returns `{ id, record, outcome }` so callers can access the agent ID and its lifecycle outcome.
    *
    * @param onSpawned - Called synchronously after spawn(), before onSessionCreated fires.
    *   Use this to set record.outputFile so streamToOutputFile can pick it up.
-   * @param untilCheckIn - Also return at this Execution's check-in, detaching the
-   *   caller's signal; the run keeps its foreground slot until Settlement.
+   * @param untilCheckIn - Also return at this Execution's check-in (a `check-in`
+   *   lifecycle outcome), detaching the caller's signal; the run keeps its
+   *   foreground slot until Settlement.
    */
   async spawnAndWait(
     pi: ExtensionAPI,
@@ -629,16 +646,15 @@ export class AgentManager {
     options: Omit<SpawnOptions, "isBackground">,
     onSpawned?: (id: string) => void,
     untilCheckIn = false,
-  ): Promise<{ id: string; record: AgentRecord; checkIn?: number }> {
+  ): Promise<{ id: string; record: AgentRecord; outcome: LifecycleOutcome }> {
     const id = this.spawnRecord({ pi, ctx, type, prompt, options: { ...options, isBackground: false } }, true, onSpawned);
     const record = this.agents.get(id);
     if (!record) throw new Error(`Agent record disappeared: ${id}`);
     if (!untilCheckIn) {
       await record.promise;
-      return { id, record };
+      return { id, record, outcome: { kind: "settled" } };
     }
-    const checkIn = await this.waitForSettlementOrCheckIn(id, undefined, true);
-    return { id, record, checkIn };
+    return { id, record, outcome: await this.waitForOutcome(id, undefined, true) };
   }
 
   /**
@@ -800,9 +816,9 @@ export class AgentManager {
     }
   }
 
-  /** Whether the manager still owns this execution, including queued or stopped work. */
-  hasPendingExecution(id: string): boolean {
-    return this.runs.has(id);
+  /** Non-waiting lifecycle outcome: `pending` while the manager owns the current Execution, including queued or stopped work awaiting physical drain; otherwise `settled`. Only a wait observes `check-in`. */
+  getOutcome(id: string): LifecycleOutcome {
+    return this.runs.has(id) ? { kind: "pending" } : { kind: "settled" };
   }
 
   /** Whether any executions remain owned, including stopped work awaiting physical drain. */

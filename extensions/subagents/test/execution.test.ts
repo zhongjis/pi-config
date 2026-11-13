@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type ExecutionRecord, execute, startExecution } from "../src/execution.js";
+import { execute } from "../src/execution.js";
 import {
   createStructuredCapture,
   createStructuredOutputTool,
@@ -7,7 +7,7 @@ import {
   structuredFailure,
 } from "../src/structured-output.js";
 import { TURN_CEILING_REMINDER } from "../src/turn-ceiling.js";
-import { asAgentSession, fakeSession, opened } from "./helpers/session-seam.js";
+import { asAgentSession, fakeSession } from "./helpers/session-seam.js";
 
 function createSession(finalText: string) {
   const session = fakeSession();
@@ -633,24 +633,6 @@ it("an execution on an existing transcript gets the turn ceiling", async () => {
   expect(session.steer).toHaveBeenCalledWith(TURN_CEILING_REMINDER);
   expect(result.forceSteered).toBe(true);
 });
-it("does not prompt when the parent aborted during session startup", async () => {
-  const controller = new AbortController();
-  const { session } = createSession("UNREACHABLE");
-  const record: ExecutionRecord = {
-    status: "queued",
-    startedAt: 0,
-    toolUses: 0,
-    lifetimeUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    abortController: controller,
-  };
-  await startExecution(record).run(async () => {
-    controller.abort();
-    return opened(session);
-  }, "go");
-  expect(session.prompt).not.toHaveBeenCalled();
-  expect(record.status).toBe("aborted");
-  expect(record.interruptionCause).toBe("unknown");
-});
 const schema = {
   schema: {
     type: "object",
@@ -789,32 +771,4 @@ it("never prompts a pre-aborted structured session", async () => {
     signal: AbortSignal.abort(),
   });
   expect(session.prompt).not.toHaveBeenCalled();
-});
-it("forwards real tool completions separately from setup diagnostics", async () => {
-  const session = fakeSession((_prompt, child) => {
-    child.toolEnd("read");
-    return "DONE";
-  });
-  const activities: Array<{
-    type: string;
-    toolName: string;
-  }> = [];
-  const record: ExecutionRecord = {
-    status: "queued",
-    startedAt: 0,
-    toolUses: 0,
-    lifetimeUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-  };
-  await startExecution(record, {
-    onToolActivity: (activity) => activities.push(activity),
-  }).run(async (setup) => {
-    setup.onToolActivity({
-      type: "diagnostic",
-      toolName: "tools-warning:missing-extension",
-    });
-    return opened(session);
-  }, "go");
-  expect(activities.filter((activity) => activity.type === "end")).toEqual([{ type: "end", toolName: "read" }]);
-  expect(record.toolUses).toBe(1);
-  expect(record.diagnostics).toEqual(["tools-warning:missing-extension"]);
 });

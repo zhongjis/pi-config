@@ -5,7 +5,7 @@ Run isolated Agent sessions with foreground results and background supervision. 
 ## Ownership
 
 - Owns agent discovery, execution, steering/resume, notifications, the typed `agent_graph` graph runtime (`src/graph/`), and local UI/tests.
-- [Execution](src/execution.ts) owns the shared start, session attach, activity, prompt, drain, terminal fields, and Settlement label for fresh, reopened, and live sessions. [The runner](src/agent-runner.ts) opens sessions; [the manager](src/agent-manager.ts) owns admission, queues, pools, registry, and steering.
+- [The manager](src/agent-manager.ts) is the lifecycle interface: admission, queues, pools, registry, steering, check-in, and Settlement, reported to callers as one lifecycle outcome. [Execution](src/execution.ts) is internal to it and implements the shared start, session attach, activity, prompt, drain, terminal fields, and Settlement label for fresh, reopened, and live sessions; [the runner](src/agent-runner.ts) opens sessions as its adapter.
 - Agent definitions remain outside this runtime; shared utilities belong to [lib](../lib/AGENTS.md).
 - `src/index.ts` owns activation order, manager/registry ownership, live settings/appliers, UI composition, lifecycle hooks, and registration. Extracted modules MUST NOT import it.
 - Only the activation that owns the manager registry MAY mutate shared lifecycle state; non-owning child activations still register tools, no-op start, and dispose only their local manager, fleet, notifications, and usage state on shutdown.

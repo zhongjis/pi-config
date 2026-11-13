@@ -48,7 +48,6 @@ import { AgentManager } from "../src/agent-manager.js";
 import { createAgentResultBuilder } from "../src/agent-result.js";
 import { SUBAGENT_LAUNCH_ENTRY } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
-import { failExecutionStart, startExecution } from "../src/execution.js";
 import { DELEGATE_RESEARCH_TOOL_NAME } from "../src/research-delegation.js";
 import { createResultTools } from "../src/result-tools.js";
 import { sessionFastPolicies } from "../src/session-fast.js";
@@ -247,7 +246,7 @@ describe("fresh spawn", () => {
       expect(manager.steer(id, "after stop")).toEqual({ status: "refused" });
       expect(record).toMatchObject({ status: "stopped", interruptionCause: "user" });
       expect(record.session).toBeUndefined();
-      expect(manager.hasPendingExecution(id)).toBe(true);
+      expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
       expect(manager.hasRunning()).toBe(true);
     } finally { opening.open(); }
     const stoppedAt = record.completedAt;
@@ -259,7 +258,7 @@ describe("fresh spawn", () => {
     expect(late.steer).not.toHaveBeenCalled();
     expect(sessionListener).toHaveBeenCalledExactlyOnceWith(record);
     expect(onComplete).toHaveBeenCalledExactlyOnceWith(record);
-    expect(manager.hasPendingExecution(id)).toBe(false);
+    expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
     expect(late.dispose).not.toHaveBeenCalled();
 
     await manager.resume(id, "again");
@@ -406,7 +405,7 @@ describe("evicted resume", () => {
       await new Promise((resolve) => setImmediate(resolve));
       expect(sessionManagerOpen).not.toHaveBeenCalled();
       expect(record.status).toBe("stopped");
-      expect(manager.hasPendingExecution(id)).toBe(true);
+      expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
     } finally { shutdown.open(); }
     const stoppedAt = record.completedAt;
     await record.promise;
@@ -415,7 +414,7 @@ describe("evicted resume", () => {
     expect(sessionManagerOpen).toHaveBeenCalledOnce();
     expect(record).toMatchObject({ status: "stopped", interruptionCause: "user", completedAt: stoppedAt, session: reopened });
     expect(reopened.prompt).not.toHaveBeenCalled();
-    expect(manager.hasPendingExecution(id)).toBe(false);
+    expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
     await manager.waitForAll();
   });
 
@@ -433,7 +432,7 @@ describe("evicted resume", () => {
     expect(record.completedAt).toBeDefined();
     expect(record.session).toBeUndefined();
     expect(manager.getRecord(id)).toBe(record);
-    expect(manager.hasPendingExecution(id)).toBe(false);
+    expect(manager.getOutcome(id)).toEqual({ kind: "settled" });
     expect(createAgentSession).not.toHaveBeenCalled();
     expect(sessionListener).not.toHaveBeenCalled();
     expect(onComplete).toHaveBeenCalledExactlyOnceWith(record);
@@ -536,18 +535,25 @@ describe("steering ownership", () => {
   });
 
   it("clears pending steering at Settlement and at start failure", async () => {
-    manager = new AgentManager();
-    const { record } = await manager.spawnAndWait(pi, ctx, "probe", "first", { description: "probe" });
-    const execution = startExecution(record);
+    manager = new AgentManager(undefined, 1);
+    const { id, record } = await manager.spawnAndWait(pi, ctx, "probe", "first", { description: "probe" });
     const holding = parkPrompt("again");
-    const running = execution.run(required(record.session), "again");
+    const resumed = manager.resume(id, "again");
     record.pendingSteers = ["discard at settlement"];
     holding.open();
-    await running;
+    await resumed;
     expect(record.pendingSteers).toBeUndefined();
-    record.pendingSteers = ["discard at start failure"];
-    failExecutionStart(record, new Error("start failed"));
-    expect(record.pendingSteers).toBeUndefined();
+
+    const blocking = parkPrompt("hold");
+    const cwd = mkdtempSync(join(root, "vanishing-"));
+    manager.spawn(pi, ctx, "probe", "hold", { description: "blocker", isBackground: true });
+    const failing = manager.spawn(pi, ctx, "probe", "fail", { description: "failing", isBackground: true, cwd });
+    expect(manager.steer(failing, "discard at start failure")).toEqual({ status: "pending" });
+    rmSync(cwd, { recursive: true });
+    blocking.open();
+    await manager.waitForAll();
+    expect(manager.getRecord(failing)).toMatchObject({ status: "error", error: expect.stringContaining(cwd) });
+    expect(manager.getRecord(failing)?.pendingSteers).toBeUndefined();
   });
 
   it("clears buffered steering when opening fails and diagnoses buffered delivery rejection", async () => {
@@ -619,7 +625,7 @@ describe("orchestrator check-in", () => {
       if (entry === "fresh spawn") id = manager.spawn(pi, ctx, "probe", "work", { description: "probe", isBackground: true });
       else await manager.resume(id, "work", undefined, undefined, { isBackground: true });
       expect(manager.getRecord(id)?.status).toBe("queued");
-      const woken = manager.waitForSettlementOrCheckIn(id);
+      const woken = manager.waitForOutcome(id);
       const buildDetails = createAgentResultBuilder(() => false);
       const cancelNudge = vi.fn();
       const tools = createResultTools(pi, manager, {
@@ -632,12 +638,12 @@ describe("orchestrator check-in", () => {
       try {
         holding.open();
         await busy.promise;
-        await expect(woken).resolves.toBe(1);
+        await expect(woken).resolves.toEqual({ kind: "check-in", threshold: 1 });
         // Let tool-result promise continuations run without advancing timer tasks.
         for (let tick = 0; tick < 10; tick++) await Promise.resolve();
         expect(retrieved?.details).toMatchObject({ status: "running" });
         expect(manager.getRecord(id)).toMatchObject({ status: "running", resultConsumed: false });
-        expect(manager.hasPendingExecution(id)).toBe(true);
+        expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
         expect(cancelNudge).not.toHaveBeenCalled();
         expect(listener).not.toHaveBeenCalled();
       } finally { working.open(); await retrieval; }
@@ -660,11 +666,11 @@ describe("orchestrator check-in", () => {
         await manager.resume(id, "work", undefined, undefined, { isBackground: true });
       }
       await vi.waitFor(() => expect(sessions[0]?.prompt).toHaveBeenCalledWith("work"));
-      const waiting = manager.waitForSettlementOrCheckIn(id);
+      const waiting = manager.waitForOutcome(id);
       manager.abort(id, "user");
       working.open();
 
-      await expect(waiting).resolves.toBeUndefined();
+      await expect(waiting).resolves.toEqual({ kind: "settled" });
       expect(manager.getRecord(id)).toMatchObject({ status: "stopped", turnCount: 1 });
       expect(listener).not.toHaveBeenCalled();
     } finally { working.open(); }
