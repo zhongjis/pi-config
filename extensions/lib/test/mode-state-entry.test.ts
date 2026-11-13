@@ -36,4 +36,10 @@ describe("findLatestModeStateEntry", () => {
 		const rejected = mode({ mode: "  " });
 		expect(findLatestModeStateEntry([older, rejected], (entry) => entry !== rejected)).toBe(older);
 	});
+
+	it("throws on a nullish entry newer than the match unless accept rejects it", () => {
+		const entries = [mode({ mode: "fuxi" }), null as never];
+		expect(() => findLatestModeStateEntry(entries)).toThrow(TypeError);
+		expect(findLatestModeStateEntry(entries, (entry) => entry != null)).toBe(entries[0]);
+	});
 });

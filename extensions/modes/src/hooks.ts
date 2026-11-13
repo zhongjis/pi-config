@@ -5,7 +5,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
 import { isTui } from "../../lib/mode.js";
-import { findLatestModeStateEntry } from "../../lib/mode-state-entry.js";
+import { findLatestModeStateEntry, isModeStateEntry } from "../../lib/mode-state-entry.js";
 import {
 	hasGuardCapability,
 	registerGuardScopeProvider,
@@ -115,8 +115,8 @@ function resolveInitialMode(pi: ExtensionAPI, state: ModeStateManager, ctx: Exte
 	}
 
 	if (!flagValue || flagValue === "kuafu") {
-		// Spread rejects non-iterable entries instead of reading them as "no saved mode".
-		const modeEntry = findLatestModeStateEntry([...ctx.sessionManager.getEntries()]) as { data?: ModeState } | undefined;
+		// Full-history filter: skips holes, throws on any nullish entry or non-array result.
+		const modeEntry = findLatestModeStateEntry(ctx.sessionManager.getEntries().filter(isModeStateEntry)) as { data?: ModeState } | undefined;
 
 		if (modeEntry && !MODES.some((mode) => mode === modeEntry.data?.mode)) {
 			state.currentMode = "kuafu";

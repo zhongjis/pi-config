@@ -286,6 +286,15 @@ describe("ulw extension — unit tests", () => {
 		expect(bas).toBeUndefined();
 	});
 
+	it("reads the saved mode past a missing trailing entry slot", async () => {
+		const ctx = createMockContext();
+		const entries: unknown[] = [{ type: "custom", customType: "agent-mode", data: { mode: "fuxi" } }];
+		entries.length = 2;
+		(ctx.sessionManager as any).getEntries = () => entries;
+		const result = await fireInput(mock, "ulw fix it", ctx);
+		expect(result).toEqual({ action: "continue" });
+	});
+
 	it("handles broken sessionManager gracefully", async () => {
 		const ctx = createMockContext();
 		(ctx.sessionManager as any).getEntries = () => { throw new Error("boom"); };
