@@ -48,7 +48,6 @@ import { AgentManager } from "../src/agent-manager.js";
 import { createAgentResultBuilder } from "../src/agent-result.js";
 import { SUBAGENT_LAUNCH_ENTRY } from "../src/agent-runner.js";
 import { registerAgents } from "../src/agent-types.js";
-import { failExecutionStart, startExecution } from "../src/execution.js";
 import { DELEGATE_RESEARCH_TOOL_NAME } from "../src/research-delegation.js";
 import { createResultTools } from "../src/result-tools.js";
 import { sessionFastPolicies } from "../src/session-fast.js";
@@ -536,18 +535,25 @@ describe("steering ownership", () => {
   });
 
   it("clears pending steering at Settlement and at start failure", async () => {
-    manager = new AgentManager();
-    const { record } = await manager.spawnAndWait(pi, ctx, "probe", "first", { description: "probe" });
-    const execution = startExecution(record);
+    manager = new AgentManager(undefined, 1);
+    const { id, record } = await manager.spawnAndWait(pi, ctx, "probe", "first", { description: "probe" });
     const holding = parkPrompt("again");
-    const running = execution.run(required(record.session), "again");
+    const resumed = manager.resume(id, "again");
     record.pendingSteers = ["discard at settlement"];
     holding.open();
-    await running;
+    await resumed;
     expect(record.pendingSteers).toBeUndefined();
-    record.pendingSteers = ["discard at start failure"];
-    failExecutionStart(record, new Error("start failed"));
-    expect(record.pendingSteers).toBeUndefined();
+
+    const blocking = parkPrompt("hold");
+    const cwd = mkdtempSync(join(root, "vanishing-"));
+    manager.spawn(pi, ctx, "probe", "hold", { description: "blocker", isBackground: true });
+    const failing = manager.spawn(pi, ctx, "probe", "fail", { description: "failing", isBackground: true, cwd });
+    expect(manager.steer(failing, "discard at start failure")).toEqual({ status: "pending" });
+    rmSync(cwd, { recursive: true });
+    blocking.open();
+    await manager.waitForAll();
+    expect(manager.getRecord(failing)).toMatchObject({ status: "error", error: expect.stringContaining(cwd) });
+    expect(manager.getRecord(failing)?.pendingSteers).toBeUndefined();
   });
 
   it("clears buffered steering when opening fails and diagnoses buffered delivery rejection", async () => {

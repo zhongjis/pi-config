@@ -2134,3 +2134,61 @@ describe("AgentManager — orchestrator check-in", () => {
     } finally { run.release(); await manager.dispose(); }
   });
 });
+
+describe("AgentManager — lifecycle interface", () => {
+  it("holds the session source, forwards its prefix, and settles a rejected source as an error", async () => {
+    const manager = new AgentManager();
+    try {
+      const opening = deferred<ReturnType<typeof opened>>();
+      vi.mocked(openSession).mockImplementationOnce(() => opening.promise);
+      const session = mockSession((prompt) => prompt);
+      const id = manager.spawn(mockPi, mockCtx, "fixture", "task", { description: "source", isBackground: true });
+      await flush();
+      expect(manager.getRecord(id)?.status).toBe("running");
+      expect(manager.getOutcome(id)).toEqual({ kind: "pending" });
+      expect(session.prompt).not.toHaveBeenCalled();
+      opening.resolve(opened(session, "prefix: "));
+      await expect(manager.waitForOutcome(id)).resolves.toEqual({ kind: "settled" });
+      expect(session.prompt).toHaveBeenCalledExactlyOnceWith("prefix: task");
+      expect(manager.getRecord(id)).toMatchObject({ status: "completed", result: "prefix: task" });
+      vi.mocked(openSession).mockRejectedValueOnce(new Error("open failed"));
+      const failed = await manager.spawnAndWait(mockPi, mockCtx, "fixture", "task", { description: "rejected" });
+      expect(failed.outcome).toEqual({ kind: "settled" });
+      expect(failed.record).toMatchObject({ status: "error", error: "open failed" });
+    } finally { await manager.dispose(); }
+  });
+
+  it("does not prompt when the Execution signal aborts during session startup", async () => {
+    const manager = new AgentManager();
+    try {
+      const session = mockSession(() => "UNREACHABLE");
+      vi.mocked(openSession).mockImplementationOnce(async (_ctx, _type, options) => {
+        manager.getRecord(options.agentId ?? "")?.abortController?.abort();
+        return opened(session);
+      });
+      const { record, outcome } = await manager.spawnAndWait(mockPi, mockCtx, "fixture", "go", { description: "startup abort" });
+      expect(outcome).toEqual({ kind: "settled" });
+      expect(session.prompt).not.toHaveBeenCalled();
+      expect(record).toMatchObject({ status: "aborted", interruptionCause: "unknown" });
+    } finally { await manager.dispose(); }
+  });
+
+  it("forwards real tool completions separately from setup diagnostics", async () => {
+    const manager = new AgentManager();
+    try {
+      const session = mockSession((_prompt, child) => { child.toolEnd("read"); return "DONE"; });
+      vi.mocked(openSession).mockImplementationOnce(async (_ctx, _type, options) => {
+        options.onToolActivity?.({ type: "diagnostic", toolName: "tools-warning:missing-extension" });
+        return opened(session);
+      });
+      const activities: Array<{ type: string; toolName: string }> = [];
+      const { record } = await manager.spawnAndWait(mockPi, mockCtx, "fixture", "go", {
+        description: "diagnostics",
+        onToolActivity: (activity) => activities.push(activity),
+      });
+      expect(activities.filter((activity) => activity.type === "end")).toEqual([{ type: "end", toolName: "read" }]);
+      expect(record.toolUses).toBe(1);
+      expect(record.diagnostics).toEqual(["tools-warning:missing-extension"]);
+    } finally { await manager.dispose(); }
+  });
+});

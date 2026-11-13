@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { type ExecutionRecord, execute, startExecution } from "../src/execution.js";
+import { execute } from "../src/execution.js";
 import { TURN_CEILING, TURN_CEILING_GRACE, TURN_CEILING_REMINDER, TURN_CHECK_IN } from "../src/turn-ceiling.js";
-import { asAgentSession, deferred, fakeSession, flush, mockOpenSession, opened, type Script } from "./helpers/session-seam.js";
+import { asAgentSession, fakeSession, flush, mockOpenSession, type Script } from "./helpers/session-seam.js";
 
 vi.mock("../src/turn-ceiling.js", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/turn-ceiling.js")>();
@@ -13,10 +13,6 @@ beforeEach(() => {
   vi.stubEnv("SUBAGENT_TURN_CHECK_IN", String(TURN_CHECK_IN));
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
-
-function record(): ExecutionRecord {
-  return { status: "queued", startedAt: 0, toolUses: 0, lifetimeUsage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 } };
-}
 
 describe("openSession test adapter against Execution", () => {
   it.each<[string, Script, object]>([
@@ -96,23 +92,9 @@ describe("openSession test adapter against Execution", () => {
     expect(settled).toHaveBeenCalledWith(expect.objectContaining({ interruptionCause: "unknown" }));
   });
 
-  it("holds or rejects the openSession source and forwards its prefix", async () => {
+  it("mocks openSession while keeping the real exports", () => {
     const mock = mockOpenSession({ marker: "real export" });
     expect(mock.marker).toBe("real export");
-    const opening = deferred<ReturnType<typeof opened>>();
-    const source = vi.fn(() => opening.promise);
-    const session = fakeSession();
-    const state = record();
-    const run = startExecution(state).run(source, "task");
-    await flush();
-    expect(state.status).toBe("running");
-    expect(session.prompt).not.toHaveBeenCalled();
-    opening.resolve(opened(session, "prefix: ")); await run;
-    expect(session.prompt).toHaveBeenCalledExactlyOnceWith("prefix: task");
-    expect(state).toMatchObject({ status: "completed", result: "prefix: task" });
-    source.mockRejectedValueOnce(new Error("open failed"));
-    await startExecution(state).run(source, "task");
-    expect(state).toMatchObject({ status: "error", error: "open failed" });
   });
 
   it("checks in once, steers, then aborts unfinished turns at the ceiling", async () => {
