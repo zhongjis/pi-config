@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { readGoalForContext } from "../../../goal/src/goal/context.js";
+import { findLatestModeStateEntry } from "../../../lib/mode-state-entry.js";
 import type { TaskStore } from "../task-store.js";
 import type { Task } from "../types.js";
 
@@ -28,16 +29,12 @@ function eligible(task: Task): boolean {
 
 function waiting(ctx: ExtensionContext): boolean {
   if (/<active_agent\s+name\s*=/.test(ctx.getSystemPrompt())) return true;
-  const entries = ctx.sessionManager.getEntries();
-  for (let i = entries.length - 1; i >= 0; i--) {
-    const entry = entries[i];
-    if (entry?.type !== "custom" || entry.customType !== "agent-mode") continue;
-    const data: unknown = entry.data;
-    if (!isRecord(data)) return true;
-    return data.mode === "fuxi" || Boolean(data.planReviewPending) ||
-      (isRecord(data.awaitingUserAction) && data.awaitingUserAction.suppressContinuationReminder === true);
-  }
-  return false;
+  const entry = findLatestModeStateEntry(ctx.sessionManager.getEntries());
+  if (!entry) return false;
+  const data: unknown = entry.data;
+  if (!isRecord(data)) return true;
+  return data.mode === "fuxi" || Boolean(data.planReviewPending) ||
+    (isRecord(data.awaitingUserAction) && data.awaitingUserAction.suppressContinuationReminder === true);
 }
 
 function workersRunning(): boolean {
