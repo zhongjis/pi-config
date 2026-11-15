@@ -144,6 +144,8 @@ const projectQueues = new Map<string, Promise<void>>();
 const codeGraphInitPromises = new Map<string, SharedCodeGraphInit>();
 const RequestTimeoutMs = Number(process.env.CODEGRAPH_TIMEOUT_MS) || 30_000;
 const InitTimeoutMs = Number(process.env.CODEGRAPH_INIT_TIMEOUT_MS) || 120_000;
+/** An unused MCP session closes after this, so the project's daemon can idle out too. */
+const SessionIdleMs = Number(process.env.CODEGRAPH_SESSION_IDLE_MS) || 300_000;
 const MaxToolCallAttempts = 2;
 const ToolCallRetryBackoffMinMs = 250;
 const ToolCallRetryBackoffJitterMs = 500;
@@ -262,19 +264,93 @@ async function withToolsCallTimeoutRetry<T>(
   throw new Error("CodeGraph tools/call retry loop exhausted.");
 }
 
+type CodeGraphMcpSession = {
+  cwd: string;
+  child: ChildProcessWithoutNullStreams;
+  pending: PendingJsonRpcRequests;
+  request: JsonRpcRequest;
+  ready: Promise<void>;
+  idleTimer?: ReturnType<typeof setTimeout>;
+};
+
+/** One long-lived MCP subprocess per project; same-project calls are already serialized. */
+const mcpSessions = new Map<string, CodeGraphMcpSession>();
+
+function openCodeGraphSession(cwd: string): CodeGraphMcpSession {
+  const child = spawn("codegraph", ["serve", "--mcp", "--path", cwd], {
+    cwd,
+    env: CodeGraphSpawnEnv,
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const pending: PendingJsonRpcRequests = new Map();
+  attachJsonRpcHandlers(child, pending, { value: "" });
+  const request = createJsonRpcRequestSender(child, pending);
+  const session: CodeGraphMcpSession = {
+    cwd,
+    child,
+    pending,
+    request,
+    ready: initializeJsonRpcSession(cwd, request, sendJsonRpcNotification.bind(undefined, child)),
+  };
+  // Awaited by the caller; this only keeps an early failure from going unhandled.
+  session.ready.catch(() => {});
+  const forget = () => {
+    if (mcpSessions.get(cwd) === session) mcpSessions.delete(cwd);
+    clearTimeout(session.idleTimer);
+  };
+  child.on("exit", forget);
+  child.on("error", forget);
+  return session;
+}
+
+function closeCodeGraphSession(session: CodeGraphMcpSession): void {
+  if (mcpSessions.get(session.cwd) === session) mcpSessions.delete(session.cwd);
+  clearTimeout(session.idleTimer);
+  cleanupJsonRpcChild(session.child, session.pending);
+}
+
+/** Close the project's MCP session, if any; the next call starts a fresh subprocess. */
+export function closeCodeGraphSessionFor(cwd: string): void {
+  const session = mcpSessions.get(cwd);
+  if (session) closeCodeGraphSession(session);
+}
+
+export function closeAllCodeGraphSessions(): void {
+  for (const session of [...mcpSessions.values()]) closeCodeGraphSession(session);
+}
+
 export async function withCodeGraphMcp<T>(
   projectPath: string | undefined,
   signal: AbortSignal | undefined,
   fn: (request: JsonRpcRequest) => Promise<T>,
 ): Promise<T> {
   const project = await resolveCodeGraphProject(projectPath);
-  const child = spawn("codegraph", ["serve", "--mcp", "--path", project.cwd], {
-    cwd: project.cwd,
-    env: CodeGraphSpawnEnv,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  let session = mcpSessions.get(project.cwd);
+  if (!session) {
+    session = openCodeGraphSession(project.cwd);
+    mcpSessions.set(project.cwd, session);
+  }
+  const active = session;
+  clearTimeout(active.idleTimer);
 
-  return runJsonRpcSession(child, project.cwd, signal, fn);
+  // Abort, timeout, and transport failures kill the subprocess; a tool result,
+  // including `isError`, is a normal answer and keeps the session.
+  const onAbort = () => closeCodeGraphSession(active);
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    throwIfAborted(signal);
+    await active.ready;
+    return await fn(active.request);
+  } catch (error) {
+    closeCodeGraphSession(active);
+    throw error;
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+    if (mcpSessions.get(active.cwd) === active) {
+      active.idleTimer = setTimeout(() => closeCodeGraphSession(active), SessionIdleMs);
+      active.idleTimer.unref();
+    }
+  }
 }
 
 function isDirectorySync(candidate: string): boolean {
@@ -529,30 +605,6 @@ export function sanitizeDiagnostic(value: string): string {
     : redacted;
 }
 
-async function runJsonRpcSession<T>(
-  child: ChildProcessWithoutNullStreams,
-  cwd: string,
-  signal: AbortSignal | undefined,
-  fn: (request: JsonRpcRequest) => Promise<T>,
-): Promise<T> {
-  const pending: PendingJsonRpcRequests = new Map();
-  const stderr = { value: "" };
-  const cleanup = () => cleanupJsonRpcChild(child, pending);
-  const onAbort = () => cleanup();
-
-  signal?.addEventListener("abort", onAbort, { once: true });
-  attachJsonRpcHandlers(child, pending, stderr);
-
-  try {
-    const sendRequest = createJsonRpcRequestSender(child, pending);
-    await initializeJsonRpcSession(cwd, sendRequest, sendJsonRpcNotification.bind(undefined, child));
-    return await fn(sendRequest);
-  } finally {
-    signal?.removeEventListener("abort", onAbort);
-    cleanup();
-  }
-}
-
 function cleanupJsonRpcChild(
   child: ChildProcessWithoutNullStreams,
   pending: PendingJsonRpcRequests,
@@ -583,7 +635,8 @@ function attachJsonRpcHandlers(
     handleJsonRpcStdout(chunk, stdout, pending);
   });
   child.stderr.on("data", (chunk) => {
-    stderr.value += chunk.toString("utf-8");
+    // Long-lived sessions keep only the recent tail for exit diagnostics.
+    stderr.value = (stderr.value + chunk.toString("utf-8")).slice(-4 * MaxDiagnosticLength);
   });
   child.on("error", (err) => rejectPendingJsonRpcRequests(pending, err));
   child.on("exit", (code) => rejectPendingJsonRpcOnExit(pending, stderr.value, code));
@@ -1000,6 +1053,8 @@ async function callCodeGraphToolWithInitRetry(
     if (!shouldAutoInit || !isCodeGraphUninitializedMessage(getErrorMessage(error))) throw error;
   }
 
+  // The pre-init subprocess saw no index; start a fresh one after init.
+  closeCodeGraphSessionFor(project.cwd);
   await initCodeGraphProject(project.cwd, signal);
   return requestCodeGraphTool(name, args, project, signal);
 }
@@ -1073,6 +1128,10 @@ export function formatCodeGraphError(error: unknown, toolName: string): string {
 }
 
 export default function codegraphExtension(pi: ExtensionAPI): void {
+  pi.on("session_shutdown", async () => {
+    closeAllCodeGraphSessions();
+  });
+
   pi.on("before_agent_start", async (event, ctx) => {
     // Only steer toward CodeGraph when the active project has a valid .codegraph project marker.
     // This hook fires once per user turn and ctx.cwd is read fresh each time, so a

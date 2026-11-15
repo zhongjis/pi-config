@@ -87,6 +87,8 @@ type CreateChildOptions = {
   exitCode?: number;
   resultText?: string;
   toolError?: boolean;
+  /** Per-call answers, consumed in order before falling back to resultText/toolError. */
+  responses?: Array<{ text: string; isError?: boolean }>;
   toolResponseDelay?: Promise<void>;
   initExitDelay?: Promise<void>;
   initStdout?: string;
@@ -127,6 +129,9 @@ function createChild(options: CreateChildOptions = {}): FakeChild {
       });
     }
     if (msg.method === "tools/call") {
+      const response = options.responses?.shift();
+      const isError = response ? response.isError === true : options.toolError;
+      const text = response?.text ?? options.resultText ?? (isError ? "tool failed" : "ok");
       queueMicrotask(async () => {
         await options.toolResponseDelay;
         child.stdout.emit(
@@ -134,9 +139,9 @@ function createChild(options: CreateChildOptions = {}): FakeChild {
           `${JSON.stringify({
             jsonrpc: "2.0",
             id: msg.id,
-            result: options.toolError
-              ? { isError: true, content: [{ type: "text", text: options.resultText ?? "tool failed" }] }
-              : { content: [{ type: "text", text: options.resultText ?? "ok" }] },
+            result: isError
+              ? { isError: true, content: [{ type: "text", text }] }
+              : { content: [{ type: "text", text }] },
           })}\n`,
         );
       });
@@ -166,6 +171,10 @@ function getToolCall(child: FakeChild): { params: { name: string; arguments: Rec
     | undefined;
   expect(toolCall).toBeDefined();
   return toolCall!;
+}
+
+async function shutdownSession(mock: MockPi): Promise<void> {
+  await mock.handlers.get("session_shutdown")!({});
 }
 
 function getSpawnSubcommands(): string[] {
@@ -428,6 +437,8 @@ describe("codegraph extension", () => {
       env: expect.objectContaining({ CODEGRAPH_PARSE_WORKERS: "1" }),
       stdio: ["pipe", "pipe", "pipe"],
     });
+    expect(child.kill).not.toHaveBeenCalled();
+    await shutdownSession(mock);
     expect(child.kill).toHaveBeenCalled();
   });
 
@@ -634,7 +645,7 @@ describe("codegraph extension", () => {
     expect(result.content[0].text).toContain(`The filter "${absolutePath}" did not match any indexed path.`);
   });
 
-  it("cleans up pending MCP session on tool error", async () => {
+  it("keeps the MCP session after a tool error result", async () => {
     await mkdir(path.join(tempRoot, ".codegraph"));
     const child = createChild({ resultText: "tool failed", toolError: true });
     spawnMock.mockReturnValue(child);
@@ -645,7 +656,7 @@ describe("codegraph extension", () => {
     await expect(
       mock.tools.get("codegraph_status")!.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot }),
     ).rejects.toThrow("tool failed");
-    expect(child.kill).toHaveBeenCalled();
+    expect(child.kill).not.toHaveBeenCalled();
     expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 
@@ -681,20 +692,20 @@ describe("codegraph extension", () => {
     releaseFirst();
     const results = await Promise.all([first, second]);
 
-    expect(spawnMock).toHaveBeenCalledTimes(2);
-    expect(results.map((result) => result.content[0].text)).toEqual(["ok 1", "ok 2"]);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(results.map((result) => result.content[0].text)).toEqual(["ok 1", "ok 1"]);
   });
 
   it("continues same-project queue after a failed call", async () => {
     await mkdir(path.join(tempRoot, ".codegraph"));
-    let spawnCount = 0;
-    spawnMock.mockImplementation(() => {
-      spawnCount += 1;
-      return createChild({
-        resultText: spawnCount === 1 ? "tool failed" : "ok after failure",
-        toolError: spawnCount === 1,
-      });
-    });
+    spawnMock.mockImplementation(() =>
+      createChild({
+        responses: [
+          { text: "tool failed", isError: true },
+          { text: "ok after failure" },
+        ],
+      })
+    );
     const mock = createMockPi();
     const { default: codegraphExtension } = await loadExtension();
     codegraphExtension(mock.pi as never);
@@ -708,7 +719,7 @@ describe("codegraph extension", () => {
     if (secondResult.status === "fulfilled") {
       expect(secondResult.value.content[0].text).toBe("ok after failure");
     }
-    expect(spawnMock).toHaveBeenCalledTimes(2);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
   });
 
   it("does not serialize calls for different projects", async () => {
@@ -748,6 +759,82 @@ describe("codegraph extension", () => {
     expect(spawnMock).toHaveBeenCalledTimes(2);
   });
 
+  it("reuses one MCP subprocess for sequential calls in a project", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
+    const child = createChild({ responses: [{ text: "first" }, { text: "second" }] });
+    spawnMock.mockReturnValue(child);
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+
+    const status = mock.tools.get("codegraph_status")!;
+    const first = await status.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
+    const second = await status.execute("tool-2", {}, undefined, undefined, { cwd: tempRoot });
+
+    expect([first.content[0].text, second.content[0].text]).toEqual(["first", "second"]);
+    expect(spawnMock).toHaveBeenCalledTimes(1);
+    expect(child.writes.filter((msg) => msg.method === "initialize")).toHaveLength(1);
+  });
+
+  it("closes an idle MCP session after CODEGRAPH_SESSION_IDLE_MS and respawns on the next call", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
+    process.env.CODEGRAPH_SESSION_IDLE_MS = "20";
+    try {
+      const firstChild = createChild();
+      const secondChild = createChild();
+      spawnMock.mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild);
+      const mock = createMockPi();
+      const { default: codegraphExtension } = await loadExtension();
+      codegraphExtension(mock.pi as never);
+      const status = mock.tools.get("codegraph_status")!;
+
+      await status.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
+      await vi.waitFor(() => expect(firstChild.kill).toHaveBeenCalled());
+      await status.execute("tool-2", {}, undefined, undefined, { cwd: tempRoot });
+
+      expect(spawnMock).toHaveBeenCalledTimes(2);
+      expect(secondChild.kill).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.CODEGRAPH_SESSION_IDLE_MS;
+    }
+  });
+
+  it("respawns after the MCP subprocess exits between calls", async () => {
+    await mkdir(path.join(tempRoot, ".codegraph"));
+    const firstChild = createChild();
+    const secondChild = createChild({ resultText: "fresh" });
+    spawnMock.mockReturnValueOnce(firstChild).mockReturnValueOnce(secondChild);
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+    const status = mock.tools.get("codegraph_status")!;
+
+    await status.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
+    firstChild.emit("exit", 0, null);
+    const result = await status.execute("tool-2", {}, undefined, undefined, { cwd: tempRoot });
+
+    expect(result.content[0].text).toBe("fresh");
+    expect(spawnMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("closes every MCP session on session_shutdown", async () => {
+    const projectPath = await mkdtemp(path.join(tempRoot, "other-"));
+    await mkdir(path.join(tempRoot, ".codegraph"));
+    await mkdir(path.join(projectPath, ".codegraph"));
+    const children = [createChild(), createChild()];
+    spawnMock.mockReturnValueOnce(children[0]).mockReturnValueOnce(children[1]);
+    const mock = createMockPi();
+    const { default: codegraphExtension } = await loadExtension();
+    codegraphExtension(mock.pi as never);
+    const status = mock.tools.get("codegraph_status")!;
+
+    await status.execute("tool-1", {}, undefined, undefined, { cwd: tempRoot });
+    await status.execute("tool-2", { projectPath }, undefined, undefined, { cwd: tempRoot });
+    await shutdownSession(mock);
+
+    expect(children.map((child) => child.kill.mock.calls.length)).toEqual([1, 1]);
+  });
+
   it("resolves to the nearest ancestor that contains .codegraph", async () => {
     const projectRoot = await mkdtemp(path.join(tempRoot, "mono-"));
     await mkdir(path.join(projectRoot, ".codegraph"));
@@ -776,7 +863,7 @@ describe("codegraph extension", () => {
       expect(result.content[0].text).toBe("ok after retry");
       expect(spawnMock).toHaveBeenCalledTimes(2);
       expect(firstChild.kill).toHaveBeenCalled();
-      expect(secondChild.kill).toHaveBeenCalled();
+      expect(secondChild.kill).not.toHaveBeenCalled();
     } finally {
       delete process.env.CODEGRAPH_TIMEOUT_MS;
     }
@@ -888,7 +975,7 @@ describe("codegraph extension", () => {
     });
     expect(getToolCall(secondServe).params).toEqual(originalToolCall);
     expect(firstServe.kill).toHaveBeenCalled();
-    expect(secondServe.kill).toHaveBeenCalled();
+    expect(secondServe.kill).not.toHaveBeenCalled();
   });
 
   it("auto-inits a nested marker project on normal-text unindexed output with canonical projectPath arguments", async () => {
@@ -947,7 +1034,7 @@ describe("codegraph extension", () => {
     });
     expect(getToolCall(secondServe).params).toEqual(originalToolCall);
     expect(firstServe.kill).toHaveBeenCalled();
-    expect(secondServe.kill).toHaveBeenCalled();
+    expect(secondServe.kill).not.toHaveBeenCalled();
   });
 
   it("short-circuits non-status queries without spawning when no .codegraph marker exists", async () => {
@@ -1001,7 +1088,7 @@ describe("codegraph extension", () => {
       name: "codegraph_search",
       arguments: { projectPath: tempRoot, query: "SymbolName" },
     });
-    expect(child.kill).toHaveBeenCalled();
+    expect(child.kill).not.toHaveBeenCalled();
   });
 
   it("returns cold-enabled status text for marker root from normal-text unindexed output without auto-init", async () => {
@@ -1026,7 +1113,7 @@ describe("codegraph extension", () => {
       arguments: { projectPath: projectRoot },
     });
     expect(getSpawnSubcommands()).toEqual(["serve"]);
-    expect(child.kill).toHaveBeenCalled();
+    expect(child.kill).not.toHaveBeenCalled();
   });
 
   it("ignores invalid ancestor .codegraph past a git directory boundary for status without spawning", async () => {

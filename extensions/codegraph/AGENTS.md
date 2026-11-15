@@ -1,6 +1,6 @@
 ## Purpose
 
-Expose native indexed-code tools backed by the local CodeGraph MCP subprocess.
+Expose native indexed-code tools backed by a per-project CodeGraph MCP subprocess.
 
 ## Ownership
 
@@ -14,6 +14,7 @@ Expose native indexed-code tools backed by the local CodeGraph MCP subprocess.
 - Root discovery MUST remain bounded by the containing git/worktree root.
 - Same-project calls MUST serialize; unrelated project queues remain independent.
 - Timeouts MUST kill hung subprocesses; retries retain the [documented limits](README.md#configuration--requirements).
+- Each project keeps at most one MCP subprocess; it MUST close on idle, `session_shutdown`, auto-init, and any thrown failure so the project daemon can idle out.
 
 ## Work Guidance
 
