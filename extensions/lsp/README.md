@@ -39,6 +39,8 @@ Config shape: `lsp` may be `false` or a server map; [config.ts](config.ts) defin
 
 Clients are shared process-wide only when the canonical workspace root and full resolved server configuration match.
 
+A server with no request for 15 minutes (`LSP_IDLE_TIMEOUT_MS` in [client.ts](client.ts)) is stopped to free memory. Its client stays leased; the next request respawns the server and re-opens documents from disk, so it pays one cold project load and starts with empty diagnostics.
+
 ## Local Tweaks
 
-See `AGENTS.md` for the sync manifest. Current local changes include repo-local layout/provenance docs, managed `~/.pi/agent/lsp.json` config ownership, runtime fixes for diagnostics/process restart handling, diagnostics settle/quiet windows after `didChange` in [client.ts](client.ts), edit/write LSP error hook and late-error watch ([edit-hook.ts](edit-hook.ts), `tool_result` hook and `edit` renderer wrapper in [index.ts](index.ts)) backed by the `onDiagnostics` publish listener in [client.ts](client.ts), extension loading via `install.sh`, and keeping `effect` as an extension workspace dependency instead of a root dependency.
+See `AGENTS.md` for the sync manifest. Current local changes include repo-local layout/provenance docs, managed `~/.pi/agent/lsp.json` config ownership, runtime fixes for diagnostics/process restart handling, diagnostics settle/quiet windows after `didChange` and idle server suspend in [client.ts](client.ts), edit/write LSP error hook and late-error watch ([edit-hook.ts](edit-hook.ts), `tool_result` hook and `edit` renderer wrapper in [index.ts](index.ts)) backed by the `onDiagnostics` publish listener in [client.ts](client.ts), extension loading via `install.sh`, and keeping `effect` as an extension workspace dependency instead of a root dependency.

@@ -11,6 +11,7 @@ Expose language-server queries through the unified `lsp` tool, append LSP errors
 
 - Clients share only when canonical workspace root and full resolved configuration match.
 - Restart/shutdown MUST release this activation's leases; only the final holder stops a shared server.
+- Idle suspend stops only the server process; the client and its leases stay valid and the next request respawns it. NEVER suspend through `dispose()`, which ends a connection permanently.
 - Managed configuration is `~/.pi/agent/lsp.json`; project overrides use `.pi/lsp.json`.
 - You MUST NOT recreate root `lsp.json` or treat `.pi-lsp.json` as the active override.
 - Installation uses the extension directory link, not a settings package entry.
@@ -24,7 +25,7 @@ Expose language-server queries through the unified `lsp` tool, append LSP errors
 ## Verification
 
 - From repository root: `pnpm exec vitest run --project unit extensions/lsp/test`.
-- [Client pool](test/client-pool.test.ts), [lifecycle](test/lifecycle.test.ts), and [configuration](test/config.test.ts) cover sharing and ownership.
+- [Client pool](test/client-pool.test.ts), [lifecycle](test/lifecycle.test.ts), and [configuration](test/config.test.ts) cover sharing and ownership; [idle](test/client-idle.test.ts) covers suspend and respawn.
 
 ## Child DOX Index
 

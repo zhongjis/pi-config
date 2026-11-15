@@ -44,6 +44,12 @@ export const DIAGNOSTICS_SETTLE_MS = 300;
 // until the next edit; make it per-server if a slow server needs longer.
 export const DIAGNOSTICS_QUIET_MS = 1_000;
 
+/**
+ * How long a server may go without a request before it is stopped to free memory.
+ * The next request respawns it and re-opens documents from disk.
+ */
+export const LSP_IDLE_TIMEOUT_MS = 15 * 60_000;
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
@@ -159,13 +165,20 @@ export class LspClient {
   private serverCapabilities: Record<string, unknown> = {};
   private stderrLog: string[] = [];
   private initTimestamp = 0;
+  private idleTimer: ReturnType<typeof setTimeout> | undefined;
 
   readonly config: ResolvedServerConfig;
   private rootPath: string;
+  private idleTimeoutMs: number;
 
-  constructor(config: ResolvedServerConfig, rootPath: string) {
+  constructor(
+    config: ResolvedServerConfig,
+    rootPath: string,
+    options: { idleTimeoutMs?: number } = {},
+  ) {
     this.config = config;
     this.rootPath = rootPath;
+    this.idleTimeoutMs = options.idleTimeoutMs ?? LSP_IDLE_TIMEOUT_MS;
     this.connection = this.createConnection();
   }
 
@@ -178,6 +191,8 @@ export class LspClient {
     });
 
     conn.setNotificationHandler((method, params) => {
+      // A suspended connection's late messages describe a server that is gone.
+      if (this.connection !== conn) return;
       if (method === 'textDocument/publishDiagnostics') {
         const { uri, diagnostics, version } = params as PublishDiagnosticsParams;
         const normalized = normalizeUri(uri);
@@ -219,13 +234,14 @@ export class LspClient {
     });
 
     conn.setExitHandler((_code) => {
-      this.resetRuntimeState();
+      if (this.connection === conn) this.resetRuntimeState();
     });
 
     return conn;
   }
 
   async ensureInitialized(): Promise<void> {
+    this.touch();
     if (this.initialized) return;
     if (this.initializePromise) return this.initializePromise;
     this.initializePromise = this.doInitialize();
@@ -302,19 +318,31 @@ export class LspClient {
   }
 
   async shutdown(): Promise<void> {
+    clearTimeout(this.idleTimer);
     if (!this.connection.alive) return;
-
-    try {
-      if (this.initialized) {
-        await this.connection.sendRequest('shutdown', null, 5_000);
-        this.connection.sendNotification('exit', null);
-      }
-    } catch {
-      // Best-effort
-    }
-
-    this.connection.dispose();
+    await closeConnection(this.connection, this.initialized);
     this.resetRuntimeState();
+  }
+
+  /** Restart the idle clock; an idle server is suspended, not disposed. */
+  private touch(): void {
+    clearTimeout(this.idleTimer);
+    this.idleTimer = setTimeout(() => void this.suspend(), this.idleTimeoutMs);
+    this.idleTimer.unref?.();
+  }
+
+  /**
+   * Stop the server but keep this client usable. A fresh connection replaces the
+   * old one at once, so a request arriving during the graceful close respawns
+   * instead of reaching the dying server. `dispose()` is permanent per connection.
+   */
+  private async suspend(): Promise<void> {
+    if (!this.connection.alive) return;
+    const old = this.connection;
+    const wasInitialized = this.initialized;
+    this.connection = this.createConnection();
+    this.resetRuntimeState();
+    await closeConnection(old, wasInitialized);
   }
 
   private resetRuntimeState(): void {
@@ -573,12 +601,14 @@ export class LspClient {
   }
 
   async incomingCalls(item: CallHierarchyItem): Promise<CallHierarchyIncomingCall[]> {
+    this.touch();
     const result = await this.connection.sendRequest('callHierarchy/incomingCalls', { item });
     if (!Array.isArray(result)) return [];
     return result as CallHierarchyIncomingCall[];
   }
 
   async outgoingCalls(item: CallHierarchyItem): Promise<CallHierarchyOutgoingCall[]> {
+    this.touch();
     const result = await this.connection.sendRequest('callHierarchy/outgoingCalls', { item });
     if (!Array.isArray(result)) return [];
     return result as CallHierarchyOutgoingCall[];
@@ -603,6 +633,19 @@ export class LspClient {
 }
 
 // ── Utilities ───────────────────────────────────────────────────────────────
+
+/** Ask the server to exit, then end the connection for good. */
+async function closeConnection(connection: LspConnection, initialized: boolean): Promise<void> {
+  try {
+    if (initialized) {
+      await connection.sendRequest('shutdown', null, 5_000);
+      connection.sendNotification('exit', null);
+    }
+  } catch {
+    // Best-effort
+  }
+  connection.dispose();
+}
 
 function normalizeLocations(result: unknown): Location[] {
   if (!result) return [];
