@@ -64,12 +64,12 @@ Evidence:
 - `sisyphus/default.ts` defines senior-engineer orchestrator identity, intent gate, task/todo tracking, delegation, exploration, verification, failure recovery, and concise communication.
 - `sisyphus/gpt-5-5.ts` is a complete GPT-native orchestration prompt, not a reminder fragment.
 - `sisyphus/gemini.ts` is corrective Gemini guidance for tool use, delegation, intent gate, and verification.
-- `sisyphus/claude-opus-5.ts` gates delegation by domain and size, yet keeps explore agents reachable through Phase 0 key triggers (`explore.ts`, `librarian.ts` `keyTrigger`) and the explore use/avoid lists in `dynamic-agent-core-sections.ts` (verified at commit `5275771d`). Kua Fu's key triggers, explore rules, and Delegation Trust Rule copy that wording.
-- `dynamic-agent-core-sections.ts` `buildNonClaudePlannerSection` makes every non-Claude Sisyphus consult the Plan Agent (OpenCode `plan`, demoted with Prometheus's model) before multi-step work; Claude variants plan inline. Kua Fu's `gpt.md` adapts this as a `xuannv` consult before 2+ implementation packets, without the ambiguity-to-planner rule or "Follow it".
+- `sisyphus/claude-opus-5.ts` gates delegation by domain and size, yet keeps explore agents reachable through Phase 0 key triggers (`explore.ts`, `librarian.ts` `keyTrigger`) and the explore use/avoid lists in `dynamic-agent-core-sections.ts` (verified at commit `5275771d`). Kua Fu's [default](../../modes/kuafu/default.md#tool-use-policy) and [GPT](../../modes/kuafu/gpt.md#exploration-rules) own local exploration and nonduplication policy.
+- `dynamic-agent-core-sections.ts` `buildNonClaudePlannerSection` makes every non-Claude Sisyphus consult the Plan Agent (OpenCode `plan`, demoted with Prometheus's model) before multi-step work; Claude variants plan inline. Kua Fu's [GPT tactical consultation](../../modes/kuafu/gpt.md#specialists-and-implementation-workers) instead depends on unresolved execution choices and preserves its separate complex self-execution planning and approval workflow.
 
-Local invariants before edits:
+Local invariants:
 
-- Kuafu remains Pi build mode: senior engineer/orchestrator, direct implementation only for trivial local work.
+- Kuafu remains Pi build mode: senior engineer/orchestrator with bounded direct implementation under its family routing policy.
 - Every family must include intent gate, explicit implementation authorization gate, scope discipline, delegation policy, continuation/supervision, and verification gates.
 - GPT replacement must be self-contained; it cannot depend on missing `default.md` body text.
 - Gemini overlay must reinforce tool use, delegation, read-before-claim, and verify-before-completion without replacing the full prompt.

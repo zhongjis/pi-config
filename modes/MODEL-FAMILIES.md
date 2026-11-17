@@ -17,26 +17,29 @@ Shared instructions can serve several families. Check that they do not overconst
 
 ## Local Addition: GPT Overwork Habits
 
-Local observation from an A/B eval of real Kua Fu tasks on `gpt-6.1-sol`: under the old prompts, GPT delegated small work, added ceremony (notepads, task lists, extra subagents) to small tasks, re-ran passing checks, handed one worker a whole UI for 25+ minutes, wrote tests for prototypes, and gave long answers. [`modes/kuafu/gpt.md`](kuafu/gpt.md) names these habits so the model can catch them; the behavior it asks for is the same as `default.md`, except that GPT consults `xuannv` before splitting work into two or more implementation packets.
+Local A/B observations on real Kua Fu tasks with `gpt-6.1-sol` include delegating small work, adding ceremony to small tasks, repeating passing checks, oversized UI assignments, tests for prototypes, and long answers. These are harness observations, not universal GPT tendencies. [`Kua Fu GPT`](kuafu/gpt.md) owns the corrective guidance and conditional dispatch policy while preserving shared authorization, specialist ownership, and completion contracts.
 
 ## The Three Families
 
 | Family | Detection | Prompt Style | Why |
 |--------|-----------|--------------|-----|
-| **Default** (Claude-like) | Every model not detected as GPT or Gemini | Mechanics-driven: rigid protocols, explicit constraints, sequenced steps | Local practice, no vendor source verified: these models need granular procedural detail for stable output |
-| **GPT** | Model ID contains `gpt` (checked first) | Softer emphasis, explicit done criteria and safe autonomy, each rule stated once, short recipes [1][2] | See [GPT Quirks](#gpt-quirks) |
+| **Default** (Claude-like) | Every model not detected as GPT or Gemini | Procedural baseline with explicit constraints and sequenced steps | Established local practice; effectiveness is workload-dependent, not a universal claim about Claude |
+| **GPT** | Model ID contains `gpt` (checked first) | Outcome-first conditions, explicit autonomy and completion criteria, bounded verification [2][3] | See [GPT Quirks](#gpt-quirks) |
 | **Gemini** | Provider starts with `google`, or model ID contains `gemini` | Corrective overlays: precise overrides inserted at key structural points | Prone to specific agentic failures (see [Gemini-Specific Failure Modes](#gemini-specific-failure-modes)); overlays fix errors without rewriting the base prompt |
 
 See [`model-family.ts`](../extensions/lib/model-family.ts) for the detection code.
 
 ## GPT Quirks
 
-A `gpt.md` may adapt its instructions to these quirks:
+OpenAI's GPT-6 prompting guidance primarily describes Astra and asks users to evaluate it on their selected model and workload [3]. Instructions that help Sol or Luna may overconstrain Astra [2]. These sources do not establish a universal GPT-versus-Claude prompting rule.
+
+A `gpt.md` may adapt its instructions to these observed behaviors:
 
 - **Softer emphasis.** Strong boundary language written for earlier models can stop GPT early [2].
 - **Explicit done criteria and safe autonomy.** State the result, audience, context, constraints, and what counts as done [1]. Name what may proceed independently and what needs approval, and which safe workflows run without repeated approval; GPT can be tentative about when to stop [1][2].
 - **Each rule stated once.** Contradictory or over-emphasized instructions hurt results [2].
 - **Shorter recipes** where the outcome stays the same. Overly specific recipes can hinder results [2].
+- **Conditional delegation and verification.** Astra may delegate less than a workflow needs and test small changes too broadly. Specify useful delegation and sufficient verification for the harness rather than prescribing a universal amount [3].
 
 Reasoning effort is a model setting, not prompt style: set it with the model spec's thinking-level suffix ([model selection](../docs/specs/model-selection-and-fallback.md)). Start from the model's default level and adjust to task difficulty: Low for routine tasks, Medium for judgment, High for difficult analysis, and Extra high or Max when High falls short [1].
 
@@ -64,9 +67,10 @@ Local observation: small local models often bypass tools or finish early because
 
 [`extensions/lib/model-family.ts`](../extensions/lib/model-family.ts) owns detection. GPT detection matches on the model ID, not the provider name, so proxied models (litellm and similar) resolve to their real family. Gemini detection also accepts a `google` provider prefix.
 
-Limitation: GPT detection cannot distinguish non-reasoning GPT models from reasoning models, so both use `gpt.md`. The GPT guidance above targets the GPT-6 family.
+Limitation: GPT detection cannot distinguish non-reasoning GPT models from reasoning models, so both use `gpt.md`. Evaluate the guidance separately on the GPT models used by the harness.
 
 ## Sources
 
 - [1] OpenAI, "A model guide for the GPT-6 family" (https://openai.com/index/practical-guide-building-gpt-6/)
 - [2] OpenAI Developers, "Rethinking skills and prompts for GPT-6 Astra" (https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra#better-skills)
+- [3] OpenAI Developers, "Using GPT-6: Prompting best practices" (https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices)
