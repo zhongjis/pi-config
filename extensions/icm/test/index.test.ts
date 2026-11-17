@@ -52,7 +52,8 @@ async function setup(withIcm: boolean, overrides: Record<string, unknown> = {}) 
 		handler("tool_result")({ type: "tool_result", toolName, toolCallId: "c", input, content: [{ type: "text", text }], isError: false }, ctx);
 	const compact = (messages: unknown[]) =>
 		handler("session_before_compact")({ type: "session_before_compact", preparation: { messagesToSummarize: messages, turnPrefixMessages: [] } }, ctx);
-	return { beforeAgentStart, toolResult, compact };
+	const shutdown = () => handler("session_shutdown")({ type: "session_shutdown" }, ctx);
+	return { beforeAgentStart, toolResult, compact, shutdown };
 }
 
 beforeAll(() => {
@@ -218,10 +219,11 @@ describe("icm extension", () => {
 
 		it("extracts tool output with Pi's model and stores each fact instead of queueing", async () => {
 			const { prompts, registry } = modelRegistry(REPLY);
-			const { toolResult } = await setup(true, { modelRegistry: registry });
+			const { toolResult, shutdown } = await setup(true, { modelRegistry: registry });
 			for (let i = 0; i < 10; i++) toolResult(`tool output number ${i} is long enough`);
 
-			await vi.waitFor(() => expect(stores()).toHaveLength(2), { timeout: 5000 });
+			await shutdown();
+			expect(stores()).toHaveLength(2);
 			const topic = `context-${basename(dir)}`;
 			expect(stores().map((line) => line.trimEnd())).toStrictEqual([
 				`store -t ${topic} -c The api service retries uploads three times.`,
@@ -234,10 +236,11 @@ describe("icm extension", () => {
 
 		it("extracts the compacted assistant text natively without draining icm's queue", async () => {
 			const { prompts, registry } = modelRegistry("- Pi extracts its own memories.");
-			const { compact } = await setup(true, { modelRegistry: registry });
+			const { compact, shutdown } = await setup(true, { modelRegistry: registry });
 			compact([{ role: "assistant", content: [{ type: "text", text: "We decided Pi acts as the icm extraction provider for its own sessions." }] }]);
 
-			await vi.waitFor(() => expect(stores()).toHaveLength(1), { timeout: 5000 });
+			await shutdown();
+			expect(stores()).toHaveLength(1);
 			expect(prompts[0]).toContain("=== tool=compaction");
 			expect(calls().some((line) => line.startsWith("extract"))).toBe(false);
 		});

@@ -8,6 +8,7 @@ Gives Pi the automatic memory lifecycle that [rtk-ai/icm](https://github.com/rtk
 - **Each user prompt:** runs `icm hook prompt` with the prompt and adds the recalled context as a hidden `icm-recall` message for that turn.
 - **Tool results:** captures one tool output in every N calls off the turn path, keeping its last 8000 characters. N is icm's `[extraction] extract_every` (default 3) when Pi is the provider, and 10 when icm's queue extracts. File edits, writes and `icm` CLI calls are skipped.
 - **Before compaction:** captures the assistant text being compacted.
+- **Session shutdown:** waits for the session-start `icm hook start` and config probes, then for captured native extractions and their sequential writes, including captures awaiting the config probe. Existing hook, extraction, and per-write deadlines apply; queue draining remains detached. See the lifecycle handlers in [index.ts](index.ts).
 
 In both cases, extraction runs in one of two ways:
 

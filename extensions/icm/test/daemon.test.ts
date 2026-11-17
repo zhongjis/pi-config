@@ -75,6 +75,7 @@ async function capture() {
 	await handler("session_start")({ type: "session_start" }, ctx);
 	await handler("before_agent_start")({ messageType: "user", prompt: "", systemPromptOptions: { sections: {} } }, ctx);
 	handler("tool_result")({ toolName: "read", input: {}, content: [{ type: "text", text: "A tool output with enough durable details." }] }, ctx);
+	await handler("session_shutdown")({ type: "session_shutdown" }, ctx);
 }
 
 describe("native daemon routing", () => {
@@ -105,13 +106,13 @@ describe("native daemon routing", () => {
 			descriptor({ url, database: other });
 		}
 		await capture();
-		await vi.waitFor(() => expect(stores()).toHaveLength(2));
+		expect(stores()).toHaveLength(2);
 		expect(requests).toHaveLength(0);
 	});
 
 	it("stores native facts sequentially through exact stateless MCP calls", async () => {
 		await capture();
-		await vi.waitFor(() => expect(requests).toHaveLength(2));
+		expect(requests).toHaveLength(2);
 		expect(requests).toStrictEqual(["Private first fact.", "Private second fact."].map((content) => ({
 			method: "POST", path: "/mcp", body: { jsonrpc: "2.0", id: 1, method: "tools/call", params: {
 				name: "icm_memory_store", arguments: { topic: "context-test-project", content, importance: "high" },
@@ -126,7 +127,7 @@ describe("native daemon routing", () => {
 		if (failure === "connection refused") await new Promise<void>((resolve) => server.close(() => resolve()));
 		else answer = (res) => res.end(JSON.stringify({ jsonrpc: "2.0", id: 1, error: { message: "Private first fact." } }));
 		await capture();
-		await vi.waitFor(() => expect(debug).toHaveBeenCalledTimes(2));
+		expect(debug).toHaveBeenCalledTimes(2);
 		expect(requests).toHaveLength(failure === "connection refused" ? 0 : 2);
 		expect(stores()).toHaveLength(0);
 		expect(JSON.stringify(debug.mock.calls)).not.toContain("Private");

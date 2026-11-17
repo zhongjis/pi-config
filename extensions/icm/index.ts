@@ -31,7 +31,7 @@ interface SessionState {
 	daemon?: DaemonStore;
 	/** Tool outputs per capture: EXTRACT_EVERY, or icm's `extract_every` once native mode is confirmed. */
 	extractEvery: number;
-	/** Tail of the native extraction chain; captures run one at a time. */
+	/** Tail of the capture chain, including native config resolution; drained at shutdown. */
 	extracting: Promise<void>;
 	project?: Promise<string>;
 	toolCalls: number;
@@ -156,14 +156,14 @@ async function extractNative(state: SessionState, ctx: ExtensionContext, capture
 }
 
 /** Hand captured text to Pi's model (native, one capture at a time) or icm's queue, off the turn path. */
-function capture(state: SessionState, ctx: ExtensionContext, source: string, text: string, drain: boolean): void {
-	void state.native
+function capture(state: SessionState, ctx: ExtensionContext, captured: { readonly source: string; readonly text: string; readonly drain: boolean }): void {
+	// Track the whole capture synchronously, even while native config is unresolved.
+	state.extracting = state.extracting
+		.then(() => state.native)
 		.then((native) => {
-			if (!native) return enqueue(state, ctx, text, drain);
+			if (!native) return enqueue(state, ctx, captured.text, captured.drain);
 			// Serial: finish storing each capture before starting the next.
-			state.extracting = state.extracting
-				.then(() => extractNative(state, ctx, { source, text }))
-				.catch((error) => debug(ctx, "capture failed", error));
+			return extractNative(state, ctx, captured);
 		})
 		.catch((error) => debug(ctx, "capture failed", error));
 }
@@ -271,7 +271,7 @@ export default function icmExtension(pi: ExtensionAPI): void {
 		const drain = state.enqueues >= DRAIN_EVERY;
 		if (drain) state.enqueues = 0;
 		// Keep the tail, as icm's post hook does: test, build and error results land at the end.
-		capture(state, ctx, event.toolName, output.slice(-8000), drain);
+		capture(state, ctx, { source: event.toolName, text: output.slice(-8000), drain });
 	});
 
 	pi.on("session_before_compact", (event, ctx) => {
@@ -286,6 +286,12 @@ export default function icmExtension(pi: ExtensionAPI): void {
 		if (text.length < 50) return;
 		// Compaction is a natural flush point: capture the conversation slice (and drain icm's queue when not native).
 		state.enqueues = 0;
-		capture(state, ctx, "compaction", text, true);
+		capture(state, ctx, { source: "compaction", text, drain: true });
+	});
+
+	pi.on("session_shutdown", async () => {
+		if (!state) return;
+		// Startup probes and captures spawn icm children that write its store; settle them before exit.
+		await Promise.all([state.wakeUp, state.native, state.extracting]);
 	});
 }
