@@ -395,7 +395,7 @@ describe("GraphRunReporter", () => {
     expect(t.agentCount).toBe(4);
   });
 
-  it("recomputes legacy dynamic stages when dependencies register in reverse order", () => {
+  it("recomputes dynamic stages when dependencies register in reverse order", () => {
     const t = task();
     const reporter = new GraphRunReporter(t, 1_000);
     register(reporter, graph);

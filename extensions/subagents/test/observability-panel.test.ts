@@ -103,7 +103,7 @@ describe("Herdr presentation", () => {
     expect(lines.join("\n")).toContain("Downstream: unknown-a, unknown-b");
     expect(roster(lines).find(line => line.includes("Synthesize context"))).toMatch(/^ {3}› └─/);
   });
-  it("uses explicit flat fallback for legacy labels, without guessing agent counts or iterations", () => {
+  it("uses explicit flat fallback for phase-less labels, without guessing agent counts or iterations", () => {
     const run = fixture(); run.source.progress = [agent({ index: 0, label: "Research · iteration 99 · item 4", state: "done", agentType: "agent", phaseIndex: 42 })];
     const lines = render(run, initialPanelState());
     expect(lines.join("\n")).toContain("1 unclassified node"); expect(lines.join("\n")).toContain("Flat fallback");

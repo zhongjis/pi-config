@@ -1,10 +1,7 @@
-import { readFileSync } from "node:fs";
-import { describe, it, expect, beforeEach } from "vitest";
+import { fileURLToPath } from "node:url";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 import { createMockContext } from "../../../test/fixtures/mock-context.js";
-
-const promptSource = (variant: "default" | "gpt") =>
-	readFileSync(new URL(`../prompts/${variant}.md`, import.meta.url), "utf8").trim();
 
 type InputResult =
 	| { action: "continue" }
@@ -336,11 +333,29 @@ describe("ulw extension — unit tests", () => {
 
 describe("ulw extension — model-adapted prompt selection", () => {
 	let mock: ReturnType<typeof createMockPi>;
+	const promptFixtures = new Map([
+		[fileURLToPath(new URL("../prompts/default.md", import.meta.url)), "fixture:default"],
+		[fileURLToPath(new URL("../prompts/gpt.md", import.meta.url)), "fixture:gpt"],
+	]);
 
 	beforeEach(async () => {
+		vi.resetModules();
+		vi.doMock("node:fs", async (importOriginal) => {
+			const actual = await importOriginal<typeof import("node:fs")>();
+			return {
+				...actual,
+				readFileSync: (...args: Parameters<typeof actual.readFileSync>) =>
+					promptFixtures.get(String(args[0])) ?? actual.readFileSync(...args),
+			};
+		});
 		mock = createMockPi();
 		const mod = await import("../index.js");
 		mod.default(mock.pi as never);
+	});
+
+	afterEach(() => {
+		vi.doUnmock("node:fs");
+		vi.resetModules();
 	});
 
 	/** Mock kuafu-mode context with an explicit active model. */
@@ -353,24 +368,24 @@ describe("ulw extension — model-adapted prompt selection", () => {
 	it("injects the OpenAI (GPT) variant for a GPT-family model", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "openai", id: "gpt-5.5" }));
-		expect(result?.message?.content).toBe(promptSource("gpt"));
+		expect(result?.message).toEqual({ customType: "ultrawork", content: "fixture:gpt", display: true });
 	});
 
 	it("injects the GPT variant across proxy providers (litellm/openai-codex)", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "openai-codex", id: "gpt-5.5" }));
-		expect(result?.message?.content).toBe(promptSource("gpt"));
+		expect(result?.message).toEqual({ customType: "ultrawork", content: "fixture:gpt", display: true });
 	});
 
 	it("injects the Claude (default) variant for an Anthropic model", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "anthropic", id: "claude-opus-4-8" }));
-		expect(result?.message?.content).toBe(promptSource("default"));
+		expect(result?.message).toEqual({ customType: "ultrawork", content: "fixture:default", display: true });
 	});
 
 	it("defaults to the Claude variant when no model is set", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel());
-		expect(result?.message?.content).toBe(promptSource("default"));
+		expect(result?.message).toEqual({ customType: "ultrawork", content: "fixture:default", display: true });
 	});
 });

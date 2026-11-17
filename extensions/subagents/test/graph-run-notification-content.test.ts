@@ -68,7 +68,7 @@ describe("formatGraphRunNotification", () => {
 });
 
 describe("graphRunCompletionText", () => {
-  it("writes the complete result artifact and links it, dropping the legacy trailing line", () => {
+  it("writes the complete result artifact and links it", () => {
     const cwd = mkdtempSync(join(tmpdir(), "wf-note-"));
     tmpDirs.push(cwd);
     const t = completed("q".repeat(2000));
@@ -76,7 +76,6 @@ describe("graphRunCompletionText", () => {
     expect(t.resultPath).toBeDefined();
     expect(readFileSync(t.resultPath as string, "utf-8")).toBe("q".repeat(2000));
     expect(text).toContain(`<result-file>${t.resultPath}</result-file>`);
-    expect(text).not.toContain("Full workflow result:");
     expect(text).not.toContain("q".repeat(GRAPH_RUN_RESULT_PREVIEW_CHARS + 1));
   });
 

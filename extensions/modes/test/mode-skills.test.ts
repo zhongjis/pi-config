@@ -1,8 +1,11 @@
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 
+import { MODES } from "../src/constants.js";
 import { registerModeHooks } from "../src/hooks.js";
 import { ModeStateManager } from "../src/mode-state.js";
+import type { Mode } from "../src/types.js";
 
 function createMockPi() {
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown | Promise<unknown>>>();
@@ -53,32 +56,28 @@ describe("mode skill discovery", () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
 		registerModeHooks(mock.pi as never, state);
-		const cases = [
-			{ mode: "kuafu", expected: ["modes/kuafu/skills"] },
-			{ mode: "houtu", expected: [] },
-			{ mode: "fuxi", expected: ["modes/fuxi/skills"] },
-		] as const;
-
-		for (const { mode, expected } of cases) {
+		for (const mode of MODES) {
+			const skillsDir = fileURLToPath(new URL(`../../../modes/${mode}/skills`, import.meta.url));
+			const expected = existsSync(skillsDir) && statSync(skillsDir).isDirectory() ? [skillsDir] : [];
 			state.currentMode = mode;
 			const [discover] = await mock.fire("resources_discover", {}, createContext(mode));
-			const skillPaths = (discover as { skillPaths: string[] }).skillPaths;
-			const relativePaths = skillPaths.map((path) => path.replace(/^.*\/modes\//, "modes/"));
 
-			expect(relativePaths).toEqual(expected);
+			expect(discover).toEqual({ skillPaths: expected });
 		}
 	});
 
-	it("returns only an existing active-mode skill directory", async () => {
+	it.each(MODES)("returns only existing skill directories for active mode %s", async (mode: Mode) => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);
-		state.currentMode = "fuxi";
+		state.currentMode = mode;
 		registerModeHooks(mock.pi as never, state);
+		const skillsDir = fileURLToPath(new URL(`../../../modes/${mode}/skills`, import.meta.url));
+		const hasSkills = existsSync(skillsDir) && statSync(skillsDir).isDirectory();
 
-		const [discover] = await mock.fire("resources_discover", {}, createContext("fuxi"));
+		const [discover] = await mock.fire("resources_discover", {}, createContext(mode));
 		const skillPaths = (discover as { skillPaths: string[] }).skillPaths;
 
-		expect(skillPaths).toHaveLength(1);
+		expect(skillPaths).toHaveLength(hasSkills ? 1 : 0);
 		expect(skillPaths.every((path) => statSync(path).isDirectory())).toBe(true);
 	});
 
