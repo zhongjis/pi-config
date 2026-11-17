@@ -15,33 +15,34 @@ Shared instructions can serve several families. Check that they do not overconst
 
 `default.md` supplies the default prompt, not a template that other families must restate. Family prompts may differ in structure, emphasis, workflow detail, and communication cadence while preserving shared contracts. Evaluate parity by outcomes, not matching wording or sections.
 
-## Local Addition: GPT Overwork Habits
-
-Local A/B observations on real Kua Fu tasks with `gpt-6.1-sol` include delegating small work, adding ceremony to small tasks, repeating passing checks, oversized UI assignments, tests for prototypes, and long answers. These are harness observations, not universal GPT tendencies. [`Kua Fu GPT`](kuafu/gpt.md) owns the corrective guidance and conditional dispatch policy while preserving shared authorization, specialist ownership, and completion contracts.
-
 ## The Three Families
 
 | Family | Detection | Prompt Style | Why |
 |--------|-----------|--------------|-----|
 | **Default** (Claude-like) | Every model not detected as GPT or Gemini | Procedural baseline with explicit constraints and sequenced steps | Established local practice; effectiveness is workload-dependent, not a universal claim about Claude |
-| **GPT** | Model ID contains `gpt` (checked first) | Outcome-first conditions, explicit autonomy and completion criteria, bounded verification [2][3] | See [GPT Quirks](#gpt-quirks) |
+| **GPT** | Model ID contains `gpt` (checked first) | Outcome-first conditions, explicit autonomy and completion criteria, bounded verification [2][4] | See [GPT Quirks](#gpt-quirks) |
 | **Gemini** | Provider starts with `google`, or model ID contains `gemini` | Corrective overlays: precise overrides inserted at key structural points | Prone to specific agentic failures (see [Gemini-Specific Failure Modes](#gemini-specific-failure-modes)); overlays fix errors without rewriting the base prompt |
 
 See [`model-family.ts`](../extensions/lib/model-family.ts) for the detection code.
 
 ## GPT Quirks
 
-OpenAI's GPT-6 prompting guidance primarily describes Astra and asks users to evaluate it on their selected model and workload [3]. Instructions that help Sol or Luna may overconstrain Astra [2]. These sources do not establish a universal GPT-versus-Claude prompting rule.
+GPT prompts target GPT-6.2. Its prompting guidance covers behavior observed on both Astra and Sol [4]. GPT-6 sources [1][2][3] apply where the GPT-6.2 guidance is silent. Instructions that help Sol or Luna may overconstrain Astra [2]. These sources do not establish a universal GPT-versus-Claude prompting rule.
 
 A `gpt.md` may adapt its instructions to these observed behaviors:
 
+- **Concise by default.** Revisit "be concise" instructions written for earlier models [4].
+- **Task completion.** When intent is unclear, GPT-6.2 may propose a next step and wait. Name the authorized next steps; stop only for a significant scope change, a concrete block, a decision the user must make, or an irreversible or destructive action [4].
+- **Reasonable assumptions.** Allow reasonable, reversible assumptions that keep work in scope, stated to the user [4].
+- **Self-contained final answer.** The final answer must not depend on earlier progress updates or carry shorthand from reasoning, tool calls, or subagent messages [4].
+- **Fewer new tests.** Skip new tests unless requested, required by the repository, or needed to catch a regression existing tests would miss [4].
+- **Prefix stability.** The API drops reasoning items when instructions or tool calls change mid-conversation, which can lower quality and repeat work. Keep the prompt prefix and tool set stable within a session [4].
 - **Softer emphasis.** Strong boundary language written for earlier models can stop GPT early [2].
 - **Explicit done criteria and safe autonomy.** State the result, audience, context, constraints, and what counts as done [1]. Name what may proceed independently and what needs approval, and which safe workflows run without repeated approval; GPT can be tentative about when to stop [1][2].
-- **Each rule stated once.** Contradictory or over-emphasized instructions hurt results [2].
+- **Each rule stated once.** Contradictory or over-emphasized skill descriptions lead the model to load guidance that does not help [2]; applying the same caution to prompt bodies is a local extrapolation.
 - **Shorter recipes** where the outcome stays the same. Overly specific recipes can hinder results [2].
-- **Conditional delegation and verification.** Astra may delegate less than a workflow needs and test small changes too broadly. Specify useful delegation and sufficient verification for the harness rather than prescribing a universal amount [3].
 
-Reasoning effort is a model setting, not prompt style: set it with the model spec's thinking-level suffix ([model selection](../docs/specs/model-selection-and-fallback.md)). Start from the model's default level and adjust to task difficulty: Low for routine tasks, Medium for judgment, High for difficult analysis, and Extra high or Max when High falls short [1].
+Reasoning effort is a model setting, not prompt style: set it with the model spec's thinking-level suffix ([model selection](../docs/specs/model-selection-and-fallback.md)). Start at `medium` [4], then adjust to task difficulty: Low for routine tasks, Medium for judgment, High for difficult analysis, and Extra high or Max when High falls short [1].
 
 ## Gemini-Specific Failure Modes
 
@@ -67,10 +68,11 @@ Local observation: small local models often bypass tools or finish early because
 
 [`extensions/lib/model-family.ts`](../extensions/lib/model-family.ts) owns detection. GPT detection matches on the model ID, not the provider name, so proxied models (litellm and similar) resolve to their real family. Gemini detection also accepts a `google` provider prefix.
 
-Limitation: GPT detection cannot distinguish non-reasoning GPT models from reasoning models, so both use `gpt.md`. Evaluate the guidance separately on the GPT models used by the harness.
+Limitation: GPT detection cannot distinguish non-reasoning GPT models from reasoning models, or GPT-6.2 from earlier GPT models, so all use `gpt.md`. GPT-6 Luna has no GPT-6.2 successor; evaluate the guidance separately on each GPT model the harness uses.
 
 ## Sources
 
 - [1] OpenAI, "A model guide for the GPT-6 family" (https://openai.com/index/practical-guide-building-gpt-6/)
 - [2] OpenAI Developers, "Rethinking skills and prompts for GPT-6 Astra" (https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra#better-skills)
-- [3] OpenAI Developers, "Using GPT-6: Prompting best practices" (https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices)
+- [3] OpenAI Developers, "GPT-6 Astra: Prompting best practices" (https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra#prompting-best-practices)
+- [4] OpenAI Developers, "Using GPT-6.2: Prompting best practices" (https://developers.openai.com/api/docs/guides/latest-model/gpt-6.2-astra#prompting-best-practices)

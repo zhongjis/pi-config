@@ -6,57 +6,58 @@ This reference records source inspection and design rationale. The linked prompt
 
 - Local prompt: [Kuafu GPT](../../modes/kuafu/gpt.md), with [default-family behavior](../../modes/kuafu/default.md) and [family-authoring policy](../../modes/MODEL-FAMILIES.md).
 - External prompt: Hephaestus GPT-6 at revision `7e2aae87527003dbd76ff12caded8d7e4740844d`. Line references below use that revision. [1]
-- Local line references identify the inspected prompt, not a stable API. Follow the owning section if lines move.
+- Hephaestus targets GPT-6 Astra on Codex; Kuafu GPT targets GPT-6.2 Sol. The comparison is a design reference, not evidence that transfers between models.
+- Kuafu references name the owning `gpt.md` section, not line numbers.
 - The comparison covers prompt instructions. Runtime enforcement and observed model performance are separate evidence categories.
 
 ## Conclusion
 
-Kuafu and Hephaestus both support direct work, specialist delegation, evidence-based completion, and scoped verification. Their main difference is dispatch policy: Kuafu emphasizes specialist ownership; Hephaestus emphasizes parent execution and substantial concurrent tracks. Neither prompt establishes that its policy performs better. [1]
+Kuafu and Hephaestus both default to parent execution, delegate side tracks, require evidence-based completion, and scope verification. Their main difference is specialist ownership: Kuafu routes UI work, consultation, and finish-gate review to required specialists before its self-execution default applies; Hephaestus has no required specialists. Neither prompt establishes that its policy performs better. [1]
 
-[Kuafu GPT's routing](../../modes/kuafu/gpt.md#do-it-yourself-or-delegate) applies required specialist boundaries before choosing ownership by expertise, independent progress, and overhead. Its [exploration rules](../../modes/kuafu/gpt.md#exploration-rules) assign distinct unresolved questions without a research quota. Both GPT and [default](../../modes/kuafu/default.md#delegation-policy) make tactical consultation depend on meaningful execution uncertainty; the separate complex self-execution planning and approval workflow remains authoritative.
+[Kuafu GPT's routing](../../modes/kuafu/gpt.md#do-it-yourself-or-delegate) applies required specialist boundaries, then keeps work with the parent unless a delegated track runs beside the parent's work and lands the task sooner. Its [exploration rules](../../modes/kuafu/gpt.md#exploration-rules) assign distinct unresolved questions without a research quota. Both GPT and [default](../../modes/kuafu/default.md#delegation-policy) make tactical consultation depend on meaningful execution uncertainty; the separate complex self-execution planning and approval workflow remains authoritative.
 
 ## Clause crosswalk
 
-Adjacent lines sharing a rule are grouped; headings and blank lines are omitted. Each external comparison refers to the pinned Hephaestus source. [1]
+Each external comparison refers to the pinned Hephaestus source. [1]
 
-| Kuafu GPT lines | Hephaestus lines | Finding |
+| Kuafu GPT section | Hephaestus lines | Finding |
 | --- | --- | --- |
-| 3, 7 | 6, 40 | Orchestrator versus executor emphasis; both permit direct work and delegation. [1] |
-| 13–18 | 40, 54–65, 101–105, 121 | Both counter overhead, unnecessary checks, and verbosity. [1] |
-| 22 | 26–28 | Shared instruction authority; Kuafu explicitly treats fetched content as data. [1] |
-| 26–28 | 32–36, 40 | Both use conditional batching, code-mode result reduction, and useful independent tracks. [1] |
-| 36 | 40 | Kuafu identifies discovery needs through its exploration policy; Hephaestus defaults ordinary lookups to the parent. [1] |
-| 40–48 | 10–14, 22, 54, 121 | Both bind execution to an announced outcome; Kuafu specifies more announcement fields and repository-grounded checks. [1] |
-| 52–57 | 14, 20, 22 | Shared session authorization; Kuafu adds explicit worker continuation and human-stop handling. [1] |
-| 59, 63–70 | 20, 28, 38, 40, 85 | Both ground action and place approval after authorized preparation. [1] |
-| 76–78 | 38 | Both require source inspection and appropriate symbol tools; local tools differ. [1] |
-| 82 | 26 | Both apply relevant skills; Kuafu explicitly limits reference reading to the active workflow. [1] |
-| 86 | 38 | Both prefer root-cause investigation. [1] |
-| 88–94 | 18, 75 | Shared scope and minimalism; Kuafu adds external-failure triage and explicit complexity tradeoffs. [1] |
-| 96 | 42 | Hephaestus has broader tracking triggers and a more explicit task-item lifecycle. [1] |
-| 100 | 40 | Both dispatch useful research tracks; Kuafu assigns distinct questions without a quota. [1] |
-| 102–115 | 36, 40, 83–84 | Both support direct lookup and research specialists. [1] |
-| 117–119 | 38, 40 | Both prohibit duplicate discovery and stop after convergence. [1] |
-| 123–130 | 40 | Both weigh delegation benefit; Kuafu applies required specialist ownership first. [1] |
-| 136–142 | 83–87 | Kuafu adds dynamic routing, opened-source auditing, and evidence-based worker selection. [1] |
-| 144 | No direct counterpart | Kuafu defines architecture-consultation triggers and exclusions. |
-| 146 | 85 | Both reserve tactical consultation for unresolved decisions rather than known work splits. [1] |
-| 148 | 85 | Kuafu has a separate complex self-execution planning and approval gate. [1] |
-| 152–156 | 40, 87 | Shared bounded assignments; Kuafu adds coupled invariants, checkpoints, and resume anchors. [1] |
-| 157 | 40 | Kuafu favors worker recovery; Hephaestus takes delegated follow-ups back into the parent. [1] |
-| 163–173 | 87 | Shared outcome/evidence handoff and independent test judgment; Kuafu preserves original context, user-required checks, and research ownership. [1] |
-| 177 | 46–50 | Both supervise background agents; Hephaestus extends asynchronous scheduling to long commands. [1] |
-| 178–180 | 40, 50 | Shared steering and recovery; follow-up ownership differs. [1] |
-| 184–188 | 69 | Shared surface QA; Kuafu adds UI ownership, fidelity boundaries, and explicit review opt-in. [1] |
-| 192–195 | 38, 54, 96 | Shared grounding and scoped checks; Kuafu explicitly separates worker evidence from combined-result verification. [1] |
-| 196–198 | 69, 93 | Shared surface QA and failure disclosure; Kuafu adds shared-state isolation and explicit push authorization. [1] |
-| 200 | 71 | Review triggers differ; neither policy is uniformly lighter. [1] |
-| 202 | 77 | Kuafu consults a specialist before the final recovery attempt; Hephaestus escalates after three failed approaches. [1] |
-| 204 | 121–123 | Shared observable completion and stopping; Kuafu explicitly includes corrections and cleanup. [1] |
-| 208–219 | 101–105, 115, 117 | Shared concise, outcome-first reporting and findings-first reviews. [1] |
-| 223–227 | 109–113 | Kuafu requests meaningful updates; Hephaestus prescribes a structured handoff block. [1] |
-| 231–237 | 6, 18, 56–65, 93–96 | Shared evidence, scope, Git, and test-integrity safeguards; local skill ownership matters. [1] |
-| 238 | 123 | Shared compaction continuity. [1] |
+| Role; General | 6, 40 | Orchestrator versus executor emphasis; both permit direct work and delegation. [1] |
+| Instruction priority | 26–28 | Shared instruction authority; Kuafu explicitly treats fetched content as data. [1] |
+| Batch independent work | 32–36, 40 | Both batch read-only discovery by default, reduce results in code mode, and keep direct calls for cases where batching buys nothing. [1] |
+| Step 0: Identify lookup triggers | 40 | Kuafu identifies discovery needs through its exploration policy; Hephaestus defaults ordinary lookups to the parent. [1] |
+| Step 1: Interpret and announce | 10–14, 22, 54, 121 | Both bind execution to an announced outcome; Kuafu specifies more announcement fields and repository-grounded checks. [1] |
+| Step 2: Check implementation authorization | 14, 20, 22 | Shared session authorization; Kuafu adds explicit worker continuation and human-stop handling. [1] |
+| Step 2 readiness; Step 3: Resolve blocking ambiguity | 20, 28, 38, 40, 85 | Both ground action and place approval after authorized preparation. [1] |
+| Investigate before acting | 38 | Both require source inspection and appropriate symbol tools; local tools differ. [1] |
+| Skill loading | 26 | Both apply relevant skills; Kuafu explicitly limits reference reading to the active workflow. [1] |
+| Scope: root cause | 38 | Both prefer root-cause investigation. [1] |
+| Scope: minimal change | 18, 75 | Shared scope and minimalism; Kuafu adds external-failure triage and explicit complexity tradeoffs. [1] |
+| Scope: task tracking | 42 | Both track multi-step work, uncertain scope, multiple files, or branching investigation; Hephaestus specifies a more explicit item lifecycle. [1] |
+| Exploration rules: delegation | 40 | Both dispatch useful research tracks; Kuafu assigns distinct questions without a quota. [1] |
+| Exploration rules: direct tools and researchers | 36, 40, 83–84 | Both support direct lookup and research specialists. [1] |
+| Exploration rules: trust and stop | 38, 40 | Both prohibit duplicate discovery and stop after convergence. [1] |
+| Do it yourself or delegate | 40 | Both default to self-execution, delegate side tracks that land the task sooner, and keep a child result that is the next input with the parent; Kuafu applies required specialist ownership first. [1] |
+| Specialists and implementation workers: roster, research audit, worker choice | 83–87 | Kuafu adds dynamic routing, opened-source auditing, and evidence-based worker selection. [1] |
+| Specialists and implementation workers: `taishang` | No direct counterpart | Kuafu defines architecture-consultation triggers and exclusions. |
+| Specialists and implementation workers: `xuannv` | 85 | Both reserve tactical consultation for unresolved decisions rather than known work splits. [1] |
+| Specialists and implementation workers: `deep-plan` | 85 | Kuafu has a separate complex self-execution planning and approval gate. [1] |
+| Split work: packet bounds | 40, 87 | Shared bounded assignments; Kuafu adds coupled invariants, checkpoints, and resume anchors. [1] |
+| Split work: recovery | 40 | Kuafu favors worker recovery; Hephaestus takes delegated follow-ups back into the parent. [1] |
+| Delegation packet | 87 | Shared outcome/evidence handoff and independent test judgment; Kuafu preserves original context, user-required checks, and research ownership. [1] |
+| Supervise: background agents | 46–50 | Both supervise background agents; Hephaestus extends asynchronous scheduling to long commands. [1] |
+| Supervise: steering and recovery | 40, 50 | Shared steering and recovery; follow-up ownership differs. [1] |
+| UI work | 69 | Shared surface QA; Kuafu adds UI ownership, fidelity boundaries, and explicit review opt-in. [1] |
+| Done and verification: items 1–4 | 38, 54, 96 | Shared grounding and scoped checks; Kuafu explicitly separates worker evidence from combined-result verification. [1] |
+| Done and verification: manual QA and shared state | 69, 93 | Shared surface QA and failure disclosure; Kuafu adds shared-state isolation and explicit push authorization. [1] |
+| Done and verification: new tests | 56, 64 | Both add tests only where a regression would otherwise pass unnoticed and prove prose and prompt changes without new tests. [1] |
+| Done and verification: finish gate | 71 | Review triggers differ; neither policy is uniformly lighter. [1] |
+| Done and verification: recovery | 77 | Kuafu consults a specialist before the final recovery attempt; Hephaestus escalates after three failed approaches. [1] |
+| Done and verification: stop | 18, 121–123 | Shared observable completion and stopping without handing back unfinished work; Kuafu explicitly includes corrections and cleanup. [1] |
+| Working with the user | 101–105, 115, 117 | Shared outcome-first, self-contained final answers and findings-first reviews. [1] |
+| Intermediary updates | 109–113 | Kuafu requests meaningful updates; Hephaestus prescribes a structured handoff block. [1] |
+| Hard rules 1–7 | 6, 18, 56–65, 93–96 | Shared evidence, scope, Git, and test-integrity safeguards; local skill ownership matters. [1] |
+| Hard rule 8 | 123 | Shared compaction continuity. [1] |
 
 ## Interpretation boundaries
 
@@ -79,7 +80,9 @@ Adjacent lines sharing a rule are grouped; headings and blank lines are omitted.
 
 ### Documented behavior
 
-OpenAI's GPT-6 guidance primarily describes Astra and asks users to evaluate other family members on their workload. Astra may ask unnecessary clarification, react strongly to conflicting instructions, produce elaborate formatting, delegate less than desired, and over-test small changes. [4]
+OpenAI's GPT-6.2 guidance covers behavior observed on Astra and Sol. GPT-6.2 is concise by default, may propose a next step and wait when intent is unclear, should make reasonable reversible assumptions, and should skip new tests unless requested, required, or needed for a missed regression. The API drops reasoning items when instructions or tool calls change mid-conversation. [6]
+
+The GPT-6 Astra guidance, which Hephaestus targets, notes that Astra may delegate less often than a workflow needs and recommends calibrating testing for small changes. The GPT-6.2 guidance does not restate the delegation note. [4]
 
 OpenAI also warns that elaborate recipes and overly broad skill triggers can overconstrain Astra. Instructions that help Sol or Luna may hinder Astra; task-relevant context and precise permission boundaries matter. [5]
 
@@ -87,18 +90,16 @@ OpenAI also warns that elaborate recipes and overly broad skill triggers can ove
 
 Kuafu uses conditional, outcome-first wording while preserving its orchestration responsibilities. This is a design choice, not evidence that Hephaestus performs better.
 
-- **Safe autonomy:** [authorization](../../modes/kuafu/gpt.md#step-2-check-implementation-authorization) and completion remain explicit without a separate persistence protocol.
-- **Conditional dispatch:** [routing](../../modes/kuafu/gpt.md#do-it-yourself-or-delegate) weighs expertise, independent progress, and overhead after required specialist boundaries. A general instruction to delegate less does not follow from the vendor guidance.
+- **Safe autonomy:** [authorization](../../modes/kuafu/gpt.md#step-2-check-implementation-authorization) and completion remain explicit; the [stop rule](../../modes/kuafu/gpt.md#done-and-verification) forbids ending on a plan, an offer, or a routine question while an authorized next step remains.
+- **Self-execution default:** [routing](../../modes/kuafu/gpt.md#do-it-yourself-or-delegate) keeps work with the parent after required specialist boundaries and delegates only side tracks that land the task sooner.
 - **Decision-based planning:** [tactical consultation](../../modes/kuafu/gpt.md#specialists-and-implementation-workers) addresses unresolved execution choices; the complex self-execution planning gate retains its approvals.
-- **Bounded verification:** [completion](../../modes/kuafu/gpt.md#done-and-verification) retains valid evidence reuse and combined-result acceptance.
+- **Bounded verification:** [completion](../../modes/kuafu/gpt.md#done-and-verification) retains valid evidence reuse, combined-result acceptance, and GPT-6.2's new-test threshold.
 - **Focused skills and handoffs:** [skill loading](../../modes/kuafu/gpt.md#skill-loading) follows the active workflow; [handoffs](../../modes/kuafu/gpt.md#delegation-packet) preserve independent test judgment and user-required checks.
 - **Assembled context:** the selected body, project instructions, loaded skills, tool descriptions, and opt-in overlays all influence behavior. A change to one body cannot resolve a conflicting requirement elsewhere.
 
 ### GPT versus Claude and model-specific limits
 
-The official sources do not establish that Claude needs rigid protocols, that GPT needs a particular persona, or that direct executors outperform orchestrators. [4][5] The [family guide](../../modes/MODEL-FAMILIES.md) labels its default-family characterization as local practice. Treat that distinction as a local hypothesis, not a vendor-backed universal rule.
-
-The same guide records local overdelegation observations on GPT-6.1 Sol. The cited OpenAI guidance describes Astra's default tendency to underdelegate. Different models, prompts, tools, and tasks can explain different outcomes; the sources do not isolate their causes. Raw local comparison runs are not part of this evidence record.
+The official sources do not establish that Claude needs rigid protocols, that GPT needs a particular persona, or that direct executors outperform orchestrators. [4][5][6] The [family guide](../../modes/MODEL-FAMILIES.md) labels its default-family characterization as local practice. Treat that distinction as a local hypothesis, not a vendor-backed universal rule.
 
 ### Behavior evaluation
 
@@ -115,5 +116,6 @@ Re-read the linked local prompt sections, pinned external source, and official m
 - [1] Hephaestus GPT-6 prompt (https://github.com/code-yeongyu/lazycodex/blob/7e2aae87527003dbd76ff12caded8d7e4740844d/plugins/omo/components/rules/bundled-rules/hephaestus/gpt-6.md)
 - [2] LazyCodex worker receipt validator (https://github.com/code-yeongyu/lazycodex/blob/7e2aae87527003dbd76ff12caded8d7e4740844d/plugins/omo/components/lazycodex-executor-verify/src/codex-hook.ts)
 - [3] LazyCodex spawn admission guards (https://github.com/code-yeongyu/lazycodex/blob/7e2aae87527003dbd76ff12caded8d7e4740844d/plugins/omo/components/ulw-loop/src/spawn-guard.ts)
-- [4] OpenAI, Using GPT-6: Prompting best practices (https://developers.openai.com/api/docs/guides/latest-model#prompting-best-practices)
+- [4] OpenAI, GPT-6 Astra: Prompting best practices (https://developers.openai.com/api/docs/guides/latest-model/gpt-6-astra#prompting-best-practices)
 - [5] OpenAI, Rethinking skills and prompts for GPT-6 Astra (https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra)
+- [6] OpenAI, Using GPT-6.2: Prompting best practices (https://developers.openai.com/api/docs/guides/latest-model/gpt-6.2-astra#prompting-best-practices)
