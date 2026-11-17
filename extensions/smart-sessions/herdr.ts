@@ -4,27 +4,14 @@ import { Check } from "typebox/value";
 import { resolveHerdrAppTerminal } from "../lib/herdr-app.mjs";
 import { detectPaneHost } from "../lib/pane-host.js";
 
-const TerminalInfo = Type.Object({
-	result: Type.Object({ terminal: Type.Object({ paneTitle: Type.Optional(Type.String()) }) }),
-});
 const SummaryOutput = Type.Object({ summary: Type.String({ minLength: 1 }), title: Type.String() });
-type OrcaContext = { readonly handle: string };
+export type PaneContext = { readonly host: "herdr-app"; readonly terminalId: string };
 
-export function getOrcaContext(): OrcaContext | undefined {
-	const handle = process.env.ORCA_TERMINAL_HANDLE;
-	return detectPaneHost() === "orca" && handle ? { handle } : undefined;
-}
-
-export type PaneContext =
-	| { readonly host: "herdr-app"; readonly terminalId: string }
-	| ({ readonly host: "orca" } & OrcaContext);
-
-/** The host title target, if the session runs inside herdr-app or Orca. */
+/** The host title target, if the session runs inside herdr-app. */
 export function getPaneContext(): PaneContext | undefined {
 	const terminalId = process.env.HC_TERMINAL_ID;
 	if (detectPaneHost() === "herdr-app" && terminalId) return { host: "herdr-app", terminalId };
-	const orca = getOrcaContext();
-	return orca && { host: "orca", ...orca };
+	return undefined;
 }
 
 export const HERDR_OUTPUT_INSTRUCTIONS = [
@@ -55,21 +42,9 @@ const isNumericTabName = (name: string) => /^[1-9]\d*$/.test(name);
 // herdr-app's + menu names an agent's tab after the agent ("Pi"); that is a default, not a manual name.
 const isAgentTabName = (name: string, app: string | undefined) => app !== undefined && name.toLowerCase() === app.toLowerCase();
 
-/** Orca equivalent: `paneTitle` is present only when user- or tool-set, so absence means unlabelled. */
-export async function renameOrcaPane(pi: Pick<ExtensionAPI, "exec">, context: OrcaContext, title: string): Promise<void> {
-	if (!title) return;
-	const run = (args: string[]) => pi.exec("orca", ["terminal", ...args], { timeout: 3000 });
-	const current = await run(["show", "--terminal", context.handle, "--json"]);
-	if (current.code !== 0) return;
-	const info = parseJson(current.stdout);
-	if (!Check(TerminalInfo, info)) return;
-	const { paneTitle } = info.result.terminal;
-	if (paneTitle !== undefined && !paneTitle.startsWith("[w]")) return;
-	await run(["set-pane-title", "--terminal", context.handle, "--title", `[w] ${title}`]);
-}
-
 /** The app exposes tab names, not a pane-title API. Preserve manually named tabs. */
-async function renameHerdrAppTab(pi: Pick<ExtensionAPI, "exec">, terminalId: string, title: string, previous?: PaneClaim): Promise<PaneClaim | undefined> {
+export async function renamePane(pi: Pick<ExtensionAPI, "exec">, context: PaneContext, title: string, previous?: PaneClaim): Promise<PaneClaim | undefined> {
+	const { terminalId } = context;
 	if (!title) return undefined;
 	const current = await resolveHerdrAppTerminal(pi.exec.bind(pi), terminalId);
 	if (!current) return undefined;
@@ -80,15 +55,6 @@ async function renameHerdrAppTab(pi: Pick<ExtensionAPI, "exec">, terminalId: str
 	// An empty name returns the tab to its positional number; a re-rename keeps the first claim's target.
 	const restore = previous?.tabId === current.tabId ? previous.restore : agentName ? current.tabName : "";
 	return result.code === 0 ? { host: "herdr-app", terminalId, tabId: current.tabId, written, restore } : undefined;
-}
-
-/** Orca titles are not claimed: its CLI has no verified way to clear a pane title. */
-export async function renamePane(pi: Pick<ExtensionAPI, "exec">, context: PaneContext, title: string, previous?: PaneClaim): Promise<PaneClaim | undefined> {
-	switch (context.host) {
-		case "herdr-app": return renameHerdrAppTab(pi, context.terminalId, title, previous);
-		case "orca": await renameOrcaPane(pi, context, title); return undefined;
-		default: { const exhaustive: never = context; return exhaustive; }
-	}
 }
 
 /** Undo a claim only while the host still shows the title this process wrote. */

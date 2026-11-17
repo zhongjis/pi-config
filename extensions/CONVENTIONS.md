@@ -80,4 +80,4 @@ Continuation contract:
 
 ## Pane host
 
-Extensions that act on the terminal pane they run in (title, split, close) MUST use [`detectPaneHost`](lib/pane-host.ts) as the authority for herdr-app or Orca host selection and issue only the selected host's CLI.
+Extensions that act on the terminal pane they run in (title, split, close) MUST use [`detectPaneHost`](lib/pane-host.ts) as the authority for herdr-app host selection and issue only the selected host's CLI.

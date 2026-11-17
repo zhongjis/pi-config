@@ -389,8 +389,8 @@ export default function (pi: ExtensionAPI) {
   // Background auto-supervision loop handle. Started on session_start, stopped on
   // session_shutdown. `undefined` = not running (used as the double-start guard).
   let supervisionStop: (() => void) | undefined;
-  // The graph run inspector's Herdr or Orca side pane, constructed per activation. A
-  // strict no-op when there is no Herdr- or Orca-managed pane to split off, in which case
+  // The graph run inspector's herdr-app side pane, constructed per activation. A
+  // strict no-op when there is no herdr-app-managed pane to split off, in which case
   // the in-Pi overlay stays the only inspector.
   let graphRunPane: GraphRunPaneManager | undefined;
   // Capture ctx from session_start for RPC spawn handler and broadcast readiness.
@@ -432,13 +432,11 @@ export default function (pi: ExtensionAPI) {
     const appPane = paneHost === "herdr-app" && ctx.mode === "tui"
       ? await resolveHerdrAppTerminal(pi.exec.bind(pi), process.env.HC_TERMINAL_ID ?? "") : undefined;
     graphRunPane = paneHost ? createGraphRunPaneManager({
-      enabled: isPaneHostEnabled(process.env, ctx.mode) && (paneHost !== "herdr-app" || appPane !== undefined),
+      enabled: isPaneHostEnabled(process.env, ctx.mode) && appPane !== undefined,
       host: paneHost,
       exec: (command, args, options) => pi.exec(command, args, options),
-      parentPaneId: paneHost === "herdr-app" ? appPane?.paneId ?? ""
-        : process.env.ORCA_TERMINAL_HANDLE ?? "",
-      socket: paneHost === "herdr-app" ? `herdr-app:${process.env.HERDR_APP_HOME ?? ""}:${process.env.HC_SESSION ?? ""}`
-        : process.env.ORCA_TERMINAL_HANDLE ?? "",
+      parentPaneId: appPane?.paneId ?? "",
+      socket: `herdr-app:${process.env.HERDR_APP_HOME ?? ""}:${process.env.HC_SESSION ?? ""}`,
       cwd: ctx.cwd,
       sessionId: ctx.sessionManager.getSessionId(),
       ppid: process.pid,

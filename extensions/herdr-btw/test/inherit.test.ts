@@ -212,9 +212,9 @@ describe("inherit availability", () => {
 	});
 
 	it("captures parent registry separately and passes it to the launch", async () => {
-		vi.stubEnv("HC_TERMINAL_ID", ""); vi.stubEnv("PI_HERDR_BTW_PAYLOAD", ""); vi.stubEnv("ORCA_TERMINAL_HANDLE", "term_parent");
+		vi.stubEnv("HC_TERMINAL_ID", "t-parent"); vi.stubEnv("PI_HERDR_BTW_PAYLOAD", "");
 		const mock = localPi(); mock.api.setActiveTools(selected);
-		const exec = vi.fn().mockResolvedValueOnce({ code: 0, stdout: '{"result":{"split":{"handle":"term_child"}}}', stderr: "" }).mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+		const exec = vi.fn().mockResolvedValueOnce({ code: 0, stdout: JSON.stringify({ spaces: [{ tabs: [{ id: "tab", name: "1", terminals: [{ terminal: "t-parent", pane: "p-parent" }] }] }] }), stderr: "" }).mockResolvedValue({ code: 0, stdout: '{"pane":"p-child","terminal":"t-child"}', stderr: "" });
 		Object.assign(mock.pi, { exec });
 		const store = new ContextStore(root);
 		const create = vi.spyOn(store, "create");
@@ -229,8 +229,9 @@ describe("inherit availability", () => {
 		}
 		await Reflect.apply(command.handler, command, ["question", ctx]);
 		expect(create.mock.calls[0][0]).toMatchObject({ parentActiveTools: selected, parentAvailableTools: available });
-		const args: string[] = exec.mock.calls[0][1];
-		expect(args[args.indexOf("--command") + 1]).toContain(`'--tools' '${available.join(",")}'`);
+		const args: string[] = exec.mock.calls[1][1];
+		const argv: string[] = JSON.parse(args[args.indexOf("--argv") + 1]);
+		expect(argv[argv.indexOf("--tools") + 1]).toBe(available.join(","));
 		await mock.fireLifecycle("session_shutdown");
 	});
 });

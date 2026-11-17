@@ -28,14 +28,14 @@ describe("herdr-app graph backend", () => {
   it.each([sentinel, "manual owner"])("standalone Node viewer closes only its HC-associated owned pane: %s", async owner => {
     writeRecord(dir, { paneId: "p-viewer", sentinel, closedByUser: false });
     const log = join(dir, "calls.jsonl");
-    for (const command of ["herdr-app", "hc", "herdr", "orca"]) {
+    for (const command of ["herdr-app", "hc", "herdr"]) {
       writeFileSync(join(dir, command), `#!${process.execPath}\nimport {appendFileSync} from 'node:fs';\nappendFileSync(${JSON.stringify(log)}, JSON.stringify([${JSON.stringify(command)},process.argv.slice(2)])+'\\n');\nconsole.log(process.argv[2]==='ls' ? ${JSON.stringify(layout())} : ${JSON.stringify(JSON.stringify({ address: "t-viewer", state: "live", labels: { "pi.graph-owner": owner } }))});\n`, { mode: 0o700 });
     }
     // CLI fixtures share an isolated module scope and never reach the user's CLIs.
     writeFileSync(join(dir, "package.json"), '{"type":"module"}');
     const viewer = fileURLToPath(new URL("../src/graph/pane/viewer.mjs", import.meta.url));
     const child = spawn(process.execPath, ["--input-type=module", "-e", `await import(${JSON.stringify(viewer)}); process.stdout.write('READY');`, "--", "viewer", "--dir", dir, "--host", "herdr-app"], {
-      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, HC_TERMINAL_ID: "t-viewer", HERDR_ENV: "1", HERDR_PANE_ID: "stale-native", ORCA_TERMINAL_HANDLE: "stale-orca" },
+      env: { ...process.env, PATH: `${dir}:${process.env.PATH}`, HC_TERMINAL_ID: "t-viewer", HERDR_ENV: "1", HERDR_PANE_ID: "stale-native" },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let output = "";

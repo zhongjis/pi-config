@@ -3,7 +3,7 @@
  *
  * It owns a {@link GraphRunPaneController}, a debounced writer, and a 1s liveness
  * tick that refreshes elapsed time while a run is live. When there is no
- * Herdr- or Orca-managed pane to split off it is a strict no-op: it holds no controller,
+ * herdr-app-managed pane to split off it is a strict no-op: it holds no controller,
  * touches no filesystem, and never calls `pi.exec`, so the existing in-Pi overlay
  * is the only inspector on that path.
  *
@@ -46,7 +46,7 @@ export interface GraphRunPaneManagerOptions {
   /** Which host manages the panes. */
   host: PaneHost;
   parentPaneId: string;
-  /** State-dir scope: the app home/session, or the parent terminal handle under Orca. */
+  /** State-dir scope: the app home/session. */
   socket: string;
   cwd: string;
   sessionId: string;
@@ -168,7 +168,7 @@ export class GraphRunPaneManager {
 
   /**
    * Reopen the pane for the active run, overriding a manual close. Returns false
-   * when there is no herdr-app or Orca pane to open, so the caller can explain why.
+   * when there is no herdr-app pane to open, so the caller can explain why.
    */
   async forceOpen(runId?: string): Promise<boolean> {
     if (!this.enabled || this.disposed) return false;

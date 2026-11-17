@@ -48,7 +48,7 @@ function twoPhaseTask(id: string, startTime: number): GraphRunTask {
 function manager(getTasks: () => GraphRunTask[], viewAgentConversation?: (recordId: string) => void) {
   const mgr = createGraphRunPaneManager({
     enabled: true,
-    host: "orca",
+    host: "herdr-app",
     exec: vi.fn(ok) as any,
     parentPaneId: "%p0",
     socket: "sock",
@@ -169,10 +169,12 @@ describe("external stage folding", () => {
 describe("esc-at-overview closes via the extension", () => {
   it("closes the recorded pane, marks closedByUser, and writes no new snapshot", async () => {
     const task = twoPhaseTask("agr_a", 1000);
-    const exec = vi.fn(async () => ({ code: 0, stderr: "", stdout: JSON.stringify({ result: { terminal: { paneTitle: "Agent Graph · sess1234" } } }) }));
+    const exec = vi.fn(async (command: string) => ({ code: 0, stderr: "", stdout: JSON.stringify(command === "herdr-app"
+      ? { spaces: [{ tabs: [{ id: "tab", name: "1", terminals: [{ terminal: "t-viewer", pane: "%p9" }] }] }] }
+      : { address: "t-viewer", state: "live", labels: { "pi.graph-owner": "Agent Graph · sess1234" } }) }));
     const mgr = createGraphRunPaneManager({
       enabled: true,
-      host: "orca",
+      host: "herdr-app",
       exec,
       parentPaneId: "%p0",
       socket: "sock",
@@ -190,7 +192,7 @@ describe("esc-at-overview closes via the extension", () => {
     writeInputAtomic(dir, { seq: 1, data: b64("\x1b") });
     await processInput(mgr);
 
-    expect(exec).toHaveBeenCalledWith("orca", ["terminal", "close", "--terminal", "%p9"], expect.anything());
+    expect(exec).toHaveBeenCalledWith("herdr-app", ["do", "pane.close", "--pane", "%p9"], expect.anything());
     expect(readRecord(dir)?.closedByUser).toBe(true);
     // The close path returns before writing a snapshot.
     expect(existsSync(join(dir, STATE_FILE))).toBe(false);
@@ -207,13 +209,13 @@ describe("esc-at-overview closes via the extension", () => {
 
 describe("auto-open gating", () => {
   const splitCalled = (exec: any) =>
-    exec.mock.calls.some((c: any[]) => c[0] === "orca" && c[1]?.[1] === "split");
+    exec.mock.calls.some((c: any[]) => c[0] === "herdr-app" && c[1]?.[1] === "pane.split");
   const syncNow = (mgr: GraphRunPaneManager, force: boolean) =>
     (mgr as unknown as { syncNow: (f: boolean) => Promise<void> }).syncNow(force);
   function mgrWith(exec: any, getTasks: () => GraphRunTask[]) {
     const mgr = createGraphRunPaneManager({
       enabled: true,
-      host: "orca",
+      host: "herdr-app",
       exec,
       parentPaneId: "%p0",
       socket: "sock",
@@ -254,7 +256,7 @@ describe("disabled manager", () => {
   it("never processes input and holds no view state machinery", () => {
     const mgr = createGraphRunPaneManager({
       enabled: false,
-      host: "orca",
+      host: "herdr-app",
       exec: vi.fn(ok) as any,
       parentPaneId: "",
       socket: "",

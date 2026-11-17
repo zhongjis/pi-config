@@ -31,13 +31,11 @@ function makePayloadOptions(closeOnExit: boolean, parentPaneId: string | null = 
 describe("child pane auto-close on session_shutdown", () => {
 	let tempDir: string;
 	let savedPayloadEnv: string | undefined;
-	let savedPaneIdEnv: string | undefined;
 
 	beforeEach(async () => {
-		vi.stubEnv("HC_TERMINAL_ID", "");
+		vi.stubEnv("HC_TERMINAL_ID", "t-child");
 		tempDir = await mkdtemp(join(tmpdir(), "herdr-btw-test-"));
 		savedPayloadEnv = process.env.PI_HERDR_BTW_PAYLOAD;
-		savedPaneIdEnv = process.env.ORCA_TERMINAL_HANDLE;
 	});
 
 	afterEach(async () => {
@@ -46,11 +44,6 @@ describe("child pane auto-close on session_shutdown", () => {
 			delete process.env.PI_HERDR_BTW_PAYLOAD;
 		} else {
 			process.env.PI_HERDR_BTW_PAYLOAD = savedPayloadEnv;
-		}
-		if (savedPaneIdEnv === undefined) {
-			delete process.env.ORCA_TERMINAL_HANDLE;
-		} else {
-			process.env.ORCA_TERMINAL_HANDLE = savedPaneIdEnv;
 		}
 		await rm(tempDir, { recursive: true, force: true });
 		vi.unstubAllEnvs();
@@ -63,11 +56,10 @@ describe("child pane auto-close on session_shutdown", () => {
 		const payloadPath = await store.create(payload);
 
 		process.env.PI_HERDR_BTW_PAYLOAD = payloadPath;
-		process.env.ORCA_TERMINAL_HANDLE = "%pane-child";
 
 		vi.resetModules();
 		const mock = createMockPi();
-		const exec = vi.fn().mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+		const exec = vi.fn().mockResolvedValue({ code: 0, stdout: JSON.stringify({ spaces: [{ tabs: [{ id: "tab", name: "1", terminals: [{ terminal: "t-child", pane: "%pane-child" }] }] }] }), stderr: "" });
 		(mock.pi as unknown as Record<string, unknown>).exec = exec;
 
 		const mod = await import("../index.ts");
@@ -75,8 +67,8 @@ describe("child pane auto-close on session_shutdown", () => {
 
 		await mock.fireLifecycle("session_shutdown", { reason: "quit" }, { mode: "tui" });
 
-		expect(exec).toHaveBeenCalledWith("orca", ["terminal", "switch", "--terminal", "%pane-parent"], expect.objectContaining({ timeout: 5_000 }));
-		expect(exec).toHaveBeenCalledWith("orca", ["terminal", "close", "--terminal", "%pane-child"], expect.objectContaining({ timeout: 5_000 }));
+		expect(exec).toHaveBeenCalledWith("herdr-app", ["do", "pane.focus", "--pane", "%pane-parent"], expect.objectContaining({ timeout: 5_000 }));
+		expect(exec).toHaveBeenCalledWith("herdr-app", ["do", "pane.close", "--pane", "%pane-child"], expect.objectContaining({ timeout: 5_000 }));
 	});
 
 	it("does NOT close the pane when closeOnExit is false", async () => {
@@ -85,11 +77,10 @@ describe("child pane auto-close on session_shutdown", () => {
 		const payloadPath = await store.create(payload);
 
 		process.env.PI_HERDR_BTW_PAYLOAD = payloadPath;
-		process.env.ORCA_TERMINAL_HANDLE = "%pane-child";
 
 		vi.resetModules();
 		const mock = createMockPi();
-		const exec = vi.fn().mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+		const exec = vi.fn().mockResolvedValue({ code: 0, stdout: JSON.stringify({ spaces: [{ tabs: [{ id: "tab", name: "1", terminals: [{ terminal: "t-child", pane: "%pane-child" }] }] }] }), stderr: "" });
 		(mock.pi as unknown as Record<string, unknown>).exec = exec;
 
 		const mod = await import("../index.ts");
@@ -98,7 +89,7 @@ describe("child pane auto-close on session_shutdown", () => {
 		await mock.fireLifecycle("session_shutdown", { reason: "quit" }, { mode: "tui" });
 
 		const closeCalls = exec.mock.calls.filter(
-			(call) => Array.isArray(call[1]) && call[1].includes("close"),
+			(call) => Array.isArray(call[1]) && call[1].includes("pane.close"),
 		);
 		expect(closeCalls).toHaveLength(0);
 	});
@@ -109,11 +100,10 @@ describe("child pane auto-close on session_shutdown", () => {
 		const payloadPath = await store.create(payload);
 
 		process.env.PI_HERDR_BTW_PAYLOAD = payloadPath;
-		process.env.ORCA_TERMINAL_HANDLE = "%pane-child";
 
 		vi.resetModules();
 		const mock = createMockPi();
-		const exec = vi.fn().mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+		const exec = vi.fn().mockResolvedValue({ code: 0, stdout: JSON.stringify({ spaces: [{ tabs: [{ id: "tab", name: "1", terminals: [{ terminal: "t-child", pane: "%pane-child" }] }] }] }), stderr: "" });
 		(mock.pi as unknown as Record<string, unknown>).exec = exec;
 
 		const mod = await import("../index.ts");
@@ -122,7 +112,7 @@ describe("child pane auto-close on session_shutdown", () => {
 		await mock.fireLifecycle("session_shutdown", { reason: "reload" }, { mode: "tui" });
 
 		const closeCalls = exec.mock.calls.filter(
-			(call) => Array.isArray(call[1]) && call[1].includes("close"),
+			(call) => Array.isArray(call[1]) && call[1].includes("pane.close"),
 		);
 		expect(closeCalls).toHaveLength(0);
 	});
@@ -133,11 +123,10 @@ describe("child pane auto-close on session_shutdown", () => {
 		const payloadPath = await store.create(payload);
 
 		process.env.PI_HERDR_BTW_PAYLOAD = payloadPath;
-		process.env.ORCA_TERMINAL_HANDLE = "%pane-child";
 
 		vi.resetModules();
 		const mock = createMockPi();
-		const exec = vi.fn().mockResolvedValue({ code: 0, stdout: "", stderr: "" });
+		const exec = vi.fn().mockResolvedValue({ code: 0, stdout: JSON.stringify({ spaces: [{ tabs: [{ id: "tab", name: "1", terminals: [{ terminal: "t-child", pane: "%pane-child" }] }] }] }), stderr: "" });
 		(mock.pi as unknown as Record<string, unknown>).exec = exec;
 		const remove = vi.spyOn(store, "removeIfNoPendingMerge");
 

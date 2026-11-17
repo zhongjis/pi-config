@@ -9,7 +9,7 @@
  * That keeps the shared layout the single source of truth and needs no bundler,
  * no dist, and no runtime dependencies here — only Node built-ins.
  *
- * Invocation:  node viewer.mjs --dir <paneStateDir> --ppid <piPid> --host <herdr-app|orca>
+ * Invocation:  node viewer.mjs --dir <paneStateDir> --ppid <piPid> --host herdr-app
  *
  * It repaints on `fs.watch` (debounced) plus a slow safety poll (watch is
  * unreliable on macOS), reports its terminal size back through `viewport.json`,
@@ -195,7 +195,7 @@ async function quit(userInitiated) {
   restoreTerminal();
   // A user-initiated quit (q / Ctrl+C / Ctrl+D) also closes this host pane so
   // it is not left as an empty shell. Best-effort, and only for the pane we were
-  // told to own (Orca: our own terminal handle); a SIGTERM / parent-gone /
+  // told to own; a SIGTERM / parent-gone /
   // dir-removed quit leaves it alone.
   let appPane;
   if (userInitiated && host === "herdr-app") {
@@ -209,9 +209,7 @@ async function quit(userInitiated) {
       // Missing layout, core, or ownership evidence must never close a pane.
     }
   }
-  const closeCommand = host === "herdr-app"
-    ? appPane && ["herdr-app", ["do", "pane.close", "--pane", appPane]]
-    : host === "orca" && process.env.ORCA_TERMINAL_HANDLE && ["orca", ["terminal", "close", "--terminal", process.env.ORCA_TERMINAL_HANDLE]];
+  const closeCommand = appPane && ["herdr-app", ["do", "pane.close", "--pane", appPane]];
   if (userInitiated && closeCommand) {
     try {
       execFileSync(closeCommand[0], closeCommand[1], { timeout: 5000, stdio: "ignore" });

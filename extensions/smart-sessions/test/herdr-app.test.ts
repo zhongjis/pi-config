@@ -7,7 +7,6 @@ beforeEach(() => {
   vi.stubEnv("HC_TERMINAL_ID", "t-current");
   vi.stubEnv("HERDR_ENV", "1");
   vi.stubEnv("HERDR_PANE_ID", "stale-native");
-  vi.stubEnv("ORCA_TERMINAL_HANDLE", "stale-orca");
 });
 afterEach(() => vi.unstubAllEnvs());
 const layout = (name: string, terminal = "t-current", app?: string) => JSON.stringify({ spaces: [{ tabs: [
