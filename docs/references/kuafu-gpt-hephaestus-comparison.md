@@ -12,9 +12,9 @@ This reference records source inspection and design rationale. The linked prompt
 
 ## Conclusion
 
-Kuafu and Hephaestus both default to parent execution, delegate side tracks, require evidence-based completion, and scope verification. Their main difference is specialist ownership: Kuafu routes UI work, consultation, and finish-gate review to required specialists before its self-execution default applies; Hephaestus has no required specialists. Neither prompt establishes that its policy performs better. [1]
+Kuafu and Hephaestus both default to parent implementation, delegate side tracks, require evidence-based completion, and scope verification. They differ in specialist ownership and research: Kuafu routes UI work, consultation, and finish-gate review to required specialists before its self-execution default applies, and delegates wide discovery to preserve orchestrator context; Hephaestus has no required specialists and explores in the parent by default. Neither prompt establishes that its policy performs better. [1]
 
-[Kuafu GPT's routing](../../modes/kuafu/gpt.md#do-it-yourself-or-delegate) applies required specialist boundaries, then keeps work with the parent unless a delegated track runs beside the parent's work and lands the task sooner. Its [exploration rules](../../modes/kuafu/gpt.md#exploration-rules) assign distinct unresolved questions without a research quota. Both GPT and [default](../../modes/kuafu/default.md#delegation-policy) make tactical consultation depend on meaningful execution uncertainty; the separate complex self-execution planning and approval workflow remains authoritative.
+[Kuafu GPT's routing](../../modes/kuafu/gpt.md#do-it-yourself-or-delegate) applies required specialist boundaries, then keeps implementation with the parent unless a delegated track runs beside the parent's work and lands the task sooner; discovery that meets its [exploration rules](../../modes/kuafu/gpt.md#exploration-rules) is delegated even when its result is the next input, with one distinct question per researcher and no research quota. Both GPT and [default](../../modes/kuafu/default.md#delegation-policy) make tactical consultation depend on meaningful execution uncertainty; the separate complex self-execution planning and approval workflow remains authoritative.
 
 ## Clause crosswalk
 
@@ -36,8 +36,8 @@ Each external comparison refers to the pinned Hephaestus source. [1]
 | Scope: task tracking | 42 | Both track multi-step work, uncertain scope, multiple files, or branching investigation; Hephaestus specifies a more explicit item lifecycle. [1] |
 | Exploration rules: delegation | 40 | Both dispatch useful research tracks; Kuafu assigns distinct questions without a quota. [1] |
 | Exploration rules: direct tools and researchers | 36, 40, 83–84 | Both support direct lookup and research specialists. [1] |
-| Exploration rules: trust and stop | 38, 40 | Both prohibit duplicate discovery and stop after convergence. [1] |
-| Do it yourself or delegate | 40 | Both default to self-execution, delegate side tracks that land the task sooner, and keep a child result that is the next input with the parent; Kuafu applies required specialist ownership first. [1] |
+| Exploration rules: trust and stop | 38, 40 | Both prohibit duplicate discovery, probe a direct alternative before trusting an absence, check one more layer when a finding looks too simple, and stop after convergence. [1] |
+| Do it yourself or delegate | 40, 48 | Both default implementation to the parent and delegate side tracks that land the task sooner. Hephaestus keeps any child result that is the next input with the parent; Kuafu exempts discovery that meets its exploration rules, to preserve orchestrator context, and applies required specialist ownership first. [1] |
 | Specialists and implementation workers: roster, research audit, worker choice | 83–87 | Kuafu adds dynamic routing, opened-source auditing, and evidence-based worker selection. [1] |
 | Specialists and implementation workers: `taishang` | No direct counterpart | Kuafu defines architecture-consultation triggers and exclusions. |
 | Specialists and implementation workers: `xuannv` | 85 | Both reserve tactical consultation for unresolved decisions rather than known work splits. [1] |
@@ -91,7 +91,7 @@ OpenAI also warns that elaborate recipes and overly broad skill triggers can ove
 Kuafu uses conditional, outcome-first wording while preserving its orchestration responsibilities. This is a design choice, not evidence that Hephaestus performs better.
 
 - **Safe autonomy:** [authorization](../../modes/kuafu/gpt.md#step-2-check-implementation-authorization) and completion remain explicit; the [stop rule](../../modes/kuafu/gpt.md#done-and-verification) forbids ending on a plan, an offer, or a routine question while an authorized next step remains.
-- **Self-execution default:** [routing](../../modes/kuafu/gpt.md#do-it-yourself-or-delegate) keeps work with the parent after required specialist boundaries and delegates only side tracks that land the task sooner.
+- **Self-execution default:** [routing](../../modes/kuafu/gpt.md#do-it-yourself-or-delegate) keeps implementation with the parent after required specialist boundaries, delegates only side tracks that land the task sooner, and delegates wide discovery to preserve orchestrator context.
 - **Decision-based planning:** [tactical consultation](../../modes/kuafu/gpt.md#specialists-and-implementation-workers) addresses unresolved execution choices; the complex self-execution planning gate retains its approvals.
 - **Bounded verification:** [completion](../../modes/kuafu/gpt.md#done-and-verification) retains valid evidence reuse, combined-result acceptance, and GPT-6.2's new-test threshold.
 - **Focused skills and handoffs:** [skill loading](../../modes/kuafu/gpt.md#skill-loading) follows the active workflow; [handoffs](../../modes/kuafu/gpt.md#delegation-packet) preserve independent test judgment and user-required checks.

@@ -105,13 +105,13 @@ Use `wenchang` for delegated external discovery across sources such as web docum
 
 **Delegation Trust Rule:** Avoid duplicating exploration while agents run. Verify returned findings before relying on them.
 
-Stop when you can answer. When a search comes back empty or partial, retry once with a different strategy. After 2 parallel exploration waves yield no new useful facts, stop exploring and act.
+Stop when you can answer. When a search comes back empty or partial, retry once with a different strategy. Before trusting an absence, probe a direct alternative. When a finding looks too simple, check one more layer of callers or dependencies. After 2 parallel exploration waves yield no new useful facts, stop exploring and act.
 
 ## Do it yourself or delegate
 
 Apply required specialist boundaries first: UI work, required consultation, and finish-gate review follow their rules below. Otherwise, do the work yourself by default; reading, lookups, and checks on your own change stay yours however many calls they take.
 
-Delegate a track that runs beside yours and lands the task sooner: a wide investigation across many files or sources (see Exploration rules), or an implementation unit beyond one coherent edit in files you are not touching. If a child's result would be your next input, the work is yours.
+Delegate a track that runs beside yours and lands the task sooner: a wide investigation across many files or sources (see Exploration rules), or an implementation unit beyond one coherent edit in files you are not touching. If a child's result would be your next input, the work is yours. Research is the exception: delegate discovery that meets the Exploration rules even when you wait on its result, so your context stays on orchestration. Known-target lookups stay yours.
 
 ## Specialists and implementation workers
 

@@ -42,6 +42,8 @@ A `gpt.md` may adapt its instructions to these observed behaviors:
 - **Each rule stated once.** Contradictory or over-emphasized skill descriptions lead the model to load guidance that does not help [2]; applying the same caution to prompt bodies is a local extrapolation.
 - **Shorter recipes** where the outcome stays the same. Overly specific recipes can hinder results [2].
 
+Local observation from Kua Fu on `gpt-6.1-sol`: over-delegation meant handing small implementation fixes to workers. No over-delegation of research was recorded. [Kua Fu GPT](kuafu/gpt.md#do-it-yourself-or-delegate) therefore keeps implementation with the parent by default but delegates wide discovery, so orchestrator context stays on routing, supervision, and acceptance.
+
 Reasoning effort is a model setting, not prompt style: set it with the model spec's thinking-level suffix ([model selection](../docs/specs/model-selection-and-fallback.md)). Start at `medium` [4], then adjust to task difficulty: Low for routine tasks, Medium for judgment, High for difficult analysis, and Extra high or Max when High falls short [1].
 
 ## Gemini-Specific Failure Modes
