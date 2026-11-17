@@ -11,7 +11,7 @@ Expose language-server queries through the unified `lsp` tool, append LSP errors
 
 - Clients share only when canonical workspace root and full resolved configuration match.
 - Restart/shutdown MUST release this activation's leases; only the final holder stops a shared server.
-- Idle suspend stops only the server process; the client and its leases stay valid and the next request respawns it. NEVER suspend through `dispose()`, which ends a connection permanently.
+- Idle suspend stops only the server process; the client and its leases stay valid and the next request respawns it. NEVER suspend through `dispose()`, which ends a connection permanently. Initialization and query requests pause the idle clock until the last in-flight request settles.
 - Managed configuration is `~/.pi/agent/lsp.json`; project overrides use `.pi/lsp.json`.
 - You MUST NOT recreate root `lsp.json` or treat `.pi-lsp.json` as the active override.
 - Installation uses the extension directory link, not a settings package entry.

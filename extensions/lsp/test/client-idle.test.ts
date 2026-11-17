@@ -1,18 +1,29 @@
+import { once } from 'node:events';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { LspClient } from '../client';
 
 // Minimal LSP server whose hover answers with its own pid.
 const fakeServerScript = `
 let buffer = Buffer.alloc(0);
+const held = [];
 const send = (message) => {
   const body = JSON.stringify({ jsonrpc: '2.0', ...message });
   process.stdout.write('Content-Length: ' + Buffer.byteLength(body, 'utf8') + '\\r\\n\\r\\n' + body);
 };
 function handle(msg) {
+  if (msg.method === 'test/release') return reply(held.shift());
+  if (msg.method === process.env.HOLD_METHOD) {
+    held.push(msg);
+    const uri = msg.params.textDocument?.uri ?? msg.params.rootUri + '/a.ts';
+    return send({ method: 'textDocument/publishDiagnostics', params: { uri, diagnostics: [] } });
+  }
+  reply(msg);
+}
+function reply(msg) {
   if (msg.method === 'initialize') return send({ id: msg.id, result: { capabilities: { hoverProvider: true } } });
   if (msg.method === 'shutdown') return send({ id: msg.id, result: null });
   if (msg.method === 'exit') return process.exit(0);
@@ -39,16 +50,9 @@ function isAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
-  }
-}
-
-async function until(check: () => boolean, timeoutMs = 5_000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!check()) {
-    if (Date.now() > deadline) throw new Error('condition not met in time');
-    await new Promise((resolve) => setTimeout(resolve, 20));
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') return false;
+    throw error;
   }
 }
 
@@ -60,6 +64,7 @@ describe('LspClient idle suspend', () => {
     Number((await client.hover('a.ts', { line: 0, character: 0 }))?.contents);
 
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     root = mkdtempSync(join(tmpdir(), 'lsp-idle-'));
     writeFileSync(join(root, 'a.ts'), 'const a = 1;\n');
     client = new LspClient(
@@ -77,15 +82,25 @@ describe('LspClient idle suspend', () => {
   });
 
   afterEach(async () => {
-    await client.shutdown();
-    rmSync(root, { recursive: true, force: true });
+    try {
+      await client.shutdown();
+    } finally {
+      vi.useRealTimers();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('stops an idle server and respawns it on the next request', async () => {
     const first = await serverPid();
     expect(client.isInitialized).toBe(true);
 
-    await until(() => !client.isInitialized && !isAlive(first));
+    const child = client['connection']['process'];
+    if (!child) throw new Error('Server did not spawn');
+    const exited = once(child, 'exit');
+    await vi.advanceTimersByTimeAsync(IDLE_MS);
+    await exited;
+    expect(client.isInitialized).toBe(false);
+    expect(isAlive(first)).toBe(false);
 
     const second = await serverPid();
     expect(second).not.toBe(first);
@@ -95,8 +110,49 @@ describe('LspClient idle suspend', () => {
   it('keeps a server that keeps receiving requests', async () => {
     const first = await serverPid();
     for (let i = 0; i < 4; i++) {
-      await new Promise((resolve) => setTimeout(resolve, IDLE_MS / 2));
+      await vi.advanceTimersByTimeAsync(IDLE_MS / 2);
       expect(await serverPid()).toBe(first);
     }
   });
+
+  it.each([
+    { method: 'initialize', count: 1 },
+    { method: 'textDocument/hover', count: 1 },
+    { method: 'textDocument/hover', count: 2 },
+  ])(
+    'waits for in-flight $method ($count concurrent) before starting the idle window',
+    async ({ method, count }) => {
+      client.config.env.HOLD_METHOD = method;
+      const requests: Promise<number>[] = [];
+      for (let i = 0; i < count; i++) {
+        const received = new Promise<void>((resolve) => {
+          const unsubscribe = client.onDiagnostics('a.ts', () => {
+            unsubscribe();
+            resolve();
+          });
+        });
+        requests.push(serverPid());
+        await received;
+      }
+      const child = client['connection']['process'];
+      if (!child?.pid) throw new Error('Server did not spawn');
+      const exited = once(child, 'exit');
+      const completed = expect(Promise.all(requests)).resolves.toEqual(Array(count).fill(child.pid));
+
+      for (const request of requests) {
+        await vi.advanceTimersByTimeAsync(IDLE_MS * 2);
+        expect(isAlive(child.pid)).toBe(true);
+        client['connection'].sendNotification('test/release', null);
+        expect(await request).toBe(child.pid);
+      }
+      await completed;
+
+      await vi.advanceTimersByTimeAsync(IDLE_MS - 1);
+      expect(client.isInitialized).toBe(true);
+      await vi.advanceTimersByTimeAsync(1);
+      await exited;
+      expect(client.isInitialized).toBe(false);
+      expect(isAlive(child.pid)).toBe(false);
+    },
+  );
 });

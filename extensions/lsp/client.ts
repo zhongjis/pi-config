@@ -166,6 +166,7 @@ export class LspClient {
   private stderrLog: string[] = [];
   private initTimestamp = 0;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
+  private requestsInFlight = 0;
 
   readonly config: ResolvedServerConfig;
   private rootPath: string;
@@ -255,7 +256,7 @@ export class LspClient {
 
     const rootUri = pathToUri(this.rootPath);
 
-    const result = (await this.connection.sendRequest('initialize', {
+    const result = (await this.sendRequest('initialize', {
       processId: process.pid,
       rootUri,
       rootPath: this.rootPath,
@@ -324,9 +325,21 @@ export class LspClient {
     this.resetRuntimeState();
   }
 
-  /** Restart the idle clock; an idle server is suspended, not disposed. */
+  private async sendRequest(method: string, params: unknown): Promise<unknown> {
+    this.requestsInFlight++;
+    this.touch();
+    try {
+      return await this.connection.sendRequest(method, params);
+    } finally {
+      this.requestsInFlight--;
+      this.touch();
+    }
+  }
+
+  /** Restart the idle clock only after all requests have settled. */
   private touch(): void {
     clearTimeout(this.idleTimer);
+    if (this.requestsInFlight > 0) return;
     this.idleTimer = setTimeout(() => void this.suspend(), this.idleTimeoutMs);
     this.idleTimer.unref?.();
   }
@@ -499,7 +512,7 @@ export class LspClient {
     const uri = await this.openDocument(filePath);
     return this.retryIfIndexing(
       async () => {
-        const result = await this.connection.sendRequest('textDocument/hover', {
+        const result = await this.sendRequest('textDocument/hover', {
           textDocument: { uri },
           position,
         });
@@ -515,7 +528,7 @@ export class LspClient {
     const uri = await this.openDocument(filePath);
     return this.retryIfIndexing(
       async () => {
-        const result = await this.connection.sendRequest('textDocument/definition', {
+        const result = await this.sendRequest('textDocument/definition', {
           textDocument: { uri },
           position,
         });
@@ -531,7 +544,7 @@ export class LspClient {
     const uri = await this.openDocument(filePath);
     return this.retryIfIndexing(
       async () => {
-        const result = await this.connection.sendRequest('textDocument/references', {
+        const result = await this.sendRequest('textDocument/references', {
           textDocument: { uri },
           position,
           context: { includeDeclaration: true },
@@ -548,7 +561,7 @@ export class LspClient {
     const uri = await this.openDocument(filePath);
     return this.retryIfIndexing(
       async () => {
-        const result = await this.connection.sendRequest('textDocument/implementation', {
+        const result = await this.sendRequest('textDocument/implementation', {
           textDocument: { uri },
           position,
         });
@@ -564,7 +577,7 @@ export class LspClient {
     const uri = await this.openDocument(filePath);
     return this.retryIfIndexing(
       async () => {
-        const result = await this.connection.sendRequest('textDocument/documentSymbol', {
+        const result = await this.sendRequest('textDocument/documentSymbol', {
           textDocument: { uri },
         });
         if (!Array.isArray(result)) return [];
@@ -580,7 +593,7 @@ export class LspClient {
     await this.ensureInitialized();
     return this.retryIfIndexing(
       async () => {
-        const result = await this.connection.sendRequest('workspace/symbol', { query });
+        const result = await this.sendRequest('workspace/symbol', { query });
         if (!Array.isArray(result)) return [];
         return result as SymbolInformation[];
       },
@@ -592,7 +605,7 @@ export class LspClient {
 
   async prepareCallHierarchy(filePath: string, position: Position): Promise<CallHierarchyItem[]> {
     const uri = await this.openDocument(filePath);
-    const result = await this.connection.sendRequest('textDocument/prepareCallHierarchy', {
+    const result = await this.sendRequest('textDocument/prepareCallHierarchy', {
       textDocument: { uri },
       position,
     });
@@ -602,14 +615,14 @@ export class LspClient {
 
   async incomingCalls(item: CallHierarchyItem): Promise<CallHierarchyIncomingCall[]> {
     this.touch();
-    const result = await this.connection.sendRequest('callHierarchy/incomingCalls', { item });
+    const result = await this.sendRequest('callHierarchy/incomingCalls', { item });
     if (!Array.isArray(result)) return [];
     return result as CallHierarchyIncomingCall[];
   }
 
   async outgoingCalls(item: CallHierarchyItem): Promise<CallHierarchyOutgoingCall[]> {
     this.touch();
-    const result = await this.connection.sendRequest('callHierarchy/outgoingCalls', { item });
+    const result = await this.sendRequest('callHierarchy/outgoingCalls', { item });
     if (!Array.isArray(result)) return [];
     return result as CallHierarchyOutgoingCall[];
   }
@@ -622,7 +635,7 @@ export class LspClient {
     context: CodeActionContext,
   ): Promise<CodeAction[]> {
     const uri = await this.openDocument(filePath);
-    const result = await this.connection.sendRequest('textDocument/codeAction', {
+    const result = await this.sendRequest('textDocument/codeAction', {
       textDocument: { uri },
       range,
       context,
