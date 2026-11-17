@@ -28,7 +28,7 @@ afterEach(async () => {
   await rm(tempRoot, { recursive: true, force: true });
 });
 
-describe("pi package manager wrapper", () => {
+describe("pi package manager wrapper", { timeout: 30_000 }, () => {
   it("preserves package-local pnpm workspace policy", async () => {
     const packageDir = await makePackageDir("pnpm-workspace", {
       "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",

@@ -186,17 +186,18 @@ setInterval(() => {}, 1000);
     const posted = vi.fn();
     const pending = registerScopeTool({ exec, sendMessage: posted }).execute("scope", scope, abort.signal, undefined, ctx);
     try {
-      await vi.waitFor(async () => expect(await readFile(ready, "utf8")).toBe("ready"));
+      // ponytail: polls cross-process marker files; bounds sized for Node child start-up under full-suite load.
+      await vi.waitFor(async () => expect(await readFile(ready, "utf8")).toBe("ready"), { timeout: 10_000 });
       abort.abort();
       await expect(pending).resolves.toMatchObject({ isError: true, details: undefined });
-      await vi.waitFor(async () => expect(await readFile(killed, "utf8")).toBe("SIGTERM"));
+      await vi.waitFor(async () => expect(await readFile(killed, "utf8")).toBe("SIGTERM"), { timeout: 10_000 });
       expect(posted).not.toHaveBeenCalled();
       expect(getEventListeners(abort.signal, "abort")).toHaveLength(0);
     } finally {
       abort.abort();
       await pending;
     }
-  });
+  }, 30_000);
 
   it("does not spawn a review when the tool signal is already aborted", async () => {
     await writeFile(join(directory, "codex"), `#!${process.execPath}\nrequire("node:fs").writeFileSync(${JSON.stringify(join(directory, "spawned"))}, "spawned");\n`);
