@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { describe, expect, it, vi } from "vitest";
 import { checkGraphDelegation } from "../src/graph/delegation-preflight.js";
 import { validateGraphRestore } from "../src/graph/graph-restore-validation.js";
@@ -208,12 +209,19 @@ describe("Caller notes on loop re-entry", () => {
 describe("cancellation", () => {
   it("retains a parked decider until it settles and never escalates", async () => {
     const controller = new AbortController(); const parked = deferred<DecisionResult>(); const awaitEscalation = vi.fn<NonNullable<NodeHost["awaitEscalation"]>>();
-    let entered = false; let settled = false;
-    const running = run({ decide: () => { entered = true; return parked.promise; }, awaitEscalation }, graph(), { signal: controller.signal });
+    const entered = deferred<void>(); const cancelled = deferred<void>(); let settled = false;
+    const definition = graph();
+    const running = run({ decide: () => { entered.resolve(); return parked.promise; }, awaitEscalation }, definition, {
+      signal: controller.signal, onCheckpoint: state => {
+        check(definition)(state);
+        if (state.runtime?.cancelled) cancelled.resolve();
+      },
+    });
     void running.then(() => { settled = true; });
-    await vi.waitFor(() => expect(entered).toBe(true));
+    await entered.promise;
     controller.abort();
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await cancelled.promise;
+    await setImmediate();
     try { expect(settled).toBe(false); }
     finally { parked.resolve(answer(true, 0.3)); }
     const result = await running;
@@ -222,12 +230,19 @@ describe("cancellation", () => {
 
   it("retains a parked escalation until its handoff settles", async () => {
     const controller = new AbortController(); const parked = deferred<NodeSpawnResult>();
-    let entered = false; let settled = false;
-    const running = run({ decide: async () => answer(true, 0.3), awaitEscalation: () => { entered = true; return parked.promise; } }, graph(), { signal: controller.signal });
+    const entered = deferred<void>(); const cancelled = deferred<void>(); let settled = false;
+    const definition = graph();
+    const running = run({ decide: async () => answer(true, 0.3), awaitEscalation: () => { entered.resolve(); return parked.promise; } }, definition, {
+      signal: controller.signal, onCheckpoint: state => {
+        check(definition)(state);
+        if (state.runtime?.cancelled) cancelled.resolve();
+      },
+    });
     void running.then(() => { settled = true; });
-    await vi.waitFor(() => expect(entered).toBe(true));
+    await entered.promise;
     controller.abort();
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await cancelled.promise;
+    await setImmediate();
     try { expect(settled).toBe(false); }
     finally { parked.resolve({ ok: false, skipped: true, error: "Escalation cancelled." }); }
     expect((await running).status).toBe("aborted");
@@ -247,16 +262,19 @@ describe("restore", () => {
   /** Runs until a lifecycle reload interrupts a parked escalation; returns the undrained and drained checkpoints. */
   async function interruptedEscalation(gate: Partial<DecisionGateNode> = {}) {
     const definition = graph(gate); const controller = new AbortController(); const parked = deferred<NodeSpawnResult>();
-    let entered: EscalationRequest | undefined; let saved: SchedulerState | undefined;
-    const running = run({ decide: async () => answer(true, 0.3), awaitEscalation: request => { entered = request; return parked.promise; } }, definition,
-      { signal: controller.signal, onCheckpoint: state => { check(definition)(state); saved = state; } });
-    await vi.waitFor(() => expect(entered).toBeDefined());
+    const entered = deferred<EscalationRequest>(); const cancelled = deferred<void>(); let saved: SchedulerState | undefined;
+    const running = run({ decide: async () => answer(true, 0.3), awaitEscalation: request => { entered.resolve(request); return parked.promise; } }, definition,
+      { signal: controller.signal, onCheckpoint: state => {
+        check(definition)(state); saved = state;
+        if (state.runtime?.executionLedger?.some(row => "payload" in row && row.payload.kind === "cancel-requested")) cancelled.resolve();
+      } });
+    const request = await entered.promise;
     controller.abort("reload");
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await cancelled.promise;
     const undrained = structuredClone(required(saved));
     parked.resolve({ ok: false, skipped: true, error: "Escalation cancelled." });
     await running;
-    return { reason: required(entered).reason, checkpoints: { undrained, drained: required(saved) } };
+    return { reason: request.reason, checkpoints: { undrained, drained: required(saved) } };
   }
 
   it.each(["undrained", "drained"] as const)("restores an always-escalating %s gate without deciding", async kind => {

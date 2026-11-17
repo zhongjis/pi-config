@@ -1,3 +1,4 @@
+import { setImmediate } from "node:timers/promises";
 import { expect, it, vi } from "vitest";
 import { createActor, toPromise } from "xstate";
 import { type CoordinatorRequest, CoordinatorRequestJournal } from "../src/graph/coordinator-protocol.js";
@@ -7,6 +8,7 @@ import { validateGraphRestore } from "../src/graph/graph-restore-validation.js";
 import type { AgentGraph, BoundedFeedbackNode } from "../src/graph/ir.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
 import type { SchedulerState } from "../src/graph/scheduler.js";
+import { deferred } from "./graph-drain.fixture.js";
 
 const feedback: BoundedFeedbackNode = {
   type: "bounded_feedback", maxIterations: 2, maxItemsPerIteration: 2, maxTotalItems: 4,
@@ -118,19 +120,23 @@ it("replays committed feedback requests without allocation and rejects conflicti
 it.each(["item", "evaluator"] as const)("preserves %s skip/retry controls and physical drain", async target => {
   for (const operation of ["skip", "retry"] as const) {
     let control: GraphControl | undefined; let release: (() => void) | undefined; let calls = 0; let finished = false;
-    const pending = runGraph(graph, input, { concurrency: 1, onCheckpoint: () => {}, onControl: value => { control = value; }, host: {
+    const entered = deferred<void>(); const cancelled = deferred<void>();
+    const pending = runGraph(graph, input, { concurrency: 1, onCheckpoint: state => {
+      if (state.runtime?.executionLedger?.some(row => "payload" in row && row.payload.kind === "cancel-requested" && row.payload.reason === operation)) cancelled.resolve();
+    }, onControl: value => { control = value; }, host: {
       spawnAgent: async request => {
         if ((request.agentType === "judge") === (target === "evaluator")) {
-          calls++; if (calls === 1) await new Promise<void>(resolve => { release = resolve; });
+          calls++; if (calls === 1) await new Promise<void>(resolve => { release = resolve; entered.resolve(); });
         }
         return host.spawnAgent(request);
       },
     } });
     void pending.then(() => { finished = true; });
     try {
-      await vi.waitFor(() => expect(release).toBeDefined());
+      await entered.promise;
       expect(control?.[operation](target === "item" ? 3 : 2)).toBe(true);
-      await new Promise(resolve => setTimeout(resolve, 5));
+      await cancelled.promise;
+      await setImmediate();
       expect(calls).toBe(1); expect(finished).toBe(false);
     } finally { release?.(); }
     const result = await pending;

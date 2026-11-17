@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { boot, mockSessions, required } from "./graph-run-registration.fixture.js";
+import { flush } from "./helpers/session-seam.js";
 
 describe("registered result retrieval", () => {
   it("returns a durable human request before completion without opening UI", async () => {
@@ -38,7 +39,7 @@ describe("registered result retrieval", () => {
     const waiting = required(host.tools.get("get_agent_result")).execute("read", { run_id: id, wait: true }, undefined, undefined, host.ctx)
       .then(result => { settled = true; return result; });
     try {
-      await new Promise(resolve => setTimeout(resolve, 20));
+      await flush();
       expect(settled).toBe(false);
     } finally { required(release)(); }
     const result = await waiting;

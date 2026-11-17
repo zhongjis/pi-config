@@ -537,8 +537,7 @@ describe("Boomerang Extension", () => {
   }
 
   async function flushDeferredFallbackHandoff() {
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
   }
 
   function expectBoomerangHandoff(count = 1, expectedSummary?: string) {
@@ -1853,17 +1852,18 @@ describe("Boomerang Extension", () => {
     it("supports canceling mid-rethrow", async () => {
       writePrompt("user", "task", "Task");
       const waitResolvers: Array<() => void> = [];
-      waitForIdleMock.mockImplementation(() => new Promise<void>((resolve) => {
-        waitResolvers.push(() => {
-          agentIdle = true;
-          resolve();
-        });
-      }));
+      const registered = new Promise<void>((registered) => {
+        waitForIdleMock.mockImplementation(() => new Promise<void>((resolve) => {
+          waitResolvers.push(() => {
+            agentIdle = true;
+            resolve();
+          });
+          registered();
+        }));
+      });
 
       const running = runBoomerang("/task --rethrow 3");
-      for (let attempts = 0; waitResolvers.length < 1 && attempts < 20; attempts++) {
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
+      await registered;
       expect(waitResolvers).toHaveLength(1);
       await runCancel();
       waitResolvers[0]?.();
@@ -1874,24 +1874,25 @@ describe("Boomerang Extension", () => {
     });
 
     it("stops when cancelled before a rethrow turn starts", async () => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       writePrompt("user", "task", "Task");
-      (mockPi.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: string) => {
-        sentMessages.push(content);
-        addSessionEntry({
-          type: "message",
-          message: { role: "user", content, timestamp: Date.now() },
-          timestamp: new Date().toISOString(),
+      const sent = new Promise<void>((sent) => {
+        (mockPi.sendUserMessage as ReturnType<typeof vi.fn>).mockImplementation((content: string) => {
+          sentMessages.push(content);
+          addSessionEntry({
+            type: "message",
+            message: { role: "user", content, timestamp: Date.now() },
+            timestamp: new Date().toISOString(),
+          });
+          sent();
         });
       });
 
       const running = runBoomerang("/task --rethrow 2");
-      await Promise.resolve();
+      await sent;
       await runCancel();
-
-      await Promise.race([
-        running,
-        new Promise((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for rethrow cancel")), 200)),
-      ]);
+      await vi.advanceTimersByTimeAsync(10);
+      await running;
 
       expect(navigateTreeCalls).toHaveLength(0);
     });
@@ -1994,6 +1995,9 @@ describe("Boomerang Extension", () => {
   });
 
   describe("integration behavior", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    });
     it("does not summarize before the assistant responds", async () => {
       writePrompt("user", "task", "---\nmodel: claude-opus-4-6\n---\nTask content");
 
@@ -2709,6 +2713,9 @@ describe("Boomerang Extension", () => {
   });
 
   describe("auto-boomerang mode", () => {
+    beforeEach(() => {
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    });
     it("toggles auto mode through /boomerang auto", async () => {
       await runBoomerang("auto on");
       expect(uiMock.notify).toHaveBeenCalledWith("Auto-boomerang on.", "info");

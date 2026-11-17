@@ -123,9 +123,7 @@ describe("icm extension", () => {
 		for (let i = 0; i < 20; i++) toolResult("edited file contents here", "edit");
 		for (let i = 0; i < 20; i++) toolResult("icm recall output that is long enough", "bash", { command: "icm recall foo" });
 		for (let i = 0; i < 9; i++) toolResult(`tool output number ${i} is long enough`);
-		const started = Date.now();
 		expect(toolResult("tool output number 9 is long enough")).toBeUndefined();
-		expect(Date.now() - started).toBeLessThan(100);
 		expect(calls().some((line) => line.startsWith("extract"))).toBe(false);
 
 		await vi.waitFor(() => expect(calls().filter((line) => line.startsWith("extract --enqueue"))).toHaveLength(1), { timeout: 5000 });

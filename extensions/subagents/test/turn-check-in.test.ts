@@ -7,12 +7,12 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SUBAGENT_SUPERVISION_CEILING_MS, getBackgroundSupervisionAction } from "../src/background-supervision.js";
 import { turnCheckInNotice } from "../src/turn-ceiling.js";
 import type { AgentRecord } from "../src/types.js";
 import { boot, dir, mockSessions } from "./graph-run-registration.fixture.js";
-import { deferred } from "./helpers/session-seam.js";
+import { deferred, flush } from "./helpers/session-seam.js";
 
 type Host = ReturnType<typeof boot>;
 interface Registry {
@@ -24,7 +24,7 @@ interface Registry {
 const CHECK_IN = 2;
 const textOf = (result: { content: Array<{ type: string; text?: string }> }) => result.content[0]?.text ?? "";
 const registry = () => (globalThis as Record<symbol, unknown>)[Symbol.for("pi-subagents:manager")] as Registry;
-const settle = () => new Promise(resolve => setTimeout(resolve, 350));
+afterEach(() => vi.useRealTimers());
 
 interface ParkedRun {
   release(): void;
@@ -90,6 +90,7 @@ const checkInMessages = (host: Host) => host.api.sendMessage.mock.calls.filter((
 
 describe("orchestrator turn check-in", () => {
   it("returns a waiting get_agent_result at the check-in without consuming completion; verbose reads the running conversation", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const runs = parkRuns();
     const host = boot();
     const id = await launchBackground(host);
@@ -108,22 +109,32 @@ describe("orchestrator turn check-in", () => {
       expect(verbose).toContain("[User]: inspect the repo");
 
       // A woken waiter is the only delivery; completion still arrives as a notification.
+      const completion = deferred<string>();
+      host.api.sendMessage.mockImplementation(message => {
+        if (message.content.includes(`<task-id>${id}</task-id>`)) completion.resolve(message.content);
+      });
       runs[0]?.release();
-      expect((await host.notification(id)).content).toContain("inspect answer");
-      await settle();
+      await vi.advanceTimersByTimeAsync(350);
+      expect(await completion.promise).toContain("inspect answer");
       expect(checkInMessages(host)).toHaveLength(0);
     } finally { for (const run of runs) run.release(); }
   });
 
   it("sends one held follow-up when no waiter is active, and none for untracked RPC spawns", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const runs = parkRuns();
     const host = boot();
+    const delivered = deferred();
+    host.api.sendMessage.mockImplementation(message => {
+      if (message.customType === "subagent-notification" && message.details?.status === "running") delivered.resolve();
+    });
     const id = await launchBackground(host);
     const rpcId = registry().spawn({}, host.ctx, "fixture", "rpc", { description: "rpc run", isBackground: true });
     try {
       await checkIn(runs, 0);
       await checkIn(runs, 1);
-      await settle();
+      await vi.advanceTimersByTimeAsync(350);
+      await delivered.promise;
       expect(checkInMessages(host)).toHaveLength(1);
       const [message, options] = checkInMessages(host)[0] ?? [];
       expect(message).toMatchObject({ customType: "subagent-notification", content: turnCheckInNotice({ id, description: "inspect repo" }, CHECK_IN), display: true, details: { id, status: "running" } });
@@ -151,7 +162,7 @@ describe("orchestrator turn check-in", () => {
       expect(registry().getRecord(id)).toMatchObject({ status: "running", isBackground: true, invocation: { runInBackground: true }, toolCallId: "tc-fg", joinMode: "smart" });
 
       next = agent?.execute("tc-next", { prompt: "next", description: "next task", subagent_type: "fixture" }, undefined, undefined, host.ctx);
-      await settle();
+      await flush();
       expect(runs).toHaveLength(1);
 
       runs[0]?.release();
@@ -196,11 +207,11 @@ describe("orchestrator turn check-in", () => {
   it("converts a foreground live resume at the check-in; its completion arrives as a background notification", async () => {
     vi.stubEnv("SUBAGENT_TURN_CHECK_IN", "1");
     const drain = deferred();
+    const firstTurn = deferred();
     // The spawn answers at once; the resume runs one unfinished tool turn, then parks.
     mockSessions(async (prompt, session) => {
       if (prompt === "audit") return `${prompt} answer`;
-      // A real first turn is asynchronous; the foreground caller is waiting by then.
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await firstTurn.promise;
       session.turn(true);
       await drain.promise;
       return `${prompt} answer`;
@@ -210,7 +221,10 @@ describe("orchestrator turn check-in", () => {
     const first = await agent?.execute("tc-first", { prompt: "audit", description: "audit repo", subagent_type: "fixture" }, undefined, undefined, host.ctx);
     const id = /Agent ID: (\S+)/.exec(textOf(first ?? { content: [] }))?.[1] ?? "";
     try {
-      const resumed = await agent?.execute("tc-resume", { prompt: "continue", description: "continue audit", subagent_type: "fixture", resume: id }, undefined, undefined, host.ctx);
+      const resuming = agent?.execute("tc-resume", { prompt: "continue", description: "continue audit", subagent_type: "fixture", resume: id }, undefined, undefined, host.ctx);
+      await flush();
+      firstTurn.resolve();
+      const resumed = await resuming;
       expectConverted(resumed, { id, description: "audit repo" }, 1, "tc-resume");
       drain.resolve();
       const completion = await host.notification(id);

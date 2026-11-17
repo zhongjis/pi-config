@@ -82,6 +82,7 @@ afterEach(() => {
   if (priorGlobal === undefined) delete (globalThis as any)[MANAGER_KEY];
   else (globalThis as any)[MANAGER_KEY] = priorGlobal;
   vi.mocked(openSession).mockReset();
+  vi.useRealTimers();
 });
 
 describe("Symbol.for manager registry across activations", () => {
@@ -126,6 +127,7 @@ describe("Symbol.for manager registry across activations", () => {
 
 describe("owner session_shutdown ordering (/new, /resume, quit)", () => {
   it("stops every agent before awaiting, sends no follow-up while draining, then releases the slot", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     delete (globalThis as any)[MANAGER_KEY];
     const root = makePi();
     subagentsExtension(root.pi);
@@ -145,8 +147,8 @@ describe("owner session_shutdown ordering (/new, /resume, quit)", () => {
 
     const shutdown = Promise.resolve(root.lifecycle.get("session_shutdown")?.({ reason: "new" }, ctx()));
     expect(records.map(record => [record.status, record.interruptionCause])).toEqual([["stopped", "lifecycle"], ["stopped", "lifecycle"]]);
-    // Longer than the 200ms follow-up hold: the first agent settled, the second still drains.
-    await new Promise(resolve => setTimeout(resolve, 250));
+    // Advance past the follow-up hold while the second agent still drains.
+    await vi.advanceTimersByTimeAsync(250);
     expect(root.pi.sendMessage).not.toHaveBeenCalled();
     expect((globalThis as any)[MANAGER_KEY], "a child opening during the drain must not find a free slot").toBe(entry);
     lingering.resolve("b");

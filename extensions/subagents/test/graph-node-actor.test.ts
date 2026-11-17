@@ -65,12 +65,13 @@ describe("agentNodeLogic — cancellation", () => {
   it("aborts the child's signal when the actor is stopped", async () => {
     let captured: AbortSignal | undefined;
     const execution = deferred<NodeSpawnResult>();
+    const entered = deferred<void>();
     const host: NodeHost = {
-      spawnAgent: (_request, signal) => { captured = signal; return execution.promise; },
+      spawnAgent: (_request, signal) => { captured = signal; entered.resolve(); return execution.promise; },
     };
     const actor = machine(agentInput({ host }));
     actor.admit();
-    await new Promise(resolve => setTimeout(resolve, 0));
+    await entered.promise;
     expect(captured).toBeDefined();
     expect(captured?.aborted).toBe(false);
     actor.parent.stop();

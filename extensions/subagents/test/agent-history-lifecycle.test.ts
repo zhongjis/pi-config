@@ -1,14 +1,17 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { boot, dir, mockSessions } from "./graph-run-registration.fixture.js";
+import { boot, dir, mockSessions, required } from "./graph-run-registration.fixture.js";
+import { AgentHistoryStore } from "../src/agent-history.js";
 
 const MANAGER_KEY = Symbol.for("pi-subagents:manager");
 
 describe("independent agent history lifecycle", () => {
   it("disables capture before reload abort, then shows the reloaded row as stopped", async () => {
+    const loadHistory = vi.spyOn(AgentHistoryStore, "load");
     const host = boot();
     await host.lifecycle("session_start");
+    const history = await required(loadHistory.mock.results[0]).value;
     const sessionFile = join(dir, "child.jsonl");
     const { writeFile } = await import("node:fs/promises");
     await writeFile(sessionFile, "");
@@ -25,14 +28,13 @@ describe("independent agent history lifecycle", () => {
       run_in_background: true,
     }, undefined, undefined, host.ctx);
     const historyPath = join(dir, "global", "local", "parent", "agent-history.json");
-    await vi.waitFor(async () => {
-      expect(await readFile(historyPath, "utf8")).toContain('"status":"running"');
-    });
+    await history.flush();
+    expect(await readFile(historyPath, "utf8")).toContain('"status":"running"');
     const before = await readFile(historyPath, "utf8");
     expect(before).not.toContain("SECRET_");
     await host.lifecycle("session_shutdown", { reason: "reload" });
-    await vi.waitFor(() => expect(settled).toBe(true));
-    await new Promise(resolve => setTimeout(resolve, 50));
+    expect(settled).toBe(true);
+    await history.flush();
     expect(await readFile(historyPath, "utf8")).toBe(before);
 
     const next = boot();

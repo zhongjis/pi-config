@@ -251,16 +251,14 @@ describe("get_agent_result wait:true on a queued agent", () => {
       new Promise<string>((resolve) => setTimeout(() => resolve("timed-out"), 100)),
     ]);
 
-    let completedResult: any;
-    for (let i = 0; i < 40 && !completedResult; i++) {
-      while (resolvers.length > 0) resolvers.shift()!();
-      await flush();
-      const result = await tools
-        .get("get_agent_result")
-        .execute("tc-queued-result", { run_id: queuedId }, undefined, undefined, ctx());
-      if (textOf(result).includes("THE-RESULT-PAYLOAD")) completedResult = result;
-      await new Promise((r) => setTimeout(r, 25));
-    }
+    const completed = tools
+      .get("get_agent_result")
+      .execute("tc-queued-result", { run_id: queuedId, wait: true }, undefined, undefined, ctx());
+    await flush();
+    // Existing runners stay gated; the queued runner completes as soon as admitted.
+    vi.mocked(openSession).mockResolvedValue(opened(fakeSession(() => "THE-RESULT-PAYLOAD")));
+    while (resolvers.length > 0) resolvers.shift()?.();
+    const completedResult = await completed;
 
     await waitOutcome;
     await lifecycle.get("session_shutdown")?.();
