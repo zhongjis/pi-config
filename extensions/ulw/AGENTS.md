@@ -16,14 +16,14 @@ Inject the opt-in ultrawork prompt in Kua Fu mode when a message contains a bare
 - Both variants MUST stop redundant work once useful evidence satisfies the request, without waiving required final-state checks, manual QA, or approval/handoff gates.
 - Both variants MUST respect research-only, review-only, and proposal-only scope and planner approval/handoff gates; ULW adds rigor, not authority.
 - Both variants MUST derive scenarios from the agreed task as evidence, not redefine its outcomes, and size them at 1-2 for small single-surface work and 3+ for risky or multi-surface work; completion requires fulfilling agreed outcomes and constraints with supporting evidence, not passing checks alone.
-- Both variants MUST read covering tests before changes, reproduce bugs before fixing, compare refactor results before and after the change, and add tests only where repository convention keeps them and regressions would otherwise go unnoticed. Prototypes, spikes, docs, prompts, and visual-only changes get no new tests. Required repository gates and manual QA for runnable changed user surfaces remain binding.
+- Both variants MUST read covering tests before changes, reproduce bugs before fixing, and compare refactor results before and after the change. The `programming` skill owns test design. Required repository gates and manual QA for runnable changed user surfaces remain binding.
 - You MUST review prompt prose rather than assert it; tests MAY protect machine-consumed contracts with synthetic mechanism fixtures, NEVER pin live repository data. Reuse evidence until relevant changes invalidate it.
 
 - Accepted activation MUST emit one session-scoped `ulw:activated` signal; ULW NEVER reads or mutates Goal state. Goal owns the separate hidden bootstrap and lifecycle. Session switching MUST discard pending injection.
 
 ## Work Guidance
 
-- Fidelity review and UI QA policy live in the Kua Fu body's UI work and verification sections ([default.md](../../modes/kuafu/default.md), [gpt.md](../../modes/kuafu/gpt.md)); the ULW manual-QA table only names the real surface per change type.
+- The Manual QA sections cover real-surface evidence and capability gaps. Follow the live Herdr Core CLI manual for terminal operation.
 
 ## Verification
 
