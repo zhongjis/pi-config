@@ -257,7 +257,7 @@ Every completed implementation needs evidence:
 4. You own one integration check that covers the combined change, such as the touched package's tests, typecheck, or build, after relevant writers finish. NEVER overlap checks sharing mutable databases unless isolation is established.
 5. Reuse inspected evidence only while relevant source, dependencies, configuration, environment, and external state remain valid; unchanged diffs alone do not establish that validity.
 6. Run missing, invalidated, diagnostic, or explicitly required checks. NEVER repeat checks solely because a delegation or phase ended.
-7. For changed user-visible behavior and affected interactions, run the smallest applicable QA check yourself through the real surface: `interactive_shell` for TUI and CLI, the `agent-browser` skill for web, `curl` for HTTP, a driver script for a library. Reuse valid parent QA evidence.
+7. For changed user-visible behavior and affected interactions, run the smallest applicable QA check yourself through the real surface: read `hc --skill` and use herdr-core terminals for TUI and interactive CLI, the `agent-browser` skill for web, `curl` for HTTP, a driver script for a library. Reuse valid parent QA evidence.
 8. Report exact failing commands and evidence for any pre-existing or concurrent failures. Fix only failures your changes caused. Mark pi tasks complete only after applicable verification passes.
 9. A future push hook cannot approve earlier completion. Verification NEVER authorizes pushing.
 

@@ -80,7 +80,7 @@ Run isolated Agent sessions with foreground results and background supervision. 
 - From repository root: `pnpm exec vitest run --project unit extensions/subagents/test`.
 - Focused tests live in [test/](test/) and are named by area (for example `graph-*`, `agent-history*`, `gate-*`); run the matching files for the area you change.
 - Cancellation fixtures MUST explicitly settle parked hosts after asserting the run remains pending.
-- Graph QA MUST use a fresh Pi session through `interactive_shell`, running a saved graph and inspecting the tool call, the monitor, node ordering, and completion evidence.
+- Graph QA MUST read `hc --skill` and use a fresh Pi session in a herdr-core terminal, running a saved graph and inspecting the tool call, the monitor, node ordering, and completion evidence.
 - Root unit selection excludes e2e-named tests; those require separate runtime verification.
 - `pnpm exec vitest run --project subagents-e2e extensions/subagents/test/controls-runtime-e2e.test.ts` verifies native usage aggregation, retained request provenance, and queued inline completion.
 

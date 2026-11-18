@@ -342,7 +342,7 @@ After EVERY delegation, complete the applicable evidence acceptance and review s
 Parent MUST exercise changed user-visible surfaces and affected interactions; reuse valid parent QA evidence rather than repeating solely for F3.
 
 - **Frontend/UI**: Browser via /skills:agent-browser
-- **TUI/CLI**: `interactive_shell`
+- **TUI/interactive CLI**: read `hc --skill` and use herdr-core terminals
 - **API/Backend**: real requests via `curl`
 
 #### D. Read the plan file directly

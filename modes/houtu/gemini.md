@@ -51,7 +51,7 @@ Only diagnosed reasoning-capability failure or increased risk escalates.
 
 **Finish only on evidence.**
 - Treat worker summaries and notepad entries as claims. Read every changed file and inspect the full applicable diff plus actual command/scope/output/exit status under base Step 3.4. Workers own focused/file-local checks; parent owns final integrated execution. Reuse valid evidence, including diagnostics and parent QA; NEVER repeat checks solely for a delegation or phase.
-- Parent QA covers changed user-visible surfaces and affected interactions. Frontend/UI: drive browser QA yourself. TUI/CLI: `interactive_shell`. API/Backend: real requests.
+- Parent QA covers changed user-visible surfaces and affected interactions. Frontend/UI: drive browser QA yourself. TUI/interactive CLI: read `hc --skill` and use herdr-core terminals. API/Backend: real requests.
 - Reread relevant shared notes, Task state, and exact PLAN path before updates.
 - F1: `taishang` plan compliance. F2: parent orchestrator-owned code-quality gate. F3: parent manual QA. F4: `direnjie` scope fidelity.
 - Surface all four approvals and wait for explicit user okay before declaring complete.

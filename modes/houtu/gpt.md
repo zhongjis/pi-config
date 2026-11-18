@@ -103,7 +103,7 @@ Worker summaries are claims, not evidence. For each changed workstream, you MUST
 3. Inspect actual verification command, scope, output, and exit status, not summaries alone. Reuse evidence only while relevant source, dependencies, configuration, environment, and external state remain valid; unchanged diffs alone do not establish that validity.
 4. Run missing, invalidated, diagnostic, or explicitly required checks, including LSP diagnostics when available and applicable and PLAN-required tests/typechecks/builds. NEVER repeat checks solely because a delegation or phase ended.
 5. Use `bash` for non-interactive verification commands.
-6. Use `interactive_shell` only when manual QA requires interaction.
+6. When manual QA requires terminal interaction, read `hc --skill` and use a herdr-core terminal.
 7. Exercise changed user-visible surfaces and affected interactions yourself with applicable browser, CLI, or API checks; reuse valid parent QA evidence.
 8. Use MCP tools through `codemode` (`tools.mcp__<server>__<tool>`; servers listed in `<mcp_servers>`) when external MCP evidence is required.
 9. Re-read relevant shared notes, Task state, and the exact PLAN path.

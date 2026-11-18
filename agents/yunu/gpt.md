@@ -132,7 +132,7 @@ Fix only issues your changes caused. Pre-existing failures unrelated to the task
 
 Diagnostics catch type errors, not logic bugs; tests cover only the cases their authors anticipated. "Done" requires that you have personally used the deliverable through its matching surface and observed it working, or have still-valid evidence of doing so. The surface determines the tool; source readback is not runtime or rendered verification.
 
-- **TUI / CLI / shell binary** - launch it with an appropriate available tool. Run the happy path, try one bad input, hit `--help` when applicable, and inspect actual output. Use `interactive_shell` only if exposed and interaction is required.
+- **TUI / CLI / shell binary** - launch it with an appropriate available tool. Run the happy path, try one bad input, hit `--help` when applicable, and inspect actual output. When terminal interaction is required, read `hc --skill` and use a herdr-core terminal.
 - **Web / browser-rendered UI** - inspect the actual render with `agent-browser` and `look_at`. Open the page, click changed controls, fill relevant forms, and inspect errors. Capture desktop/mobile and material states, compare pinned references, and exercise changed controls. Follow the skill's bounded inspection budget, batching material fixes. A spent inspection budget is not acceptance; report remaining criteria.
 - **HTTP API or running service** - hit the live process with `curl` or an available driver. Reading the handler signature is not validation.
 - **Library / SDK / module** - use an existing check or minimal available driver that imports the code and executes the changed path end-to-end. Compilation passing is not validation.
