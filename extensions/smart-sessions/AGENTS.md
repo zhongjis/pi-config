@@ -1,6 +1,6 @@
 ## Purpose
 
-Maintain LLM-generated session names and herdr-app tab names.
+Maintain LLM-generated session names and per-pane `pi.session` labels.
 
 ## Ownership
 
@@ -8,8 +8,8 @@ Maintain LLM-generated session names and herdr-app tab names.
 
 ## Local Contracts
 
-- [smart-sessions](herdr.ts) MUST generate host titles separately within the existing summary call and preserve Pi summaries, without startup renames, additional model calls, or title persistence. Rename only the exact HC terminal’s associated tab after re-reading its name; positional numeric defaults, a name equal to the terminal’s reported agent (`app`, case-insensitive; herdr-app’s + menu names agent tabs this way), and own `[w]` names are eligible, manual names are preserved. The app title is tab-scoped, not pane-scoped.
-- On `session_shutdown` for any reason except `reload`, restore only a title this process wrote and the host still shows: reset the herdr-app tab to the agent name it took over, else to its number with an empty name.
+- [smart-sessions](herdr.ts) MUST generate host titles separately within the existing summary call and preserve Pi summaries, without startup renames, additional model calls, or title persistence. Write the title only as the exact HC terminal’s `pi.session=[w] <title>` label; never rename herdr-app tabs, which panes share.
+- On `session_shutdown` for any reason except `reload`, clear the label this process wrote.
 
 ## Work Guidance
 

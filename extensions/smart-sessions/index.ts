@@ -5,7 +5,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { ThinkingLevel } from "../lib/thinking-level.js";
 import { resolveToolModelCandidates } from "../lib/tool-models.js";
 import { isTui, registerTuiCommand } from "../lib/mode.js";
-import { getPaneContext, HERDR_OUTPUT_INSTRUCTIONS, type PaneClaim, parseHerdrSummary, renamePane, restorePane } from "./herdr.js";
+import { clearPaneLabel, getPaneContext, HERDR_OUTPUT_INSTRUCTIONS, labelPane, type PaneContext, parseHerdrSummary } from "./herdr.js";
 
 // -- Configuration --------------------------------------------------------
 
@@ -157,7 +157,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 	let lastError = "";            // last error (code only)
 	let latestCtx: ExtensionContext | undefined; // most recent ctx for widget updates
 	let summaryAbort: AbortController | undefined; // aborts the in-flight summary on shutdown
-	let paneClaim: PaneClaim | undefined; // host title this process wrote; restored on shutdown
+	let labeledPane: PaneContext | undefined; // terminal this process labeled; cleared on shutdown
 
 	// -- Persist + session name helpers -----------------------------------
 
@@ -409,8 +409,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 					lastError = "";
 					// Update session name so it shows in /resume
 					pi.setSessionName(lastSummary);
-					// Later renames start from our own `[w]` title; the previous claim keeps the original restore target.
-					if (herdr && herdrSummary && !signal.aborted) paneClaim = await renamePane(pi, herdr, herdrSummary.title, paneClaim) ?? paneClaim;
+					if (herdr && herdrSummary && !signal.aborted && await labelPane(pi, herdr, herdrSummary.title)) labeledPane = herdr;
 					// Verbose notification (guard: ctx may be stale after session replacement/reload)
 					if (config.verbose && changed) {
 						try {
@@ -547,10 +546,10 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		summaryAbort?.abort();
 		summaryAbort = undefined;
 		// Reload keeps the same conversation, so its title stays accurate.
-		if (event.reason === "reload" || !paneClaim) return;
-		const claim = paneClaim;
-		paneClaim = undefined;
-		await restorePane(pi, claim);
+		if (event.reason === "reload" || !labeledPane) return;
+		const labeled = labeledPane;
+		labeledPane = undefined;
+		await clearPaneLabel(pi, labeled);
 	});
 
 

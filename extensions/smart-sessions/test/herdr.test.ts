@@ -28,16 +28,8 @@ describe("separate host title output", () => {
 	});
 });
 
-// Stateful app fake: tab.rename changes the name returned by ls.
 function app() {
-	let name = "Pi";
-	const exec = vi.fn<ExtensionAPI["exec"]>(async (_cmd, args) => {
-		if (args[0] === "do") name = args[5];
-		return { code: 0, stderr: "", killed: false, stdout: JSON.stringify({ spaces: [{ tabs: [
-			{ id: "tab-current", name, terminals: [{ terminal: "t-current", pane: "p-current", app: "pi" }] },
-		] }] }) };
-	});
-	return { exec, setName: (next: string) => { name = next; } };
+	return { exec: vi.fn<ExtensionAPI["exec"]>(async () => ({ code: 0, stderr: "", killed: false, truncated: false, stdout: "" })) };
 }
 
 async function surface(exec = app().exec) {
@@ -67,7 +59,7 @@ describe("mocked lifecycle surface", () => {
 	it("updates app and Pi separately in one existing call, retaining debounce", async () => {
 		const { mock, ctx, exec, streamSimple, setSessionName } = await surface();
 		expect(setSessionName).toHaveBeenCalledWith(summary);
-		expect(exec).toHaveBeenLastCalledWith("herdr-app", ["do", "tab.rename", "--id", "tab-current", "--name", "[w] railway issue"], expect.any(Object));
+		expect(exec.mock.calls.map(call => [call[0], call[1]])).toEqual([["hc", ["label", "t-current", "pi.session=[w] railway issue"]]]);
 		await mock.fireLifecycle("agent_end", {}, ctx);
 		expect(streamSimple).toHaveBeenCalledTimes(1);
 	});
@@ -81,28 +73,20 @@ describe("mocked lifecycle surface", () => {
 	});
 });
 
-describe("app title restore on shutdown", () => {
-	it.each(["quit", "new", "resume", "fork"])("restores its own title on %s", async (reason) => {
-		const { exec } = app();
-		const { mock } = await surface(exec);
+describe("pane label cleanup on shutdown", () => {
+	it.each(["quit", "new", "resume", "fork"])("clears its own label on %s", async (reason) => {
+		const { mock, exec } = await surface();
 		await mock.fireLifecycle("session_shutdown", { reason });
-		expect(exec).toHaveBeenLastCalledWith("herdr-app", ["do", "tab.rename", "--id", "tab-current", "--name", "Pi"], expect.any(Object));
+		expect(exec).toHaveBeenLastCalledWith("hc", ["label", "t-current", "pi.session="], expect.any(Object));
+		expect(exec.mock.calls.some(call => call[0] === "herdr-app")).toBe(false);
 	});
-	it("keeps the title across reload", async () => {
-		const { exec } = app();
-		const { mock } = await surface(exec);
+	it("keeps the label across reload", async () => {
+		const { mock, exec } = await surface();
 		const calls = exec.mock.calls.length;
 		await mock.fireLifecycle("session_shutdown", { reason: "reload" });
 		expect(exec).toHaveBeenCalledTimes(calls);
 	});
-	it("preserves a name the user set after the takeover", async () => {
-		const { exec, setName } = app();
-		const { mock } = await surface(exec);
-		setName("my project");
-		await mock.fireLifecycle("session_shutdown", { reason: "quit" });
-		expect(exec).toHaveBeenLastCalledWith("herdr-app", ["ls"], expect.any(Object));
-	});
-	it("never touches the host when it never renamed", async () => {
+	it("never touches the host when it never labeled", async () => {
 		const { exec } = app();
 		const mock = createMockPi();
 		Reflect.apply(sessionSummaryExtension, undefined, [{ ...mock.pi, exec }]);

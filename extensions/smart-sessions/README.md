@@ -14,11 +14,9 @@ Maintains an LLM-generated one-line session summary as the session name, so acti
 
 Inside herdr-app, the existing summary request also generates a separate meaningful title; the Pi session summary stays independent. Titles use `[w] ` followed by at most four words, counting whitespace and hyphens as separators.
 
-herdr-app titles name the **whole associated tab**, not an individual pane: the app exposes tab renaming, not pane renaming. Positional numeric default tab names, the agent name herdr-app's + menu gives an agent's tab (`Pi`), and own `[w]` names are eligible; manual names are preserved. HC labels are metadata, not visible titles.
+Each session labels its own HC terminal `pi.session=[w] <title>`, which Focus cards and other name-aware mods show per pane, so agents sharing a tab stay distinct. Tab names are never changed. When the session ends (quit, `/new`, `/resume`, `/fork`; not `/reload`), the label is cleared; a label left by a hard kill stays until the terminal's next session overwrites it.
 
-When the session ends (quit, `/new`, `/resume`, `/fork`; not `/reload`), a title this process wrote is undone if the host still shows it: the herdr-app tab returns to the agent name it took over, else to its number. A label renamed in the meantime is left alone. A title left by a hard kill stays until the next session reclaims it.
-
-Updates follow the existing summary timing and debounce, not startup. [herdr.ts](herdr.ts) uses [shared host selection](../lib/pane-host.ts) and re-reads the live label/name before renaming; [index.ts](index.ts) owns the shared summary request. [App resolution](../lib/herdr-app.mjs) requires the exact current HC terminal’s tab/pane association; missing or malformed layouts never fall back to another host or focus. Outside supported hosts, summaries follow the plain one-line path.
+Updates follow the existing summary timing and debounce, not startup. [herdr.ts](herdr.ts) uses [shared host selection](../lib/pane-host.ts) and labels `$HC_TERMINAL_ID` only; [index.ts](index.ts) owns the shared summary request. Outside supported hosts, summaries follow the plain one-line path.
 
 ## Entry Points
 
