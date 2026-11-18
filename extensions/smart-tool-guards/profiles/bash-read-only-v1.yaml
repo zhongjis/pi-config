@@ -50,15 +50,41 @@ rules:
     on: segment
     argv:
       - gh
-      - [api, auth, attestation, browse, cache, codespace, completion, config, copilot, extension, gist, gpg-key, label, org,
-         pr, project, release, ruleset, run, secret, ssh-key, status, variable, workflow]
+      - [agent-task, alias, attestation, auth, browse, cache, co, codespace, completion, config, copilot, extension,
+         gist, gpg-key, label, org, preview, project, ruleset, secret, skill, ssh-key, stack, status, variable, workflow]
+    global_options: &gh-value-options [-R, --repo]
   - effect: vcs-mutation
     on: segment
-    argv: [gh, repo, [archive, clone, create, delete, deploy-key, edit, fork, rename, set-default, sync, unarchive]]
+    argv:
+      - gh
+      - pr
+      - [checkout, close, co, comment, create, edit, lock, merge, new, ready, reopen, revert, review, unlock, update-branch]
+    global_options: *gh-value-options
   - effect: vcs-mutation
     on: segment
-    argv: [gh, issue, [close, comment, create, delete, develop, edit, lock, pin, reopen, transfer, unlock, unpin]]
-  - {effect: vcs-mutation, on: segment, argv: [gh], any_option: [--web, -w]}
+    argv: [gh, release, [create, delete, delete-asset, download, edit, new, upload, verify, verify-asset]]
+    global_options: *gh-value-options
+  - effect: vcs-mutation
+    on: segment
+    argv: [gh, run, [cancel, delete, download, rerun, watch]]
+    global_options: *gh-value-options
+  - {effect: vcs-mutation, on: segment, argv: [gh, discussion, [comment, create, edit]], global_options: *gh-value-options}
+  - effect: vcs-mutation
+    on: segment
+    argv: [gh, repo, [archive, autolink, clone, create, delete, deploy-key, edit, fork, new, rename, set-default, sync, unarchive]]
+    global_options: *gh-value-options
+  - effect: vcs-mutation
+    on: segment
+    argv: [gh, issue, [artifact, close, comment, create, delete, develop, edit, lock, new, pin, reopen, transfer, unlock, unpin]]
+    global_options: *gh-value-options
+  - {effect: vcs-mutation, on: segment, argv: [gh], any_option: [--web, -w, --watch]}
+  # gh api non-GET methods and host changes, matched before or after `api` because gh honors flags placed before the subcommand.
+  # -i is gh api's only boolean shorthand, so only it can lead a cluster such as -iXPOST.
+  - effect: vcs-mutation
+    on: segment
+    argv: [gh]
+    any_option: [-X, --method, -f, -F, --field, --raw-field, --input, -i, --hostname]
+    operands: true
   - {effect: external-system-mutation, on: segment, argv: [lark-cli], fallback: true}
   - effect: external-system-mutation
     on: segment

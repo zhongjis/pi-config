@@ -50,7 +50,9 @@ function denialPosition(rule: DenialRule, argv: Word[]): number | undefined {
 		const rest = argv.slice(rule.argv.length > 1 ? start + rule.argv.length - 1 : 1);
 		const separator = rule.operands ? rest.findIndex((word) => word.text === "--") : -1;
 		const options = separator < 0 ? rest : rest.slice(0, separator);
-		if (!options.some((word) => rule.anyOption?.has(optionName(word.text)))) return undefined;
+		// A single-dash word also names its leading short option, which may carry an attached value or cluster (-XPOST, -dr).
+		if (!options.some(({ text }) => rule.anyOption?.has(optionName(text)) ||
+			/^-[^-]/.test(text) && rule.anyOption?.has(text.slice(0, 2)))) return undefined;
 	}
 	return rule.argv.length > 1 || rule.anyOption ? (action ?? executable).start : executable.start;
 }
