@@ -1,7 +1,7 @@
-import { readFileSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TaskStore } from "../src/task-store.js";
 
 describe("TaskStore (in-memory)", () => {
@@ -289,49 +289,37 @@ describe("TaskStore (in-memory)", () => {
     store.create("Pending", "Desc");
     expect(store.clearCompleted()).toBe(0);
   });
-
-  it("list sorts pending → in_progress → completed with all three present", () => {
-    store.create("Pending task", "Desc");
-    store.create("Completed task", "Desc");
-    store.create("In-progress task", "Desc");
-    store.create("Another pending", "Desc");
-
-    store.update("2", { status: "completed" });
-    store.update("3", { status: "in_progress" });
-
-    const tasks = store.list();
-    // Store returns by ID; TaskList tool sorts by status group
-    // Here we verify the raw list order (by ID), then test status-grouped sort
-    const statusOrder: Record<string, number> = { pending: 0, in_progress: 1, completed: 2 };
-    const sorted = [...tasks].sort((a, b) => {
-      const so = (statusOrder[a.status] ?? 0) - (statusOrder[b.status] ?? 0);
-      if (so !== 0) return so;
-      return Number(a.id) - Number(b.id);
-    });
-
-    expect(sorted.map(t => t.id)).toEqual(["1", "4", "3", "2"]);
-    expect(sorted.map(t => t.status)).toEqual(["pending", "pending", "in_progress", "completed"]);
-  });
 });
 
 describe("TaskStore (file-backed)", () => {
-  const testListId = `test-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const tasksDir = join(homedir(), ".pi", "tasks");
-  const filePath = join(tasksDir, `${testListId}.json`);
+  let root: string;
+  let listPath: string;
+
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "pi-task-store-"));
+    listPath = join(root, "tasks", "list.json");
+  });
 
   afterEach(() => {
-    // Clean up test file
-    try { rmSync(filePath); } catch { /* */ }
-    try { rmSync(filePath + ".lock"); } catch { /* */ }
-    try { rmSync(filePath + ".tmp"); } catch { /* */ }
+    vi.unstubAllEnvs();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it("stores a list ID under ~/.pi/tasks", async () => {
+    vi.stubEnv("HOME", root);
+    vi.resetModules();
+    const { TaskStore: HomeTaskStore } = await import("../src/task-store.js");
+    new HomeTaskStore("shared").create("Shared task", "Desc");
+
+    expect(existsSync(join(root, ".pi", "tasks", "shared.json"))).toBe(true);
   });
 
   it("persists tasks to disk", () => {
-    const store1 = new TaskStore(testListId);
+    const store1 = new TaskStore(listPath);
     store1.create("Persistent task", "Should survive reload");
 
     // Create a new store instance pointing to same file
-    const store2 = new TaskStore(testListId);
+    const store2 = new TaskStore(listPath);
     const tasks = store2.list();
 
     expect(tasks).toHaveLength(1);
@@ -339,21 +327,21 @@ describe("TaskStore (file-backed)", () => {
   });
 
   it("persists in_progress updates to disk", () => {
-    const store1 = new TaskStore(testListId);
+    const store1 = new TaskStore(listPath);
     store1.create("Task", "Desc");
     store1.update("1", { status: "in_progress" });
 
-    const store2 = new TaskStore(testListId);
+    const store2 = new TaskStore(listPath);
     expect(store2.get("1")!.status).toBe("in_progress");
   });
 
   it("persists completed tasks to disk", () => {
-    const store1 = new TaskStore(testListId);
+    const store1 = new TaskStore(listPath);
     store1.create("Done task", "Desc");
     store1.create("Pending task", "Desc");
     store1.update("1", { status: "completed" });
 
-    const store2 = new TaskStore(testListId);
+    const store2 = new TaskStore(listPath);
     expect(store2.get("1")).toBeDefined();
     expect(store2.get("1")!.status).toBe("completed");
     expect(store2.get("2")).toBeDefined();
@@ -361,14 +349,14 @@ describe("TaskStore (file-backed)", () => {
   });
 
   it("restores all tasks across instances", () => {
-    const store1 = new TaskStore(testListId);
+    const store1 = new TaskStore(listPath);
     store1.create("Pending", "Desc");
     store1.create("In progress", "Desc");
     store1.create("Done", "Desc");
     store1.update("2", { status: "in_progress" });
     store1.update("3", { status: "completed" });
 
-    const store2 = new TaskStore(testListId);
+    const store2 = new TaskStore(listPath);
     const tasks = store2.list();
     expect(tasks).toHaveLength(3);
     expect(tasks.map(t => t.id)).toContain("1");
@@ -377,11 +365,11 @@ describe("TaskStore (file-backed)", () => {
   });
 
   it("persists ID counter across instances", () => {
-    const store1 = new TaskStore(testListId);
+    const store1 = new TaskStore(listPath);
     store1.create("Task 1", "Desc");
     store1.create("Task 2", "Desc");
 
-    const store2 = new TaskStore(testListId);
+    const store2 = new TaskStore(listPath);
     const t3 = store2.create("Task 3", "Desc");
     expect(t3.id).toBe("3");
   });
