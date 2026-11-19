@@ -3,4 +3,7 @@ if ! command -v pnpm >/dev/null 2>&1; then
   exit 1
 fi
 
-pnpm typecheck && pnpm test:extensions && pnpm exec vitest run --project integration test/integration/pi-runtime-version.integration.test.ts
+# Typecheck is single-threaded; overlap it with the multi-core test run.
+pnpm typecheck & typecheck=$!
+pnpm test:extensions && pnpm exec vitest run --project integration test/integration/pi-runtime-version.integration.test.ts || { wait "$typecheck"; exit 1; }
+wait "$typecheck"
