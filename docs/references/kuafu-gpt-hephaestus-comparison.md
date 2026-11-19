@@ -55,7 +55,7 @@ Each external comparison refers to the pinned Hephaestus source. [1]
 | Done and verification: recovery | 77 | Kuafu consults a specialist before the final recovery attempt; Hephaestus escalates after three failed approaches. [1] |
 | Done and verification: stop | 18, 121–123 | Shared observable completion and stopping without handing back unfinished work; Kuafu explicitly includes corrections and cleanup. [1] |
 | Working with the user | 101–105, 115, 117 | Shared outcome-first, self-contained final answers and findings-first reviews. [1] |
-| Intermediary updates | 109–113 | Kuafu requests meaningful updates; Hephaestus prescribes a structured handoff block. [1] |
+| Handoff | 109–113 | Both prescribe a structured handoff block at Task or phase changes with no narration between handoffs; Kuafu anchors it to the intent line's `Done when`. [1] |
 | Hard rules 1–7 | 6, 18, 56–65, 93–96 | Shared evidence, scope, Git, and test-integrity safeguards; local skill ownership matters. [1] |
 | Hard rule 8 | 123 | Shared compaction continuity. [1] |
 
