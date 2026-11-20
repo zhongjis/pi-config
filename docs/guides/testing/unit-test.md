@@ -31,6 +31,8 @@ extensions/modes/src/index.ts
 
 `test/setup-require-stubs.ts` patches `Module._resolveFilename` for CJS `require()` calls that bypass vitest's ESM aliases.
 
+[`test/setup-git-env.ts`](../../../test/setup-git-env.ts) runs in every project and clears the repository-location variables git exports to hooks. Without it, fixture `git` commands run during a pre-push from a worktree write into the host repository.
+
 ## Smoke Test
 
 `test/extensions.smoke.test.ts` auto-discovers all extension entrypoints and validates:
@@ -76,6 +78,15 @@ describe("my-extension", () => {
   });
 });
 ```
+
+### Assertion quality
+
+- Name the expected error: `toThrow(/message/)`, an error class, or `toMatchObject({ code })`. A bare `toThrow()` passes for any failure.
+- Never put `expect` inside a callback or an `if` branch that may not run. Record evidence in the callback and assert after the act.
+- Assert through the public seam: return values, rendered output, files, emitted events. Reach into private state only to arrange a scenario.
+- Do not assert on elapsed time. Use fake timers, `vi.waitFor`, or `expect.poll` instead of fixed sleeps or `Date.now()` bounds.
+- Do not assert what a mock or fixture was told to return, and do not recompute the expected value with production code.
+- Sample boundaries instead of brute-forcing ranges. A test that needs more than 1 s under suite load gets an explicit timeout and a `ponytail:` comment naming the cost and the upgrade path.
 
 ## Maintenance
 
