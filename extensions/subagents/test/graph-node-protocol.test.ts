@@ -67,7 +67,7 @@ it("rejects a successor while its predecessor still awaits checkpoint commit", (
   expect(journal.receive(successor, next.correlation)).toEqual({ kind: "apply" });
 });
 
-it.each(["id", "incarnation", "runId", "instanceId", "activation", "graphAttempt", "executionAttemptId"] as const)("rejects stale %s even on an acknowledged request", field => {
+it.each(["id", "incarnation", "runId", "instanceId", "activation", "graphAttempt", "executionAttemptId"] as const)("rejects a changed %s when an acknowledged request is replayed", field => {
   const { journal, request, receipt, ack } = fixture();
   journal.receive(request, receipt.correlation); journal.prepare(ack); journal.commit(ack);
   const other = fixture();
@@ -79,7 +79,7 @@ it.each(["id", "incarnation", "runId", "instanceId", "activation", "graphAttempt
 
 it("rejects a new request with a stale correlation without consuming its sequence", () => {
   const { journal, request, receipt, next } = fixture();
-  expect(() => journal.receive(request, next.correlation)).toThrow(/Stale/);
+  expect(() => journal.receive(request, next.correlation)).toThrow(/Stale node execution correlation/);
   expect(journal.receive(request, receipt.correlation)).toEqual({ kind: "apply" });
 });
 
