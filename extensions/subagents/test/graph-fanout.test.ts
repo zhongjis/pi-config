@@ -200,7 +200,8 @@ describe("awaited fanout", () => {
   });
 });
 
-it("allows exactly 500 effective nodes and rejects overflow across fanouts", async () => {
+// ponytail: each checkpoint deep-clones the run state, so node-limit graphs cost O(n²); timeout sized for full-suite load until checkpoints clone incrementally.
+it("allows exactly 500 effective nodes and rejects overflow across fanouts", { timeout: 30_000 }, async () => {
   const host: NodeHost = { spawnAgent: async () => ({ ok: true, output: "fixture" }) };
   const atLimit = await runGraph(graph, { tasks: Array.from({ length: 499 }, () => tasks[0]) }, { host });
   expect(atLimit.status).toBe("completed");

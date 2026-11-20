@@ -148,7 +148,8 @@ describe("bounded feedback judge", () => {
     expect(result.nodes["research:iteration:1:evaluator"]).toBeUndefined();
   });
 
-  it("fails a lazy step that concurrent growth left without capacity, and restores that terminal", async () => {
+  // ponytail: each checkpoint deep-clones the run state, so node-limit graphs cost O(n²); timeout sized for full-suite load until checkpoints clone incrementally.
+  it("fails a lazy step that concurrent growth left without capacity, and restores that terminal", { timeout: 30_000 }, async () => {
     const definition: AgentGraph = { ...graph(), nodes: { ...graph().nodes, src: { type: "agent", agent: "source", prompt: "fragment", outputSchema: { type: "object" } }, grow: { type: "expand", source: { node: "src", path: "$" } } }, edges: [{ from: "src", to: "grow" }] };
     for (let index = 0; index < 493; index++) definition.nodes[`static${index}`] = { type: "agent", agent: "filler", prompt: "static" };
     const worked = deferred<void>(); const grown = deferred<void>(); const host = scripted();

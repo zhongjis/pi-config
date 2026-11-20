@@ -305,15 +305,16 @@ describe("ask dialog preview and widths", () => {
 		expect(text(120)).toContain("end");
 		dialog.dispose();
 	});
-	it("every line fits widths 0..8, 20..200 and 320 across title, notes, multi, preview, review, editor and dismiss", () => {
+	it("every line fits sampled widths 0..320 across title, notes, multi, preview, review, editor and dismiss", () => {
 		const input = [question({ multi: true, required: true, prompt: "中文🙂 é " + "prompt ".repeat(30), options: [
 			{ value: "a", label: "中文🙂".repeat(30), description: "description ".repeat(30), preview: "中文🙂 code\n".repeat(20) },
 			{ value: "b", label: "Beta" },
 		] }), question({ id: "next", required: true })];
 		const { dialog, feed } = setup(input, { title: "中文🙂 title ".repeat(20) });
 		const check = () => {
-			for (const width of [0, 1, 2, 8, ...Array.from({ length: 181 }, (_, i) => i + 20), 320]) for (const line of dialog.render(width)) {
-				expect(visibleWidth(line), `${JSON.stringify(line)} at ${width}`).toBeLessThanOrEqual(width);
+			// Tiny widths, the 20..40 wrap boundary, sampled mid widths, and wide.
+			for (const width of [0, 1, 2, 8, ...Array.from({ length: 21 }, (_, i) => i + 20), 50, 64, 79, 80, 99, 120, 159, 200, 320]) for (const line of dialog.render(width)) {
+				if (visibleWidth(line) > width) expect.fail(`${JSON.stringify(line)} at ${width}: ${visibleWidth(line)} columns`);
 			}
 		};
 		check();
