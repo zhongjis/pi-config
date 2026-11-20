@@ -63,6 +63,32 @@ describe("mocked lifecycle surface", () => {
 		await mock.fireLifecycle("agent_end", {}, ctx);
 		expect(streamSimple).toHaveBeenCalledTimes(1);
 	});
+	it("names a debounced final turn once the debounce window ends", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+		try {
+			const { mock, ctx, streamSimple } = await surface();
+			await mock.fireLifecycle("agent_end", {}, ctx);
+			await mock.fireLifecycle("agent_end", {}, ctx);
+			expect(streamSimple).toHaveBeenCalledTimes(1);
+			await vi.advanceTimersByTimeAsync(61_000);
+			expect(streamSimple).toHaveBeenCalledTimes(2);
+			await mock.fireLifecycle("session_shutdown", { reason: "quit" });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+	it("drops the trailing summary on shutdown", async () => {
+		vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+		try {
+			const { mock, ctx, streamSimple } = await surface();
+			await mock.fireLifecycle("agent_end", {}, ctx);
+			await mock.fireLifecycle("session_shutdown", { reason: "quit" });
+			await vi.advanceTimersByTimeAsync(61_000);
+			expect(streamSimple).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
 	it("uses plain summaries when only stale native environment variables remain", async () => {
 		vi.stubEnv("HC_TERMINAL_ID", "");
 		expect(getPaneContext()).toBeUndefined();

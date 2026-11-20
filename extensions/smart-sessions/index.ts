@@ -158,6 +158,7 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 	let latestCtx: ExtensionContext | undefined; // most recent ctx for widget updates
 	let summaryAbort: AbortController | undefined; // aborts the in-flight summary on shutdown
 	let labeledPane: PaneContext | undefined; // terminal this process labeled; cleared on shutdown
+	let trailingSummary: ReturnType<typeof setTimeout> | undefined; // names a debounced final turn
 
 	// -- Persist + session name helpers -----------------------------------
 
@@ -529,12 +530,19 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 		latestCtx = ctx;
 		turnsSinceSummary++;
 		updateWidget(ctx);
+		clearTimeout(trailingSummary);
+		trailingSummary = undefined;
 
 		// Debounce: only call LLM if enough time has passed
 		const now = Date.now();
 		const elapsed = now - lastSummaryTime;
 		if (elapsed < config.debounceSeconds * 1000 && lastSummary) {
-			// Too soon -- widget already shows hybrid line with turn count
+			// Too soon -- summarize once the window ends, so a final turn is still named.
+			trailingSummary = setTimeout(() => {
+				trailingSummary = undefined;
+				if (latestCtx) generateSummary(latestCtx);
+			}, config.debounceSeconds * 1000 - elapsed);
+			trailingSummary.unref?.();
 			return;
 		}
 
@@ -543,6 +551,8 @@ export default function sessionSummaryExtension(pi: ExtensionAPI) {
 	});
 
 	pi.on("session_shutdown", async (event) => {
+		clearTimeout(trailingSummary);
+		trailingSummary = undefined;
 		summaryAbort?.abort();
 		summaryAbort = undefined;
 		// Reload keeps the same conversation, so its title stays accurate.

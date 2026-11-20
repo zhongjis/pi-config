@@ -10,6 +10,7 @@ Maintain LLM-generated session names and per-pane `pi.session` labels.
 
 - [smart-sessions](herdr.ts) MUST generate host titles separately within the existing summary call and preserve Pi summaries, without startup renames, additional model calls, or title persistence. Write the title only as the exact HC terminal’s `pi.session=[w] <title>` label; never rename herdr-app tabs, which panes share.
 - On `session_shutdown` for any reason except `reload`, clear the label this process wrote.
+- An `agent_end` inside the debounce window schedules one trailing summary at the window's end, so the final turn is always named; the next `agent_end` or `session_shutdown` cancels it.
 
 ## Work Guidance
 
