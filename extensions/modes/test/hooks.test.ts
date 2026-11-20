@@ -236,6 +236,23 @@ describe("mode hooks", () => {
 		expect(event.systemPromptOptions.sections).toEqual({ other: "kept", modes: "Fu Xi prompt" });
 	});
 
+	it("drops fully denied MCP servers from mcp_servers and keeps allowed ones", async () => {
+		const mock = createMockPi();
+		const state = new ModeStateManager(mock.pi as never);
+		state.cachedConfigs["kuafu:default"] = { body: "Kua Fu", toolRules: toolRules("-mcp__linear_readonly__*, +mcp__linear__*") };
+		registerModeHooks(mock.pi as never, state);
+
+		const event = beforeAgentStartEvent("Base", {
+			mcp_servers: "Header\n- mcp__linear_readonly (codemode)\n- mcp__linear (codemode)",
+		});
+		await mock.fire("before_agent_start", event, { hasUI: false });
+		expect(event.systemPromptOptions.sections.mcp_servers).toBe("Header\n- mcp__linear (codemode)");
+
+		const allDenied = beforeAgentStartEvent("Base", { mcp_servers: "Header\n- mcp__linear_readonly (codemode)" });
+		await mock.fire("before_agent_start", allDenied, { hasUI: false });
+		expect(allDenied.systemPromptOptions.sections).not.toHaveProperty("mcp_servers");
+	});
+
 	it("sets no modes section when the mode has no body", async () => {
 		const mock = createMockPi();
 		const state = new ModeStateManager(mock.pi as never);

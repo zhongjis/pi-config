@@ -37,6 +37,7 @@ import {
 } from "../../lib/active-tools.js";
 import { assertFastSupported, transformFastHeaders, transformFastPayload } from "../../lib/fast.js";
 import { registerGuardScopeProvider } from "../../lib/guard-registration.js";
+import { dropDeniedMcpServers, isMcpNamespaceFullyDenied } from "../../lib/mcp-servers-section.js";
 import { getModePromptSource } from "../../lib/model-family.js";
 import { selectPromptBody } from "../../lib/prompt-variants.js";
 import sessionLocalTools from "../../session-local/index.js";
@@ -92,8 +93,6 @@ const PI_BUILTIN_EXTENSIONS: ReadonlyArray<{ name: string; create: () => Extensi
 ];
 /** Pi's MCP resource tools; not `mcp__*` names, and not exported from Pi's package entry. */
 const MCP_RESOURCE_TOOL_NAMES = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"];
-/** Pi's `MCP_SERVERS_SECTION` prompt section key, not exported from Pi's package entry. */
-const MCP_SERVERS_SECTION = "mcp_servers";
 
 /** Pi's `mcpNamespace` (core/mcp-servers.js), not exported from Pi's package entry. */
 function mcpNamespace(server: string): string {
@@ -133,18 +132,7 @@ function mcpToolExcludes(
   const deniedNames = candidates.filter(({ name }) => !allowed.has(name)).map(({ name }) => name);
 
   const namespaces = new Set(configPaths.flatMap((path) => mcpConfigServerNames(path).map(mcpNamespace)));
-  const deniedNamespaces = [...namespaces].filter((namespace) => {
-    const prefix = `${namespace}__`;
-    const probe = `${prefix}<probe>`;
-    if (resolveToolAccess(toolRules, builtinMcpTool(probe), gates).allowed.has(probe)) return false;
-    return !toolRules.some(({ sign, selector }) => {
-      if (sign !== "+" || selector.startsWith("@")) return false;
-      const star = selector.indexOf("*");
-      if (star < 0) return selector.startsWith(prefix);
-      const literal = selector.slice(0, star);
-      return literal.startsWith(prefix) || prefix.startsWith(literal);
-    });
-  });
+  const deniedNamespaces = [...namespaces].filter((namespace) => isMcpNamespaceFullyDenied(toolRules, gates, namespace));
   return { excludeTools: [...deniedNamespaces.map((namespace) => `${namespace}__*`), ...deniedNames], deniedNamespaces };
 }
 
@@ -552,20 +540,9 @@ Return only the answer, in exactly the shape the prompt asks for — no preamble
             return { block: true, reason: `Tool "${event.toolName}" is not available to this subagent.` };
           });
           extensionPi.registerTool(createToolCeilingTool(TOOL_CEILING_TOOL_NAME, allowedToolNames));
-          // ponytail: Pi's MCP extension lists every enabled configured server in
-          // `mcp_servers`, so drop the fully denied ones (inline factories load
-          // after `builtin:mcp`). Removable once Pi lists the section from the
-          // allowed tools at startup (earendil-works/pi#10635).
+          // Inline factories load after `builtin:mcp`.
           if (mcpExcludes.deniedNamespaces.length > 0) {
-            const deniedLines = mcpExcludes.deniedNamespaces.map((namespace) => `- ${namespace} (`);
-            extensionPi.on("before_agent_start", (event) => {
-              const { sections } = event.systemPromptOptions;
-              const section = sections[MCP_SERVERS_SECTION];
-              if (section === undefined) return;
-              const lines = section.split("\n").filter((line) => !deniedLines.some((prefix) => line.startsWith(prefix)));
-              if (lines.some((line) => line.startsWith("- mcp__"))) sections[MCP_SERVERS_SECTION] = lines.join("\n");
-              else delete sections[MCP_SERVERS_SECTION];
-            });
+            extensionPi.on("before_agent_start", (event) => dropDeniedMcpServers(event.systemPromptOptions.sections, mcpExcludes.deniedNamespaces));
           }
         },
         hidden: true,

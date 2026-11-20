@@ -20,6 +20,7 @@ export * from "./model-family.js";
 export * from "./prompt-variants.js";
 export * from "./thinking-level.js";
 export * from "./active-tools.js";
+export * from "./mcp-servers-section.js";
 export * from "./agent-frontmatter.js";
 export { GUARD_PROFILE_IDS, type GuardProfileId } from "./guard-registration.js";
 export * from "./provider-errors.js";

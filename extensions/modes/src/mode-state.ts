@@ -2,7 +2,8 @@ import { GOAL_TOOL_NAMES, goalToolAccess } from "../../goal/src/goal/access.js";
 import type { RuntimeModelCandidate } from "../../lib/runtime-model-fallback.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { assertFastSupported, readFastPolicy, type FastPolicyEntry } from "../../lib/fast.js";
-import { type AccessDiagnostic, type AccessRule, hasPositiveDelegationRule, resolveToolAccess, toolCandidates } from "../../lib/active-tools.js";
+import { type AccessDiagnostic, type AccessRule, hasPositiveDelegationRule, resolveToolAccess, type ToolAccessGates, toolCandidates } from "../../lib/active-tools.js";
+import { isMcpNamespaceFullyDenied } from "../../lib/mcp-servers-section.js";
 import { MODES, MODE_COLORS, MODE_META, MODE_TOOL_CEILING_NAME, RESET } from "./constants.js";
 import { getModeSkillPaths } from "./mode-skills.js";
 import { loadAgentConfig } from "./config-loader.js";
@@ -103,11 +104,22 @@ export class ModeStateManager {
 	/** Resolve the current mode's `tools:` rules against the live registry, then the hard gates. */
 	toolAccess(allowedGoals: readonly string[] = this.allowedGoalTools): { allowed: Set<string>; diagnostics: AccessDiagnostic[] } {
 		const config = this.loadConfig(this.currentMode);
-		return resolveToolAccess(config.toolRules, toolCandidates(this.pi.getAllTools()), {
+		return resolveToolAccess(config.toolRules, toolCandidates(this.pi.getAllTools()), this.toolGates(config, allowedGoals));
+	}
+
+	private toolGates(config: ModeConfig, allowedGoals: readonly string[]): ToolAccessGates {
+		return {
 			allowNesting: (this.delegationTargets(config.delegationRules ?? [])?.length ?? 0) > 0,
 			goalTools: { names: GOAL_TOOL_NAMES, allowed: allowedGoals },
 			planTools: this.currentMode === "fuxi",
-		});
+		};
+	}
+
+	/** Subset of MCP `namespaces` (`mcp__<server>`) for which the current mode permits no tool. */
+	deniedMcpNamespaces(namespaces: readonly string[]): string[] {
+		const config = this.loadConfig(this.currentMode);
+		const gates = this.toolGates(config, this.allowedGoalTools);
+		return namespaces.filter((namespace) => isMcpNamespaceFullyDenied(config.toolRules, gates, namespace));
 	}
 
 	/** Allowed tool names for the mode tool ceiling, using the Goal access cached at the last apply. */

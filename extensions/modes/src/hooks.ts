@@ -4,6 +4,7 @@ import { assertFastSupported } from "../../lib/fast.js";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { CustomEditor } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey } from "@earendil-works/pi-tui";
+import { dropDeniedMcpServers, listedMcpNamespaces, MCP_SERVERS_SECTION } from "../../lib/mcp-servers-section.js";
 import { isTui } from "../../lib/mode.js";
 import { findLatestModeStateEntry, isModeStateEntry } from "../../lib/mode-state-entry.js";
 import {
@@ -242,6 +243,11 @@ export function registerModeHooks(pi: ExtensionAPI, state: ModeStateManager): vo
 		if (config.body) {
 			event.systemPromptOptions.sections.modes = expandAgentRoster(config.body, ctx, event.systemPromptOptions);
 		}
+
+		// Pi lists every configured MCP server; drop the ones this mode denies entirely.
+		const { sections } = event.systemPromptOptions;
+		const listed = sections[MCP_SERVERS_SECTION];
+		if (listed !== undefined) dropDeniedMcpServers(sections, state.deniedMcpNamespaces(listedMcpNamespaces(listed)));
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
