@@ -333,11 +333,13 @@ describe("ulw extension — unit tests", () => {
 
 describe("ulw extension — model-adapted prompt selection", () => {
 	let mock: ReturnType<typeof createMockPi>;
+	const defaultFixture = "fixture:default\n## 1. NOTEPAD\nlocal-default\n```\n## Plan\n```\n\n## 2. DEFINE DONE BEFORE CODING\nworkflow-default";
+	const gptFixture = "fixture:gpt\n## Notepad\nlocal-gpt\n\n## Define done before coding\nworkflow-gpt";
+	const beadFixture = "fixture:bead\n$ORCH_BEAD $& $1";
 	const promptFixtures = new Map([
-		[fileURLToPath(new URL("../prompts/default.md", import.meta.url)), "fixture:default"],
-		[fileURLToPath(new URL("../prompts/gpt.md", import.meta.url)), "fixture:gpt"],
-		[fileURLToPath(new URL("../prompts/default-bead.md", import.meta.url)), "fixture:default-bead"],
-		[fileURLToPath(new URL("../prompts/gpt-bead.md", import.meta.url)), "fixture:gpt-bead"],
+		[fileURLToPath(new URL("../prompts/default.md", import.meta.url)), defaultFixture],
+		[fileURLToPath(new URL("../prompts/gpt.md", import.meta.url)), gptFixture],
+		[fileURLToPath(new URL("../prompts/bead-notepad.md", import.meta.url)), beadFixture],
 	]);
 
 	beforeEach(async () => {
@@ -372,37 +374,43 @@ describe("ulw extension — model-adapted prompt selection", () => {
 	it("injects the OpenAI (GPT) variant for a GPT-family model", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "openai", id: "gpt-5.5" }));
-		expect(result?.message).toEqual({ customType: "ultrawork", content: "fixture:gpt", display: true });
+		expect(result?.message).toEqual({ customType: "ultrawork", content: gptFixture, display: true });
 	});
 
 	it("injects the GPT variant across proxy providers (litellm/openai-codex)", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "openai-codex", id: "gpt-5.5" }));
-		expect(result?.message).toEqual({ customType: "ultrawork", content: "fixture:gpt", display: true });
+		expect(result?.message).toEqual({ customType: "ultrawork", content: gptFixture, display: true });
 	});
 
 	it("injects the Claude (default) variant for an Anthropic model", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "anthropic", id: "claude-opus-4-8" }));
-		expect(result?.message).toEqual({ customType: "ultrawork", content: "fixture:default", display: true });
+		expect(result?.message).toEqual({ customType: "ultrawork", content: defaultFixture, display: true });
 	});
 
 	describe.each([
-		{ model: { provider: "anthropic", id: "claude-opus-4-8" }, variant: "default" },
-		{ model: { provider: "openai", id: "gpt-5.5" }, variant: "gpt" },
-	])("notepad routing for $variant", ({ model, variant }) => {
+		{
+			model: { provider: "anthropic", id: "claude-opus-4-8" }, variant: "default", local: defaultFixture,
+			assigned: `fixture:default\n## 1. NOTEPAD\n\n${beadFixture}\n\n## 2. DEFINE DONE BEFORE CODING\nworkflow-default`,
+		},
+		{
+			model: { provider: "openai", id: "gpt-5.5" }, variant: "gpt", local: gptFixture,
+			assigned: `fixture:gpt\n## Notepad\n\n${beadFixture}\n\n## Define done before coding\nworkflow-gpt`,
+		},
+	])("notepad routing for $variant", ({ model, local, assigned }) => {
 		it.each([
-			{ bead: "task-123", actor: undefined, suffix: "-bead" },
-			{ bead: undefined, actor: undefined, suffix: "" },
-			{ bead: "", actor: "worker", suffix: "" },
-			{ bead: undefined, actor: "worker", suffix: "" },
-		])("selects by ORCH_BEAD=$bead, not BEADS_ACTOR=$actor", async ({ bead, actor, suffix }) => {
+			{ bead: "task-123", actor: undefined },
+			{ bead: undefined, actor: undefined },
+			{ bead: "", actor: "worker" },
+			{ bead: undefined, actor: "worker" },
+		])("selects by ORCH_BEAD=$bead, not BEADS_ACTOR=$actor", async ({ bead, actor }) => {
 			vi.stubEnv("ORCH_BEAD", bead);
 			vi.stubEnv("BEADS_ACTOR", actor);
 			await fireInput(mock, "ulw fix it");
 			const result = await fireBeforeAgentStart(mock, ctxWithModel(model));
 			expect(result?.message).toEqual({
-				customType: "ultrawork", content: `fixture:${variant}${suffix}`, display: true,
+				customType: "ultrawork", content: bead ? assigned : local, display: true,
 			});
 		});
 
@@ -412,13 +420,13 @@ describe("ulw extension — model-adapted prompt selection", () => {
 			vi.stubEnv("ORCH_BEAD", "task-123");
 			await fireInput(mock, "ulw fix it");
 			const result = await fireBeforeAgentStart(mock, ctxWithModel(model));
-			expect(result?.message?.content).toBe(`fixture:${variant}-bead`);
+			expect(result?.message?.content).toBe(assigned);
 		});
 	});
 
 	it("defaults to the Claude variant when no model is set", async () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel());
-		expect(result?.message).toEqual({ customType: "ultrawork", content: "fixture:default", display: true });
+		expect(result?.message).toEqual({ customType: "ultrawork", content: defaultFixture, display: true });
 	});
 });

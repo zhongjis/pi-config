@@ -10,7 +10,7 @@
 //
 // Selection mirrors the modes extension: Claude is the default; switch to the
 // GPT variant only when the active model is a GPT-family (OpenAI) model.
-// ORCH_BEAD selects the matching bead-notepad variant at injection time.
+// ORCH_BEAD replaces the notepad section with the shared bead instructions at injection time.
 // ---------------------------------------------------------------------------
 
 import { readFileSync } from "node:fs";
@@ -22,7 +22,7 @@ const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 
 const cache = new Map<string, string>();
 
-function loadPrompt(variant: "default" | "gpt" | "default-bead" | "gpt-bead"): string {
+function loadPrompt(variant: "default" | "gpt" | "bead-notepad"): string {
   const cached = cache.get(variant);
   if (cached !== undefined) return cached;
   const content = readFileSync(join(PROMPTS_DIR, `${variant}.md`), "utf-8").trim();
@@ -36,5 +36,10 @@ function loadPrompt(variant: "default" | "gpt" | "default-bead" | "gpt-bead"): s
  */
 export function getUltraworkPrompt(model?: { provider: string; id: string }): string {
   const variant = model && isGptModel(model) ? "gpt" : "default";
-  return loadPrompt(process.env.ORCH_BEAD ? `${variant}-bead` : variant);
+  const prompt = loadPrompt(variant);
+  if (!process.env.ORCH_BEAD) return prompt;
+  return prompt.replace(
+    /(^## (?:1\. )?NOTEPAD\n)[\s\S]*?(?=\n## (?:2\. )?DEFINE DONE BEFORE CODING)/im,
+    (_section, heading: string) => `${heading}\n${loadPrompt("bead-notepad")}\n`,
+  );
 }

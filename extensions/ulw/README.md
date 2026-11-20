@@ -11,7 +11,7 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 
 - [Default](prompts/default.md) owns the shared workflow, and [GPT](prompts/gpt.md) expresses it for GPT. See the [upstream GPT baseline](https://github.com/code-yeongyu/oh-my-openagent/blob/b7a702362ec21ba79c353c4783848ea1d589c5c4/packages/prompts-core/prompts/ultrawork/gpt.md) for provenance.
 - Both variants add only what the Kua Fu body lacks; delegation, packets, verification, and output rules live in [default.md](../../modes/kuafu/default.md) and [gpt.md](../../modes/kuafu/gpt.md). Ultrawork authorizes per-increment commits through `git-master` and runs the [gate-review](../../modes/kuafu/skills/gate-review/SKILL.md) finish gate for larger or riskier changes.
-- Without an assigned bead, notepads use exact-replacement `edit` operations and Agent-tree-shared `local://` storage (requires `session-local`). The [default bead](prompts/default-bead.md) and [GPT bead](prompts/gpt-bead.md) prompts instead keep a whole-replaced Plan / Now / Findings document in the assigned bead’s notes field, with milestones in comments. Requested deliverables retain their required destinations.
+- Without an assigned bead, notepads use exact-replacement `edit` operations and Agent-tree-shared `local://` storage (requires `session-local`). For assigned workers, [prompt selection](prompt.ts) replaces only the notepad section with [shared bead instructions](prompts/bead-notepad.md): a whole-replaced Plan / Now / Findings document in the bead’s notes field, literal-safe shell transport, and milestones in comments. Requested deliverables retain their required destinations.
 
 ## What It Does
 

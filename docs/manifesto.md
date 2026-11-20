@@ -149,7 +149,7 @@ In this harness, a prompt asks and the runtime guarantees: a rule that keeps fai
 Work should survive interruptions:
 
 - Session crashed? Tasks and goals record what remains.
-- Need to step away? Notepads and scratch files persist in session-local storage.
+- Need to step away? [Ultrawork notepads](../extensions/ulw/README.md) persist in the assigned bead for orchestrated workers and in session-local storage otherwise; scratch files stay session-local.
 - Worker stopped mid-task? Resume it with its context.
 
 A session exists to settle one task: any problem with a done condition, coding or not. The session is only a container; the task outlives it through recorded state. The agent maintains state. You don't have to.
