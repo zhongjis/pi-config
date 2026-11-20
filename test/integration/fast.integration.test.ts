@@ -5,7 +5,7 @@ import fastExtension from "../../extensions/fast/index.js";
 import { ModeStateManager } from "../../extensions/modes/src/mode-state.js";
 import { registerModeCommands } from "../../extensions/modes/src/commands.js";
 import { registerModeHooks } from "../../extensions/modes/src/hooks.js";
-import { readFastPolicy } from "../../extensions/lib/fast.js";
+import { getFastProfile, readFastPolicy } from "../../extensions/lib/fast.js";
 import { createFastSession } from "./helpers/fast-session.js";
 
 const beta = "fast-mode-2026-02-01";
@@ -89,7 +89,7 @@ it("real Codex transport receives strict priority after OAuth drift and strict o
 		const token = `e30.${Buffer.from(JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "test-account" } })).toString("base64url")}.test`;
 		t.runtime.registerProvider("openai-codex", { apiKey: token, baseUrl: "http://127.0.0.1:1" });
 		await t.runtime.refresh({ allowNetwork: false });
-		const model = t.runtime.getModel("openai-codex", "gpt-5.5");
+		const model = t.runtime.getModels("openai-codex").find((candidate) => getFastProfile(candidate));
 		if (!model) throw new Error("Missing Codex model");
 		await t.session.setModel(model);
 		// A previously validated frontmatter default remains fixed; provider auth is separate.

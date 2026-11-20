@@ -13,7 +13,7 @@
  * No network, no manager: a native faux provider on a per-test `ModelRuntime`
  * satisfies `createAgentSession`.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { fauxAssistantMessage, fauxText, fauxToolCall, getCurrentTools } from "@earendil-works/pi-ai";
@@ -46,7 +46,8 @@ function makePi() {
 }
 
 function installRuntimeFixtures(): void {
-	testCwd = mkdtempSync(path.join(tmpdir(), "pi-subagent-tool-access-"));
+	// Real path: Pi resolves the fixture's relative import from the realpath (macOS /var -> /private/var).
+	testCwd = realpathSync(mkdtempSync(path.join(tmpdir(), "pi-subagent-tool-access-")));
 	previousAgentDir = process.env.PI_CODING_AGENT_DIR;
 	const agentDir = path.join(testCwd, "agent-dir");
 	process.env.PI_CODING_AGENT_DIR = agentDir;

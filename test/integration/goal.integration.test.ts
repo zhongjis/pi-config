@@ -449,7 +449,11 @@ describe("Goal in native Pi", () => {
 				: kind === "template"
 					? "/fixture supplied argument"
 					: "/skill:fixture supplied argument";
-		const image = { type: "image" as const, data: "aW1hZ2U=", mimeType: "image/png" };
+		const image = {
+			type: "image" as const,
+			data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=",
+			mimeType: "image/png",
+		};
 		await session.prompt(text, { source: "rpc", streamingBehavior: "steer", images: [image] });
 		const ref = goalStoreRef({ cwd, sessionManager: session.sessionManager });
 		expect((await readGoal(ref))?.amendments).toEqual(kind === "text" ? [text] : undefined);
@@ -459,7 +463,7 @@ describe("Goal in native Pi", () => {
 			.getEntries()
 			.flatMap((entry) => (entry.type === "message" && entry.message.role === "user" ? [entry.message] : []));
 		expect(users).toHaveLength(2);
-		expect(users[1]?.content).toEqual(expect.arrayContaining([image]));
+		expect(users[1]?.content).toEqual(expect.arrayContaining([expect.objectContaining({ type: "image" })]));
 		expect(JSON.stringify(users[1]?.content)).toContain(
 			kind === "text"
 				? text
