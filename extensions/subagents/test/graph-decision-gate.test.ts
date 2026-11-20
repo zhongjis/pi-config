@@ -328,7 +328,7 @@ describe("restore", () => {
     const state = structuredClone(required(saved)); const runtime = required(state.runtime);
     state.runtime = { ...runtime, executionLedger: required(runtime.executionLedger).map(row => "payload" in row && row.payload.kind === "dispatched" && row.payload.target === "agent" && row.instanceId === runtime.manifest.find(entry => entry.binding === "gate")?.instanceId
       ? { ...row, payload: { kind: "dispatched", target: "escalation", reason: "Forged" } } : row) };
-    expect(() => validateGraphRestore(state, graph())).toThrow();
+    expect(() => validateGraphRestore(state, graph())).toThrow(/Invalid execution ledger/);
   });
 
   it("claims no decision source while an escalation waits", async () => {

@@ -43,22 +43,22 @@ it.each(["gate", "repair"] as const)("ACKs a pending %s after durable global can
 });
 
 it.each(["concurrency", "resource", "replacement"] as const)("retains %s ownership through settlement ACK until release completion", async capacity => {
-  const evidence: string[] = []; let calls = 0;
+  const evidence: string[] = []; let calls = 0; let held = 0; let insp = 0; let sec = 0;
   const worker = { type: "agent" as const, agent: "worker", prompt: "fixture", resources: ["exclusive"] };
   const actor = createActor(graphLogic, {
     inspect: event => {
       if (event.type !== "@xstate.event") return;
       if (["NODE.ACK", "NODE.RELEASE_READY", "NODE.RELEASE", "NODE.RELEASED"].includes(event.event.type)) {
         evidence.push(event.event.type);
-        if (calls === 1 || capacity === "replacement") expect(actor.getSnapshot().children["node:a"]).toBeDefined();
+        if (calls === 1 || capacity === "replacement") { insp++; expect(actor.getSnapshot().children["node:a"]).toBeDefined(); }
       }
     },
     input: { graph: { nodes: capacity === "replacement" ? { a: worker } : { a: worker, b: worker }, edges: [] }, input: {}, depth: 0,
       options: { concurrency: capacity === "concurrency" ? 1 : 2, resources: { exclusive: { capacity: 1 } },
-        host: { spawnAgent: async () => { if (++calls === 2) expect(evidence).toContain("NODE.RELEASED"); return { ok: true }; } },
+        host: { spawnAgent: async () => { if (++calls === 2) { sec++; expect(evidence).toContain("NODE.RELEASED"); } return { ok: true }; } },
         onCheckpoint: state => {
           if (state.nodes.a.status === "completed" && calls === 1 && !evidence.includes("NODE.RELEASED")) {
-            expect(actor.getSnapshot().children["node:a"]).toBeDefined();
+            held++; expect(actor.getSnapshot().children["node:a"]).toBeDefined();
             expect(actor.getSnapshot().context.domain?.running()).toContain("a");
           }
         },
@@ -70,7 +70,8 @@ it.each(["concurrency", "resource", "replacement"] as const)("retains %s ownersh
       } },
   });
   actor.start(); expect((await toPromise(actor)).status).toBe("completed");
-  expect(calls).toBe(2);
+  expect(calls).toBe(2); expect(sec).toBe(1);
+  expect(insp).toBeGreaterThan(0); expect(held).toBe(capacity === "replacement" ? 0 : 1); expect(evidence).toContain("NODE.RELEASED");
 });
 
 it("coalesces pending gate retransmissions before the containing checkpoint ACK", async () => {

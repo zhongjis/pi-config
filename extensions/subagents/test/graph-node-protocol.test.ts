@@ -74,7 +74,7 @@ it.each(["id", "incarnation", "runId", "instanceId", "activation", "graphAttempt
   const stale = structuredClone(request);
   const replacement = field === "id" || field === "incarnation" ? { ...stale, [field]: "stale" }
     : { ...stale, correlation: { ...stale.correlation, [field]: field === "activation" || field === "graphAttempt" ? 99 : field === "runId" ? "stale" : other.receipt.correlation[field] } };
-  expect(() => journal.receive(replacement, receipt.correlation)).toThrow();
+  expect(() => journal.receive(replacement, receipt.correlation)).toThrow(field === "id" || field === "incarnation" ? /Stale node incarnation/ : /Conflicting node request sequence/);
 });
 
 it("rejects a new request with a stale correlation without consuming its sequence", () => {
@@ -96,10 +96,10 @@ it("captures request payloads by value so mutation cannot rewrite duplicate evid
 it("rejects an ACK with mismatched request identity or sequence", () => {
   const { journal, request, receipt, ack } = fixture();
   journal.receive(request, receipt.correlation);
-  for (const invalid of [{ ...ack, requestSequence: 2 }, { ...ack, incarnation: "stale" },
-    { ...ack, correlation: { ...ack.correlation, activation: 99 } },
-    { ...ack, receipt: { ...ack.receipt, executionSequence: 2 } }]) {
-    expect(() => journal.prepare(invalid)).toThrow();
+  for (const [invalid, error] of [[{ ...ack, requestSequence: 2 }, /Conflicting node acknowledgment/], [{ ...ack, incarnation: "stale" }, /Conflicting node acknowledgment/],
+    [{ ...ack, correlation: { ...ack.correlation, activation: 99 } }, /Conflicting node acknowledgment/],
+    [{ ...ack, receipt: { ...ack.receipt, executionSequence: 2 } }, /Invalid repair acknowledgment identity/]] satisfies [typeof ack, RegExp][]) {
+    expect(() => journal.prepare(invalid)).toThrow(error);
   }
   journal.prepare(ack); journal.commit(ack);
   expect(journal.receive(request, ack.receipt.correlation).kind).toBe("replay");
@@ -108,10 +108,10 @@ it("rejects an ACK with mismatched request identity or sequence", () => {
 it("rejects repair ACKs that change the durable scope or reuse an execution identity", () => {
   const { journal, request, receipt, ack } = fixture();
   journal.receive(request, receipt.correlation);
-  for (const invalid of [{ ...ack, receipt: { ...ack.receipt, correlation: receipt.correlation } },
-    { ...ack, receipt: { ...ack.receipt, correlation: { ...ack.receipt.correlation, graphAttempt: 2 } } },
-    { ...ack, receipt: { ...ack.receipt, incarnation: "replacement" } }]) {
-    expect(() => journal.prepare(invalid)).toThrow();
+  for (const [invalid, error] of [[{ ...ack, receipt: { ...ack.receipt, correlation: receipt.correlation } }, /Invalid repair acknowledgment identity/],
+    [{ ...ack, receipt: { ...ack.receipt, correlation: { ...ack.receipt.correlation, graphAttempt: 2 } } }, /Invalid repair acknowledgment identity/],
+    [{ ...ack, receipt: { ...ack.receipt, incarnation: "replacement" } }, /Stale node acknowledgment incarnation/]] satisfies [typeof ack, RegExp][]) {
+    expect(() => journal.prepare(invalid)).toThrow(error);
   }
 });
 

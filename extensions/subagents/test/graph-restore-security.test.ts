@@ -81,7 +81,7 @@ it.each(["missing", "unknown", "status", "attempt", "loops", "output", "gate out
   if (kind === "output") saved.state.nodes.a.output = { ok: "forged" };
   if (kind === "gate output") saved.state.nodes.a.output = { answers: { approved: { value: "forged", confidence: 1 } }, decidedBy: "classifier" };
   const spawnAgent = vi.fn(); const onCheckpoint = vi.fn();
-  await expect(runGraph(saved.graph, saved.input, { runId: saved.runId, restore: saved.state, host: { spawnAgent }, onCheckpoint })).rejects.toThrow();
+  await expect(runGraph(saved.graph, saved.input, { runId: saved.runId, restore: saved.state, host: { spawnAgent }, onCheckpoint })).rejects.toThrow({ missing: /Invalid execution ledger/, unknown: /Invalid restored node state/, status: /Invalid restored node state/, attempt: /Invalid restored node state/, loops: /Invalid restored loop counter/, output: /Invalid restored structured output/, "gate output": /Invalid restored structured output/ }[kind]);
   expect(onCheckpoint).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled();
 });
 
@@ -91,7 +91,7 @@ it("rejects identity replacement even with the correct next revision", async () 
   const next = structuredClone(saved); if (!next.state.runtime) throw new Error("missing runtime");
   next.state.runtime.revision++;
   Object.assign(next.state.runtime.manifest[0], { instanceId: "00000000-0000-4000-8000-000000000001" });
-  expect(() => writeGraphSnapshot(cwd, next)).toThrow();
+  expect(() => writeGraphSnapshot(cwd, next)).toThrow(/Invalid execution ledger/);
   expect(readFileSync(join(graphRunsDir(cwd), `${saved.runId}.json`), "utf8")).toBe(before);
 });
 
@@ -109,7 +109,7 @@ it.each(["partial", "owner", "cost", "budget", "resources"])("rejects forged exe
   if (mutation === "budget" || mutation === "resources") Reflect.set(ledger[0], "payload", { kind: "admitted", resources: mutation === "resources" ? ["forged"] : [], budget: { maxExecutions: mutation === "budget" ? 100 : 1 } });
   if (mutation === "cost") Reflect.set(restoredRuntime, "executionLedger", [...ledger, { ...ledger[0], payload: { kind: "dispatched", target: "agent" } }, { ...ledger[0], payload: { kind: "cost", costUsd: 100 } }]);
   const onCheckpoint = vi.fn(); const spawnAgent = vi.fn();
-  await expect(runGraph(graph, {}, { restore: state, onCheckpoint, host: { spawnAgent } })).rejects.toThrow();
+  await expect(runGraph(graph, {}, { restore: state, onCheckpoint, host: { spawnAgent } })).rejects.toThrow(/Invalid execution ledger/);
   expect(onCheckpoint).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled();
 });
 
@@ -135,7 +135,7 @@ it("isolates nested protocol ledgers and rejects partial recursive checkpoints",
       Reflect.set(entry, "instanceId", instance.instanceId);
     }
     if (mutation === "remove") { Reflect.deleteProperty(runtime, "executionProtocolVersion"); Reflect.deleteProperty(runtime, "executionLedger"); }
-    if (mutation !== "remove") expect(() => validateGraphRestore(next.state, parent)).toThrow();
-    expect(() => validateCheckpointTransition(snapshot, next)).toThrow();
+    if (mutation !== "remove") expect(() => validateGraphRestore(next.state, parent)).toThrow(/Invalid execution ledger/);
+    expect(() => validateCheckpointTransition(snapshot, next)).toThrow(/Invalid execution ledger/);
   }
 });

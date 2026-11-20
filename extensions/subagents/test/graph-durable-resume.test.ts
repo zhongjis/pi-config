@@ -226,7 +226,7 @@ it("keeps checkpoint session ownership immutable under replacement", async () =>
     required(next.state.runtime).revision++;
     if (owner === undefined) delete next.ownerSessionId;
     else Reflect.set(next, "ownerSessionId", owner);
-    expect(() => persistence.writeGraphSnapshot(session.ctx.cwd, next)).toThrow();
+    expect(() => persistence.writeGraphSnapshot(session.ctx.cwd, next)).toThrow(owner === "foreign" || owner === undefined ? /Checkpoint changes session ownership/ : /Invalid serialized checkpoint/);
     expect(readFileSync(path, "utf8")).toBe(original);
   }
   const next = structuredClone(saved);
@@ -236,7 +236,7 @@ it("keeps checkpoint session ownership immutable under replacement", async () =>
   // Old ownerless checkpoints cannot be claimed by attaching the current session.
   delete saved.ownerSessionId;
   writeFileSync(path, JSON.stringify(saved));
-  expect(() => persistence.writeGraphSnapshot(session.ctx.cwd, next)).toThrow();
+  expect(() => persistence.writeGraphSnapshot(session.ctx.cwd, next)).toThrow(/Checkpoint changes session ownership/);
   expect(readFileSync(path, "utf8")).toBe(JSON.stringify(saved));
 });
 

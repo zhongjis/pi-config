@@ -44,13 +44,9 @@ describe("agent_graph tool", () => {
     ).rejects.toThrow(/Invalid agent graph/);
   });
 
-  it("registers the graph tool", () => {
-    expect(boot().tools.has("agent_graph")).toBe(true);
-  });
-
   const flat = (c: { render(w: number): string[] }) => c.render(120).join("\n");
 
-  it("renders 'diagnostics' expand label on isError (L3)", () => {
+  it("renders 'diagnostics' expand label on isError", () => {
     const host = boot();
     const tool = required(host.tools.get("agent_graph"));
     const result = { content: [{ type: "text", text: "boom" }] };
@@ -59,7 +55,7 @@ describe("agent_graph tool", () => {
     expect(rendered).toContain("diagnostics");
   });
 
-  it("hints at /agents when task not in session (L4)", async () => {
+  it("hints at /agents when task not in session", async () => {
     const host = boot();
     await host.lifecycle("session_start");
     const tool = required(host.tools.get("agent_graph"));
@@ -73,7 +69,7 @@ describe("agent_graph tool", () => {
     expect(expanded).toContain("Task ID: ghost123");
   });
 
-  it("renders via graph run card for a live task, not the fallback (G1)", async () => {
+  it("renders via graph run card for a live task, not the fallback", async () => {
     const host = boot();
     await host.lifecycle("session_start");
     const tool = required(host.tools.get("agent_graph"));

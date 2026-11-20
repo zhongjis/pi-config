@@ -1,7 +1,7 @@
 // graph-run-pane-store.test.ts (S3) — the per-pane state directory and its atomic
 // writes. The viewer reads these files while the extension rewrites them, so
 // every write has to land whole (tmp + rename) and leave no debris.
-import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -59,7 +59,7 @@ describe("record helpers", () => {
   it("returns undefined for a malformed record rather than throwing", () => {
     writeRecord(dir, { paneId: "%p9", sentinel: "s", closedByUser: false });
     // Corrupt it.
-    rmSync(join(dir, "pane.json"));
+    writeFileSync(join(dir, "pane.json"), "{ torn");
     expect(readRecord(dir)).toBeUndefined();
   });
 });
@@ -93,11 +93,10 @@ describe("input channel", () => {
 
   it("rejects a malformed input slot rather than throwing", () => {
     writeInputAtomic(dir, { seq: 1, data: "x" });
-    rmSync(join(dir, INPUT_FILE));
+    writeFileSync(join(dir, INPUT_FILE), "{ torn");
     expect(readInput(dir)).toBeUndefined();
     // A record with the wrong field types is rejected too.
-    writeSnapshotAtomic(dir, { version: 1, sessionId: "s", updatedAt: 0, connected: true, lines: [] });
-    // state.json is not an input slot; readInput only reads input.json.
+    writeFileSync(join(dir, INPUT_FILE), JSON.stringify({ seq: "1", data: 1 }));
     expect(readInput(dir)).toBeUndefined();
   });
 });

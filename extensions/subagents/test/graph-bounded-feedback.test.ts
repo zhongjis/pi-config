@@ -150,11 +150,12 @@ it("fails closed on corrupt restored feedback before dispatch or checkpoint repl
   state.active = { ...active, work: "missing" };
   const spawnAgent = vi.fn();
   const onCheckpoint = vi.fn();
-  await expect(runGraph(corrupt.graph, { tasks: [initial] }, { restore: corrupt.state, onCheckpoint, host: { spawnAgent } })).rejects.toThrow();
+  await expect(runGraph(corrupt.graph, { tasks: [initial] }, { restore: corrupt.state, onCheckpoint, host: { spawnAgent } })).rejects.toThrow(/Invalid feedback topology binding/);
   expect(spawnAgent).not.toHaveBeenCalled();
   expect(onCheckpoint).not.toHaveBeenCalled();
 });
 
+// ponytail: 497 nodes are needed to reach the production node limit; shrink only if the limit becomes injectable.
 it("blocks node and item ceilings before materializing iteration rows", async () => {
   const many: AgentGraph = { ...graph(), nodes: { ...graph().nodes } };
   for (let index = 0; index < 497; index++) many.nodes[`static${index}`] = { type: "agent", agent: "worker", prompt: "static" };
@@ -166,6 +167,9 @@ it("blocks node and item ceilings before materializing iteration rows", async ()
   expect(checkpoints).toBeLessThan(135);
   expect(clone.mock.calls.length).toBeLessThan(140);
   clone.mockRestore();
+}, 10_000);
+
+it("accepts deadline and spendLimit feedback bounds", () => {
   expect(validateGraph(graph({ ...feedback, deadline: 100 })).ok).toBe(true);
   expect(validateGraph(graph({ ...feedback, spendLimit: 1 })).ok).toBe(true);
 });
@@ -212,7 +216,7 @@ it("rejects a corrupted terminal accumulator before downstream synthesis", async
   const state = structuredClone(saved.state);
   state.nodes.research.output = { reason: "sufficient" };
   const spawnAgent = vi.fn();
-  await expect(runGraph(saved.graph, { tasks: [initial] }, { restore: state, onCheckpoint: () => {}, host: { spawnAgent } })).rejects.toThrow();
+  await expect(runGraph(saved.graph, { tasks: [initial] }, { restore: state, onCheckpoint: () => {}, host: { spawnAgent } })).rejects.toThrow(/Invalid terminal accumulator/);
   expect(spawnAgent).not.toHaveBeenCalled();
 });
 

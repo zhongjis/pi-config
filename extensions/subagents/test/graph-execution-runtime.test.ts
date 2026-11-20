@@ -106,8 +106,8 @@ it("does not accept an unproven recovery acknowledgement", () => {
   const correlation = { runId: "run", instanceId: "10000000-0000-4000-8000-000000000001" as NodeInstanceId, activation: 1, graphAttempt: 1, executionAttemptId: executionAttemptId("10000000-0000-4000-8000-000000000002") };
   const ledger = appendExecution(appendExecution([], { ...correlation, payload: { kind: "admitted", budget: { maxExecutions: 2 }, resources: [] } }), { ...correlation, payload: { kind: "dispatched", target: "agent" } });
   const drain: ExecutionEvent = { ...correlation, payload: { kind: "drain-ack", source: "recovery" } };
-  expect(() => appendExecution(ledger, drain)).toThrow();
-  expect(() => appendExecution(ledger, drain, { reclaimedDeadWriter: true, reconciled: false })).toThrow();
+  expect(() => appendExecution(ledger, drain)).toThrow(/Invalid execution ledger/);
+  expect(() => appendExecution(ledger, drain, { reclaimedDeadWriter: true, reconciled: false })).toThrow(/Invalid execution ledger/);
   expect(appendExecution(ledger, drain, { reclaimedDeadWriter: true, reconciled: true })).toHaveLength(3);
 });
 it("checks live delegation before initial dispatch and before a repair", async () => {
@@ -148,7 +148,7 @@ it("validates aggregate cost, graph starts, projections, and gated success befor
   ]) {
     const state = structuredClone(requireValue(saved, "missing saved checkpoint")); mutate(state);
     const callback = vi.fn(); const spawnAgent = vi.fn();
-    await expect(runGraph(gated, {}, { restore: state, host: { spawnAgent }, onCheckpoint: callback, onNodeAdded: callback })).rejects.toThrow();
+    await expect(runGraph(gated, {}, { restore: state, host: { spawnAgent }, onCheckpoint: callback, onNodeAdded: callback })).rejects.toThrow(/Invalid execution ledger/);
     expect(callback).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled();
   }
 });

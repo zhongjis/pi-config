@@ -46,7 +46,7 @@ it("rechecks ownership under the recovery guard before unlinking", () => {
     link(source, target);
     if (String(target) === `${path}.recovery`) fs.writeFileSync(path, replacement);
   });
-  expect(() => ownGraphRun(cwd, "agr_abcdef123456")).toThrow();
+  expect(() => ownGraphRun(cwd, "agr_abcdef123456")).toThrow(/Checkpoint owner changed during recovery/);
   expect(fs.readFileSync(path, "utf8")).toBe(replacement);
 });
 it("refuses a second live writer with a typed LiveWriterError", () => {

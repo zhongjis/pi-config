@@ -65,7 +65,9 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
         return result;
       });
     }
+    let prompted = false;
     const child = fakeSession(() => {
+      prompted = true;
       expect(collapse(task.graphRunProgress).agents[0]?.modelId).toBeUndefined();
       if (scenario !== "no-evidence") {
         emit("first-model");
@@ -95,6 +97,7 @@ it.each(["normal", "switch", "failure", "no-evidence", "early-session", "missing
     };
     vi.mocked(openSession).mockResolvedValue(opened(child));
     const result = await host.spawnAgent({ nodeId: "a", attempt: 1, agentType: "fixture", prompt: "task", correlation: identity, onResolved: info => reporter.setResolved("a", info, identity) }, new AbortController().signal);
+    expect(prompted).toBe(true);
     expect(result.ok).toBe(scenario !== "failure");
     reporter.update("a", { ...running, status: result.ok ? "completed" : "failed", output: result.output, error: result.error }, identity);
     Object.assign(task, { status: result.ok ? "completed" : "failed", endTime: Date.now() });

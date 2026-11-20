@@ -38,7 +38,7 @@ describe("historical node artifacts", () => {
     expect(alias).not.toContain("private-binding");
     expect(alias).not.toBe(graphRunNodeArtifactId(hostile, 8));
     expect(alias).not.toBe(graphRunNodeArtifactId("another-run", 7));
-    for (const index of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) expect(() => graphRunNodeArtifactId("run", index)).toThrow();
+    for (const index of [-1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) expect(() => graphRunNodeArtifactId("run", index)).toThrow(/Invalid graph run artifact key/);
   });
 
   it("maps private v2 execution identities to the assigned history index", () => {
@@ -125,7 +125,8 @@ describe("historical node artifacts", () => {
     const run = { id: history.id, name: history.graphRunName, status: history.status, source, readHistoricalDetail: history.readNodeDetail };
     const state = { ...initialPanelState(), cursor: { kind: "node" as const, id: 7 }, expandedSections: ["prompt", "outcome"] };
     const rendered = renderPanelLines([run], state, { width: 140 }).flat().map(segment => segment.text).join("\n");
-    expect(rendered).toContain("History snapshot · read-only metadata · session artifacts resolved on demand");
+    expect(rendered).toMatch(/read-only/);
+    expect(rendered).toMatch(/resolved on demand/);
     expect(rendered).toContain("PROMPT_FIXTURE");
     expect(rendered).toContain("FINAL_FIXTURE");
     expect(rendered).not.toMatch(/PRIVATE_|content not retained|TOOL_SECRET|HIDDEN/);

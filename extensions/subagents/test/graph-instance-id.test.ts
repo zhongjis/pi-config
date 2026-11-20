@@ -27,7 +27,7 @@ describe("v2 runtime identity", () => {
   it("rejects allocator collisions and noncanonical IDs before dispatch", async () => {
     for (const value of ["bad", "00000000-0000-4000-8000-000000000001"]) {
       const spawnAgent = vi.fn();
-      await expect(runGraph(graph, {}, { host: { spawnAgent }, allocateInstanceId: () => value, onCheckpoint: () => {} })).rejects.toThrow();
+      await expect(runGraph(graph, {}, { host: { spawnAgent }, allocateInstanceId: () => value, onCheckpoint: () => {} })).rejects.toThrow(/Invalid or duplicate graph instance identity/);
       expect(spawnAgent).not.toHaveBeenCalled();
     }
   });
@@ -114,7 +114,7 @@ it.each(["missing mapping", "missing counter", "low counter"])("rejects nested %
   if (mutation === "missing counter") delete saved.runtime.nextOrdinal;
   if (mutation === "low counter") saved.runtime.nextOrdinal = 1;
   const onCheckpoint = vi.fn(); const spawnAgent = vi.fn();
-  await expect(runGraph(parent, {}, { restore: saved, onCheckpoint, host: { spawnAgent } })).rejects.toThrow();
+  await expect(runGraph(parent, {}, { restore: saved, onCheckpoint, host: { spawnAgent } })).rejects.toThrow(mutation === "missing mapping" ? /Incomplete nested ordinal mapping/ : /Invalid materialization counter/);
   expect(onCheckpoint).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled();
 });
 
@@ -167,6 +167,6 @@ it.each([-1, 1.5, Infinity, "1000"])("rejects invalid persisted start %s before 
   if (!saved?.runtime) throw new Error("missing checkpoint");
   Reflect.set(saved.runtime, "startedAt", startedAt);
   const onCheckpoint = vi.fn(); const spawnAgent = vi.fn(); const allocateInstanceId = vi.fn();
-  await expect(runGraph(graph, {}, { restore: saved, host: { spawnAgent }, onCheckpoint, allocateInstanceId })).rejects.toThrow();
+  await expect(runGraph(graph, {}, { restore: saved, host: { spawnAgent }, onCheckpoint, allocateInstanceId })).rejects.toThrow(/Invalid graph runtime checkpoint/);
   expect(onCheckpoint).not.toHaveBeenCalled(); expect(spawnAgent).not.toHaveBeenCalled(); expect(allocateInstanceId).not.toHaveBeenCalled();
 });

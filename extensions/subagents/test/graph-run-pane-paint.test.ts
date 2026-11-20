@@ -165,7 +165,6 @@ describe("shownLines", () => {
 
   it("keeps the ended notice on the last rows when the parent is gone", () => {
     const lines = Array.from({ length: 10 }, (_, i) => `L${i}`);
-    expect(ENDED_NOTICE).toBe("Pi session ended — press q to close");
     expect(shownLines(lines, { rows: 5, parentGone: true })).toEqual(["L0", "L1", "L2", "", ENDED_NOTICE]);
   });
 

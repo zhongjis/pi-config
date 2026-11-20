@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { AgentGraph } from "../src/graph/ir.js";
 import type { NodeHost, NodeSpawnResult } from "../src/graph/node-host.js";
 import { type GraphControl, runGraph } from "../src/graph/run-graph.js";
@@ -36,8 +36,7 @@ describe("runGraph live controls", () => {
     const g = gatedHost();
     let control!: GraphControl;
     const run = runGraph(chain, {}, { host: g.host, onNodeAdded: g.onNodeAdded, onControl: c => (control = c) });
-    await tick();
-    expect(g.started).toEqual(["a"]);
+    await vi.waitFor(() => expect(g.started).toEqual(["a"]));
 
     control.pause();
     g.finish("a", { ok: true, output: "x" });
@@ -45,8 +44,7 @@ describe("runGraph live controls", () => {
     expect(g.started).toEqual(["a"]); // b withheld while paused
 
     control.resume();
-    await tick();
-    expect(g.started).toEqual(["a", "b"]);
+    await vi.waitFor(() => expect(g.started).toEqual(["a", "b"]));
     g.finish("b", { ok: true, output: "y" });
     expect((await run).status).toBe("completed");
   });
@@ -55,7 +53,7 @@ describe("runGraph live controls", () => {
     const g = gatedHost();
     let control!: GraphControl;
     const run = runGraph(chain, {}, { host: g.host, onNodeAdded: g.onNodeAdded, onControl: c => (control = c) });
-    await tick();
+    await vi.waitFor(() => expect(g.started).toContain("a"));
     expect(control.skip(1)).toBe(true); // b is pending
     g.finish("a", { ok: true, output: "x" });
     const result = await run;
@@ -66,7 +64,7 @@ describe("runGraph live controls", () => {
     const g = gatedHost();
     let control!: GraphControl;
     const run = runGraph(chain, {}, { host: g.host, onNodeAdded: g.onNodeAdded, onControl: c => (control = c) });
-    await tick();
+    await vi.waitFor(() => expect(g.started).toContain("a"));
     expect(control.skip(0)).toBe(true); // a is running
     await releaseAfterPending(run, () => g.finish("a", { ok: true }));
     const result = await run;
@@ -78,16 +76,15 @@ describe("runGraph live controls", () => {
     const g = gatedHost();
     let control!: GraphControl;
     const run = runGraph(chain, {}, { host: g.host, onNodeAdded: g.onNodeAdded, onControl: c => (control = c) });
-    await tick();
+    await vi.waitFor(() => expect(g.started).toContain("a"));
     expect(control.retry(0)).toBe(true); // stop + re-run a
     await releaseAfterPending(run, () => {
       expect(g.started).toEqual(["a"]);
       g.finish("a", { ok: true });
     });
-    await tick();
-    expect(g.started.filter(id => id === "a").length).toBe(2);
+    await vi.waitFor(() => expect(g.started.filter(id => id === "a").length).toBe(2));
     g.finish("a", { ok: true, output: "x" });
-    await tick();
+    await vi.waitFor(() => expect(g.started).toContain("b"));
     g.finish("b", { ok: true, output: "y" });
     const result = await run;
     expect(result.status).toBe("completed");

@@ -63,7 +63,7 @@ it("rejects malformed, foreign, stale and rewritten parent dispositions", async 
     expect(() => validateGraphRestore(bad, graph)).toThrow(/subgraph disposition/i);
   }
   const wrongType: AgentGraph = { ...graph, nodes: { sub: { type: "agent", agent: "worker", prompt: "x" } } };
-  expect(() => validateGraphRestore(saved, wrongType)).toThrow();
+  expect(() => validateGraphRestore(saved, wrongType)).toThrow(/Invalid execution ledger/);
   for (const records of [[], [{ ...row, reason: "retry" as const }]]) {
     const bad = structuredClone(saved); assert(bad.runtime); bad.runtime.subgraphDispositions = records;
     expect(() => validateCheckpointTransition(snapshot(saved), snapshot(bad))).toThrow(/rewrites subgraph dispositions/);

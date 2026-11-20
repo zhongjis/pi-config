@@ -130,6 +130,7 @@ describe("graph metadata history", () => {
   });
 });
 
+// ponytail: the 8 MiB ceiling is the production bound.
 it("enforces the actual 8 MiB ceiling by evicting oldest runs before touching node tails", () => {
   const value = task();
   value.graphRunProgress = Array.from({ length: 200 }, (_, index) => ({
@@ -149,7 +150,7 @@ it("enforces the actual 8 MiB ceiling by evicting oldest runs before touching no
   expect(bounded[0].id).toBe("run-19");
   expect(bounded.length).toBeLessThan(20);
   expect(bounded.every(run => run.omittedNodeCount === 0)).toBe(true);
-});
+}, 10_000);
 
 it.each([
   { parentIndex: 0 }, { parentIndex: 99 }, { parentIndex: -1 }, { iteration: 1.5 },

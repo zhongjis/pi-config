@@ -138,7 +138,7 @@ it("rejects stale checkpoint owners and reports unknown or corrupt v2 snapshots"
   expect(invalid).toHaveBeenCalledTimes(2);
 });
 
-it("holds one live run owner across multiple checkpoints until release", async () => {
+it("holds one live run owner until release", async () => {
   const { ownGraphRun } = await import("../src/graph/graph-persist.js");
   cwd = mkdtempSync(join(tmpdir(), "gp-owner-"));
   const directory = cwd;

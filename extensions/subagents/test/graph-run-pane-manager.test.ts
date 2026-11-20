@@ -253,7 +253,7 @@ describe("auto-open gating", () => {
 });
 
 describe("disabled manager", () => {
-  it("never processes input and holds no view state machinery", () => {
+  it("processing input on a disabled manager is a no-op", () => {
     const mgr = createGraphRunPaneManager({
       enabled: false,
       host: "herdr-app",

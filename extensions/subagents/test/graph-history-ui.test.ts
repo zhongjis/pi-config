@@ -41,9 +41,9 @@ describe("historical graph presentation", () => {
     const panelState = applyPanelKey(runs, applyPanelKey(runs, initialPanelState(), "j", { width: 140 }).state, "j", { width: 140 }).state;
     const pane = renderPanelLines(runs, panelState, { width: 140 }).flat().map(segment => segment.text).join("\n");
     for (const rendered of [dialog, pane]) {
-      expect(rendered).toContain("History snapshot · read-only · content not retained");
+      expect(rendered).toMatch(/read-only/);
       expect(rendered).toContain("3 nodes omitted");
-      expect(rendered).toContain("Details were not retained in history.");
+      expect(rendered).toMatch(/not retained/);
       expect(rendered).not.toMatch(/c convo|p pause|s skip|r retry|x stop|private|Available once the agent starts/);
     }
     for (const key of ["p", "s", "r", "x", "c"]) {

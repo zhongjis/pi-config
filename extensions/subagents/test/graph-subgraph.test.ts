@@ -69,18 +69,28 @@ function savedChain(depth: number): { root: AgentGraph; loadGraph: (name: string
   return { root, loadGraph: name => saved.get(name) };
 }
 
-it.each([32, 33])("enforces the shared graph depth limit at %i", async depth => {
-  const chain = savedChain(depth);
-  const created: string[] = [];
+it("rejects a saved chain deeper than 32", async () => {
+  const chain = savedChain(33);
   const selectors: string[] = [];
   const run = runGraph(chain.root, {}, {
     loadGraph: chain.loadGraph,
     host: { spawnAgent: async request => { selectors.push(request.agentType); return { ok: true, output: "leaf" }; } },
+  });
+  await expect(run).rejects.toThrow(/depth 32/);
+  expect(selectors).toEqual([]);
+});
+
+// ponytail: depth 32 is the production limit; a real 33-level chain is the boundary cost.
+it("completes a saved chain at the depth-32 limit", async () => {
+  const chain = savedChain(32);
+  const created: string[] = [];
+  const selectors: string[] = [];
+  const result = await runGraph(chain.root, {}, {
+    loadGraph: chain.loadGraph,
+    host: { spawnAgent: async request => { selectors.push(request.agentType); return { ok: true, output: "leaf" }; } },
     onNodeAdded: id => created.push(id),
   });
-  if (depth > 32) { await expect(run).rejects.toThrow(/depth 32/); expect(selectors).toEqual([]); return; }
-  const result = await run;
   expect(result.status).toBe("completed");
-  expect(selectors).toEqual([`worker-${depth}`]);
+  expect(selectors).toEqual(["worker-32"]);
   expect(created.some(id => id.endsWith("/leaf"))).toBe(true);
 }, 20_000);

@@ -152,7 +152,7 @@ it("enforces immutable execution prefixes across replacements", async () => {
       Reflect.set(entry, "costUsd", 1);
     }
     if (change === "truncate") Reflect.set(runtime, "executionLedger", []);
-    expect(() => writeGraphSnapshot(cwd, next)).toThrow();
+    expect(() => writeGraphSnapshot(cwd, next)).toThrow(/Invalid execution ledger/);
     expect(readFileSync(path, "utf8")).toBe(bytes);
   }
 });
