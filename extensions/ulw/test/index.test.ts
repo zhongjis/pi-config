@@ -336,9 +336,12 @@ describe("ulw extension — model-adapted prompt selection", () => {
 	const promptFixtures = new Map([
 		[fileURLToPath(new URL("../prompts/default.md", import.meta.url)), "fixture:default"],
 		[fileURLToPath(new URL("../prompts/gpt.md", import.meta.url)), "fixture:gpt"],
+		[fileURLToPath(new URL("../prompts/default-bead.md", import.meta.url)), "fixture:default-bead"],
+		[fileURLToPath(new URL("../prompts/gpt-bead.md", import.meta.url)), "fixture:gpt-bead"],
 	]);
 
 	beforeEach(async () => {
+		vi.stubEnv("ORCH_BEAD", undefined);
 		vi.resetModules();
 		vi.doMock("node:fs", async (importOriginal) => {
 			const actual = await importOriginal<typeof import("node:fs")>();
@@ -354,6 +357,7 @@ describe("ulw extension — model-adapted prompt selection", () => {
 	});
 
 	afterEach(() => {
+		vi.unstubAllEnvs();
 		vi.doUnmock("node:fs");
 		vi.resetModules();
 	});
@@ -381,6 +385,35 @@ describe("ulw extension — model-adapted prompt selection", () => {
 		await fireInput(mock, "ulw fix it");
 		const result = await fireBeforeAgentStart(mock, ctxWithModel({ provider: "anthropic", id: "claude-opus-4-8" }));
 		expect(result?.message).toEqual({ customType: "ultrawork", content: "fixture:default", display: true });
+	});
+
+	describe.each([
+		{ model: { provider: "anthropic", id: "claude-opus-4-8" }, variant: "default" },
+		{ model: { provider: "openai", id: "gpt-5.5" }, variant: "gpt" },
+	])("notepad routing for $variant", ({ model, variant }) => {
+		it.each([
+			{ bead: "task-123", actor: undefined, suffix: "-bead" },
+			{ bead: undefined, actor: undefined, suffix: "" },
+			{ bead: "", actor: "worker", suffix: "" },
+			{ bead: undefined, actor: "worker", suffix: "" },
+		])("selects by ORCH_BEAD=$bead, not BEADS_ACTOR=$actor", async ({ bead, actor, suffix }) => {
+			vi.stubEnv("ORCH_BEAD", bead);
+			vi.stubEnv("BEADS_ACTOR", actor);
+			await fireInput(mock, "ulw fix it");
+			const result = await fireBeforeAgentStart(mock, ctxWithModel(model));
+			expect(result?.message).toEqual({
+				customType: "ultrawork", content: `fixture:${variant}${suffix}`, display: true,
+			});
+		});
+
+		it("reselects the notepad variant after the prompt cache is warm", async () => {
+			await fireInput(mock, "ulw fix it");
+			await fireBeforeAgentStart(mock, ctxWithModel(model));
+			vi.stubEnv("ORCH_BEAD", "task-123");
+			await fireInput(mock, "ulw fix it");
+			const result = await fireBeforeAgentStart(mock, ctxWithModel(model));
+			expect(result?.message?.content).toBe(`fixture:${variant}-bead`);
+		});
 	});
 
 	it("defaults to the Claude variant when no model is set", async () => {

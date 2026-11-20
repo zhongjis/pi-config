@@ -10,6 +10,7 @@
 //
 // Selection mirrors the modes extension: Claude is the default; switch to the
 // GPT variant only when the active model is a GPT-family (OpenAI) model.
+// ORCH_BEAD selects the matching bead-notepad variant at injection time.
 // ---------------------------------------------------------------------------
 
 import { readFileSync } from "node:fs";
@@ -21,7 +22,7 @@ const PROMPTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "prompts");
 
 const cache = new Map<string, string>();
 
-function loadPrompt(variant: "default" | "gpt"): string {
+function loadPrompt(variant: "default" | "gpt" | "default-bead" | "gpt-bead"): string {
   const cached = cache.get(variant);
   if (cached !== undefined) return cached;
   const content = readFileSync(join(PROMPTS_DIR, `${variant}.md`), "utf-8").trim();
@@ -35,5 +36,5 @@ function loadPrompt(variant: "default" | "gpt"): string {
  */
 export function getUltraworkPrompt(model?: { provider: string; id: string }): string {
   const variant = model && isGptModel(model) ? "gpt" : "default";
-  return loadPrompt(variant);
+  return loadPrompt(process.env.ORCH_BEAD ? `${variant}-bead` : variant);
 }

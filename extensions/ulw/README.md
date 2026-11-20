@@ -5,13 +5,13 @@ Ultrawork mode injection — intensifies agent behavior with a structured execut
 ## Upstream
 
 - **Source:** https://github.com/code-yeongyu/oh-my-openagent
-- **Adapted:** Pi-native adaptation of upstream `ultrawork/default.md` (Claude) and `ultrawork/gpt.md` (OpenAI), using Pi agents and tools. Pi handles continuation, so there is no loop. Both variants keep a light notepad at `local://ulw/<goal-slug>.md` (requires `session-local`).
+- **Adapted:** Pi-native adaptation of upstream `ultrawork/default.md` (Claude) and `ultrawork/gpt.md` (OpenAI), using Pi agents and tools. Pi handles continuation, so there is no loop. [Prompt selection](prompt.ts) chooses session-local or assigned-bead notepad storage for both model families.
 
 ## Local Tweaks
 
 - [Default](prompts/default.md) owns the shared workflow, and [GPT](prompts/gpt.md) expresses it for GPT. See the [upstream GPT baseline](https://github.com/code-yeongyu/oh-my-openagent/blob/b7a702362ec21ba79c353c4783848ea1d589c5c4/packages/prompts-core/prompts/ultrawork/gpt.md) for provenance.
 - Both variants add only what the Kua Fu body lacks; delegation, packets, verification, and output rules live in [default.md](../../modes/kuafu/default.md) and [gpt.md](../../modes/kuafu/gpt.md). Ultrawork authorizes per-increment commits through `git-master` and runs the [gate-review](../../modes/kuafu/skills/gate-review/SKILL.md) finish gate for larger or riskier changes.
-- Notepads use exact-replacement `edit` operations and Agent-tree-shared `local://` storage; requested deliverables retain their required destinations.
+- Without an assigned bead, notepads use exact-replacement `edit` operations and Agent-tree-shared `local://` storage (requires `session-local`). The [default bead](prompts/default-bead.md) and [GPT bead](prompts/gpt-bead.md) prompts instead keep a whole-replaced Plan / Now / Findings document in the assigned bead’s notes field, with milestones in comments. Requested deliverables retain their required destinations.
 
 ## What It Does
 
