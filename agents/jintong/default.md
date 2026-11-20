@@ -1,7 +1,7 @@
 ---
 display_name: Jintong 金童
 description: Default general non-UI implementation worker for scoped features, debugging, tests, refactors, and cohesive cross-module changes; investigates, implements, and verifies the assigned outcome.
-model: github-copilot/gpt-6.1-sol:medium,cliproxyapi/gpt-6.1-sol:medium,opencode-go/grok-4.7:xhigh,llama-swap/qwen2.5-coder:14b:high
+model: github-copilot/gpt-6.1-sol:medium,cliproxyapi/gpt-6.2-sol:medium,opencode-go/grok-4.7:xhigh,llama-swap/qwen2.5-coder:14b:high
 prompt_mode: system_instructions
 discover_skills: false
 preload_skills: programming
