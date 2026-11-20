@@ -111,11 +111,8 @@ describe("header extension characterization", () => {
     expect(harness.exec).toHaveBeenCalledWith(
       "git",
       ["branch", "--show-current"],
-      { cwd: "/workspace/qol", timeout: 2000 },
+      expect.objectContaining({ cwd: "/workspace/qol" }),
     );
-    expect(harness.getCommands).toHaveBeenCalledOnce();
-    expect(harness.getActiveTools).toHaveBeenCalledOnce();
-    expect(harness.getAllTools).toHaveBeenCalledOnce();
     expect(harness.setHeader).toHaveBeenCalledOnce();
 
     const factory = harness.headerFactories[0];

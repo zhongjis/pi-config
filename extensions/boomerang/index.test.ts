@@ -769,6 +769,16 @@ describe("Boomerang Extension", () => {
   });
 
   describe("boomerang:commit command", () => {
+    beforeEach(() => {
+      writeFile(
+        join(currentCwd, ".pi", "tool_models.json"),
+        JSON.stringify({
+          version: 1,
+          tools: { "boomerang.commit": { chain: "claude-haiku-4-5,gpt-5.4-mini" } },
+        }),
+      );
+    });
+
     it("sends a plain commit task with args", async () => {
       writeSkill("user", "git-master", "Use git carefully.");
 
@@ -778,7 +788,7 @@ describe("Boomerang Extension", () => {
       expect(sentMessages[0]).not.toContain("/skills:git-master");
     });
 
-    it("uses the Wen Chang model fallback chain", async () => {
+    it("uses the configured commit chain", async () => {
       writeSkill("user", "git-master", "Use git carefully.");
 
       await runBoomerangCommit("--amend");
@@ -813,13 +823,9 @@ describe("Boomerang Extension", () => {
 
     it("falls back to current model when no commit fallback model is available", async () => {
       writeSkill("user", "git-master", "Use git carefully.");
-      // Profile-aware chain: gpt-5.4-mini, claude-haiku-4-5,
-      // opencode-go/qwen3.5-plus, llama-swap/qwen2.5-coder:7b
       availableModels = availableModels.filter((entry) =>
         entry.id !== "gpt-5.4-mini"
         && entry.id !== "claude-haiku-4-5"
-        && entry.id !== "qwen3.5-plus"
-        && entry.id !== "qwen2.5-coder:7b"
       );
 
       await runBoomerangCommit("--amend");

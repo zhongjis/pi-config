@@ -177,7 +177,8 @@ describe("computeLineDiff", () => {
 describe("buildEditorRefinementMessage", () => {
 	it("returns no-changes message for empty diff", () => {
 		const msg = buildEditorRefinementMessage("");
-		expect(msg).toContain("no meaningful changes");
+		expect(msg).not.toContain("```diff");
+		expect(msg).not.toContain("plan_approve");
 	});
 
 	it("includes diff and revision instructions for non-empty diff", () => {

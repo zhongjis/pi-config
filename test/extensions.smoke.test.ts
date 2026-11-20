@@ -104,6 +104,7 @@ describe("extension entrypoints", () => {
     expect(new Set(extensionEntries).size).toBe(extensionEntries.length);
   });
 
+  // ponytail: first test pays the import cost of every extension
   it("registers unique tool names across all extensions", async () => {
     const mock = createMockPi();
 

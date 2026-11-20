@@ -36,7 +36,7 @@ describe("shared Goal context reader", () => {
 		const goal = await createGoal(goalStoreRef(ctx), "Work");
 		expect(await readGoalForContext(ctx)).toEqual(goal);
 		await writeFile(goalFilePath(goalStoreRef(ctx)), "broken json");
-		await expect(readGoalForContext(ctx)).rejects.toThrow();
+		await expect(readGoalForContext(ctx)).rejects.toThrow(SyntaxError);
 	});
 
 	it.each(GOAL_STATUS_VALUES)("returns existing %s records without granting task continuation", async (status) => {

@@ -43,7 +43,7 @@ describe("Goal-owned tool access", () => {
 		const ref = goalStoreRef(ctx);
 		await createGoal(ref, "Fixture");
 		await writeFile(goalFilePath(ref), "invalid");
-		await expect(goalToolAccess(ctx as never)).rejects.toThrow();
+		await expect(goalToolAccess(ctx as never)).rejects.toThrow(SyntaxError);
 	});
 	it("consumes repeated activation once and clears pending on session switching", async () => {
 		const ctx = await context();

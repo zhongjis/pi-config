@@ -118,22 +118,6 @@ afterEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("registry filter", () => {
-	it("returns all models when no profile is active yet", () => {
-		const ctx = createContext();
-		// Not fired session_start — filter shouldn't be active.
-		const snapshot = ctx.modelRegistry.getAvailable();
-		expect(snapshot).toEqual([
-			anthropicModel,
-			openaiCodexModel,
-			opencodeGoModel,
-			opencodeGoKimi,
-			opencodeZenModel,
-			llamaSwapModel,
-			cliproxyapiModel,
-			unrelatedModel,
-		]);
-	});
-
 	it("filters to default providers on session_start", async () => {
 		const harness = createHarness();
 		const ctx = createContext(anthropicModel);

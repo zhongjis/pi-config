@@ -176,7 +176,7 @@ describe("session-local extension composition", () => {
     });
 
     await mock.fire("tool_execution_end", { toolCallId: "read-dir-1" }, ctx);
-    await expect(access(listingPath)).rejects.toThrow();
+    await expect(access(listingPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("lists a folder when the provider tool-call ID exceeds filename limits", async () => {

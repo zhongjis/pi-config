@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createMockContext } from "./fixtures/mock-context.js";
-import { createMockPi } from "./fixtures/mock-pi.js";
+import { createMockContext } from "../../../test/fixtures/mock-context.js";
+import { createMockPi } from "../../../test/fixtures/mock-pi.js";
 
 const mockState = vi.hoisted(() => ({
   execCallbacks: [] as Array<
@@ -38,7 +38,7 @@ vi.mock("node:fs", async () => {
   };
 });
 
-import initDirenv from "../extensions/direnv/index.js";
+import initDirenv from "../index.js";
 
 type SessionContextOptions = {
   hasUI?: boolean;

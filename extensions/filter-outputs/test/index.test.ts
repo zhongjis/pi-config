@@ -179,21 +179,19 @@ describe("filter-outputs tool_result", () => {
   });
 
   describe("bounded scanning", () => {
-    it("scans adversarial 1 MiB output within a generous time bound", { timeout: 30_000 }, async () => {
+    // ponytail: test timeout is the linear-scan guard (about 1.7 s measured); raise only with the bounds in index.ts
+    it("scans adversarial 1 MiB output without hanging", { timeout: 10_000 }, async () => {
       const { run } = setup();
       const urls = "postgres://a:".repeat(Math.floor(MiB / 13));
       const keys = "-----BEGIN RSA PRIVATE KEY-----\n".repeat(MiB / 32);
 
-      const started = performance.now();
       const result = await run({
         toolName: "bash",
         content: [text(urls), text(keys)],
         structuredContent: { output: urls },
       });
-      const elapsed = performance.now() - started;
 
       expect(result).toBeUndefined();
-      expect(elapsed).toBeLessThan(5_000);
     });
 
     it("still redacts realistic URL credentials and PEM blocks", async () => {

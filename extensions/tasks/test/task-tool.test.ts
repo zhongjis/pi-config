@@ -187,13 +187,13 @@ describe("Task consolidated tool", () => {
     initExtension(mock.pi as any);
 
     await expect(mock.executeTool("Task", { op: "create", tasks: [{ subject: "NoDesc" } as any] }))
-      .rejects.toThrow();
+      .rejects.toThrow(/item 1 is missing a description/);
     await expect(mock.executeTool("Task", { op: "update", tasks: [{ status: "completed" } as any] }))
-      .rejects.toThrow();
+      .rejects.toThrow(/item 1 is missing a taskId/);
     await expect(mock.executeTool("Task", { op: "get" } as any))
-      .rejects.toThrow();
+      .rejects.toThrow(/Task get requires a `taskId`/);
     await expect(mock.executeTool("Task", { op: "bogus" } as any))
-      .rejects.toThrow();
+      .rejects.toThrow(/Unknown Task op: bogus/);
   });
 
   it("list reports empty state", async () => {

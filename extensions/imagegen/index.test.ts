@@ -479,7 +479,7 @@ describe("vendored imagegen public registration", () => {
     expect(apiKey).toHaveBeenCalledWith(official);
   });
 
-  it("rejects unauthenticated and cross-origin studio requests before side effects", async () => {
+  it("rejects unauthenticated and cross-origin studio requests before side effects, then serves authorized same-origin ones", async () => {
     let studioUrl = "";
     processMocks.spawn.mockImplementation((_command: string, args: string[]) => {
       studioUrl = args[0];

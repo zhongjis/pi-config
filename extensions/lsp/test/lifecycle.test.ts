@@ -43,13 +43,11 @@ vi.mock('../client', () => ({
 
 vi.mock('../config', async () => {
   const { Effect } = await import('effect');
+  const actual = await vi.importActual<typeof import('../config')>('../config');
   return {
     loadConfigEffect: vi.fn(() => Effect.succeed(mocks.config)),
     scaffoldGlobalConfigEffect: vi.fn(() => Effect.succeed(false)),
-    serversForExtension: vi.fn(
-      (servers: typeof mocks.config.servers, filePath: string) =>
-        servers.filter((server) => filePath.endsWith(server.extensions[0])),
-    ),
+    serversForExtension: actual.serversForExtension,
   };
 });
 

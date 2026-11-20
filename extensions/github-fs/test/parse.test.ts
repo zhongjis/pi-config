@@ -118,7 +118,7 @@ describe("parseGithubPath - diff", () => {
 
 describe("parseGithubPath - malformed", () => {
   it("rejects owner without repo", () => {
-    expect(() => parseGithubPath("gh-pr://onlyowner")).toThrow();
+    expect(() => parseGithubPath("gh-pr://onlyowner")).toThrow(/Invalid gh-pr:\/\/ path 'gh-pr:\/\/onlyowner'/);
   });
 
   it("rejects non-positive number", () => {
