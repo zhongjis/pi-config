@@ -32,7 +32,7 @@ export default defineConfig({
             "test/integration/**",
             "extensions/subagents/test/**/*e2e*.test.ts"
           ],
-          setupFiles: ["test/setup-require-stubs.ts"],
+          setupFiles: ["test/setup-git-env.ts", "test/setup-require-stubs.ts"],
           server: {
             deps: {
               inline: [/@earendil-works/, /@mariozechner/]
@@ -45,6 +45,7 @@ export default defineConfig({
           name: "integration",
           environment: "node",
           globals: true,
+          setupFiles: ["test/setup-git-env.ts"],
           include: [
             "test/integration/**/*.test.ts"
           ],
@@ -64,6 +65,7 @@ export default defineConfig({
           name: "subagents-e2e",
           environment: "node",
           globals: true,
+          setupFiles: ["test/setup-git-env.ts"],
           include: [
             "extensions/subagents/test/**/*e2e*.test.ts"
           ],

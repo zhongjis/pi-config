@@ -15,6 +15,7 @@ Shared test harness, smoke coverage, fixtures, stubs, and runtime integration te
 - Unit tests use local Pi stubs; integration tests use real packages.
 - Repository testing infrastructure stays outside runtime installation.
 - Smoke coverage checks loading and registration, not behavioral correctness.
+- [setup-git-env.ts](setup-git-env.ts) MUST stay in every Vitest project's `setupFiles` so fixture git commands never touch the host repository.
 
 ## Work Guidance
 
