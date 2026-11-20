@@ -75,7 +75,29 @@ export default function (pi: ExtensionAPI): void {
 	let agentTurnInProgress = false;
 	let agentGoalAccounting: AgentGoalAccounting | null = null;
 	let completedThisTurnGoalId: string | null = null;
-	const admission = createGoalAdmission();
+	// Background tasks whose completion will wake the agent; continuing meanwhile only busy-loops.
+	const waitingBgTasks = new Set<string>();
+	const terminalBgTasks = new Set<string>();
+	const admission = createGoalAdmission(() => waitingBgTasks.size > 0);
+	pi.events.on("pi-background-tasks:terminal:v1", (data: unknown) => {
+		const task = isRecord(data) ? data.task : undefined;
+		if (!isRecord(task) || typeof task.id !== "string") return;
+		terminalBgTasks.add(task.id);
+		waitingBgTasks.delete(task.id);
+	});
+	pi.on("tool_result", (event) => {
+		if (event.toolName !== "bg_run" || event.isError || !isRecord(event.details)) return;
+		const task = event.details.task;
+		if (
+			isRecord(task) &&
+			typeof task.id === "string" &&
+			task.status === "running" &&
+			task.notifyOnCompletion === true &&
+			task.triggerOnCompletion === true &&
+			!terminalBgTasks.has(task.id)
+		)
+			waitingBgTasks.add(task.id);
+	});
 	let run: {
 		ref: GoalStoreRef;
 		goalId: string;
@@ -395,6 +417,8 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.on("session_start", async (_event, ctx) => {
 		activeCtx = ctx;
+		waitingBgTasks.clear();
+		terminalBgTasks.clear();
 		pendingBootstrap = undefined;
 		bootstrapId = undefined;
 		await refreshToolAccess(ctx);

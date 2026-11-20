@@ -5,7 +5,7 @@ import { readGoal } from "./store.js";
 import type { Goal } from "./types.js";
 
 /** Process-local admission; native boundaries own in-run continuation. */
-export function createGoalAdmission() {
+export function createGoalAdmission(backgroundWaiting: () => boolean = () => false) {
 	let generation = 0;
 	let reserved = false;
 	let budgetReportedId: string | null = null;
@@ -38,7 +38,7 @@ export function createGoalAdmission() {
 					(current.amendments?.length ?? 0) !== (goal.amendments?.length ?? 0)
 				)
 					return;
-				if (ctx.signal?.aborted || ctx.hasPendingMessages() || (!boundary && !ctx.isIdle())) return;
+				if (ctx.signal?.aborted || ctx.hasPendingMessages() || backgroundWaiting() || (!boundary && !ctx.isIdle())) return;
 				if (current.status === "budgetLimited" && budgetReportedId === current.id) return;
 				admitted = true;
 				return {
