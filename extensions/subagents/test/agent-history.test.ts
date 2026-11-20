@@ -177,7 +177,7 @@ describe("independent agent history", () => {
     store.capture(record(sessionFile, { sessionFile: undefined }));
     expect(store.runs).toEqual([]);
     await store.flush();
-    await expect(readFile(historyPath("session-a"))).rejects.toThrow();
+    await expect(readFile(historyPath("session-a"))).rejects.toMatchObject({ code: "ENOENT" });
   });
 
   it("mergeAgentHistory keeps live records first and projects history without a session", () => {

@@ -806,9 +806,7 @@ describe("ConversationViewer — cache and scroll", () => {
     viewer.render(80);
     (viewer as any).scrollOffset = 9999;
     (viewer as any).autoScroll = false;
-    viewer.render(80);
-    const max = Math.max(0, (viewer as any).contentLines.length - (viewer as any).viewportHeight());
-    expect((viewer as any).scrollOffset).toBeLessThanOrEqual(max);
+    expect(viewer.render(80).join("\n")).toContain("line 39");
   });
 });
 

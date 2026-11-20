@@ -140,6 +140,8 @@ describe("S2 bracket rules and paused lifecycle", () => {
   it("brackets only running/queued agent rows and never coordination rows or waiting", () => {
     const rows = plain(renderPanelLines([liveFixture()], liveState(), { width: 72, rows: 30, now: NOW }));
     const roster = rows.slice(0, rows.findIndex(line => line.includes("Selected node")));
+    expect(roster.some(l => /✓ done/.test(l))).toBe(true);
+    expect(roster.some(l => /Research|Gather evidence/.test(l))).toBe(true);
     for (const line of roster) {
       if (/✓ done/.test(line)) expect(line).not.toContain("[");
       if (/Research|Gather evidence/.test(line)) expect(line).not.toContain("[");

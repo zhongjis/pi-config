@@ -48,10 +48,12 @@ describe("cross-extension RPC", () => {
     it("scopes replies — other requestIds do not receive it", async () => {
       registerRpcHandlers(deps);
       const wrongReply = vi.fn();
+      const rightReply = vi.fn();
       events.on("subagents:rpc:ping:reply:req-other", wrongReply);
+      events.on("subagents:rpc:ping:reply:req-1", rightReply);
       events.emit("subagents:rpc:ping", { requestId: "req-1" });
 
-      await new Promise((r) => setTimeout(r, 20));
+      await vi.waitFor(() => expect(rightReply).toHaveBeenCalled());
       expect(wrongReply).not.toHaveBeenCalled();
     });
 
@@ -63,7 +65,7 @@ describe("cross-extension RPC", () => {
       events.on("subagents:rpc:ping:reply:req-1", reply);
       events.emit("subagents:rpc:ping", { requestId: "req-1" });
 
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => setImmediate(r));
       expect(reply).not.toHaveBeenCalled();
     });
   });
@@ -156,7 +158,7 @@ describe("cross-extension RPC", () => {
       });
 
       // Give any potential async handler time to fire
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => setImmediate(r));
       expect(reply).not.toHaveBeenCalled();
     });
   });
@@ -206,7 +208,7 @@ describe("cross-extension RPC", () => {
       events.on("subagents:rpc:stop:reply:req-st4", reply);
       events.emit("subagents:rpc:stop", { requestId: "req-st4", agentId: "agent-42" });
 
-      await new Promise((r) => setTimeout(r, 20));
+      await new Promise((r) => setImmediate(r));
       expect(reply).not.toHaveBeenCalled();
     });
   });

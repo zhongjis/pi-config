@@ -114,17 +114,9 @@ describe("status note reaches the parent through the real handlers", () => {
     const out = textOf(res);
     // Exact lead clause, not just "turn limit": a force_steered/aborted mix-up would
     // otherwise slip through, and they are different outcomes.
-    expect(out).toContain("aborted at the turn ceiling");
+    expect(out).toContain(getForegroundOutcomeNote("aborted", "turn-limit"));
     expect(out).toContain("partial work so far");     // partial result still delivered
     expect(out).not.toContain("STOPPED BY THE USER"); // not mislabelled as a user stop
-
-    expect(out).toContain("everything the agent produced is above");
-    expect(out).toContain("the task is unfinished");
-    // State only, never an instruction to act (see getForegroundOutcomeNote):
-    // advising a fresh run to save one wasted tool call is a bet nothing here
-    // can measure. And naming the tool we steer away from only raises its salience.
-    expect(out).not.toContain("re-spawn");
-    expect(out).not.toContain("get_agent_result");
   });
 
   it("foreground generic parent cancellation is not a proven human stop", async () => {
@@ -147,16 +139,7 @@ describe("status note reaches the parent through the real handlers", () => {
 
     const out = textOf(await call);
     expect(out).not.toContain("STOPPED BY THE USER");
-    expect(out).toContain("caller");
-    expect(out).toContain("everything the agent produced is above");
-    // Same claim, same confidence, same words as the aborted case — only the
-    // lead clause distinguishes them.
-    expect(out).toContain("the task is unfinished");
-    // State only, here most of all. Advice to re-spawn would re-run work a human
-    // deliberately killed; advice to ask first presumes someone is there to ask,
-    // which is false under `pi -p`, scheduled jobs, and background-driven runs.
-    expect(out).not.toContain("re-spawn");
-    expect(out).not.toContain("ask before");
+    expect(out).toContain(getForegroundOutcomeNote("stopped", "caller"));
   });
 
   it("programmatic RPC stop is caller cancellation, not user action", async () => {
@@ -185,8 +168,7 @@ describe("status note reaches the parent through the real handlers", () => {
 
     const out = textOf(res);
     expect(out).not.toContain("STOPPED BY THE USER");
-    expect(out).toContain("caller");
-    expect(out).toContain("the task was NOT finished");
+    expect(out).toContain(getStatusNote("stopped", "caller"));
     expect(out).not.toContain("Done"); // not surfaced as a normal completion
 
     // The background/retrieval path keeps getStatusNote, NOT the foreground

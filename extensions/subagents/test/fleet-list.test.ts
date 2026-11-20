@@ -562,7 +562,6 @@ describe("FleetList detailed rows", () => {
         expect(row.includes("gpt-5.6:high")).toBe(level < 3);
         expect(row.includes("(62%)")).toBe(level < 4);
       }
-      if (level === 3) console.log(`NARROW FLEET ROW (${width} columns):\n${lines[3]}`);
     }
     for (const width of [0, 1, 2, 8, 20, 40, 80, 120]) {
       for (const row of h.render(width)) expect(visibleWidth(row)).toBeLessThanOrEqual(width);

@@ -49,8 +49,8 @@ describe("StructuredOutput retry budget", () => {
 
   it("returns a terminating result on the third failure and refuses further calls", async () => {
     const { capture, execute } = setup();
-    await expect(execute({ answer: 1 })).rejects.toThrow();
-    await expect(execute({ answer: 2 })).rejects.toThrow();
+    await expect(execute({ answer: 1 })).rejects.toThrow(/did not match the required schema/);
+    await expect(execute({ answer: 2 })).rejects.toThrow(/did not match the required schema/);
     const invalid = { answer: 3 };
     const result = await execute(invalid);
     expect(result.terminate).toBe(true);
@@ -74,8 +74,8 @@ describe("StructuredOutput retry budget", () => {
 
   it("counts failures during repair against the same budget", async () => {
     const { capture, execute } = setup();
-    await expect(execute({ answer: 1 })).rejects.toThrow();
-    await expect(execute({ answer: 2 })).rejects.toThrow();
+    await expect(execute({ answer: 1 })).rejects.toThrow(/did not match the required schema/);
+    await expect(execute({ answer: 2 })).rejects.toThrow(/did not match the required schema/);
     const { session, prompt, waitForIdle } = fakeSession(vi.fn(async (_text: string) => {
       expect((await execute({ answer: 3 })).terminate).toBe(true);
     }));
@@ -101,8 +101,8 @@ describe("StructuredOutput retry budget", () => {
 
   it("reports exhaustion with the last error and bounded, unverified payload", async () => {
     const { capture, execute } = setup();
-    await expect(execute({ answer: 1 })).rejects.toThrow();
-    await expect(execute({ answer: 2 })).rejects.toThrow();
+    await expect(execute({ answer: 1 })).rejects.toThrow(/did not match the required schema/);
+    await expect(execute({ answer: 2 })).rejects.toThrow(/did not match the required schema/);
     const invalid = { answer: 3, extra: "x".repeat(3000) };
     await execute(invalid);
     expect(capture.lastInvalidOutput).toHaveLength(2000);
@@ -120,8 +120,8 @@ describe("StructuredOutput retry budget", () => {
   it("resets every capture field and restores the full failure budget", async () => {
     const { capture, execute } = setup();
     await execute({ answer: "previous execution" });
-    await expect(execute({ answer: 1 })).rejects.toThrow();
-    await expect(execute({ answer: 2 })).rejects.toThrow();
+    await expect(execute({ answer: 1 })).rejects.toThrow(/did not match the required schema/);
+    await expect(execute({ answer: 2 })).rejects.toThrow(/did not match the required schema/);
     await execute({ answer: 3 });
     resetStructuredCapture(capture);
     expect(capture.json).toBeUndefined();
@@ -130,8 +130,8 @@ describe("StructuredOutput retry budget", () => {
     expect(capture.failedCalls).toBe(0);
     expect(capture.exhausted).toBe(false);
     expect(capture.lastInvalidOutput).toBeUndefined();
-    await expect(execute({ answer: 1 })).rejects.toThrow();
-    await expect(execute({ answer: 2 })).rejects.toThrow();
+    await expect(execute({ answer: 1 })).rejects.toThrow(/did not match the required schema/);
+    await expect(execute({ answer: 2 })).rejects.toThrow(/did not match the required schema/);
     expect((await execute({ answer: 3 })).terminate).toBe(true);
     expect(capture.failedCalls).toBe(3);
     expect(capture.exhausted).toBe(true);

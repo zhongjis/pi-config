@@ -57,7 +57,7 @@ describe("foreground native cards through registered subagent", () => {
   it("closes thrown preparation errors without changing their propagation", async () => {
     const host = presentationHost();
     writeFileSync(join(dir, ".pi", "agents", "fixture.md"), "---\nname: fixture\nmodel: unavailable/model\n---\nTask");
-    await expect(required(host.tools.get("subagent")).execute("throw", launchParams, undefined, undefined, host.context("throw"))).rejects.toThrow();
+    await expect(required(host.tools.get("subagent")).execute("throw", launchParams, undefined, undefined, host.context("throw"))).rejects.toThrow(/Model not found/);
     expectClosed(host, "throw", { exitCode: 1, stopReason: "error", errorMessage: expect.any(String) });
   });
 

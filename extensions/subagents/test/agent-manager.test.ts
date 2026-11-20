@@ -58,27 +58,6 @@ describe("AgentManager — Bug 1 race condition (resultConsumed vs onComplete)",
     manager?.dispose();
   });
 
-  it("reproduces bug: onComplete fires with resultConsumed=false when set after await", async () => {
-    let seenConsumed: boolean | undefined;
-    manager = new AgentManager((r) => {
-      seenConsumed = r.resultConsumed;
-    });
-    resolvedRun();
-
-    const id = manager.spawn(mockPi, mockCtx, "fixture", "test", {
-      description: "test",
-      isBackground: true,
-    });
-    const record = manager.getRecord(id)!;
-
-    // Simulate the buggy get_agent_result: await THEN mark consumed
-    await record.promise;
-    record.resultConsumed = true; // too late — onComplete already fired
-
-    // onComplete saw resultConsumed as falsy (undefined) — would queue a notification (the bug)
-    expect(seenConsumed).toBeFalsy();
-  });
-
   it("fix: onComplete sees resultConsumed=true when pre-marked before await", async () => {
     let seenConsumed: boolean | undefined;
     manager = new AgentManager((r) => {

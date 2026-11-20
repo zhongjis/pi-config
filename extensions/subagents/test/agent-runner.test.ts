@@ -2027,7 +2027,7 @@ describe("agent prompt variants", () => {
     const initialPrompt = options.systemPromptOverride();
     const notesStart = initialPrompt.indexOf("local://notes/variant-worker.md");
     const notesSuffix = notesStart >= 0 ? initialPrompt.slice(notesStart) : undefined;
-    if (!isolated) expect(notesSuffix).toBeDefined();
+    expect(notesSuffix !== undefined).toBe(!isolated);
     for (const [model, body] of [
       [{ provider: "fixture", id: "claude-child" }, "DEFAULT_BODY\n<critical>RULES</critical>"],
       [childModel, "GPT_BODY"],

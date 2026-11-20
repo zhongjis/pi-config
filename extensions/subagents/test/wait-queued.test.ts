@@ -198,10 +198,7 @@ describe("get_agent_result wait:true on a queued agent", () => {
       );
 
     controller.abort();
-    const outcome = await Promise.race([
-      waitOutcome,
-      new Promise<string>((resolve) => setTimeout(() => resolve("timed-out"), 100)),
-    ]);
+    const outcome = await waitOutcome;
     const childWasAborted = session.abort.mock.calls.length > 0;
 
     gate.resolve("THE-RESULT-PAYLOAD");
