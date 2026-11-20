@@ -5,7 +5,7 @@
     "memory.extract": "github-copilot/gpt-6-luna:off,cliproxyapi/gpt-6-luna:off:fast,openai-codex/gpt-6-luna:off:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
     "commit": "github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,openai-codex/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
     "guard.tool": "github-copilot/gpt-6-luna:low,cliproxyapi/gpt-6-luna:low:fast,openai-codex/gpt-6-luna:low:fast,opencode-go/qwen3.7-plus,llama-swap/granite4.1:8b",
-    "vision.inspect": "github-copilot/gpt-6.1-sol:low,anthropic/claude-sonnet-5:medium,cliproxyapi/gpt-6.2-sol:low,openai-codex/gpt-6.2-sol:low",
+    "vision.inspect": "github-copilot/gpt-6.1-sol:low,anthropic/claude-sonnet-5:medium,cliproxyapi/gpt-6.1-sol:low,openai-codex/gpt-6.1-sol:low",
     "image.generate": "cliproxyapi/gpt-image-2.5,cliproxyapi/gpt-image-2.5-sunburst,openai-codex/gpt-image-2.5,openai-codex/gpt-image-2.5-sunburst"
   },
   "tools": {
