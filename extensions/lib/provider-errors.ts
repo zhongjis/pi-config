@@ -84,6 +84,7 @@ function getStructuredErrorKind(err: object): ProviderErrorKind | undefined {
 	switch (getStatus(metadata)) {
 		case 402: return "quota";
 		case 429: return "rate-limit";
+		case 401:
 		case 403: return "access-denied";
 		default: return undefined;
 	}
@@ -114,12 +115,12 @@ export function isRateLimitError(err: unknown): boolean {
 		|| msg.includes("too many requests");
 }
 
-/** 403 Forbidden, or message containing permission/access-denied keywords. */
+/** 401/403 status, or message containing permission/access-denied/expired-credential keywords. Transient proxy failures (auth_unavailable) never count. */
 export function isAccessDeniedError(err: unknown): boolean {
-	if (!err || typeof err !== "object") return false;
+	if (!err || typeof err !== "object" || isTransientProviderError(err)) return false;
 	const structured = getStructuredErrorKind(err);
 	if (structured) return structured === "access-denied";
-	return /\b403\b|forbidden|permission.?(?:error|denied)|access.?denied/.test(getErrorText(err));
+	return /\b403\b|forbidden|permission.?(?:error|denied)|access.?denied|authentication_error|api_key_expired|invalid_grant/.test(getErrorText(err));
 }
 
 /** Recoverable transport/proxy failures; invalid credentials and access denials are not transient. */

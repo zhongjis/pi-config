@@ -175,8 +175,18 @@ describe("isAccessDeniedError", () => {
 		expect(isAccessDeniedError({ message: "AccessDeniedException: not authorized" })).toBe(true);
 	});
 
+	it("detects expired or invalid credentials", () => {
+		expect(isAccessDeniedError({ status: 401 })).toBe(true);
+		expect(isAccessDeniedError({ errorMessage: "opencode-go API error (401): {\"type\":\"authentication_error\",\"code\":\"api_key_expired\"}" })).toBe(true);
+		expect(isAccessDeniedError({ message: "invalid_grant: refresh token revoked" })).toBe(true);
+	});
+
+	it("keeps transient auth_unavailable out of access-denied", () => {
+		expect(isAccessDeniedError({ message: "auth_unavailable: server_is_overloaded" })).toBe(false);
+		expect(isAccessDeniedError({ status: 401, message: "auth_unavailable: server_is_overloaded" })).toBe(false);
+	});
+
 	it("returns false for other errors", () => {
-		expect(isAccessDeniedError({ status: 401 })).toBe(false);
 		expect(isAccessDeniedError({ errorMessage: "400 invalid API key" })).toBe(false);
 		expect(isAccessDeniedError({ errorMessage: "prompt is too long: 214035 tokens" })).toBe(false);
 		expect(isAccessDeniedError(null)).toBe(false);
